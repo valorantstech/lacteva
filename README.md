@@ -17,7 +17,9 @@ Lacteva is an AI-first, cloud-native, multi-tenant **Dairy Intelligence Platform
 | `docs/08-ai/` | AI/ML documentation: model cards, evaluation reports, prompt specifications. |
 | `docs/09-events/` | The event catalog for the platform's event-driven backbone. |
 | `docs/10-operations/` | Runbooks and operational documentation. |
-| `docs/11-glossary/` | The company-wide glossary of domain and technical terms. |
+| `docs/11-glossary/` | The company-wide glossary and taxonomy of domain and technical terms. |
+| `docs/12-quality/` | Repository quality reports, traceability matrix, and the documentation roadmap. |
+| `docs/INDEX.md` | Master index of every document in the repository. |
 | `services/` | Platform microservices (code). |
 | `libs/` | Shared libraries used across services. |
 | `infra/` | Infrastructure as code. |

@@ -26,6 +26,19 @@ Every formal document in this repository starts from a template in this folder. 
 | [TPL-0010](TPL-0010-domain-model-template.md) | Domain Model | `DOM` | `03-architecture/domain-models/` |
 | [TPL-0011](TPL-0011-glossary-template.md) | Glossary | glossary sections | `11-glossary/` |
 | [TPL-0012](TPL-0012-changelog-template.md) | Change Log | change logs | any component/service |
+| [TPL-0013](TPL-0013-concept-template.md) | Concept | `CON` | `03-architecture/00-concepts/` |
+| [TPL-0014](TPL-0014-business-process-template.md) | Business Process | `BPR` | `03-architecture/01-business-layer/` |
+| [TPL-0015](TPL-0015-platform-service-template.md) | Platform Service | `PSV` | `03-architecture/03-application-layer/` |
+| [TPL-0016](TPL-0016-product-template.md) | Product | `PDT` | `03-architecture/03-application-layer/` |
+| [TPL-0017](TPL-0017-aggregate-template.md) | Aggregate | `AGG` | `03-architecture/02-domain-layer/` |
+| [TPL-0018](TPL-0018-entity-template.md) | Entity | `ENT` | `03-architecture/02-domain-layer/` |
+| [TPL-0019](TPL-0019-value-object-template.md) | Value Object | `VAL` | `03-architecture/02-domain-layer/` |
+| [TPL-0020](TPL-0020-repository-template.md) | Repository (domain access) | `REP` | `03-architecture/02-domain-layer/` |
+| [TPL-0021](TPL-0021-policy-template.md) | Policy | `POL` | `03-architecture/02-domain-layer/` |
+| [TPL-0022](TPL-0022-specification-template.md) | Specification | `SPC` | `03-architecture/02-domain-layer/` |
+| [TPL-0023](TPL-0023-ai-agent-template.md) | AI Agent | `AGT` | `03-architecture/03-application-layer/` |
+
+Enterprise Architecture artifacts reuse existing templates where they already exist: ADRs → TPL-0001, business capabilities → TPL-0009 (as amended for domain catalogs), domain models/bounded contexts → TPL-0010, event contracts → TPL-0008. Review checklists for all EA artifact types: [GOV-0003](../01-governance/GOV-0003-architecture-review-checklists.md).
 
 ## Changing a Template
 

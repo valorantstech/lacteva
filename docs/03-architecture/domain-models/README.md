@@ -13,4 +13,4 @@ One document per **bounded context**, from [TPL-0010](../../02-templates/TPL-001
 
 | ID | Bounded Context | Status |
 | --- | --- | --- |
-| — | *No domain models yet. Candidate first contexts from the dairy domain: Farm & Herd Management, Milk Collection, Quality Assessment, Payments & Settlement, Intelligence & Forecasting.* | |
+| — | *No domain models yet. Candidate first contexts, aligned with the capability model ([CAP-0001](../../05-capabilities/CAP-0001-business-capability-master-map.md)): Farm Production (FPR), Milk Collection & Logistics (MCL), Quality & Food Safety (QFS), Producer Economics & Settlement (PEF), Dairy Intelligence & Advisory (DIA). Sequencing in [QR-0004](../../12-quality/QR-0004-documentation-roadmap.md).* | |

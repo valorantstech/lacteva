@@ -3,7 +3,7 @@ id: GLOSSARY
 title: Lacteva Company-Wide Glossary
 type: reference
 status: Approved
-version: "1.0"
+version: "1.2"
 owner: Docs Guild
 created: 2026-08-02
 last-updated: 2026-08-02
@@ -15,11 +15,39 @@ Terminology source of truth for all Lacteva documentation. Entry format and rule
 
 ## Dairy Domain Terms
 
+### Adulteration
+
+**Definition:** Deliberate addition of foreign substances to milk (water, neutralizers, extraneous fats or solids) to increase volume or mask spoilage; a food-safety violation and settlement fraud.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Not *contamination* (unintentional presence of a harmful substance).
+**Source:** Food-law standard usage.
+
 ### Bulk Tank
 
 **Definition:** Refrigerated on-farm storage vessel where milk from one or more milkings is held before collection.
 **Context:** Company-wide
 **Synonyms / Do not confuse with:** Bulk milk tank. Not a *silo* (processor-side storage).
+**Source:** Industry standard usage.
+
+### Cold Chain
+
+**Definition:** The unbroken sequence of temperature-controlled storage and transport that keeps milk and dairy products within safe temperature bounds from farm to consumer.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** —
+**Source:** Industry standard usage.
+
+### Chilling Center
+
+**Definition:** An intermediate facility where milk deliveries — typically from smallholders — are aggregated, cooled, and stored pending bulk transport to processing.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Milk collection center, bulk milk cooling unit. Not on-farm storage (a *bulk tank*).
+**Source:** Industry standard usage.
+
+### Extension Services
+
+**Definition:** Organized delivery of agricultural knowledge and advisory to producers — training, campaigns, and field visits — by cooperatives, buyers, or public agencies.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Farm advisory. Not platform-generated advisory (see capability DIA.ADV.01), which extension may deliver.
 **Source:** Industry standard usage.
 
 ### Herd
@@ -57,6 +85,13 @@ Terminology source of truth for all Lacteva documentation. Entry format and rule
 **Synonyms / Do not confuse with:** Farmer (informal). Not a *processor* (buys and transforms milk) or *collector* (transports it).
 **Source:** Internal definition.
 
+### Patronage
+
+**Definition:** The cooperative principle and practice of allocating surplus (profit) to members in proportion to their use of the cooperative — for dairy, typically in proportion to milk delivered.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Patronage dividend/refund. Not a *share dividend* (return on capital, not on use).
+**Source:** Cooperative-sector standard usage.
+
 ### Somatic Cell Count (SCC)
 
 **Definition:** Concentration of somatic cells in milk (cells/mL), used as a key indicator of udder health and milk quality.
@@ -64,7 +99,28 @@ Terminology source of truth for all Lacteva documentation. Entry format and rule
 **Synonyms / Do not confuse with:** Not *bacterial count* (a separate hygiene indicator).
 **Source:** Industry standard measure.
 
+### Traceability
+
+**Definition:** The ability to follow a milk quantity or product batch backward to its contributing sources and forward to its destinations, one step at a time, across the whole chain.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Not *provenance* alone (origin story) — traceability is bidirectional and operational.
+**Source:** Food-law standard usage (one-step-back / one-step-forward principle).
+
+### Withdrawal Period
+
+**Definition:** The legally mandated time after an animal's treatment with a veterinary medicine during which its milk (or meat) must not enter the food chain.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Withholding period. Not *market withdrawal* of product (see recall terminology).
+**Source:** Veterinary regulation, standard across markets.
+
 ## Platform and Architecture Terms
+
+### Business Capability
+
+**Definition:** A discrete business ability — what the business does, independent of organization and technology — cataloged in the capability model with a hierarchical ID (e.g. `FPR.HLT.02`).
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Not a *feature* (product behavior) or a *service* (implementation unit).
+**Source:** [CAP-0001](../05-capabilities/CAP-0001-business-capability-master-map.md).
 
 ### Bounded Context
 
@@ -146,22 +202,35 @@ Terminology source of truth for all Lacteva documentation. Entry format and rule
 | --- | --- |
 | ADR | Architecture Decision Record |
 | AIM | AI Model documentation (document prefix) |
+| B2B | Business-to-Business |
 | BRD | Business Requirements Document |
 | CAP | Business Capability (document prefix) |
 | DBD | Database Design (document prefix) |
 | DDD | Domain-Driven Design |
 | DOM | Domain Model (document prefix) |
 | EVT | Event Specification (document prefix) |
+| FSSAI | Food Safety and Standards Authority of India |
+| IaC | Infrastructure as Code |
+| KPI | Key Performance Indicator |
+| MoSCoW | Must / Should / Could / Won't (prioritization scheme) |
+| OTIF | On Time In Full (delivery performance measure) |
 | PRD | Product Requirements Document |
+| QR | Quality Review report (document prefix) |
 | RLS | Row-Level Security |
 | RPO | Recovery Point Objective |
+| RPS | Requests Per Second |
 | RTO | Recovery Time Objective |
 | SCC | Somatic Cell Count |
+| SLA | Service Level Agreement |
 | SLI / SLO | Service Level Indicator / Objective |
+| SNF | Solids-Not-Fat (milk solids excluding fat) |
 | SRS | Software Requirements Specification |
+| UHT | Ultra-High Temperature (milk treatment) |
 
 ## Change Log
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-08-02 | Documentation Engineering | QR-0001 remediation: added Adulteration, Cold Chain, Traceability; added 11 abbreviations found in use but undefined (B2B, FSSAI, IaC, KPI, MoSCoW, OTIF, QR, RPS, SLA, SNF, UHT). |
+| 1.1 | 2026-08-02 | Enterprise Architecture | Added capability-model terms: Chilling Center, Extension Services, Patronage, Withdrawal Period, Business Capability. |
 | 1.0 | 2026-08-02 | Documentation Engineering | Initial seeded glossary. |

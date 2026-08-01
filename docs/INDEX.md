@@ -1,0 +1,129 @@
+---
+id: INDEX
+title: Master Documentation Index
+type: reference
+status: Approved
+version: "1.0"
+owner: Documentation Engineering
+created: 2026-08-02
+last-updated: 2026-08-02
+---
+
+# Master Documentation Index
+
+Complete inventory of every document in the repository, by domain. **Maintenance rule:** updated in the same PR as any document addition, retitle, or status change (reviewers check per [GOV-0001](01-governance/GOV-0001-review-workflow.md)); to be generated automatically once the `tools/` validators exist.
+
+Snapshot: 2026-08-02 — 87 markdown files (47 with formal document IDs, plus README/index, reference, and root files). Verified by `tools/validate/validate_docs.py`.
+
+## Root
+
+| Document | Purpose |
+| --- | --- |
+| [`README.md`](../README.md) | Repository entry point and map |
+| [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution workflow and rules |
+| [`CHANGELOG.md`](../CHANGELOG.md) | Repository-level change history |
+| [`.github/CODEOWNERS`](../.github/CODEOWNERS), [`.github/PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md) | Review enforcement and PR checklist |
+
+## 00 — Standards ([index](00-standards/README.md))
+
+| ID | Title | Status | Version |
+| --- | --- | --- | --- |
+| [STD-0001](00-standards/STD-0001-markdown-writing-standards.md) | Markdown Writing Standards | Approved | 1.1 |
+| [STD-0002](00-standards/STD-0002-naming-conventions.md) | Naming Conventions | Approved | 1.0 |
+| [STD-0003](00-standards/STD-0003-document-numbering.md) | Document Numbering Conventions | Approved | 1.1 |
+| [STD-0004](00-standards/STD-0004-versioning-strategy.md) | Versioning Strategy | Approved | 1.0 |
+| [STD-0005](00-standards/STD-0005-mermaid-standards.md) | Mermaid Standards | Approved | 1.0 |
+| [STD-0006](00-standards/STD-0006-plantuml-standards.md) | PlantUML Standards | Approved | 1.0 |
+
+## 01 — Governance ([index](01-governance/README.md))
+
+| ID | Title | Status | Version |
+| --- | --- | --- | --- |
+| [GOV-0001](01-governance/GOV-0001-review-workflow.md) | Review Workflow | Approved | 1.0 |
+| [GOV-0002](01-governance/GOV-0002-approval-workflow.md) | Approval Workflow | Approved | 1.0 |
+| [GOV-0003](01-governance/GOV-0003-architecture-review-checklists.md) | Architecture Review Checklists | Approved | 1.0 |
+
+## 02 — Templates ([index](02-templates/README.md))
+
+| ID | Title | Status | Version |
+| --- | --- | --- | --- |
+| [TPL-0001](02-templates/TPL-0001-adr-template.md) | ADR Template | Approved | 1.0 |
+| [TPL-0002](02-templates/TPL-0002-business-requirements-template.md) | BRD Template | Approved | 1.0 |
+| [TPL-0003](02-templates/TPL-0003-product-requirements-template.md) | PRD Template | Approved | 1.0 |
+| [TPL-0004](02-templates/TPL-0004-software-requirements-template.md) | SRS Template | Approved | 1.0 |
+| [TPL-0005](02-templates/TPL-0005-api-specification-template.md) | API Specification Template | Approved | 1.0 |
+| [TPL-0006](02-templates/TPL-0006-database-design-template.md) | Database Design Template | Approved | 1.0 |
+| [TPL-0007](02-templates/TPL-0007-ai-model-card-template.md) | AI Model Card Template | Approved | 1.0 |
+| [TPL-0008](02-templates/TPL-0008-event-specification-template.md) | Event Specification Template | Approved | 1.0 |
+| [TPL-0009](02-templates/TPL-0009-business-capability-template.md) | Business Capability Template | Approved | 1.0 |
+| [TPL-0010](02-templates/TPL-0010-domain-model-template.md) | Domain Model Template | Approved | 1.0 |
+| [TPL-0011](02-templates/TPL-0011-glossary-template.md) | Glossary Template | Approved | 1.0 |
+| [TPL-0012](02-templates/TPL-0012-changelog-template.md) | Change Log Template | Approved | 1.0 |
+| [TPL-0013](02-templates/TPL-0013-concept-template.md) | Concept Template | Approved | 1.0 |
+| [TPL-0014](02-templates/TPL-0014-business-process-template.md) | Business Process Template | Approved | 1.0 |
+| [TPL-0015](02-templates/TPL-0015-platform-service-template.md) | Platform Service Template | Approved | 1.0 |
+| [TPL-0016](02-templates/TPL-0016-product-template.md) | Product Template | Approved | 1.0 |
+| [TPL-0017](02-templates/TPL-0017-aggregate-template.md) | Aggregate Template | Approved | 1.0 |
+| [TPL-0018](02-templates/TPL-0018-entity-template.md) | Entity Template | Approved | 1.0 |
+| [TPL-0019](02-templates/TPL-0019-value-object-template.md) | Value Object Template | Approved | 1.0 |
+| [TPL-0020](02-templates/TPL-0020-repository-template.md) | Repository Template | Approved | 1.0 |
+| [TPL-0021](02-templates/TPL-0021-policy-template.md) | Policy Template | Approved | 1.0 |
+| [TPL-0022](02-templates/TPL-0022-specification-template.md) | Specification Template | Approved | 1.0 |
+| [TPL-0023](02-templates/TPL-0023-ai-agent-template.md) | AI Agent Template | Approved | 1.0 |
+
+## 03 — Enterprise Architecture Workspace ([overview](03-architecture/README.md))
+
+Five architecture layers, each with a README and index: [Concepts](03-architecture/00-concepts/README.md) · [Business](03-architecture/01-business-layer/README.md) · [Domain](03-architecture/02-domain-layer/README.md) · [Application](03-architecture/03-application-layer/README.md) · [Technology](03-architecture/04-technology-layer/README.md). Cross-layer: [ADRs](03-architecture/adr/README.md) · [Domain models](03-architecture/domain-models/README.md) · [Diagrams](03-architecture/diagrams/README.md).
+
+| Document | Purpose | Status | Version |
+| --- | --- | --- | --- |
+| [ARCH-INDEX](03-architecture/INDEX.md) | Architecture artifact index | Approved | 1.0 |
+| [ARCH-TRACE](03-architecture/TRACEABILITY.md) | Layer traceability index + capability coverage | Approved | 1.0 |
+| [ARCH-XREF](03-architecture/CROSS-REFERENCE.md) | Cross-reference rules and registers | Approved | 1.0 |
+| [ARCH-DEPMAP](03-architecture/DEPENDENCY-MAP.md) | Authoring-order dependency maps | Approved | 1.0 |
+
+No ADRs, domain models, or architecture artifacts yet — first entries are Phase 1 of [QR-0004](12-quality/QR-0004-documentation-roadmap.md).
+
+## 04 — Requirements ([index](04-requirements/README.md))
+
+No BRDs, PRDs, or SRSs yet — BRD-0001 is roadmap item 1.1. Sub-indexes: [Business](04-requirements/business/README.md) · [Product](04-requirements/product/README.md) · [Software](04-requirements/software/README.md).
+
+## 05 — Capabilities ([index](05-capabilities/README.md))
+
+| ID | Title | Status | Version |
+| --- | --- | --- | --- |
+| [CAP-0001](05-capabilities/CAP-0001-business-capability-master-map.md) | Business Capability Master Map — Dairy Ecosystem | Draft | 0.1 |
+| [CAP-0002](05-capabilities/CAP-0002-farm-production.md) | Farm Production (FPR) | Draft | 0.1 |
+| [CAP-0003](05-capabilities/CAP-0003-milk-collection-logistics.md) | Milk Collection & Logistics (MCL) | Draft | 0.1 |
+| [CAP-0004](05-capabilities/CAP-0004-quality-food-safety.md) | Quality & Food Safety (QFS) | Draft | 0.1 |
+| [CAP-0005](05-capabilities/CAP-0005-processing-manufacturing.md) | Processing & Manufacturing (PRO) | Draft | 0.1 |
+| [CAP-0006](05-capabilities/CAP-0006-commerce-market-access.md) | Commerce & Market Access (CMA) | Draft | 0.1 |
+| [CAP-0007](05-capabilities/CAP-0007-producer-economics-financial-services.md) | Producer Economics & Financial Services (PEF) | Draft | 0.1 |
+| [CAP-0008](05-capabilities/CAP-0008-cooperative-producer-relations.md) | Cooperative & Producer Relations (CPR) | Draft | 0.1 |
+| [CAP-0009](05-capabilities/CAP-0009-sustainability-welfare-compliance.md) | Sustainability, Welfare & Compliance (SWC) | Draft | 0.1 |
+| [CAP-0010](05-capabilities/CAP-0010-dairy-intelligence-advisory.md) | Dairy Intelligence & Advisory (DIA) | Draft | 0.1 |
+| [CAP-0011](05-capabilities/CAP-0011-ecosystem-tenant-enablement.md) | Ecosystem & Tenant Enablement (ETE) | Draft | 0.1 |
+
+## 06–10 — API, Data, AI, Events, Operations
+
+Empty pending Phase 3–4 of the roadmap. Indexes: [API](06-api/README.md) · [Data](07-data/README.md) · [AI](08-ai/README.md) · [Events](09-events/README.md) · [Operations](10-operations/README.md).
+
+## 11 — Glossary ([index](11-glossary/README.md))
+
+| Document | Status | Version |
+| --- | --- | --- |
+| [GLOSSARY](11-glossary/GLOSSARY.md) — company-wide glossary | Approved | 1.2 |
+| [TAXONOMY](11-glossary/TAXONOMY.md) — taxonomy of business terms | Approved | 1.0 |
+
+## 12 — Quality ([index](12-quality/README.md))
+
+| ID | Title | Status | Version |
+| --- | --- | --- | --- |
+| [QR-0001](12-quality/QR-0001-repository-health-report.md) | Repository Health Report | Approved | 1.0 |
+| [QR-0002](12-quality/QR-0002-gap-analysis.md) | Gap Analysis | Approved | 1.0 |
+| [QR-0003](12-quality/QR-0003-traceability-matrix.md) | Traceability Matrix | Approved | 1.0 |
+| [QR-0004](12-quality/QR-0004-documentation-roadmap.md) | Documentation Roadmap & Dependency Graph | Approved | 1.0 |
+
+## Code Roots
+
+[`services/`](../services/README.md) · [`libs/`](../libs/README.md) · [`infra/`](../infra/README.md) · [`tools/`](../tools/README.md). First code delivered: [`tools/validate/validate_docs.py`](../tools/validate/README.md) — the repository documentation validator (roadmap item 0.4, partially complete).

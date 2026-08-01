@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Rep
 
 ## [Unreleased]
 
+### Added
+
+- Enterprise Architecture framework: `docs/03-architecture/` restructured into a five-layer EA workspace (concepts, business, domain, application, technology) with layer READMEs, architecture artifact index, traceability index, cross-reference index (citation legality matrix), and authoring-order dependency maps; 11 new artifact types registered in STD-0003 v1.2 (CON, BPR, AGG, ENT, VAL, REP, POL, SPC, PSV, PDT, AGT) with templates TPL-0013…TPL-0023; architecture review checklists (GOV-0003); front-matter keys `layer`/`context` (STD-0001 v1.2); first working validator `tools/validate/validate_docs.py`.
+- Documentation quality suite: new `docs/12-quality/` domain (`QR` prefix registered in STD-0003 v1.1) with repository health report (QR-0001), gap analysis (QR-0002), traceability matrix (QR-0003), and documentation roadmap with dependency graph (QR-0004); master documentation index (`docs/INDEX.md`); business-term taxonomy (`docs/11-glossary/TAXONOMY.md`).
+- Enterprise foundation: complete dairy-ecosystem Business Capability Model in `docs/05-capabilities/` — master map (CAP-0001) plus 10 domain catalogs (CAP-0002 … CAP-0011) covering 10 domains, ~40 subdomains, and 86 capabilities with purpose, actors, value, dependencies, business events, AI opportunities, reports, and KPIs; hierarchical capability ID scheme (`<DOMAIN>.<SUBDOMAIN>.<NN>`); cross-domain dependency model; index for future BRD/PRD/DOM/EVT/AIM documents.
+- Glossary: dairy-ecosystem terms introduced by the capability model (chilling center, withdrawal period, patronage, extension services, and related abbreviations).
+
+### Fixed
+
+- QR-0001 audit remediations: broken illustrative links in STD-0001/STD-0003 (both now v1.1, with a new code-font rule for example links); glossary coverage gaps (GLOSSARY v1.2: 3 terms, 11 abbreviations); stale bounded-context naming in the domain-models index realigned to capability-model vocabulary.
+
 ## [0.1.0] - 2026-08-02
 
 ### Added

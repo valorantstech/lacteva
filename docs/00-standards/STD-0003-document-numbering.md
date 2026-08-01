@@ -3,7 +3,7 @@ id: STD-0003
 title: Document Numbering Conventions
 type: standard
 status: Approved
-version: "1.0"
+version: "1.2"
 owner: Architecture Board
 created: 2026-08-02
 last-updated: 2026-08-02
@@ -42,6 +42,18 @@ Every formal document has a permanent, unique ID. IDs make documents citable ("p
 | `AIM` | AI model / AI system documentation | `docs/08-ai/` | [TPL-0007](../02-templates/TPL-0007-ai-model-card-template.md) |
 | `EVT` | Event specification | `docs/09-events/` | [TPL-0008](../02-templates/TPL-0008-event-specification-template.md) |
 | `OPS` | Runbook / operational document | `docs/10-operations/` | — (template to be added with first runbook) |
+| `QR` | Quality review report (repository/documentation audits) | `docs/12-quality/` | — (reports are review-shaped, not templated) |
+| `CON` | Concept | `docs/03-architecture/00-concepts/` | [TPL-0013](../02-templates/TPL-0013-concept-template.md) |
+| `BPR` | Business process | `docs/03-architecture/01-business-layer/` | [TPL-0014](../02-templates/TPL-0014-business-process-template.md) |
+| `AGG` | Aggregate | `docs/03-architecture/02-domain-layer/` | [TPL-0017](../02-templates/TPL-0017-aggregate-template.md) |
+| `ENT` | Entity | `docs/03-architecture/02-domain-layer/` | [TPL-0018](../02-templates/TPL-0018-entity-template.md) |
+| `VAL` | Value object | `docs/03-architecture/02-domain-layer/` | [TPL-0019](../02-templates/TPL-0019-value-object-template.md) |
+| `REP` | Repository (domain access abstraction) | `docs/03-architecture/02-domain-layer/` | [TPL-0020](../02-templates/TPL-0020-repository-template.md) |
+| `POL` | Policy | `docs/03-architecture/02-domain-layer/` | [TPL-0021](../02-templates/TPL-0021-policy-template.md) |
+| `SPC` | Specification (domain predicate) | `docs/03-architecture/02-domain-layer/` | [TPL-0022](../02-templates/TPL-0022-specification-template.md) |
+| `PSV` | Platform service | `docs/03-architecture/03-application-layer/` | [TPL-0015](../02-templates/TPL-0015-platform-service-template.md) |
+| `PDT` | Product definition (architecture object — not a PRD) | `docs/03-architecture/03-application-layer/` | [TPL-0016](../02-templates/TPL-0016-product-template.md) |
+| `AGT` | AI agent charter | `docs/03-architecture/03-application-layer/` | [TPL-0023](../02-templates/TPL-0023-ai-agent-template.md) |
 
 New prefixes require a PR updating this registry, approved by the Architecture Board.
 
@@ -67,11 +79,13 @@ These sub-IDs are the anchor for traceability matrices linking BRD → PRD → S
 
 ## 6. Citing Documents
 
-- In prose: link the ID on first mention — `[ADR-0007](…)`; plain `ADR-0007` thereafter.
+- In prose: link the ID on first mention (pattern `[<DOC-ID>](<relative-path>.md)`); plain ID text thereafter.
 - In commits and PR titles: bare ID, e.g. `docs(adr): add ADR-0007 event bus selection`.
 
 ## Change Log
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-08-02 | Architecture Board | Registered 11 Enterprise Architecture prefixes (CON, BPR, AGG, ENT, VAL, REP, POL, SPC, PSV, PDT, AGT) with the EA workspace. |
+| 1.1 | 2026-08-02 | Documentation Engineering | Added `QR` prefix for quality review reports; editorial link-example fix (QR-0001 finding). |
 | 1.0 | 2026-08-02 | Documentation Engineering | Initial approved version. |

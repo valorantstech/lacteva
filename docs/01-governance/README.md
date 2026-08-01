@@ -6,6 +6,7 @@ This folder defines **how documents become authoritative**. Two workflows cover 
 | --- | --- | --- |
 | [GOV-0001](GOV-0001-review-workflow.md) | Review Workflow | How is a change reviewed? Who reviews it? What do reviewers check? |
 | [GOV-0002](GOV-0002-approval-workflow.md) | Approval Workflow | Which documents need formal sign-off, from whom, and how is it recorded? |
+| [GOV-0003](GOV-0003-architecture-review-checklists.md) | Architecture Review Checklists | What do reviewers additionally check per Enterprise Architecture artifact type? |
 
 ## The Short Version
 

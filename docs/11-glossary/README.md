@@ -3,6 +3,7 @@
 The company-wide glossary is the **terminology source of truth**. Every document in this repository uses these terms with exactly these meanings; consistent language is what lets hundreds of engineers, and the platform's own AI systems, talk about the same things.
 
 - The glossary itself: [`GLOSSARY.md`](GLOSSARY.md)
+- The structural view — terms by kind (actor, object, rule, event, measure) mapped to governing capability domains, with pending-definition tracking: [`TAXONOMY.md`](TAXONOMY.md)
 - Entry format and rules: [TPL-0011](../02-templates/TPL-0011-glossary-template.md)
 
 ## Rules

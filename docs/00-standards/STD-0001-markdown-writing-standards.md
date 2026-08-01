@@ -3,7 +3,7 @@ id: STD-0001
 title: Markdown Writing Standards
 type: standard
 status: Approved
-version: "1.0"
+version: "1.2"
 owner: Architecture Board
 created: 2026-08-02
 last-updated: 2026-08-02
@@ -32,7 +32,7 @@ last-updated: <YYYY-MM-DD>
 ---
 ```
 
-Optional keys when applicable: `supersedes`, `superseded-by`, `reviewers`, `approvers`, `related` (list of document IDs).
+Optional keys when applicable: `supersedes`, `superseded-by`, `reviewers`, `approvers`, `related` (list of document IDs), `layer` (concept | business | domain | application | technology — required for Enterprise Architecture artifacts), `context` (owning `DOM` ID — required for domain-layer tactical artifacts).
 
 ## 3. Document Structure
 
@@ -65,7 +65,8 @@ Optional keys when applicable: `supersedes`, `superseded-by`, `reviewers`, `appr
 
 - Use **relative links** within the repository, never absolute URLs to the hosting platform.
 - Link to a document the first time it is mentioned; plain text thereafter.
-- Link document IDs, e.g. `[ADR-0007](../03-architecture/adr/ADR-0007-event-bus-selection.md)`.
+- Link document IDs using relative paths — pattern: `[<DOC-ID>](<relative-path-to-file>.md)`.
+- Illustrative links in examples MUST be written in code font (backticks), so link checkers do not treat them as real targets.
 - External links MUST be to stable, canonical sources (specifications, official docs).
 
 ## 7. Images and Diagrams
@@ -82,4 +83,6 @@ Optional keys when applicable: `supersedes`, `superseded-by`, `reviewers`, `appr
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-08-02 | Architecture Board | Added optional front-matter keys `layer` and `context` for Enterprise Architecture artifacts. |
+| 1.1 | 2026-08-02 | Documentation Engineering | Editorial: illustrative links must use code font (QR-0001 finding); fixed a broken example link. |
 | 1.0 | 2026-08-02 | Documentation Engineering | Initial approved version. |
