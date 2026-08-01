@@ -3,7 +3,7 @@ id: STD-0003
 title: Document Numbering Conventions
 type: standard
 status: Approved
-version: "1.2"
+version: "1.3"
 owner: Architecture Board
 created: 2026-08-02
 last-updated: 2026-08-02
@@ -54,6 +54,7 @@ Every formal document has a permanent, unique ID. IDs make documents citable ("p
 | `PSV` | Platform service | `docs/03-architecture/03-application-layer/` | [TPL-0015](../02-templates/TPL-0015-platform-service-template.md) |
 | `PDT` | Product definition (architecture object — not a PRD) | `docs/03-architecture/03-application-layer/` | [TPL-0016](../02-templates/TPL-0016-product-template.md) |
 | `AGT` | AI agent charter | `docs/03-architecture/03-application-layer/` | [TPL-0023](../02-templates/TPL-0023-ai-agent-template.md) |
+| `PSP` | Product specification (chapter-level spec inside a product package) | `docs/13-products/<product>/` | — (chapter-shaped; references TPL types it decomposes into) |
 
 New prefixes require a PR updating this registry, approved by the Architecture Board.
 
@@ -86,6 +87,7 @@ These sub-IDs are the anchor for traceability matrices linking BRD → PRD → S
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.3 | 2026-08-02 | Documentation Engineering | Registered `PSP` prefix for product specification packages (`docs/13-products/`). |
 | 1.2 | 2026-08-02 | Architecture Board | Registered 11 Enterprise Architecture prefixes (CON, BPR, AGG, ENT, VAL, REP, POL, SPC, PSV, PDT, AGT) with the EA workspace. |
 | 1.1 | 2026-08-02 | Documentation Engineering | Added `QR` prefix for quality review reports; editorial link-example fix (QR-0001 finding). |
 | 1.0 | 2026-08-02 | Documentation Engineering | Initial approved version. |

@@ -21,6 +21,7 @@ REGISTERED_PREFIXES = {
     "STD", "GOV", "TPL", "ADR", "DOM", "BRD", "PRD", "SRS", "CAP", "API",
     "DBD", "AIM", "EVT", "OPS", "QR",
     "CON", "BPR", "PSV", "PDT", "AGG", "ENT", "VAL", "REP", "POL", "SPC", "AGT",
+    "PSP",
 }
 FRONT_MATTER_REQUIRED = ["id", "title", "type", "status", "version",
                          "created", "last-updated", "owner"]
@@ -30,6 +31,9 @@ CONTEXT_REQUIRED_TYPES = {"agg", "ent", "val", "rep", "pol", "spc"}
 # Files exempt from front matter (indexes are docs; these are infrastructure)
 FM_EXEMPT = {"README.md", "CONTRIBUTING.md", "CHANGELOG.md",
              "PULL_REQUEST_TEMPLATE.md", "CODEOWNERS"}
+# Auto-generated files: front matter required, change-log section not
+# (their history is the generator run, recorded in front matter)
+GENERATED = {"XREF.md"}
 
 DOC_ID_RE = re.compile(r"^([A-Z]{2,4})-(\d{4})-[a-z0-9-]+\.md$")
 CAP_ID_RE = re.compile(r"\b[A-Z]{3}\.[A-Z]{3}\.\d{2}\b")
@@ -112,6 +116,24 @@ def main():
                     and not fm.get("context")):
                 errors.append(f"{rel}: type '{fm['type']}' requires "
                               f"'context:' front matter")
+            # Revision history: every front-mattered doc carries a Change Log
+            if base not in GENERATED and "## Change Log" not in text:
+                errors.append(f"{rel}: missing '## Change Log' section "
+                              f"(STD-0001 revision-history rule)")
+            # Status/version coherence (STD-0004: drafts are 0.x,
+            # approved docs are >= 1.0)
+            ver = fm.get("version", "")
+            vm = re.match(r"^(\d+)\.(\d+)$", ver)
+            if vm:
+                major = int(vm.group(1))
+                if fm.get("status") == "Draft" and major >= 1:
+                    errors.append(f"{rel}: status Draft but version {ver} "
+                                  f"(drafts are 0.x per STD-0004)")
+                if fm.get("status") == "Approved" and major < 1:
+                    errors.append(f"{rel}: status Approved but version {ver} "
+                                  f"(approved docs are >= 1.0 per STD-0004)")
+            elif "version" in fm:
+                errors.append(f"{rel}: version '{ver}' not MAJOR.MINOR")
 
         # --- links (skip fences/inline code; templates hold placeholders) ---
         if not is_template:

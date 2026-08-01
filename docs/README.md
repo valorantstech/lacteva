@@ -21,6 +21,7 @@ This directory is the documentation half of the single source of truth. It is or
 | [`10-operations/`](10-operations/README.md) | Runbooks and operational docs | `OPS` |
 | [`11-glossary/`](11-glossary/README.md) | Company-wide glossary and business-term taxonomy | — |
 | [`12-quality/`](12-quality/README.md) | Repository quality reports, traceability matrix, documentation roadmap | `QR` |
+| [`13-products/`](13-products/README.md) | Product implementation packages (chapter specifications per product) | `PSP` |
 
 ## How a Document Comes to Exist
 

@@ -13,9 +13,11 @@ Repository and documentation quality artifacts (`QR` prefix): audit reports, tra
 
 | ID | Title | Kind | Status | Version |
 | --- | --- | --- | --- | --- |
-| [QR-0001](QR-0001-repository-health-report.md) | Repository Health Report | Point-in-time audit | Approved | 1.0 |
+| [QR-0001](QR-0001-repository-health-report.md) | Repository Health Report | Point-in-time audit + findings register | Approved | 1.1 |
 | [QR-0002](QR-0002-gap-analysis.md) | Gap Analysis | Point-in-time audit | Approved | 1.0 |
 | [QR-0003](QR-0003-traceability-matrix.md) | Traceability Matrix | Living artifact | Approved | 1.0 |
 | [QR-0004](QR-0004-documentation-roadmap.md) | Documentation Roadmap & Dependency Graph | Living artifact | Approved | 1.0 |
+| [QR-0005](QR-0005-documentation-coverage-report.md) | Documentation Coverage Report | Point-in-time audit | Approved | 1.0 |
+| [QR-0006](QR-0006-next-work-queue.md) | Next Work Queue | Living artifact | Approved | 1.0 |
 
 The master documentation index lives at [`docs/INDEX.md`](../INDEX.md); the business-term taxonomy at [`docs/11-glossary/TAXONOMY.md`](../11-glossary/TAXONOMY.md).

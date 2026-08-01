@@ -3,7 +3,7 @@ id: INDEX
 title: Master Documentation Index
 type: reference
 status: Approved
-version: "1.0"
+version: "1.3"
 owner: Documentation Engineering
 created: 2026-08-02
 last-updated: 2026-08-02
@@ -11,7 +11,7 @@ last-updated: 2026-08-02
 
 # Master Documentation Index
 
-Complete inventory of every document in the repository, by domain. **Maintenance rule:** updated in the same PR as any document addition, retitle, or status change (reviewers check per [GOV-0001](01-governance/GOV-0001-review-workflow.md)); to be generated automatically once the `tools/` validators exist.
+Complete inventory of every document in the repository, by domain. Task-oriented entry points: [NAVIGATION.md](NAVIGATION.md). Machine-generated reference map: [XREF.md](XREF.md). **Maintenance rule:** updated in the same PR as any document addition, retitle, or status change (reviewers check per [GOV-0001](01-governance/GOV-0001-review-workflow.md)); to be generated automatically once the `tools/` validators exist.
 
 Snapshot: 2026-08-02 — 87 markdown files (47 with formal document IDs, plus README/index, reference, and root files). Verified by `tools/validate/validate_docs.py`.
 
@@ -28,9 +28,9 @@ Snapshot: 2026-08-02 — 87 markdown files (47 with formal document IDs, plus RE
 
 | ID | Title | Status | Version |
 | --- | --- | --- | --- |
-| [STD-0001](00-standards/STD-0001-markdown-writing-standards.md) | Markdown Writing Standards | Approved | 1.1 |
+| [STD-0001](00-standards/STD-0001-markdown-writing-standards.md) | Markdown Writing Standards | Approved | 1.2 |
 | [STD-0002](00-standards/STD-0002-naming-conventions.md) | Naming Conventions | Approved | 1.0 |
-| [STD-0003](00-standards/STD-0003-document-numbering.md) | Document Numbering Conventions | Approved | 1.1 |
+| [STD-0003](00-standards/STD-0003-document-numbering.md) | Document Numbering Conventions | Approved | 1.3 |
 | [STD-0004](00-standards/STD-0004-versioning-strategy.md) | Versioning Strategy | Approved | 1.0 |
 | [STD-0005](00-standards/STD-0005-mermaid-standards.md) | Mermaid Standards | Approved | 1.0 |
 | [STD-0006](00-standards/STD-0006-plantuml-standards.md) | PlantUML Standards | Approved | 1.0 |
@@ -82,7 +82,7 @@ Five architecture layers, each with a README and index: [Concepts](03-architectu
 | [ARCH-XREF](03-architecture/CROSS-REFERENCE.md) | Cross-reference rules and registers | Approved | 1.0 |
 | [ARCH-DEPMAP](03-architecture/DEPENDENCY-MAP.md) | Authoring-order dependency maps | Approved | 1.0 |
 
-No ADRs, domain models, or architecture artifacts yet — first entries are Phase 1 of [QR-0004](12-quality/QR-0004-documentation-roadmap.md).
+First application-layer artifact: [PDT-0001 — Lacteva Collect](03-architecture/03-application-layer/PDT-0001-lacteva-collect.md) (Draft 0.1). No ADRs or domain models yet — those are Phase 1 of [QR-0004](12-quality/QR-0004-documentation-roadmap.md).
 
 ## 04 — Requirements ([index](04-requirements/README.md))
 
@@ -112,18 +112,47 @@ Empty pending Phase 3–4 of the roadmap. Indexes: [API](06-api/README.md) · [D
 
 | Document | Status | Version |
 | --- | --- | --- |
-| [GLOSSARY](11-glossary/GLOSSARY.md) — company-wide glossary | Approved | 1.2 |
-| [TAXONOMY](11-glossary/TAXONOMY.md) — taxonomy of business terms | Approved | 1.0 |
+| [GLOSSARY](11-glossary/GLOSSARY.md) — company-wide glossary | Approved | 1.3 |
+| [TAXONOMY](11-glossary/TAXONOMY.md) — taxonomy of business terms | Approved | 1.1 |
 
 ## 12 — Quality ([index](12-quality/README.md))
 
 | ID | Title | Status | Version |
 | --- | --- | --- | --- |
-| [QR-0001](12-quality/QR-0001-repository-health-report.md) | Repository Health Report | Approved | 1.0 |
+| [QR-0001](12-quality/QR-0001-repository-health-report.md) | Repository Health Report | Approved | 1.1 |
 | [QR-0002](12-quality/QR-0002-gap-analysis.md) | Gap Analysis | Approved | 1.0 |
 | [QR-0003](12-quality/QR-0003-traceability-matrix.md) | Traceability Matrix | Approved | 1.0 |
 | [QR-0004](12-quality/QR-0004-documentation-roadmap.md) | Documentation Roadmap & Dependency Graph | Approved | 1.0 |
+| [QR-0005](12-quality/QR-0005-documentation-coverage-report.md) | Documentation Coverage Report | Approved | 1.0 |
+| [QR-0006](12-quality/QR-0006-next-work-queue.md) | Next Work Queue | Approved | 1.0 |
+
+## 13 — Products ([index](13-products/README.md))
+
+**Lacteva Collect** ([package](13-products/lacteva-collect/README.md); product object [PDT-0001](03-architecture/03-application-layer/PDT-0001-lacteva-collect.md)):
+
+| ID | Title | Status | Version |
+| --- | --- | --- | --- |
+| [PSP-0001](13-products/lacteva-collect/PSP-0001-actors-and-roles.md) | Actors & Operational Roles | Draft | 0.1 |
+| [PSP-0002](13-products/lacteva-collect/PSP-0002-collection-center.md) | Collection Center Architecture | Draft | 0.1 |
+| [PSP-0003](13-products/lacteva-collect/PSP-0003-shift.md) | Shift | Draft | 0.1 |
+| [PSP-0004](13-products/lacteva-collect/PSP-0004-shift-lifecycle.md) | Shift Lifecycle | Draft | 0.1 |
+| [PSP-0005](13-products/lacteva-collect/PSP-0005-shift-opening.md) | Shift Opening | Draft | 0.1 |
+| [PSP-0006](13-products/lacteva-collect/PSP-0006-shift-closing.md) | Shift Closing | Draft | 0.1 |
+| [PSP-0007](13-products/lacteva-collect/PSP-0007-hardware-profile.md) | Hardware Profile | Draft | 0.1 |
+| [PSP-0008](13-products/lacteva-collect/PSP-0008-operational-metrics.md) | Operational Metrics | Draft | 0.1 |
+| [PSP-0009](13-products/lacteva-collect/PSP-0009-business-rules.md) | Business Rules | Draft | 0.1 |
+| [PSP-0010](13-products/lacteva-collect/PSP-0010-business-events.md) | Business Events | Draft | 0.1 |
+| [TRACEABILITY](13-products/lacteva-collect/TRACEABILITY.md) · [REVIEW-NOTES](13-products/lacteva-collect/REVIEW-NOTES.md) | Package traceability & review registers | Draft | 0.1 |
 
 ## Code Roots
 
-[`services/`](../services/README.md) · [`libs/`](../libs/README.md) · [`infra/`](../infra/README.md) · [`tools/`](../tools/README.md). First code delivered: [`tools/validate/validate_docs.py`](../tools/validate/README.md) — the repository documentation validator (roadmap item 0.4, partially complete).
+[`services/`](../services/README.md) · [`libs/`](../libs/README.md) · [`infra/`](../infra/README.md) · [`tools/`](../tools/README.md). Code delivered so far: [`tools/validate/`](../tools/validate/README.md) (documentation validator) and [`tools/xref/`](../tools/xref/README.md) (cross-reference generator).
+
+## Change Log
+
+| Version | Date | Author | Change |
+| --- | --- | --- | --- |
+| 1.3 | 2026-08-02 | Lacteva Collect Product Team | Added 13-products section (Lacteva Collect package: PSP-0001…0010, PDT-0001); refreshed version columns. |
+| 1.2 | 2026-08-02 | Documentation Engineering | Added navigation page, XREF map, QR-0005/0006; own Change Log section added (validator finding). |
+| 1.1 | 2026-08-02 | Architecture Board | EA workspace: GOV-0003, TPL-0013…0023, architecture indexes. |
+| 1.0 | 2026-08-02 | Documentation Engineering | Initial master index. |

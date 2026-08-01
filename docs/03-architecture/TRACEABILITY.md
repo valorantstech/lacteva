@@ -3,7 +3,7 @@ id: ARCH-TRACE
 title: Architecture Traceability Index
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Architecture Board
 created: 2026-08-02
 last-updated: 2026-08-02
@@ -49,8 +49,8 @@ One row per capability domain; counts updated as artifacts land. This table is t
 | Capability Domain | BPRs | DOM | Tactical | PSVs | PDTs | AGTs |
 | --- | --- | --- | --- | --- | --- | --- |
 | FPR Farm Production | 0 | — | 0 | 0 | 0 | 0 |
-| MCL Collection & Logistics | 0 | — | 0 | 0 | 0 | 0 |
-| QFS Quality & Food Safety | 0 | — | 0 | 0 | 0 | 0 |
+| MCL Collection & Logistics | 0 | — | 0 | 0 | 1 (PDT-0001) | 0 |
+| QFS Quality & Food Safety | 0 | — | 0 | 0 | 1 (PDT-0001) | 0 |
 | PRO Processing & Manufacturing | 0 | — | 0 | 0 | 0 | 0 |
 | CMA Commerce & Market Access | 0 | — | 0 | 0 | 0 | 0 |
 | PEF Producer Economics | 0 | — | 0 | 0 | 0 | 0 |
@@ -71,4 +71,5 @@ Concepts (`CON`) trace horizontally — one concept, many consumers. Register on
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-02 | Lacteva Collect Product Team | PDT-0001 counted for MCL/QFS coverage; package-level trace in `13-products/lacteva-collect/TRACEABILITY.md`. |
 | 1.0 | 2026-08-02 | Architecture Board | Trace rules and coverage skeleton established; all counts zero by design. |

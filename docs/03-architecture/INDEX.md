@@ -3,7 +3,7 @@ id: ARCH-INDEX
 title: Architecture Artifact Index
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Architecture Board
 created: 2026-08-02
 last-updated: 2026-08-02
@@ -35,7 +35,7 @@ Inventory of every artifact in the Enterprise Architecture workspace, by layer. 
 
 | ID | Artifact | Kind | Status | Version |
 | --- | --- | --- | --- | --- |
-| — | *None yet* | | | |
+| [PDT-0001](03-application-layer/PDT-0001-lacteva-collect.md) | Lacteva Collect | Product | Draft | 0.1 |
 
 ## Layer 04 — Technology
 
@@ -57,7 +57,7 @@ Inventory of every artifact in the Enterprise Architecture workspace, by layer. 
 | Concepts | 0 | — |
 | Business (BPR) | 0 | — |
 | Domain (tactical) | 0 | — |
-| Application | 0 | — |
+| Application | 1 | 2026-08-02 (PDT-0001) |
 | Technology | 0 | — |
 | ADRs | 0 | — |
 
@@ -65,4 +65,5 @@ Inventory of every artifact in the Enterprise Architecture workspace, by layer. 
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-02 | Lacteva Collect Product Team | PDT-0001 Lacteva Collect registered (Draft). |
 | 1.0 | 2026-08-02 | Architecture Board | Index established with the EA workspace; all layers open and empty. |

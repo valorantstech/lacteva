@@ -40,7 +40,7 @@ Existing and approved: standards, governance, templates. Existing but Draft: the
 
 | # | Item | Exit Criterion | Source Finding |
 | --- | --- | --- | --- |
-| 0.1 | `git init`, initial commit, remote, protected default branch | PR workflow physically enforced | QR-0001 F-06 |
+| 0.1 | ~~`git init`, initial commit, remote~~ **Done 2026-08-02** (GitHub `valorantstech/lacteva`); remaining: protected default branch | PR workflow physically enforced | QR-0001 F-06 |
 | 0.2 | Staff minimal approver roles (Architecture Board of ≥2, domain owners); replace CODEOWNERS placeholders | GOV-0002 executable | QR-0001 F-05 |
 | 0.3 | Approve the capability model: CAP-0001…0011 through GOV-0002, folding in QR-0002 model-gap decisions (byproducts, scope exclusions) | CAP suite status `Approved 1.0` | F-05, G-01…G-05 |
 | 0.4 | Build the four CI validators specified in `tools/README.md` (front matter, IDs/index, links, diagrams) | CI red on standard violations | QR-0001 F-07 |

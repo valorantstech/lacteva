@@ -3,7 +3,7 @@ id: GLOSSARY
 title: Lacteva Company-Wide Glossary
 type: reference
 status: Approved
-version: "1.2"
+version: "1.3"
 owner: Docs Guild
 created: 2026-08-02
 last-updated: 2026-08-02
@@ -29,6 +29,27 @@ Terminology source of truth for all Lacteva documentation. Entry format and rule
 **Synonyms / Do not confuse with:** Bulk milk tank. Not a *silo* (processor-side storage).
 **Source:** Industry standard usage.
 
+### Collection Center
+
+**Definition:** A fixed facility where producers deliver milk for identification, testing, weighing, and bulking. A collection center with bulk cooling is a *Chilling Center* (see that entry).
+**Context:** Company-wide (defined by [PSP-0002](../13-products/lacteva-collect/PSP-0002-collection-center.md))
+**Synonyms / Do not confuse with:** Village collection point, DCS (dairy cooperative society) center. Not a *farm* or a *plant reception*.
+**Source:** Industry standard usage; Lacteva Collect chapter 2.
+
+### Collection Session
+
+**Definition:** A recurring daily window (typically morning or evening, following milking patterns) during which a collection center accepts deliveries. Each session is operated under exactly one shift.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Not a *shift* (the accountability wrapper that operates a session).
+**Source:** Lacteva Collect chapter 3 ([PSP-0003](../13-products/lacteva-collect/PSP-0003-shift.md)).
+
+### Collection Transaction
+
+**Definition:** The recorded acceptance (or refusal) of one member's delivery within an open shift: identity, test outcome, quantity, attribution, and receipt.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** The transactional record of a *Milk Collection* (see that entry for the business act).
+**Source:** Lacteva Collect chapter 3.
+
 ### Cold Chain
 
 **Definition:** The unbroken sequence of temperature-controlled storage and transport that keeps milk and dairy products within safe temperature bounds from farm to consumer.
@@ -49,6 +70,13 @@ Terminology source of truth for all Lacteva documentation. Entry format and rule
 **Context:** Company-wide
 **Synonyms / Do not confuse with:** Farm advisory. Not platform-generated advisory (see capability DIA.ADV.01), which extension may deliver.
 **Source:** Industry standard usage.
+
+### Hardware Profile
+
+**Definition:** The equipment class a collection center operates with (Basic / Standard / Advanced), determining which opening checks apply, which measurements are instrument-read, and which fallbacks exist.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Not a device inventory (specific devices are registered separately).
+**Source:** Lacteva Collect chapter 2 ([PSP-0007](../13-products/lacteva-collect/PSP-0007-hardware-profile.md)).
 
 ### Herd
 
@@ -92,12 +120,33 @@ Terminology source of truth for all Lacteva documentation. Entry format and rule
 **Synonyms / Do not confuse with:** Patronage dividend/refund. Not a *share dividend* (return on capital, not on use).
 **Source:** Cooperative-sector standard usage.
 
+### Shift
+
+**Definition:** The bounded, accountable operating period of one collection center: one responsible operator, one opening state, a stream of collection transactions, one closing reconciliation. The unit of trust in collection operations.
+**Context:** Company-wide (collection operations; other future contexts must qualify their meaning)
+**Synonyms / Do not confuse with:** Not a *collection session* (the time window a shift operates).
+**Source:** Lacteva Collect chapter 3 ([PSP-0003](../13-products/lacteva-collect/PSP-0003-shift.md)).
+
+### Shift Reconciliation
+
+**Definition:** The closing verification that a shift's recorded intake matches physical reality (storage measurement plus dispatch), judged against a market-parameterized variance tolerance and confirmed by a supervisor.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Not *settlement* (paying producers) — reconciliation validates the records settlement later pays against.
+**Source:** Lacteva Collect chapter 3 ([PSP-0006](../13-products/lacteva-collect/PSP-0006-shift-closing.md)).
+
 ### Somatic Cell Count (SCC)
 
 **Definition:** Concentration of somatic cells in milk (cells/mL), used as a key indicator of udder health and milk quality.
 **Context:** Company-wide
 **Synonyms / Do not confuse with:** Not *bacterial count* (a separate hygiene indicator).
 **Source:** Industry standard measure.
+
+### Supervisor Override
+
+**Definition:** A recorded decision by a Center Supervisor to proceed past a failed control (equipment check, variance breach) — always attributed, always with reason, never available to the actor whose work it excuses.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Not an *exception* (the recorded fact of a failed control); the override is the decision to proceed despite it.
+**Source:** Lacteva Collect chapters 1/3 ([PSP-0009](../13-products/lacteva-collect/PSP-0009-business-rules.md) R04/R08).
 
 ### Traceability
 
@@ -231,6 +280,7 @@ Terminology source of truth for all Lacteva documentation. Entry format and rule
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.3 | 2026-08-02 | Lacteva Collect Product Team | Lacteva Collect chapter terms: Collection Center, Collection Session, Collection Transaction, Hardware Profile, Shift, Shift Reconciliation, Supervisor Override. |
 | 1.2 | 2026-08-02 | Documentation Engineering | QR-0001 remediation: added Adulteration, Cold Chain, Traceability; added 11 abbreviations found in use but undefined (B2B, FSSAI, IaC, KPI, MoSCoW, OTIF, QR, RPS, SLA, SNF, UHT). |
 | 1.1 | 2026-08-02 | Enterprise Architecture | Added capability-model terms: Chilling Center, Extension Services, Patronage, Withdrawal Period, Business Capability. |
 | 1.0 | 2026-08-02 | Documentation Engineering | Initial seeded glossary. |

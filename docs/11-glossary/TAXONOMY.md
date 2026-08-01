@@ -3,7 +3,7 @@ id: TAXONOMY
 title: Taxonomy of Business Terms
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Docs Guild
 created: 2026-08-02
 last-updated: 2026-08-02
@@ -37,7 +37,7 @@ The structural companion to the [glossary](GLOSSARY.md): where the glossary defi
 | --- | --- | --- |
 | Farm (pending) | FPR | Pending |
 | Bulk Tank | FPR | Defined |
-| Collection point (pending) | MCL | Pending |
+| Collection Center | MCL | Defined |
 | Chilling Center | MCL | Defined |
 | Processing plant (pending) | PRO | Pending |
 | Input store (pending) | CPR | Pending |
@@ -49,6 +49,11 @@ The structural companion to the [glossary](GLOSSARY.md): where the glossary defi
 | Herd, Lactation | FPR | Defined |
 | Animal identity (pending) | FPR | Pending |
 | Milk Collection | MCL | Defined |
+| Collection Transaction | MCL | Defined |
+| Shift | MCL | Defined |
+| Collection Session | MCL | Defined |
+| Shift Reconciliation | MCL | Defined |
+| Hardware Profile | MCL | Defined |
 | Cold Chain | MCL | Defined |
 | Sample / test result (pending) | QFS | Pending |
 | Milk Quality Grade | QFS | Defined |
@@ -73,6 +78,7 @@ The structural companion to the [glossary](GLOSSARY.md): where the glossary defi
 | Quality scheme / grading scheme (pending) | QFS | Pending |
 | Quality premium / penalty (pending) | PEF | Pending |
 | Withdrawal Period | FPR / QFS | Defined |
+| Supervisor Override | MCL | Defined |
 | Regulatory obligation (pending) | SWC | Pending |
 | Sharing agreement (pending) | ETE | Pending |
 
@@ -118,4 +124,5 @@ The full pre-inventory (~250 named business events) lives in the capability cata
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-02 | Lacteva Collect Product Team | Lacteva Collect terms added; Collection point retired in favor of defined Collection Center. |
 | 1.0 | 2026-08-02 | Documentation Engineering | Initial taxonomy: 6 kinds, ~60 terms mapped, pending-definition markers set. |

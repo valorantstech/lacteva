@@ -3,7 +3,7 @@ id: QR-0001
 title: Repository Health Report
 type: qr
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Documentation Engineering
 created: 2026-08-02
 last-updated: 2026-08-02
@@ -65,11 +65,11 @@ All 11 CAP documents are `Draft 0.1`. Per [GOV-0002](../01-governance/GOV-0002-a
 
 **Recommendation:** staff minimal approver roles (even provisionally) and run the CAP suite through GOV-0002 **before** domain-model work begins. This is Phase 0 of the roadmap ([QR-0004](QR-0004-documentation-roadmap.md)).
 
-### F-06 — No version control (severity: high) — OPEN
+### F-06 — No version control (severity: high) — RESOLVED 2026-08-02
 
-The repository is not under git. CONTRIBUTING, GOV-0001, and GOV-0002 all presuppose branches, PRs, and CODEOWNERS enforcement; none of it is currently executable, and there is no history or backup. This is the single largest gap between the repository's documented process and its reality.
+The repository was not under effective version control when audited; CONTRIBUTING, GOV-0001, and GOV-0002 presuppose branches, PRs, and CODEOWNERS enforcement.
 
-**Recommendation:** `git init`, initial commit, remote with protected default branch — before any further authoring.
+**Resolution:** repository committed and pushed to GitHub (`valorantstech/lacteva`, default branch `main`). **Residual follow-ups (tracked as roadmap items 0.1/0.4):** protect the default branch (require PRs + CODEOWNERS review, no direct pushes), and wire `tools/validate/validate_docs.py` into CI so the standards gate every PR.
 
 ### F-07 — Standards are enforced by nothing (severity: medium) — OPEN
 
@@ -104,4 +104,5 @@ Health grade by area: Content **A**, Consistency **A−** (post-remediation), Go
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-02 | Documentation Engineering | F-06 resolved: repository committed and pushed to GitHub; residual branch-protection and CI follow-ups noted. |
 | 1.0 | 2026-08-02 | Documentation Engineering | Initial audit report; findings F-01…F-08 with remediations applied same day. |
