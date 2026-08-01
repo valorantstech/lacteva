@@ -1,0 +1,83 @@
+# Lacteva local development stack.
+# Usage:
+#   docker compose up -d postgres redis rabbitmq minio      # infra only
+#   docker compose up --build platform-core                 # full stack
+# OpenSearch is behind a profile (heavy): docker compose --profile search up
+
+name: lacteva
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lacteva
+      POSTGRES_PASSWORD: lacteva
+      POSTGRES_DB: lacteva
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lacteva"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: lacteva
+      RABBITMQ_DEFAULT_PASS: lacteva
+    ports: ["5672:5672", "15672:15672"]  # 15672 = management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: lacteva
+      MINIO_ROOT_PASSWORD: lacteva-secret
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [miniodata:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  opensearch:
+    image: opensearchproject/opensearch:2
+    profiles: ["search"]
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports: ["9200:9200"]
+
+  platform-core:
+    build: services/platform-core
+    env_file: services/platform-core/.env.example
+    environment:
+      LACTEVA_ENV: dev
+      LACTEVA_EVENT_BUS: rabbitmq
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      minio: {condition: service_healthy}
+
+volumes:
+  pgdata:
+  miniodata:

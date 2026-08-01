@@ -20,7 +20,9 @@ Lacteva is an AI-first, cloud-native, multi-tenant **Dairy Intelligence Platform
 | `docs/11-glossary/` | The company-wide glossary and taxonomy of domain and technical terms. |
 | `docs/12-quality/` | Repository quality reports, traceability matrix, and the documentation roadmap. |
 | `docs/INDEX.md` | Master index of every document in the repository. |
-| `services/` | Platform microservices (code). |
+| `services/` | Platform services (code) — `platform-core` is live; see `DEVELOPMENT_ROADMAP.md`. |
+| `apps/` | Client applications: admin portal (Next.js), mobile (Flutter). |
+| `docker-compose.yml` | Local development stack (Postgres, Redis, RabbitMQ, MinIO, OpenSearch, platform-core). |
 | `libs/` | Shared libraries used across services. |
 | `infra/` | Infrastructure as code. |
 | `tools/` | Internal developer tooling. |

@@ -1,8 +1,12 @@
 # services/
 
-Home of Lacteva's platform microservices — one subfolder per service, named per [STD-0002](../docs/00-standards/STD-0002-naming-conventions.md) (kebab-case, noun-based, e.g. `milk-collection-service/`).
+Home of Lacteva's platform services — one subfolder per service, named per [STD-0002](../docs/00-standards/STD-0002-naming-conventions.md) (kebab-case, noun-based).
 
-This folder is intentionally empty during the documentation-foundation phase. Before the first service lands here, the platform ADRs (language/framework baseline, service template, CI conventions) must be approved in [`docs/03-architecture/adr/`](../docs/03-architecture/adr/README.md).
+| Service | Purpose | Status |
+| --- | --- | --- |
+| [`platform-core/`](platform-core/README.md) | Platform foundation: identity, organizations, authn/authz, configuration, audit, event/notification/storage/search infrastructure (modular monolith; modules are future service seams) | M0 delivered — see [DEVELOPMENT_ROADMAP.md](../DEVELOPMENT_ROADMAP.md) |
+
+Note: the stack and service shape were directed externally ahead of the founding platform ADRs; backfilling those ADRs is queue item B4 ([QR-0006](../docs/12-quality/QR-0006-next-work-queue.md)) so decisions get their durable record.
 
 ## Rules for Every Service (binding once code lands)
 

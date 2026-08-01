@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+
+# Environments & secrets
+.env
+.env.*
+!.env.example
+
+# Node / Next.js (admin portal)
+node_modules/
+.next/
+out/
+
+# Flutter (mobile app)
+.dart_tool/
+build/
+.flutter-plugins*
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Local data
+*.sqlite3
+minio-data/

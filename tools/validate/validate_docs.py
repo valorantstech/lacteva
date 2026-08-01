@@ -71,7 +71,8 @@ def main():
     md_files = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames
-                       if not d.startswith(".git") and d != "node_modules"]
+                       if not d.startswith(".")  # .git, .venv, .next, .dart_tool, caches
+                       and d not in ("node_modules", "build", "dist", "__pycache__")]
         md_files += [os.path.join(dirpath, f) for f in filenames
                      if f.endswith(".md")]
     md_files.sort()

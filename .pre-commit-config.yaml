@@ -1,0 +1,31 @@
+# Install: uv tool install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: lacteva-docs-validate
+        name: Lacteva documentation validator
+        entry: python3 tools/validate/validate_docs.py
+        language: system
+        pass_filenames: false
+        files: '\.md$'
+      - id: lacteva-xref-check
+        name: Lacteva XREF freshness
+        entry: python3 tools/xref/generate_xref.py --check
+        language: system
+        pass_filenames: false
+        files: '\.md$'

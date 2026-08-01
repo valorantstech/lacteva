@@ -52,7 +52,12 @@ def collect(root):
     docs = {}   # id -> {path, title}
     refs = {}   # id -> set of ids it mentions
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".git")]
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if not d.startswith(".")
+            and d not in ("node_modules", "build", "dist", "__pycache__")
+        ]
         for f in filenames:
             if not f.endswith(".md"):
                 continue
