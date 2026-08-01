@@ -30,3 +30,6 @@ build/
 # Local data
 *.sqlite3
 minio-data/
+
+# Claude Code local settings
+.claude/
