@@ -1,0 +1,31 @@
+# CODEOWNERS — mandatory reviewers by path.
+# Later entries take precedence over earlier ones.
+# Teams are placeholders until the GitHub organization is provisioned;
+# replace @lacteva/* with real team handles when available.
+
+# Default: documentation guild owns everything until code lands.
+*                       @lacteva/docs-guild
+
+# Standards and governance change rarely and require architecture sign-off.
+/docs/00-standards/     @lacteva/architecture-board
+/docs/01-governance/    @lacteva/architecture-board
+/docs/02-templates/     @lacteva/architecture-board
+
+# Architecture decisions require the architecture board.
+/docs/03-architecture/  @lacteva/architecture-board
+
+# Requirements are owned by product; software requirements co-owned by engineering.
+/docs/04-requirements/business/  @lacteva/product
+/docs/04-requirements/product/   @lacteva/product
+/docs/04-requirements/software/  @lacteva/engineering-leads
+
+# Contract-like documents require the owning platform teams.
+/docs/06-api/           @lacteva/platform-api
+/docs/07-data/          @lacteva/data-platform
+/docs/08-ai/            @lacteva/ai-platform
+/docs/09-events/        @lacteva/platform-api
+
+# Root governance files.
+/CONTRIBUTING.md        @lacteva/architecture-board
+/CHANGELOG.md           @lacteva/docs-guild
+/.github/               @lacteva/architecture-board
