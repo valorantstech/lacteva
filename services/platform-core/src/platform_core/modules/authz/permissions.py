@@ -29,6 +29,9 @@ PERMISSIONS: dict[str, str] = {
     "collection.session.manage": "Open and close collection sessions",
     "collection.transaction.record": "Record milk collection transactions",
     "collection.transaction.read": "Read milk collection transactions and their events",
+    "pricing.ratecard.read": "Read rate cards and their assignments",
+    "pricing.ratecard.manage": "Create, edit, submit, version, and archive rate cards",
+    "pricing.ratecard.approve": "Approve and publish rate cards",
     "platform.relay.manage": (
         "Operate the event relay (replay, retry, dead letters) — platform staff only"
     ),
@@ -62,6 +65,9 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "collection.session.manage",
         "collection.transaction.record",
         "collection.transaction.read",
+        "pricing.ratecard.read",
+        "pricing.ratecard.manage",
+        "pricing.ratecard.approve",
     ],
     "tenant-viewer": [
         "identity.user.read",
@@ -74,6 +80,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "operations.readiness.read",
         "supplier.read",
         "collection.transaction.read",
+        "pricing.ratecard.read",
     ],
 }
 

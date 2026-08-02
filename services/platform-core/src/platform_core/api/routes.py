@@ -1,6 +1,7 @@
 """API routers for all platform modules (OpenAPI-tagged, /v1 prefix)."""
 
 import uuid
+from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
@@ -64,6 +65,15 @@ from platform_core.modules.organization.service import (
     OrganizationView,
     StructureService,
     WorkspaceView,
+)
+from platform_core.modules.pricing.service import (
+    AssignProductCommand,
+    CreateRateCardCommand,
+    RateCardDetailView,
+    RateCardInput,
+    RateCardPage,
+    RateCardService,
+    RateCardView,
 )
 from platform_core.modules.supplier.service import (
     AddBankAccountCommand,
@@ -831,6 +841,124 @@ async def get_milk_transaction_events(tx_id: uuid.UUID, service: MilkSvc, _: TxR
     return await service.list_events(tx_id)
 
 
+# --- Pricing (Rate Card Foundation — lifecycle only, no calculations) -------
+pricing_router = APIRouter(prefix="/rate-cards", tags=["pricing"])
+RateCardManage = Annotated[Principal, Depends(require_permission("pricing.ratecard.manage"))]
+RateCardApprove = Annotated[Principal, Depends(require_permission("pricing.ratecard.approve"))]
+RateCardRead = Annotated[Principal, Depends(require_permission("pricing.ratecard.read"))]
+RateCardSvc = Annotated[RateCardService, Depends(deps.get_rate_card_service)]
+
+
+@pricing_router.post("", response_model=RateCardView, status_code=201)
+async def create_rate_card(
+    cmd: CreateRateCardCommand, service: RateCardSvc, p: RateCardManage
+) -> Any:
+    return await service.create(cmd, actor_id=p.id)
+
+
+@pricing_router.get("", response_model=RateCardPage)
+async def search_rate_cards(
+    service: RateCardSvc,
+    _: RateCardRead,
+    q: str | None = None,
+    status: str | None = None,
+    currency: str | None = None,
+    center_id: uuid.UUID | None = None,
+    product_code: str | None = None,
+    active_on: date | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> RateCardPage:
+    return await service.search(
+        q=q,
+        status=status,
+        currency=currency,
+        center_id=center_id,
+        product_code=product_code,
+        active_on=active_on,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@pricing_router.get("/{card_id}", response_model=RateCardDetailView)
+async def get_rate_card_detail(
+    card_id: uuid.UUID, service: RateCardSvc, _: RateCardRead
+) -> RateCardDetailView:
+    return await service.detail(card_id)
+
+
+@pricing_router.put("/{card_id}", response_model=RateCardView)
+async def update_rate_card_draft(
+    card_id: uuid.UUID, cmd: RateCardInput, service: RateCardSvc, p: RateCardManage
+) -> Any:
+    return await service.update_draft(card_id, cmd, actor_id=p.id)
+
+
+@pricing_router.post("/{card_id}/submit", response_model=RateCardView)
+async def submit_rate_card(card_id: uuid.UUID, service: RateCardSvc, p: RateCardManage) -> Any:
+    return await service.submit_for_review(card_id, actor_id=p.id)
+
+
+@pricing_router.post("/{card_id}/approve", response_model=RateCardView)
+async def approve_rate_card(card_id: uuid.UUID, service: RateCardSvc, p: RateCardApprove) -> Any:
+    return await service.approve(card_id, actor_id=p.id)
+
+
+@pricing_router.post("/{card_id}/publish", response_model=RateCardView)
+async def publish_rate_card(card_id: uuid.UUID, service: RateCardSvc, p: RateCardApprove) -> Any:
+    return await service.publish(card_id, actor_id=p.id)
+
+
+@pricing_router.post("/{card_id}/archive", response_model=RateCardView)
+async def archive_rate_card(card_id: uuid.UUID, service: RateCardSvc, p: RateCardManage) -> Any:
+    return await service.archive(card_id, actor_id=p.id)
+
+
+@pricing_router.post("/{card_id}/versions", response_model=RateCardView, status_code=201)
+async def create_rate_card_version(
+    card_id: uuid.UUID, service: RateCardSvc, p: RateCardManage
+) -> Any:
+    return await service.new_version(card_id, actor_id=p.id)
+
+
+class AssignRateCardCenterRequest(BaseModel):
+    center_id: uuid.UUID
+
+
+@pricing_router.post("/{card_id}/centers", status_code=201)
+async def assign_rate_card_center(
+    card_id: uuid.UUID,
+    body: AssignRateCardCenterRequest,
+    service: RateCardSvc,
+    p: RateCardManage,
+) -> dict:
+    a = await service.assign_center(card_id, body.center_id, actor_id=p.id)
+    return {"rate_card_id": str(a.rate_card_id), "center_id": str(a.center_id)}
+
+
+@pricing_router.delete("/{card_id}/centers/{center_id}", status_code=204)
+async def unassign_rate_card_center(
+    card_id: uuid.UUID, center_id: uuid.UUID, service: RateCardSvc, p: RateCardManage
+) -> None:
+    await service.unassign_center(card_id, center_id, actor_id=p.id)
+
+
+@pricing_router.post("/{card_id}/products", status_code=201)
+async def assign_rate_card_product(
+    card_id: uuid.UUID, cmd: AssignProductCommand, service: RateCardSvc, p: RateCardManage
+) -> dict:
+    a = await service.assign_product(card_id, cmd, actor_id=p.id)
+    return {"rate_card_id": str(a.rate_card_id), "product_code": a.product_code}
+
+
+@pricing_router.delete("/{card_id}/products/{product_code}", status_code=204)
+async def unassign_rate_card_product(
+    card_id: uuid.UUID, product_code: str, service: RateCardSvc, p: RateCardManage
+) -> None:
+    await service.unassign_product(card_id, product_code, actor_id=p.id)
+
+
 # --- Event relay (internal platform operations) -----------------------------
 relay_router = APIRouter(prefix="/_relay", tags=["event-relay"])
 RelayOps = Annotated[Principal, Depends(require_permission("platform.relay.manage"))]
@@ -984,6 +1112,7 @@ for sub in (
     ops_router,
     supplier_router,
     milk_router,
+    pricing_router,
     relay_router,
     authz_router,
     config_router,

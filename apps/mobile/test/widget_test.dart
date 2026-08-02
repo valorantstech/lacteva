@@ -4,6 +4,7 @@ import 'package:lacteva_mobile/main.dart';
 import 'package:lacteva_mobile/src/api.dart';
 import 'package:lacteva_mobile/src/centers.dart';
 import 'package:lacteva_mobile/src/collection_wizard.dart';
+import 'package:lacteva_mobile/src/rate_cards.dart';
 import 'package:lacteva_mobile/src/suppliers.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -75,6 +76,57 @@ void main() {
     expect(find.text('Identify supplier'), findsOneWidget);
   });
 
+  testWidgets('rate card form validates required fields', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: RateCardFormScreen(client: ApiClient())),
+    );
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Currency (ISO 4217)'), 'KESH');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pump();
+    expect(find.text('Name needs at least 2 characters'), findsOneWidget);
+    expect(find.text('Currency must be 3 letters'), findsOneWidget);
+    expect(find.text('Enter a date as YYYY-MM-DD'), findsOneWidget);
+  });
+
+  testWidgets('rate card list shows status chips and effective range',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: RateCardsListScreen(client: _RateCardFake())),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Standard Milk Rates'), findsOneWidget);
+    expect(find.text('published'), findsOneWidget);
+    expect(find.textContaining('2026-09-01 → open'), findsOneWidget);
+  });
+
+  testWidgets('draft rate card detail offers submit and archive',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RateCardDetailScreen(client: _RateCardFake(), cardId: 'rc-2'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Submit for review'), findsOneWidget);
+    expect(find.text('Archive'), findsOneWidget);
+    expect(find.text('Publish'), findsNothing);
+    expect(find.textContaining('Increment-002'), findsOneWidget);
+  });
+
+  testWidgets('published rate card detail offers new version only',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RateCardDetailScreen(client: _RateCardFake(), cardId: 'rc-1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('New version'), findsOneWidget);
+    expect(find.text('Submit for review'), findsNothing);
+    expect(find.text('Products: RAW-COW-MILK'), findsOneWidget);
+  });
+
   testWidgets('edit form shows timezone instead of code', (tester) async {
     final center = CenterSummary(
       id: 'c1',
@@ -131,3 +183,46 @@ class _SupplierFake extends ApiClient {
 }
 
 class _WizardFake extends ApiClient {}
+
+class _RateCardFake extends ApiClient {
+  static final _published = RateCardSummary(
+    id: 'rc-1',
+    code: 'MILK-STD',
+    name: 'Standard Milk Rates',
+    description: '',
+    currency: 'KES',
+    effectiveFrom: '2026-09-01',
+    effectiveUntil: null,
+    status: 'published',
+    version: 1,
+  );
+
+  static final _draft = RateCardSummary(
+    id: 'rc-2',
+    code: 'MILK-NEW',
+    name: 'Next Season Rates',
+    description: 'Season 27/28',
+    currency: 'KES',
+    effectiveFrom: '2027-09-01',
+    effectiveUntil: '2028-08-31',
+    status: 'draft',
+    version: 1,
+  );
+
+  @override
+  Future<RateCardPageResult> listRateCards({
+    String query = '',
+    String status = '',
+    int limit = 20,
+    int offset = 0,
+  }) async =>
+      RateCardPageResult(items: [_published], total: 1);
+
+  @override
+  Future<RateCardDetailResult> rateCardDetail(String id) async =>
+      RateCardDetailResult(
+        card: id == 'rc-1' ? _published : _draft,
+        centerIds: const ['c1'],
+        productCodes: id == 'rc-1' ? const ['RAW-COW-MILK'] : const [],
+      );
+}

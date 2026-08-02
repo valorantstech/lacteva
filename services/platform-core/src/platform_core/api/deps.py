@@ -37,6 +37,7 @@ from platform_core.modules.organization.service import (
     OrganizationService,
     StructureService,
 )
+from platform_core.modules.pricing.service import RateCardService
 from platform_core.modules.supplier.service import SupplierService
 
 Session = Annotated[AsyncSession, Depends(get_session)]
@@ -116,6 +117,10 @@ def get_readiness_service(session: Session, bus: Bus, audit: Audit) -> Operation
 
 def get_supplier_service(session: Session, bus: Bus, audit: Audit) -> SupplierService:
     return SupplierService(session, bus, audit, get_object_storage())
+
+
+def get_rate_card_service(session: Session, bus: Bus, audit: Audit) -> RateCardService:
+    return RateCardService(session, bus, audit)
 
 
 def get_milk_collection_service(session: Session, bus: Bus, audit: Audit) -> MilkCollectionService:

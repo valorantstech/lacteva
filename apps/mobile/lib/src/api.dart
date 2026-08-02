@@ -200,6 +200,79 @@ class ApiClient {
         as Map<String, dynamic>;
     return ReadinessResultView.fromJson(result);
   }
+
+  Future<RateCardPageResult> listRateCards({
+    String query = '',
+    String status = '',
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final params = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      if (query.isNotEmpty) 'q': query,
+      if (status.isNotEmpty) 'status': status,
+    };
+    final qs = Uri(queryParameters: params).query;
+    final result = await _send('GET', '/v1/rate-cards?$qs') as Map<String, dynamic>;
+    return RateCardPageResult.fromJson(result);
+  }
+
+  Future<RateCardSummary> createRateCard({
+    required String name,
+    required String currency,
+    required String effectiveFrom,
+    String? effectiveUntil,
+    String description = '',
+  }) async {
+    final result = await _send('POST', '/v1/rate-cards', body: {
+      'name': name,
+      'currency': currency,
+      'effective_from': effectiveFrom,
+      'effective_until': effectiveUntil,
+      'description': description,
+    }) as Map<String, dynamic>;
+    return RateCardSummary.fromJson(result);
+  }
+
+  Future<RateCardSummary> updateRateCard(
+    String id, {
+    required String name,
+    required String currency,
+    required String effectiveFrom,
+    String? effectiveUntil,
+    String description = '',
+  }) async {
+    final result = await _send('PUT', '/v1/rate-cards/$id', body: {
+      'name': name,
+      'currency': currency,
+      'effective_from': effectiveFrom,
+      'effective_until': effectiveUntil,
+      'description': description,
+    }) as Map<String, dynamic>;
+    return RateCardSummary.fromJson(result);
+  }
+
+  Future<RateCardDetailResult> rateCardDetail(String id) async {
+    final result = await _send('GET', '/v1/rate-cards/$id') as Map<String, dynamic>;
+    return RateCardDetailResult.fromJson(result);
+  }
+
+  /// Workflow: action is submit | approve | publish | archive | versions.
+  Future<RateCardSummary> rateCardAction(String id, String action) async {
+    final result =
+        await _send('POST', '/v1/rate-cards/$id/$action', body: {}) as Map<String, dynamic>;
+    return RateCardSummary.fromJson(result);
+  }
+
+  Future<void> assignRateCardCenter(String id, String centerId) async {
+    await _send('POST', '/v1/rate-cards/$id/centers', body: {'center_id': centerId});
+  }
+
+  Future<void> assignRateCardProduct(String id, String productCode) async {
+    await _send('POST', '/v1/rate-cards/$id/products',
+        body: {'product_code': productCode});
+  }
 }
 
 class CenterSummary {
@@ -392,4 +465,80 @@ class SupplierDetailResult {
   final String village;
   final List<String> centerIds;
   final String qrPayload;
+}
+
+class RateCardSummary {
+  RateCardSummary({
+    required this.id,
+    required this.code,
+    required this.name,
+    required this.description,
+    required this.currency,
+    required this.effectiveFrom,
+    required this.effectiveUntil,
+    required this.status,
+    required this.version,
+  });
+
+  factory RateCardSummary.fromJson(Map<String, dynamic> json) => RateCardSummary(
+        id: json['id'] as String,
+        code: json['code'] as String,
+        name: json['name'] as String,
+        description: (json['description'] ?? '').toString(),
+        currency: json['currency'] as String,
+        effectiveFrom: json['effective_from'] as String,
+        effectiveUntil: json['effective_until'] as String?,
+        status: json['status'] as String,
+        version: json['version'] as int,
+      );
+
+  final String id;
+  final String code;
+  final String name;
+  final String description;
+  final String currency;
+  final String effectiveFrom;
+  final String? effectiveUntil;
+  final String status;
+  final int version;
+
+  String get effectiveLabel => '$effectiveFrom → ${effectiveUntil ?? 'open'}';
+}
+
+class RateCardPageResult {
+  RateCardPageResult({required this.items, required this.total});
+
+  factory RateCardPageResult.fromJson(Map<String, dynamic> json) =>
+      RateCardPageResult(
+        items: (json['items'] as List<dynamic>)
+            .map((e) => RateCardSummary.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        total: json['total'] as int,
+      );
+
+  final List<RateCardSummary> items;
+  final int total;
+}
+
+class RateCardDetailResult {
+  RateCardDetailResult({
+    required this.card,
+    required this.centerIds,
+    required this.productCodes,
+  });
+
+  factory RateCardDetailResult.fromJson(Map<String, dynamic> json) =>
+      RateCardDetailResult(
+        card: RateCardSummary.fromJson(json['card'] as Map<String, dynamic>),
+        centerIds: (json['center_ids'] as List<dynamic>)
+            .map((e) => e as String)
+            .toList(),
+        productCodes: (json['products'] as List<dynamic>)
+            .map((e) => (e as Map<String, dynamic>)['product_code'] as String)
+            .toList(),
+      );
+
+  final RateCardSummary card;
+  final List<String> centerIds;
+  final List<String> productCodes;
 }

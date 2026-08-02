@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'collection_wizard.dart';
+import 'rate_cards.dart';
 import 'suppliers.dart';
 
 /// Login screen — SPRINT-003: first real auth flow in the mobile app.
@@ -172,6 +173,15 @@ class _CentersListScreenState extends State<CentersListScreen> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => SuppliersListScreen(client: widget.client),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.price_change_outlined),
+            tooltip: 'Rate cards',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => RateCardsListScreen(client: widget.client),
               ),
             ),
           ),

@@ -128,6 +128,9 @@ export default function Home() {
             <a className="text-primary underline-offset-4 hover:underline" href="/centers">
               Collection centers →
             </a>
+            <a className="text-primary underline-offset-4 hover:underline" href="/rate-cards">
+              Rate cards →
+            </a>
             <a
               className="text-primary underline-offset-4 hover:underline"
               href={`${API_URL}/docs`}

@@ -223,6 +223,90 @@ export const assignSupplierCenter = (id: string, centerId: string) =>
 export const getSupplierQr = (id: string) =>
   api<{ payload: string; code: string }>(`/v1/suppliers/${id}/qr`);
 
+// --- Rate cards (Pricing Platform — lifecycle only) -------------------------
+
+export type RateCardStatus = "draft" | "under_review" | "approved" | "published" | "archived";
+
+export type RateCard = {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  currency: string;
+  effective_from: string;
+  effective_until: string | null;
+  status: RateCardStatus;
+  version: number;
+  branch_id: string | null;
+  created_at: string;
+  updated_at: string;
+  published_at: string | null;
+  archived_at: string | null;
+};
+
+export type RateCardPage = {
+  items: RateCard[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type RateCardDetail = {
+  card: RateCard;
+  center_ids: string[];
+  products: { product_code: string; product_name: string }[];
+  pricing_rules: unknown[];
+};
+
+export type RateCardInput = {
+  name: string;
+  description?: string;
+  currency: string;
+  effective_from: string;
+  effective_until?: string | null;
+  branch_id?: string | null;
+};
+
+export function listRateCards(params: {
+  q?: string;
+  status?: string;
+  currency?: string;
+  limit: number;
+  offset: number;
+}): Promise<RateCardPage> {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.status) search.set("status", params.status);
+  if (params.currency) search.set("currency", params.currency);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<RateCardPage>(`/v1/rate-cards?${search.toString()}`);
+}
+
+export const createRateCard = (body: RateCardInput & { code?: string }) =>
+  api<RateCard>("/v1/rate-cards", { method: "POST", body: JSON.stringify(body) });
+
+export const updateRateCard = (id: string, body: RateCardInput) =>
+  api<RateCard>(`/v1/rate-cards/${id}`, { method: "PUT", body: JSON.stringify(body) });
+
+export const getRateCardDetail = (id: string) => api<RateCardDetail>(`/v1/rate-cards/${id}`);
+
+/** Workflow actions: submit | approve | publish | archive | versions (new draft version). */
+export const rateCardAction = (id: string, action: string) =>
+  api<RateCard>(`/v1/rate-cards/${id}/${action}`, { method: "POST", body: "{}" });
+
+export const assignRateCardCenter = (id: string, centerId: string) =>
+  api(`/v1/rate-cards/${id}/centers`, {
+    method: "POST",
+    body: JSON.stringify({ center_id: centerId }),
+  });
+
+export const assignRateCardProduct = (id: string, productCode: string, productName = "") =>
+  api(`/v1/rate-cards/${id}/products`, {
+    method: "POST",
+    body: JSON.stringify({ product_code: productCode, product_name: productName }),
+  });
+
 // --- Milk transactions ------------------------------------------------------
 
 export type MilkTransaction = {
