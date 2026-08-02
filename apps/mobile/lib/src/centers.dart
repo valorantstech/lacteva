@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'suppliers.dart';
 
 /// Login screen — SPRINT-003: first real auth flow in the mobile app.
 class LoginScreen extends StatefulWidget {
@@ -161,7 +162,20 @@ class _CentersListScreenState extends State<CentersListScreen> {
   Widget build(BuildContext context) {
     final page = _page;
     return Scaffold(
-      appBar: AppBar(title: const Text('Collection centers')),
+      appBar: AppBar(
+        title: const Text('Collection centers'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.people_outline),
+            tooltip: 'Suppliers',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SuppliersListScreen(client: widget.client),
+              ),
+            ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openForm(),
         tooltip: 'New center',

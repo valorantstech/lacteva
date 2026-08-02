@@ -47,6 +47,20 @@ from platform_core.modules.organization.service import (
     StructureService,
     WorkspaceView,
 )
+from platform_core.modules.supplier.service import (
+    AddBankAccountCommand,
+    BankAccountView,
+    CreateSupplierCommand,
+    DocumentView,
+    ImportRowResult,
+    SupplierDetailView,
+    SupplierPage,
+    SupplierProfileInput,
+    SupplierService,
+    SupplierView,
+    UploadDocumentCommand,
+    qr_payload_for,
+)
 
 router = APIRouter(prefix="/v1")
 
@@ -496,6 +510,174 @@ async def evaluate_center_readiness(
     return await service.evaluate_readiness(center_id)
 
 
+# --- Suppliers -------------------------------------------------------------
+supplier_router = APIRouter(prefix="/suppliers", tags=["suppliers"])
+SupplierManage = Annotated[Principal, Depends(require_permission("supplier.manage"))]
+SupplierRead = Annotated[Principal, Depends(require_permission("supplier.read"))]
+SupplierSvc = Annotated[SupplierService, Depends(deps.get_supplier_service)]
+
+
+@supplier_router.post("", response_model=SupplierView, status_code=201)
+async def create_supplier(
+    cmd: CreateSupplierCommand, service: SupplierSvc, p: SupplierManage
+) -> Any:
+    supplier = await service.create(cmd, actor_id=p.id)
+    return (await service.detail(supplier.id)).supplier
+
+
+@supplier_router.get("", response_model=SupplierPage)
+async def search_suppliers(
+    service: SupplierSvc,
+    _: SupplierRead,
+    q: str | None = None,
+    status: str | None = None,
+    center_id: uuid.UUID | None = None,
+    branch_id: uuid.UUID | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> SupplierPage:
+    return await service.search(
+        q=q, status=status, center_id=center_id, branch_id=branch_id, limit=limit, offset=offset
+    )
+
+
+@supplier_router.get("/{supplier_id}", response_model=SupplierDetailView)
+async def get_supplier_detail(
+    supplier_id: uuid.UUID, service: SupplierSvc, _: SupplierRead
+) -> SupplierDetailView:
+    return await service.detail(supplier_id)
+
+
+@supplier_router.put("/{supplier_id}", response_model=SupplierProfileInput)
+async def update_supplier_profile(
+    supplier_id: uuid.UUID, cmd: SupplierProfileInput, service: SupplierSvc, p: SupplierManage
+) -> Any:
+    profile = await service.update_profile(supplier_id, cmd, actor_id=p.id)
+    return SupplierProfileInput(
+        full_name=profile.full_name,
+        phone=profile.phone,
+        national_id=profile.national_id,
+        village=profile.village,
+        locale=profile.locale,
+        extra=profile.extra,
+    )
+
+
+class SupplierStatusRequest(BaseModel):
+    status: str
+
+
+@supplier_router.post("/{supplier_id}/status", response_model=SupplierView)
+async def set_supplier_status(
+    supplier_id: uuid.UUID, body: SupplierStatusRequest, service: SupplierSvc, p: SupplierManage
+) -> Any:
+    await service.set_status(supplier_id, body.status, actor_id=p.id)
+    return (await service.detail(supplier_id)).supplier
+
+
+class AssignSupplierCenterRequest(BaseModel):
+    center_id: uuid.UUID
+
+
+@supplier_router.post("/{supplier_id}/centers", status_code=201)
+async def assign_supplier_center(
+    supplier_id: uuid.UUID,
+    body: AssignSupplierCenterRequest,
+    service: SupplierSvc,
+    p: SupplierManage,
+) -> dict:
+    a = await service.assign_center(supplier_id, body.center_id, actor_id=p.id)
+    return {"supplier_id": str(a.supplier_id), "center_id": str(a.center_id)}
+
+
+@supplier_router.delete("/{supplier_id}/centers/{center_id}", status_code=204)
+async def unassign_supplier_center(
+    supplier_id: uuid.UUID, center_id: uuid.UUID, service: SupplierSvc, p: SupplierManage
+) -> None:
+    await service.unassign_center(supplier_id, center_id, actor_id=p.id)
+
+
+class AssignSupplierBranchRequest(BaseModel):
+    branch_id: uuid.UUID
+
+
+@supplier_router.post("/{supplier_id}/branch", response_model=SupplierView)
+async def assign_supplier_branch(
+    supplier_id: uuid.UUID,
+    body: AssignSupplierBranchRequest,
+    service: SupplierSvc,
+    p: SupplierManage,
+) -> Any:
+    await service.set_branch(supplier_id, body.branch_id, actor_id=p.id)
+    return (await service.detail(supplier_id)).supplier
+
+
+@supplier_router.post(
+    "/{supplier_id}/bank-accounts", response_model=BankAccountView, status_code=201
+)
+async def add_supplier_bank_account(
+    supplier_id: uuid.UUID, cmd: AddBankAccountCommand, service: SupplierSvc, p: SupplierManage
+) -> Any:
+    account = await service.add_bank_account(supplier_id, cmd, actor_id=p.id)
+    accounts = await service.list_bank_accounts(supplier_id)
+    return next(a for a in accounts if a.id == account.id)
+
+
+@supplier_router.get("/{supplier_id}/bank-accounts", response_model=list[BankAccountView])
+async def list_supplier_bank_accounts(
+    supplier_id: uuid.UUID, service: SupplierSvc, _: SupplierRead
+) -> Any:
+    return await service.list_bank_accounts(supplier_id)
+
+
+@supplier_router.post("/{supplier_id}/documents", response_model=DocumentView, status_code=201)
+async def add_supplier_document(
+    supplier_id: uuid.UUID, cmd: UploadDocumentCommand, service: SupplierSvc, p: SupplierManage
+) -> Any:
+    return await service.add_document(supplier_id, cmd, actor_id=p.id)
+
+
+@supplier_router.get("/{supplier_id}/documents", response_model=list[DocumentView])
+async def list_supplier_documents(
+    supplier_id: uuid.UUID, service: SupplierSvc, _: SupplierRead
+) -> Any:
+    return await service.list_documents(supplier_id)
+
+
+@supplier_router.get("/{supplier_id}/documents/{document_id}/url")
+async def get_supplier_document_url(
+    supplier_id: uuid.UUID, document_id: uuid.UUID, service: SupplierSvc, _: SupplierRead
+) -> dict:
+    return {"url": await service.document_url(supplier_id, document_id)}
+
+
+@supplier_router.get("/{supplier_id}/qr")
+async def get_supplier_qr(supplier_id: uuid.UUID, service: SupplierSvc, _: SupplierRead) -> dict:
+    supplier = await service.get(supplier_id)
+    return {"payload": qr_payload_for(supplier.id), "code": supplier.code}
+
+
+class ResolveQrRequest(BaseModel):
+    payload: str
+
+
+@supplier_router.post("/qr/resolve", response_model=SupplierView)
+async def resolve_supplier_qr(body: ResolveQrRequest, service: SupplierSvc, _: SupplierRead) -> Any:
+    supplier = await service.resolve_qr(body.payload)
+    return (await service.detail(supplier.id)).supplier
+
+
+class ImportRequest(BaseModel):
+    # Loose dicts by design: each row is validated individually in the service
+    # so a single malformed row yields a per-row error, not a 422 batch failure.
+    rows: list[dict[str, Any]]
+
+
+@supplier_router.post("/import", response_model=list[ImportRowResult])
+async def import_suppliers(body: ImportRequest, service: SupplierSvc, p: SupplierManage) -> Any:
+    return await service.import_rows(body.rows, actor_id=p.id)
+
+
 # --- Authorization --------------------------------------------------------
 authz_router = APIRouter(prefix="/authz", tags=["authz"])
 
@@ -601,6 +783,7 @@ for sub in (
     member_router,
     center_router,
     ops_router,
+    supplier_router,
     authz_router,
     config_router,
     audit_router,

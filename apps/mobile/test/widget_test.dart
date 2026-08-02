@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lacteva_mobile/main.dart';
 import 'package:lacteva_mobile/src/api.dart';
 import 'package:lacteva_mobile/src/centers.dart';
+import 'package:lacteva_mobile/src/suppliers.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class _FakeClient extends ApiClient {
   @override
@@ -48,6 +50,19 @@ void main() {
     expect(find.text('device.printer'), findsOneWidget);
   });
 
+  testWidgets('supplier detail renders QR and status actions', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SupplierDetailScreen(client: _SupplierFake(), supplierId: 'c1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Amina Njoroge'), findsOneWidget);
+    expect(find.text('S-AB12CD'), findsWidgets);
+    expect(find.text('Activate'), findsOneWidget);
+    expect(find.byType(QrImageView), findsOneWidget);
+  });
+
   testWidgets('edit form shows timezone instead of code', (tester) async {
     final center = CenterSummary(
       id: 'c1',
@@ -85,3 +100,20 @@ class _ReadinessFake extends ApiClient {
 }
 
 
+
+class _SupplierFake extends ApiClient {
+  @override
+  Future<SupplierDetailResult> supplierDetail(String id) async =>
+      SupplierDetailResult(
+        supplier: SupplierSummary(
+          id: id,
+          code: 'S-AB12CD',
+          status: 'draft',
+          fullName: 'Amina Njoroge',
+          phone: '+254700000001',
+        ),
+        village: 'Kilima',
+        centerIds: const ['c1'],
+        qrPayload: 'LCT1.abc.def',
+      );
+}

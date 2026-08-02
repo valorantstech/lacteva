@@ -24,7 +24,8 @@ import platform_core.modules.collection_center.models
 import platform_core.modules.configuration.models
 import platform_core.modules.identity.models
 import platform_core.modules.operational_readiness.models
-import platform_core.modules.organization.models  # noqa: F401
+import platform_core.modules.organization.models
+import platform_core.modules.supplier.models  # noqa: F401
 
 # Import the metadata with every module's tables registered.
 from platform_core.core.db import Base

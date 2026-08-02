@@ -117,6 +117,68 @@ class ApiClient {
     return CenterSummary.fromJson(result);
   }
 
+  Future<SupplierPageResult> listSuppliers({
+    String query = '',
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final params = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      if (query.isNotEmpty) 'q': query,
+    };
+    final qs = Uri(queryParameters: params).query;
+    final result = await _send('GET', '/v1/suppliers?$qs') as Map<String, dynamic>;
+    return SupplierPageResult.fromJson(result);
+  }
+
+  Future<SupplierSummary> createSupplier({
+    required String fullName,
+    required String phone,
+    String village = '',
+  }) async {
+    final result = await _send('POST', '/v1/suppliers', body: {
+      'full_name': fullName,
+      'phone': phone,
+      'village': village,
+    }) as Map<String, dynamic>;
+    return SupplierSummary.fromJson(result);
+  }
+
+  Future<void> updateSupplier(
+    String id, {
+    required String fullName,
+    required String phone,
+    String village = '',
+  }) async {
+    await _send('PUT', '/v1/suppliers/$id', body: {
+      'full_name': fullName,
+      'phone': phone,
+      'village': village,
+    });
+  }
+
+  Future<SupplierSummary> setSupplierStatus(String id, String status) async {
+    final result = await _send('POST', '/v1/suppliers/$id/status',
+        body: {'status': status}) as Map<String, dynamic>;
+    return SupplierSummary.fromJson(result);
+  }
+
+  Future<SupplierDetailResult> supplierDetail(String id) async {
+    final detail = await _send('GET', '/v1/suppliers/$id') as Map<String, dynamic>;
+    final qr = await _send('GET', '/v1/suppliers/$id/qr') as Map<String, dynamic>;
+    return SupplierDetailResult(
+      supplier:
+          SupplierSummary.fromJson(detail['supplier'] as Map<String, dynamic>),
+      village: ((detail['profile'] as Map<String, dynamic>)['village'] ?? '')
+          .toString(),
+      centerIds: (detail['center_ids'] as List<dynamic>)
+          .map((e) => e as String)
+          .toList(),
+      qrPayload: qr['payload'] as String,
+    );
+  }
+
   Future<ReadinessResultView> readiness(String centerId) async {
     final result = await _send('GET', '/v1/collection-centers/$centerId/readiness')
         as Map<String, dynamic>;
@@ -261,3 +323,57 @@ class ReadinessResultView {
   final List<ReadinessCheckView> checks;
 }
 
+
+class SupplierSummary {
+  SupplierSummary({
+    required this.id,
+    required this.code,
+    required this.status,
+    required this.fullName,
+    required this.phone,
+  });
+
+  factory SupplierSummary.fromJson(Map<String, dynamic> json) =>
+      SupplierSummary(
+        id: json['id'] as String,
+        code: json['code'] as String,
+        status: json['status'] as String,
+        fullName: json['full_name'] as String,
+        phone: json['phone'] as String,
+      );
+
+  final String id;
+  final String code;
+  final String status;
+  final String fullName;
+  final String phone;
+}
+
+class SupplierPageResult {
+  SupplierPageResult({required this.items, required this.total});
+
+  factory SupplierPageResult.fromJson(Map<String, dynamic> json) =>
+      SupplierPageResult(
+        items: (json['items'] as List<dynamic>)
+            .map((e) => SupplierSummary.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        total: json['total'] as int,
+      );
+
+  final List<SupplierSummary> items;
+  final int total;
+}
+
+class SupplierDetailResult {
+  SupplierDetailResult({
+    required this.supplier,
+    required this.village,
+    required this.centerIds,
+    required this.qrPayload,
+  });
+
+  final SupplierSummary supplier;
+  final String village;
+  final List<String> centerIds;
+  final String qrPayload;
+}

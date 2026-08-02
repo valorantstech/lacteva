@@ -147,3 +147,78 @@ export const setCenterStatus = (id: string, status: string) =>
     method: "POST",
     body: JSON.stringify({ status }),
   });
+
+// --- Suppliers -------------------------------------------------------------
+
+export type Supplier = {
+  id: string;
+  code: string;
+  status: "draft" | "active" | "suspended" | "archived";
+  branch_id: string | null;
+  full_name: string;
+  phone: string;
+};
+
+export type SupplierPage = {
+  items: Supplier[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type SupplierDetail = {
+  supplier: Supplier;
+  profile: { full_name: string; phone: string; village: string; national_id: string };
+  center_ids: string[];
+  bank_accounts: {
+    id: string;
+    account_name: string;
+    account_number_masked: string;
+    bank_code: string;
+    is_primary: boolean;
+  }[];
+  documents: { id: string; kind: string; file_name: string }[];
+};
+
+export function listSuppliers(params: {
+  q?: string;
+  status?: string;
+  limit: number;
+  offset: number;
+}): Promise<SupplierPage> {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.status) search.set("status", params.status);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<SupplierPage>(`/v1/suppliers?${search.toString()}`);
+}
+
+export const createSupplier = (body: {
+  full_name: string;
+  phone: string;
+  village?: string;
+  branch_id?: string;
+}) => api<Supplier>("/v1/suppliers", { method: "POST", body: JSON.stringify(body) });
+
+export const updateSupplier = (
+  id: string,
+  body: { full_name: string; phone: string; village?: string },
+) => api(`/v1/suppliers/${id}`, { method: "PUT", body: JSON.stringify(body) });
+
+export const setSupplierStatus = (id: string, status: string) =>
+  api<Supplier>(`/v1/suppliers/${id}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+
+export const getSupplierDetail = (id: string) => api<SupplierDetail>(`/v1/suppliers/${id}`);
+
+export const assignSupplierCenter = (id: string, centerId: string) =>
+  api(`/v1/suppliers/${id}/centers`, {
+    method: "POST",
+    body: JSON.stringify({ center_id: centerId }),
+  });
+
+export const getSupplierQr = (id: string) =>
+  api<{ payload: string; code: string }>(`/v1/suppliers/${id}/qr`);

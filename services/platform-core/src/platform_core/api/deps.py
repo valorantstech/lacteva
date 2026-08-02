@@ -19,6 +19,7 @@ from platform_core.core.security import decode_token
 from platform_core.core.tenancy import get_current_tenant, set_current_tenant
 from platform_core.infrastructure.events import EventBus, get_event_bus
 from platform_core.infrastructure.notifications import get_notifier
+from platform_core.infrastructure.storage import get_object_storage
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.auth.models import AuthSession
 from platform_core.modules.auth.service import AuthService
@@ -34,6 +35,7 @@ from platform_core.modules.organization.service import (
     OrganizationService,
     StructureService,
 )
+from platform_core.modules.supplier.service import SupplierService
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 Bus = Annotated[EventBus, Depends(get_event_bus)]
@@ -95,6 +97,10 @@ def get_collection_center_service(
 
 def get_readiness_service(session: Session, bus: Bus, audit: Audit) -> OperationalReadinessService:
     return OperationalReadinessService(session, bus, audit)
+
+
+def get_supplier_service(session: Session, bus: Bus, audit: Audit) -> SupplierService:
+    return SupplierService(session, bus, audit, get_object_storage())
 
 
 @dataclass(frozen=True)

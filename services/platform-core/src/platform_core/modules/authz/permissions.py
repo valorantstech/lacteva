@@ -24,6 +24,8 @@ PERMISSIONS: dict[str, str] = {
     "operations.device.read": "Read the device registry and device health",
     "operations.device.manage": "Register, assign, and administer devices; assign operators",
     "operations.readiness.read": "Evaluate and read collection center readiness",
+    "supplier.read": "Read suppliers, documents, and placements",
+    "supplier.manage": "Register, import, and administer suppliers",
 }
 
 WILDCARD = "*"
@@ -49,6 +51,8 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "operations.device.read",
         "operations.device.manage",
         "operations.readiness.read",
+        "supplier.read",
+        "supplier.manage",
     ],
     "tenant-viewer": [
         "identity.user.read",
@@ -59,6 +63,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "collection.center.read",
         "operations.device.read",
         "operations.readiness.read",
+        "supplier.read",
     ],
 }
 
