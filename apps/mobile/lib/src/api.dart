@@ -179,6 +179,22 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> openCollectionSession(String centerId) async {
+    return await _send('POST', '/v1/collection-sessions',
+        body: {'center_id': centerId, 'label': 'mobile'}) as Map<String, dynamic>;
+  }
+
+  Future<List<Map<String, dynamic>>> listOpenSessions(String centerId) async {
+    final result = await _send(
+            'GET', '/v1/collection-sessions?center_id=$centerId&status=open')
+        as List<dynamic>;
+    return result.map((e) => e as Map<String, dynamic>).toList();
+  }
+
+  Future<Map<String, dynamic>> txStep(String path, {Object? body}) async {
+    return await _send('POST', path, body: body ?? {}) as Map<String, dynamic>;
+  }
+
   Future<ReadinessResultView> readiness(String centerId) async {
     final result = await _send('GET', '/v1/collection-centers/$centerId/readiness')
         as Map<String, dynamic>;

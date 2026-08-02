@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'collection_wizard.dart';
 import 'suppliers.dart';
 
 /// Login screen — SPRINT-003: first real auth flow in the mobile app.
@@ -480,6 +481,32 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
       appBar: AppBar(
         title: Text(detail?.center.name ?? 'Center'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.local_drink_outlined),
+            tooltip: 'Collect milk',
+            onPressed: () async {
+              try {
+                final sessions =
+                    await widget.client.listOpenSessions(widget.centerId);
+                final session = sessions.isNotEmpty
+                    ? sessions.first
+                    : await widget.client.openCollectionSession(widget.centerId);
+                if (!context.mounted) return;
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => CollectionWizardScreen(
+                      client: widget.client,
+                      sessionId: session['id'] as String,
+                    ),
+                  ),
+                );
+              } on ApiException catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(SnackBar(content: Text(e.detail)));
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.fact_check_outlined),
             tooltip: 'Operational readiness',

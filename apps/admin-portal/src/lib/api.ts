@@ -222,3 +222,56 @@ export const assignSupplierCenter = (id: string, centerId: string) =>
 
 export const getSupplierQr = (id: string) =>
   api<{ payload: string; code: string }>(`/v1/suppliers/${id}/qr`);
+
+// --- Milk transactions ------------------------------------------------------
+
+export type MilkTransaction = {
+  id: string;
+  session_id: string;
+  center_id: string;
+  supplier_id: string | null;
+  state: string;
+  milk_type: string | null;
+  net_weight: number | null;
+  fat: number | null;
+  snf: number | null;
+  clr: number | null;
+  pricing_status: string | null;
+  rejected_reason: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export type MilkTransactionPage = {
+  items: MilkTransaction[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type TransactionEvent = {
+  sequence: number;
+  event_type: string;
+  data: Record<string, unknown>;
+  created_at: string;
+};
+
+export function listMilkTransactions(params: {
+  state?: string;
+  center_id?: string;
+  limit: number;
+  offset: number;
+}): Promise<MilkTransactionPage> {
+  const search = new URLSearchParams();
+  if (params.state) search.set("state", params.state);
+  if (params.center_id) search.set("center_id", params.center_id);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<MilkTransactionPage>(`/v1/milk-transactions?${search.toString()}`);
+}
+
+export const getMilkTransaction = (id: string) =>
+  api<MilkTransaction>(`/v1/milk-transactions/${id}`);
+
+export const getMilkTransactionEvents = (id: string) =>
+  api<TransactionEvent[]>(`/v1/milk-transactions/${id}/events`);

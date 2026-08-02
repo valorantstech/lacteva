@@ -28,6 +28,7 @@ from platform_core.modules.collection_center.service import CollectionCenterServ
 from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.identity.models import User
 from platform_core.modules.identity.service import IdentityService
+from platform_core.modules.milk_collection.service import MilkCollectionService
 from platform_core.modules.operational_readiness.service import OperationalReadinessService
 from platform_core.modules.organization.service import (
     InvitationService,
@@ -101,6 +102,12 @@ def get_readiness_service(session: Session, bus: Bus, audit: Audit) -> Operation
 
 def get_supplier_service(session: Session, bus: Bus, audit: Audit) -> SupplierService:
     return SupplierService(session, bus, audit, get_object_storage())
+
+
+def get_milk_collection_service(session: Session, bus: Bus, audit: Audit) -> MilkCollectionService:
+    return MilkCollectionService(
+        session, bus, audit, OperationalReadinessService(session, bus, audit)
+    )
 
 
 @dataclass(frozen=True)

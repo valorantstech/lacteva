@@ -23,6 +23,7 @@ import platform_core.modules.authz.models
 import platform_core.modules.collection_center.models
 import platform_core.modules.configuration.models
 import platform_core.modules.identity.models
+import platform_core.modules.milk_collection.models
 import platform_core.modules.operational_readiness.models
 import platform_core.modules.organization.models
 import platform_core.modules.supplier.models  # noqa: F401

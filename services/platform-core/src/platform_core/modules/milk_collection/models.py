@@ -1,0 +1,144 @@
+"""Milk Collection module — persistence models.
+
+The MilkCollectionTransaction is the first core dairy record: one attempt by
+a supplier to deliver milk during an ACTIVE collection session. Completed
+transactions are IMMUTABLE — the snapshot row is the frozen source of truth
+for future pricing, settlement, inventory, analytics, and AI. Corrections
+are future Adjustment Transactions; nothing here is ever overwritten.
+
+CollectionSession is deliberately minimal (open/close). The full shift
+engine (PSP-0003…0006: opening checks, reconciliation, variance) will
+extend it — this table is its forward-compatible seed.
+"""
+
+import uuid
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import JSON, DateTime, Float, Integer, String, UniqueConstraint, Uuid
+from sqlalchemy.orm import Mapped, mapped_column
+
+from platform_core.core.db import Base, IdMixin, utcnow
+
+SESSION_STATUSES = ("open", "closed")
+
+TRANSACTION_STATES = (
+    "NEW",
+    "SUPPLIER_IDENTIFIED",
+    "MILK_RECEIVED",
+    "WEIGHT_CAPTURED",
+    "QUALITY_PENDING",
+    "QUALITY_CAPTURED",
+    "PRICING_PENDING",
+    "PRICED",
+    "ACCEPTED",
+    "REJECTED",
+    "COMPLETED",
+    "CANCELLED",
+)
+TERMINAL_STATES = ("COMPLETED", "CANCELLED")
+MILK_TYPES = ("cow", "buffalo", "goat", "mixed", "custom")
+CAPTURE_SOURCES = ("manual", "mock_scale", "mock_analyzer")
+
+
+class CollectionSession(Base, IdMixin):
+    __tablename__ = "collection_session"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    center_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    status: Mapped[str] = mapped_column(String(10), default="open", index=True)
+    label: Mapped[str] = mapped_column(String(40), default="")  # e.g. "morning"
+    opened_by: Mapped[uuid.UUID] = mapped_column(Uuid)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    closed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MilkCollectionTransaction(Base, IdMixin):
+    __tablename__ = "milk_collection_transaction"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    center_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    supplier_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
+    operator_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    state: Mapped[str] = mapped_column(String(24), default="NEW", index=True)
+
+    # Milk information (MILK_RECEIVED)
+    milk_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    milk_type_custom: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    container_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    container_identifier: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    arrival_temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    arrived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Weight (WEIGHT_CAPTURED)
+    weight_unit: Mapped[str | None] = mapped_column(String(8), nullable=True)  # "kg"
+    gross_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tare_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
+    net_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
+    weight_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Quality (QUALITY_CAPTURED) — raw readings only; no derived calculations yet
+    fat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    snf: Mapped[float | None] = mapped_column(Float, nullable=True)
+    clr: Mapped[float | None] = mapped_column(Float, nullable=True)
+    density: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quality_temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quality_remarks: Mapped[str] = mapped_column(String(300), default="")
+    quality_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Pricing (placeholder — engine arrives in a future sprint)
+    pricing_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+    # Decision (ACCEPTED / REJECTED)
+    rejected_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    cancelled_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TransactionEvent(Base, IdMixin):
+    """Append-only per-transaction event log (ordered by sequence)."""
+
+    __tablename__ = "transaction_event"
+    __table_args__ = (UniqueConstraint("transaction_id", "sequence", name="uq_txevent_tx_seq"),)
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    transaction_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(40))  # e.g. WeightCaptured
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TransactionSnapshot(Base, IdMixin):
+    """Immutable full-state snapshot written exactly once at completion."""
+
+    __tablename__ = "transaction_snapshot"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    transaction_id: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True, index=True)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TransactionMetrics(Base, IdMixin):
+    """Denormalized timing/actor metrics written at completion (analytics seed)."""
+
+    __tablename__ = "transaction_metrics"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    transaction_id: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True, index=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    center_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    supplier_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
+    operator_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[float] = mapped_column(Float)
+    final_state: Mapped[str] = mapped_column(String(24))

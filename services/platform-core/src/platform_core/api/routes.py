@@ -26,6 +26,18 @@ from platform_core.modules.collection_center.service import (
 from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.identity.schemas import RegisterUserCommand, UserView
 from platform_core.modules.identity.service import IdentityService
+from platform_core.modules.milk_collection.service import (
+    IdentifySupplierCommand,
+    MilkCollectionService,
+    MilkInfoCommand,
+    QualityCommand,
+    RejectCommand,
+    SessionView,
+    TransactionEventView,
+    TransactionPage,
+    TransactionView,
+    WeightCommand,
+)
 from platform_core.modules.operational_readiness.models import DEVICE_CATEGORIES
 from platform_core.modules.operational_readiness.service import (
     READINESS_RULES,
@@ -678,6 +690,141 @@ async def import_suppliers(body: ImportRequest, service: SupplierSvc, p: Supplie
     return await service.import_rows(body.rows, actor_id=p.id)
 
 
+# --- Milk collection (sessions + transaction engine) ------------------------
+milk_router = APIRouter(tags=["milk-collection"])
+SessionManage = Annotated[Principal, Depends(require_permission("collection.session.manage"))]
+TxRecord = Annotated[Principal, Depends(require_permission("collection.transaction.record"))]
+TxRead = Annotated[Principal, Depends(require_permission("collection.transaction.read"))]
+MilkSvc = Annotated[MilkCollectionService, Depends(deps.get_milk_collection_service)]
+
+
+class OpenSessionRequest(BaseModel):
+    center_id: uuid.UUID
+    label: str = ""
+
+
+@milk_router.post("/collection-sessions", response_model=SessionView, status_code=201)
+async def open_collection_session(
+    body: OpenSessionRequest, service: MilkSvc, p: SessionManage
+) -> Any:
+    return await service.open_session(body.center_id, body.label, actor_id=p.id)
+
+
+@milk_router.post("/collection-sessions/{session_id}/close", response_model=SessionView)
+async def close_collection_session(
+    session_id: uuid.UUID, service: MilkSvc, p: SessionManage
+) -> Any:
+    return await service.close_session(session_id, actor_id=p.id)
+
+
+@milk_router.get("/collection-sessions", response_model=list[SessionView])
+async def list_collection_sessions(
+    service: MilkSvc,
+    _: TxRead,
+    center_id: uuid.UUID | None = None,
+    status: str | None = None,
+) -> Any:
+    return await service.list_sessions(center_id=center_id, status=status)
+
+
+class CreateTransactionRequest(BaseModel):
+    session_id: uuid.UUID
+
+
+@milk_router.post("/milk-transactions", response_model=TransactionView, status_code=201)
+async def create_milk_transaction(
+    body: CreateTransactionRequest, service: MilkSvc, p: TxRecord
+) -> Any:
+    return await service.create_transaction(body.session_id, actor_id=p.id)
+
+
+@milk_router.post("/milk-transactions/{tx_id}/identify", response_model=TransactionView)
+async def identify_transaction_supplier(
+    tx_id: uuid.UUID, cmd: IdentifySupplierCommand, service: MilkSvc, p: TxRecord
+) -> Any:
+    return await service.identify_supplier(tx_id, cmd, actor_id=p.id)
+
+
+@milk_router.post("/milk-transactions/{tx_id}/milk", response_model=TransactionView)
+async def receive_transaction_milk(
+    tx_id: uuid.UUID, cmd: MilkInfoCommand, service: MilkSvc, p: TxRecord
+) -> Any:
+    return await service.receive_milk(tx_id, cmd, actor_id=p.id)
+
+
+@milk_router.post("/milk-transactions/{tx_id}/weight", response_model=TransactionView)
+async def capture_transaction_weight(
+    tx_id: uuid.UUID, cmd: WeightCommand, service: MilkSvc, p: TxRecord
+) -> Any:
+    return await service.capture_weight(tx_id, cmd, actor_id=p.id)
+
+
+@milk_router.post("/milk-transactions/{tx_id}/quality", response_model=TransactionView)
+async def capture_transaction_quality(
+    tx_id: uuid.UUID, cmd: QualityCommand, service: MilkSvc, p: TxRecord
+) -> Any:
+    return await service.capture_quality(tx_id, cmd, actor_id=p.id)
+
+
+@milk_router.post("/milk-transactions/{tx_id}/accept", response_model=TransactionView)
+async def accept_transaction(tx_id: uuid.UUID, service: MilkSvc, p: TxRecord) -> Any:
+    return await service.accept(tx_id, actor_id=p.id)
+
+
+@milk_router.post("/milk-transactions/{tx_id}/reject", response_model=TransactionView)
+async def reject_transaction(
+    tx_id: uuid.UUID, cmd: RejectCommand, service: MilkSvc, p: TxRecord
+) -> Any:
+    return await service.reject(tx_id, cmd, actor_id=p.id)
+
+
+@milk_router.post("/milk-transactions/{tx_id}/complete", response_model=TransactionView)
+async def complete_transaction(tx_id: uuid.UUID, service: MilkSvc, p: TxRecord) -> Any:
+    return await service.complete(tx_id, actor_id=p.id)
+
+
+class CancelTransactionRequest(BaseModel):
+    reason: str = ""
+
+
+@milk_router.post("/milk-transactions/{tx_id}/cancel", response_model=TransactionView)
+async def cancel_transaction(
+    tx_id: uuid.UUID, body: CancelTransactionRequest, service: MilkSvc, p: TxRecord
+) -> Any:
+    return await service.cancel(tx_id, body.reason, actor_id=p.id)
+
+
+@milk_router.get("/milk-transactions", response_model=TransactionPage)
+async def list_milk_transactions(
+    service: MilkSvc,
+    _: TxRead,
+    session_id: uuid.UUID | None = None,
+    center_id: uuid.UUID | None = None,
+    supplier_id: uuid.UUID | None = None,
+    state: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> TransactionPage:
+    return await service.list_transactions(
+        session_id=session_id,
+        center_id=center_id,
+        supplier_id=supplier_id,
+        state=state,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@milk_router.get("/milk-transactions/{tx_id}", response_model=TransactionView)
+async def get_milk_transaction(tx_id: uuid.UUID, service: MilkSvc, _: TxRead) -> Any:
+    return await service.get_tx_view(tx_id)
+
+
+@milk_router.get("/milk-transactions/{tx_id}/events", response_model=list[TransactionEventView])
+async def get_milk_transaction_events(tx_id: uuid.UUID, service: MilkSvc, _: TxRead) -> Any:
+    return await service.list_events(tx_id)
+
+
 # --- Authorization --------------------------------------------------------
 authz_router = APIRouter(prefix="/authz", tags=["authz"])
 
@@ -784,6 +931,7 @@ for sub in (
     center_router,
     ops_router,
     supplier_router,
+    milk_router,
     authz_router,
     config_router,
     audit_router,

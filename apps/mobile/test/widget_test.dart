@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lacteva_mobile/main.dart';
 import 'package:lacteva_mobile/src/api.dart';
 import 'package:lacteva_mobile/src/centers.dart';
+import 'package:lacteva_mobile/src/collection_wizard.dart';
 import 'package:lacteva_mobile/src/suppliers.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -63,6 +64,17 @@ void main() {
     expect(find.byType(QrImageView), findsOneWidget);
   });
 
+  testWidgets('collection wizard starts at supplier step', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CollectionWizardScreen(client: _WizardFake(), sessionId: 's1'),
+      ),
+    );
+    expect(find.text('Collection — step 1 of 6'), findsOneWidget);
+    expect(find.text('Supplier code'), findsOneWidget);
+    expect(find.text('Identify supplier'), findsOneWidget);
+  });
+
   testWidgets('edit form shows timezone instead of code', (tester) async {
     final center = CenterSummary(
       id: 'c1',
@@ -117,3 +129,5 @@ class _SupplierFake extends ApiClient {
         qrPayload: 'LCT1.abc.def',
       );
 }
+
+class _WizardFake extends ApiClient {}

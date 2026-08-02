@@ -119,6 +119,9 @@ export default function Home() {
             <a className="text-primary underline-offset-4 hover:underline" href="/login">
               Sign in →
             </a>
+            <a className="text-primary underline-offset-4 hover:underline" href="/transactions">
+              Transactions →
+            </a>
             <a className="text-primary underline-offset-4 hover:underline" href="/suppliers">
               Suppliers →
             </a>

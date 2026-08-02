@@ -26,6 +26,9 @@ PERMISSIONS: dict[str, str] = {
     "operations.readiness.read": "Evaluate and read collection center readiness",
     "supplier.read": "Read suppliers, documents, and placements",
     "supplier.manage": "Register, import, and administer suppliers",
+    "collection.session.manage": "Open and close collection sessions",
+    "collection.transaction.record": "Record milk collection transactions",
+    "collection.transaction.read": "Read milk collection transactions and their events",
 }
 
 WILDCARD = "*"
@@ -53,6 +56,9 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "operations.readiness.read",
         "supplier.read",
         "supplier.manage",
+        "collection.session.manage",
+        "collection.transaction.record",
+        "collection.transaction.read",
     ],
     "tenant-viewer": [
         "identity.user.read",
@@ -64,6 +70,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "operations.device.read",
         "operations.readiness.read",
         "supplier.read",
+        "collection.transaction.read",
     ],
 }
 
