@@ -8,6 +8,7 @@ owner: Architecture Board
 created: 2026-08-02
 last-updated: 2026-08-02
 related: [QR-0004, ARCH-TRACE]
+baseline: ARCH-BASELINE-V1
 ---
 
 # Architecture Document Dependency Maps

@@ -7,6 +7,7 @@ version: "1.3"
 owner: Architecture Board
 created: 2026-08-02
 last-updated: 2026-08-02
+baseline: ARCH-BASELINE-V1
 ---
 
 # STD-0003 — Document Numbering Conventions

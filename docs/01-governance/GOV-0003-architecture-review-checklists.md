@@ -8,6 +8,7 @@ owner: Architecture Board
 created: 2026-08-02
 last-updated: 2026-08-02
 related: [GOV-0001, GOV-0002]
+baseline: ARCH-BASELINE-V1
 ---
 
 # GOV-0003 — Architecture Review Checklists

@@ -8,6 +8,7 @@ owner: Enterprise Architecture
 created: 2026-08-02
 last-updated: 2026-08-02
 related: [CAP-0001, CAP-0002, CAP-0005, CAP-0006]
+baseline: ARCH-BASELINE-V1
 ---
 
 # CAP-0009 — Sustainability, Welfare & Compliance Domain (SWC)

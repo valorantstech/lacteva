@@ -7,6 +7,7 @@ version: "1.3"
 owner: Documentation Engineering
 created: 2026-08-02
 last-updated: 2026-08-02
+baseline: ARCH-BASELINE-V1
 ---
 
 # Master Documentation Index
@@ -19,6 +20,10 @@ Snapshot: 2026-08-02 — 87 markdown files (47 with formal document IDs, plus RE
 
 | Document | Purpose |
 | --- | --- |
+| [`ARCHITECTURE_BASELINE_V1.md`](../ARCHITECTURE_BASELINE_V1.md) | **Official source of truth** — locked architecture + precedence rules |
+| [`REPOSITORY_AUDIT.md`](../REPOSITORY_AUDIT.md) | Baseline-migration audit (findings F-A1…F-A6, health score) |
+| [`REPOSITORY_MIGRATION_PLAN.md`](../REPOSITORY_MIGRATION_PLAN.md) | Migration steps, manual-review queue MR-1…MR-8, deprecation ledger |
+| [`DEVELOPMENT_ROADMAP.md`](../DEVELOPMENT_ROADMAP.md) | Code implementation sequence M0–M4 |
 | [`README.md`](../README.md) | Repository entry point and map |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution workflow and rules |
 | [`CHANGELOG.md`](../CHANGELOG.md) | Repository-level change history |

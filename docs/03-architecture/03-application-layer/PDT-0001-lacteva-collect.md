@@ -9,6 +9,7 @@ owner: Lacteva Collect Product Team
 created: 2026-08-02
 last-updated: 2026-08-02
 related: [PSP-0001, PSP-0002, PSP-0003, CAP-0003, CAP-0004]
+baseline: ARCH-BASELINE-V1
 ---
 
 # PDT-0001 — Lacteva Collect

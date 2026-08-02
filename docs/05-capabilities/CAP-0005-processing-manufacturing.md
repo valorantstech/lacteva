@@ -8,6 +8,7 @@ owner: Enterprise Architecture
 created: 2026-08-02
 last-updated: 2026-08-02
 related: [CAP-0001, CAP-0003, CAP-0004, CAP-0006]
+baseline: ARCH-BASELINE-V1
 ---
 
 # CAP-0005 — Processing & Manufacturing Domain (PRO)

@@ -24,4 +24,5 @@ The **logical** application architecture: which platform services, products, and
 
 | ID | Artifact | Kind | Realizes | Status |
 | --- | --- | --- | --- | --- |
-| — | *None yet — platform services follow the first domain models; products follow BRD-0001; agents follow the DIA domain model (roadmap Phases 1–3).* | | | |
+| [PDT-0001](PDT-0001-lacteva-collect.md) | Lacteva Collect | Product | MCL/QFS collection trust loop | Draft |
+| — | *PSVs follow the first domain models (formalizing `services/platform-core` modules is review item MR-4); agents follow the DIA domain model.* | | | |

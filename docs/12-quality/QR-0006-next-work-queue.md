@@ -8,6 +8,7 @@ owner: Documentation Engineering
 created: 2026-08-02
 last-updated: 2026-08-02
 related: [QR-0004, QR-0005, CAP-0001]
+baseline: ARCH-BASELINE-V1
 ---
 
 # QR-0006 — Next Work Queue

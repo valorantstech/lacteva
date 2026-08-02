@@ -7,6 +7,7 @@ version: "1.0"
 owner: Architecture Board
 created: 2026-08-02
 last-updated: 2026-08-02
+baseline: ARCH-BASELINE-V1
 ---
 
 # STD-0005 — Mermaid Standards

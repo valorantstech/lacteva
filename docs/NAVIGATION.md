@@ -7,11 +7,12 @@ version: "1.1"
 owner: Documentation Engineering
 created: 2026-08-02
 last-updated: 2026-08-02
+baseline: ARCH-BASELINE-V1
 ---
 
 # Repository Navigation Guide
 
-Task-oriented entry points into the repository. The [master index](INDEX.md) answers "what exists"; this page answers **"where do I go to do X"**.
+Task-oriented entry points into the repository. The [master index](INDEX.md) answers "what exists"; this page answers **"where do I go to do X"**. What the architecture *is* — and which document wins any conflict — is [ARCHITECTURE_BASELINE_V1](../ARCHITECTURE_BASELINE_V1.md).
 
 ## I am new here
 

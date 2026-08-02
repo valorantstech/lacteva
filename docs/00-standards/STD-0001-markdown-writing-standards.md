@@ -3,10 +3,11 @@ id: STD-0001
 title: Markdown Writing Standards
 type: standard
 status: Approved
-version: "1.2"
+version: "1.3"
 owner: Architecture Board
 created: 2026-08-02
 last-updated: 2026-08-02
+baseline: ARCH-BASELINE-V1
 ---
 
 # STD-0001 — Markdown Writing Standards
@@ -32,7 +33,7 @@ last-updated: <YYYY-MM-DD>
 ---
 ```
 
-Optional keys when applicable: `supersedes`, `superseded-by`, `reviewers`, `approvers`, `related` (list of document IDs), `layer` (concept | business | domain | application | technology — required for Enterprise Architecture artifacts), `context` (owning `DOM` ID — required for domain-layer tactical artifacts).
+Optional keys when applicable: `supersedes`, `superseded-by`, `reviewers`, `approvers`, `related` (list of document IDs), `layer` (concept | business | domain | application | technology — required for Enterprise Architecture artifacts), `context` (owning `DOM` ID — required for domain-layer tactical artifacts), `baseline` (the governing architecture baseline ID — REQUIRED on all formal documents; currently `ARCH-BASELINE-V1`, see `ARCHITECTURE_BASELINE_V1.md` at repo root).
 
 ## 3. Document Structure
 
@@ -83,6 +84,7 @@ Optional keys when applicable: `supersedes`, `superseded-by`, `reviewers`, `appr
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.3 | 2026-08-02 | Documentation Engineering | Registered `baseline` front-matter key (baseline migration M3). |
 | 1.2 | 2026-08-02 | Architecture Board | Added optional front-matter keys `layer` and `context` for Enterprise Architecture artifacts. |
 | 1.1 | 2026-08-02 | Documentation Engineering | Editorial: illustrative links must use code font (QR-0001 finding); fixed a broken example link. |
 | 1.0 | 2026-08-02 | Documentation Engineering | Initial approved version. |

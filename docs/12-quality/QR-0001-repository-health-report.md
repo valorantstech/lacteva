@@ -8,6 +8,7 @@ owner: Documentation Engineering
 created: 2026-08-02
 last-updated: 2026-08-02
 related: [QR-0002, QR-0003, QR-0004]
+baseline: ARCH-BASELINE-V1
 ---
 
 # QR-0001 — Repository Health Report

@@ -9,6 +9,7 @@ owner: Lacteva Collect Product Team
 created: 2026-08-02
 last-updated: 2026-08-02
 related: [PSP-0004, PSP-0009, PSP-0010, PSP-0008]
+baseline: ARCH-BASELINE-V1
 ---
 
 # PSP-0006 — Shift Closing

@@ -43,4 +43,4 @@ Lacteva is an AI-first, cloud-native, multi-tenant **Dairy Intelligence Platform
 
 ## Repository Status
 
-The repository is in its **foundation phase**: standards, governance, and templates are established here before product documentation begins. Product and system documentation will populate the numbered `docs/` domains as the platform is designed.
+**Architecture baseline locked:** [`ARCHITECTURE_BASELINE_V1.md`](ARCHITECTURE_BASELINE_V1.md) is the official source of truth; every formal document references it. Current state: governance/standards/templates operational; capability model authored (86 capabilities, approval pending); Lacteva Collect chapters 1–3 specified; platform foundation code live in `services/platform-core` (M0 — see [`DEVELOPMENT_ROADMAP.md`](DEVELOPMENT_ROADMAP.md)). Latest audit: [`REPOSITORY_AUDIT.md`](REPOSITORY_AUDIT.md); open review items: [`REPOSITORY_MIGRATION_PLAN.md`](REPOSITORY_MIGRATION_PLAN.md) §2.

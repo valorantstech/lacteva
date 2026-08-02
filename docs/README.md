@@ -2,6 +2,8 @@
 
 This directory is the documentation half of the single source of truth. It is organized into **numbered domains**: low numbers govern *how* we document (standards, governance, templates); higher numbers hold the documentation itself.
 
+**Governed by [Architecture Baseline V1](../ARCHITECTURE_BASELINE_V1.md)** — the official source of truth and conflict arbiter for everything below.
+
 **Looking for a specific document?** The complete per-document inventory is the [Master Documentation Index](INDEX.md).
 
 ## Domain Index

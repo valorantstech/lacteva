@@ -20,4 +20,4 @@ Repository and documentation quality artifacts (`QR` prefix): audit reports, tra
 | [QR-0005](QR-0005-documentation-coverage-report.md) | Documentation Coverage Report | Point-in-time audit | Approved | 1.0 |
 | [QR-0006](QR-0006-next-work-queue.md) | Next Work Queue | Living artifact | Approved | 1.0 |
 
-The master documentation index lives at [`docs/INDEX.md`](../INDEX.md); the business-term taxonomy at [`docs/11-glossary/TAXONOMY.md`](../11-glossary/TAXONOMY.md).
+The master documentation index lives at [`docs/INDEX.md`](../INDEX.md); the business-term taxonomy at [`docs/11-glossary/TAXONOMY.md`](../11-glossary/TAXONOMY.md). The baseline-migration audit and plan (2026-08-02) live at repo root: [`REPOSITORY_AUDIT.md`](../../REPOSITORY_AUDIT.md) · [`REPOSITORY_MIGRATION_PLAN.md`](../../REPOSITORY_MIGRATION_PLAN.md), governed by [`ARCHITECTURE_BASELINE_V1.md`](../../ARCHITECTURE_BASELINE_V1.md).
