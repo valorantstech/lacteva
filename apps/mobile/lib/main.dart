@@ -5,6 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'src/api.dart';
+import 'src/centers.dart';
+
 /// Backend base URL. Override at run/build time:
 ///   flutter run --dart-define=LACTEVA_API_URL=http://10.0.2.2:8000
 /// (10.0.2.2 reaches the host machine from the Android emulator.)
@@ -28,7 +31,7 @@ class LactevaApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1B5E20)),
         useMaterial3: true,
       ),
-      home: const PlatformStatusScreen(),
+      home: LoginScreen(client: ApiClient()),
     );
   }
 }

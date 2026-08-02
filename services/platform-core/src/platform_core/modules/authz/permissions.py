@@ -19,6 +19,8 @@ PERMISSIONS: dict[str, str] = {
     "configuration.read": "Read configuration entries",
     "configuration.write": "Write configuration entries",
     "audit.read": "Read the audit trail",
+    "collection.center.read": "Read collection centers, hours, and calendars",
+    "collection.center.manage": "Create and administer collection centers",
 }
 
 WILDCARD = "*"
@@ -39,6 +41,8 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "configuration.read",
         "configuration.write",
         "audit.read",
+        "collection.center.read",
+        "collection.center.manage",
     ],
     "tenant-viewer": [
         "identity.user.read",
@@ -46,6 +50,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "organization.structure.read",
         "organization.member.read",
         "audit.read",
+        "collection.center.read",
     ],
 }
 

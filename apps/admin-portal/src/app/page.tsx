@@ -116,6 +116,12 @@ export default function Home() {
             </ul>
           )}
           <div className="flex gap-4 pt-2 text-sm">
+            <a className="text-primary underline-offset-4 hover:underline" href="/login">
+              Sign in →
+            </a>
+            <a className="text-primary underline-offset-4 hover:underline" href="/centers">
+              Collection centers →
+            </a>
             <a
               className="text-primary underline-offset-4 hover:underline"
               href={`${API_URL}/docs`}

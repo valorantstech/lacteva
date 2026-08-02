@@ -11,6 +11,18 @@ from platform_core.api.deps import CurrentPrincipal, Principal, require_permissi
 from platform_core.modules.auth.service import AuthService, LoginCommand, TokenPair
 from platform_core.modules.authz.permissions import PERMISSIONS
 from platform_core.modules.authz.service import AuthzService, PermissionEngine
+from platform_core.modules.collection_center.service import (
+    CalendarEntryInput,
+    CalendarEntryView,
+    CenterDetailView,
+    CenterPage,
+    CenterView,
+    CollectionCenterService,
+    CreateCenterCommand,
+    OperatingWindowInput,
+    OperatingWindowView,
+    UpdateCenterCommand,
+)
 from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.identity.schemas import RegisterUserCommand, UserView
 from platform_core.modules.identity.service import IdentityService
@@ -271,6 +283,95 @@ async def accept_invitation(
     )
 
 
+# --- Collection centers (facility management only) -------------------------
+center_router = APIRouter(prefix="/collection-centers", tags=["collection-centers"])
+CenterManage = Annotated[Principal, Depends(require_permission("collection.center.manage"))]
+CenterRead = Annotated[Principal, Depends(require_permission("collection.center.read"))]
+CenterSvc = Annotated[CollectionCenterService, Depends(deps.get_collection_center_service)]
+
+
+@center_router.post("", response_model=CenterView, status_code=201)
+async def create_center(cmd: CreateCenterCommand, service: CenterSvc, p: CenterManage) -> Any:
+    return await service.create(cmd, actor_id=p.id)
+
+
+@center_router.get("", response_model=CenterPage)
+async def list_centers(
+    service: CenterSvc,
+    _: CenterRead,
+    q: str | None = None,
+    status: str | None = None,
+    branch_id: uuid.UUID | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> CenterPage:
+    return await service.list_page(
+        q=q, status=status, branch_id=branch_id, limit=limit, offset=offset
+    )
+
+
+@center_router.get("/{center_id}", response_model=CenterDetailView)
+async def get_center_detail(
+    center_id: uuid.UUID, service: CenterSvc, _: CenterRead
+) -> CenterDetailView:
+    return await service.detail(center_id)
+
+
+@center_router.put("/{center_id}", response_model=CenterView)
+async def update_center(
+    center_id: uuid.UUID, cmd: UpdateCenterCommand, service: CenterSvc, p: CenterManage
+) -> Any:
+    return await service.update(center_id, cmd, actor_id=p.id)
+
+
+class SetStatusRequest(BaseModel):
+    status: str
+
+
+@center_router.post("/{center_id}/status", response_model=CenterView)
+async def set_center_status(
+    center_id: uuid.UUID, body: SetStatusRequest, service: CenterSvc, p: CenterManage
+) -> Any:
+    return await service.set_status(center_id, body.status, actor_id=p.id)
+
+
+class SetConfigCenterRequest(BaseModel):
+    settings: dict[str, Any]
+
+
+@center_router.put("/{center_id}/config")
+async def set_center_config(
+    center_id: uuid.UUID, body: SetConfigCenterRequest, service: CenterSvc, p: CenterManage
+) -> dict:
+    settings = await service.set_config(center_id, body.settings, actor_id=p.id)
+    return {"settings": settings}
+
+
+class SetHoursRequest(BaseModel):
+    windows: list[OperatingWindowInput]
+
+
+@center_router.put("/{center_id}/operating-hours", response_model=list[OperatingWindowView])
+async def set_center_hours(
+    center_id: uuid.UUID, body: SetHoursRequest, service: CenterSvc, p: CenterManage
+) -> Any:
+    return await service.set_operating_hours(center_id, body.windows, actor_id=p.id)
+
+
+@center_router.post("/{center_id}/calendar", response_model=CalendarEntryView, status_code=201)
+async def add_center_calendar_entry(
+    center_id: uuid.UUID, entry: CalendarEntryInput, service: CenterSvc, p: CenterManage
+) -> Any:
+    return await service.add_calendar_entry(center_id, entry, actor_id=p.id)
+
+
+@center_router.delete("/{center_id}/calendar/{entry_id}", status_code=204)
+async def remove_center_calendar_entry(
+    center_id: uuid.UUID, entry_id: uuid.UUID, service: CenterSvc, p: CenterManage
+) -> None:
+    await service.remove_calendar_entry(center_id, entry_id, actor_id=p.id)
+
+
 # --- Authorization --------------------------------------------------------
 authz_router = APIRouter(prefix="/authz", tags=["authz"])
 
@@ -374,6 +475,7 @@ for sub in (
     org_router,
     structure_router,
     member_router,
+    center_router,
     authz_router,
     config_router,
     audit_router,

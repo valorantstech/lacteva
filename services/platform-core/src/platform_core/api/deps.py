@@ -23,6 +23,7 @@ from platform_core.modules.audit.service import AuditService
 from platform_core.modules.auth.models import AuthSession
 from platform_core.modules.auth.service import AuthService
 from platform_core.modules.authz.service import AuthzService, PermissionEngine
+from platform_core.modules.collection_center.service import CollectionCenterService
 from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.identity.models import User
 from platform_core.modules.identity.service import IdentityService
@@ -83,6 +84,12 @@ def get_permission_engine(session: Session) -> PermissionEngine:
 
 def get_configuration_service(session: Session, audit: Audit) -> ConfigurationService:
     return ConfigurationService(session, audit)
+
+
+def get_collection_center_service(
+    session: Session, bus: Bus, audit: Audit
+) -> CollectionCenterService:
+    return CollectionCenterService(session, bus, audit)
 
 
 @dataclass(frozen=True)
