@@ -25,6 +25,14 @@ log = structlog.get_logger("events")
 
 
 class EventEnvelope(BaseModel):
+    """Business event envelope (SPRINT-008A interface).
+
+    Field mapping to the platform event contract: `type` = Event Name,
+    `time` = Occurred At, `actor_id` = Created By, `data` = Payload.
+    correlation_id groups everything caused by one external stimulus
+    (defaults to the request id); causation_id points at the direct cause.
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     type: str
     source: str
@@ -32,6 +40,11 @@ class EventEnvelope(BaseModel):
     tenant_id: uuid.UUID | None = None
     actor_id: uuid.UUID | None = None
     trace_id: str | None = None
+    correlation_id: str | None = None
+    causation_id: uuid.UUID | None = None
+    aggregate_type: str | None = None
+    aggregate_id: uuid.UUID | None = None
+    version: int = 1
     data: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
@@ -41,15 +54,25 @@ class EventEnvelope(BaseModel):
         data: dict[str, Any],
         *,
         actor_id: uuid.UUID | None = None,
+        aggregate_type: str | None = None,
+        aggregate_id: uuid.UUID | None = None,
+        causation_id: uuid.UUID | None = None,
+        version: int = 1,
     ) -> "EventEnvelope":
         ctx = structlog.contextvars.get_contextvars()
+        request_id = ctx.get("request_id")
         return cls(
             type=event_type,
             source=get_settings().service_name,
             time=utcnow().isoformat(),
             tenant_id=get_current_tenant(),
             actor_id=actor_id,
-            trace_id=ctx.get("request_id"),
+            trace_id=request_id,
+            correlation_id=ctx.get("correlation_id") or request_id,
+            causation_id=causation_id,
+            aggregate_type=aggregate_type,
+            aggregate_id=aggregate_id,
+            version=version,
             data=data,
         )
 

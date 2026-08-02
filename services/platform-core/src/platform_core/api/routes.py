@@ -24,6 +24,12 @@ from platform_core.modules.collection_center.service import (
     UpdateCenterCommand,
 )
 from platform_core.modules.configuration.service import ConfigurationService
+from platform_core.modules.event_relay.service import (
+    DeadLetterView,
+    OutboxEventView,
+    RelayService,
+    RelayStats,
+)
 from platform_core.modules.identity.schemas import RegisterUserCommand, UserView
 from platform_core.modules.identity.service import IdentityService
 from platform_core.modules.milk_collection.service import (
@@ -825,6 +831,52 @@ async def get_milk_transaction_events(tx_id: uuid.UUID, service: MilkSvc, _: TxR
     return await service.list_events(tx_id)
 
 
+# --- Event relay (internal platform operations) -----------------------------
+relay_router = APIRouter(prefix="/_relay", tags=["event-relay"])
+RelayOps = Annotated[Principal, Depends(require_permission("platform.relay.manage"))]
+RelaySvc = Annotated[RelayService, Depends(deps.get_relay_service)]
+
+
+@relay_router.get("/status", response_model=RelayStats)
+async def relay_status(service: RelaySvc, _: RelayOps) -> RelayStats:
+    return await service.stats()
+
+
+@relay_router.get("/events", response_model=list[OutboxEventView])
+async def relay_events(
+    service: RelaySvc, _: RelayOps, status: str | None = None, limit: int = 50
+) -> Any:
+    return await service.list_events(status=status, limit=limit)
+
+
+@relay_router.get("/dead-letters", response_model=list[DeadLetterView])
+async def relay_dead_letters(service: RelaySvc, _: RelayOps, limit: int = 50) -> Any:
+    return await service.list_dead_letters(limit=limit)
+
+
+@relay_router.post("/dead-letters/{dead_letter_id}/replay", response_model=OutboxEventView)
+async def relay_replay_dead_letter(
+    dead_letter_id: uuid.UUID, service: RelaySvc, _: RelayOps
+) -> Any:
+    return await service.replay_dead_letter(dead_letter_id)
+
+
+@relay_router.post("/events/{event_id}/retry", response_model=OutboxEventView)
+async def relay_retry_event(event_id: uuid.UUID, service: RelaySvc, _: RelayOps) -> Any:
+    return await service.retry_event(event_id)
+
+
+@relay_router.post("/events/{event_id}/replay", response_model=OutboxEventView)
+async def relay_replay_event(event_id: uuid.UUID, service: RelaySvc, _: RelayOps) -> Any:
+    return await service.replay_delivered(event_id)
+
+
+@relay_router.post("/dispatch")
+async def relay_dispatch_now(service: RelaySvc, _: RelayOps) -> dict:
+    delivered = await service.dispatch_pending()
+    return {"delivered": delivered}
+
+
 # --- Authorization --------------------------------------------------------
 authz_router = APIRouter(prefix="/authz", tags=["authz"])
 
@@ -932,6 +984,7 @@ for sub in (
     ops_router,
     supplier_router,
     milk_router,
+    relay_router,
     authz_router,
     config_router,
     audit_router,

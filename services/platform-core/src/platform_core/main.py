@@ -17,6 +17,25 @@ from platform_core.modules.authz.service import AuthzService
 log = get_logger("app")
 
 
+async def _relay_loop() -> None:
+    """Background dispatcher: delivers committed outbox events forever."""
+    import asyncio
+
+    from platform_core.infrastructure.events import get_event_bus
+    from platform_core.modules.event_relay.service import RelayService
+
+    settings = get_settings()
+    while True:
+        try:
+            async with get_session_factory()() as session:
+                relay = RelayService(session, get_event_bus())
+                await relay.dispatch_pending()
+                await session.commit()
+        except Exception:
+            log.exception("relay_loop_error")
+        await asyncio.sleep(settings.outbox_poll_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -28,8 +47,15 @@ async def lifespan(app: FastAPI):
     async with get_session_factory()() as session:
         await AuthzService(session).ensure_system_roles()
         await session.commit()
+    relay_task = None
+    if settings.outbox_mode == "background" and settings.env != "test":
+        import asyncio
+
+        relay_task = asyncio.create_task(_relay_loop())
     log.info("startup_complete", env=settings.env, version=__version__)
     yield
+    if relay_task is not None:
+        relay_task.cancel()
     # TODO(M1): graceful shutdown — drain event-bus connection, dispose engine.
 
 

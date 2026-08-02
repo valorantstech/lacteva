@@ -29,6 +29,9 @@ PERMISSIONS: dict[str, str] = {
     "collection.session.manage": "Open and close collection sessions",
     "collection.transaction.record": "Record milk collection transactions",
     "collection.transaction.read": "Read milk collection transactions and their events",
+    "platform.relay.manage": (
+        "Operate the event relay (replay, retry, dead letters) — platform staff only"
+    ),
 }
 
 WILDCARD = "*"

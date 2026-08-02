@@ -6,6 +6,7 @@ import os
 os.environ["LACTEVA_ENV"] = "test"
 os.environ["LACTEVA_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["LACTEVA_EVENT_BUS"] = "memory"
+os.environ["LACTEVA_OUTBOX_MODE"] = "inline"
 os.environ["LACTEVA_JWT_SECRET"] = "test-secret-0123456789abcdef0123456789abcdef"
 
 import uuid

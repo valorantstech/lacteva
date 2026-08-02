@@ -26,6 +26,7 @@ from platform_core.modules.auth.service import AuthService
 from platform_core.modules.authz.service import AuthzService, PermissionEngine
 from platform_core.modules.collection_center.service import CollectionCenterService
 from platform_core.modules.configuration.service import ConfigurationService
+from platform_core.modules.event_relay.service import OutboxEventBus, RelayService
 from platform_core.modules.identity.models import User
 from platform_core.modules.identity.service import IdentityService
 from platform_core.modules.milk_collection.service import MilkCollectionService
@@ -39,7 +40,20 @@ from platform_core.modules.organization.service import (
 from platform_core.modules.supplier.service import SupplierService
 
 Session = Annotated[AsyncSession, Depends(get_session)]
-Bus = Annotated[EventBus, Depends(get_event_bus)]
+
+
+def get_outbox_bus(session: Session) -> EventBus:
+    """The transactional bus (SPRINT-008A): publishes land in event_outbox
+    inside the caller's transaction; the relay delivers to the transport."""
+    return OutboxEventBus(session, get_event_bus())
+
+
+Bus = Annotated[EventBus, Depends(get_outbox_bus)]
+
+
+def get_relay_service(session: Session) -> RelayService:
+    return RelayService(session, get_event_bus())
+
 
 _bearer = HTTPBearer(auto_error=False)
 
