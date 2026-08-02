@@ -27,6 +27,7 @@ from platform_core.modules.collection_center.service import CollectionCenterServ
 from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.identity.models import User
 from platform_core.modules.identity.service import IdentityService
+from platform_core.modules.operational_readiness.service import OperationalReadinessService
 from platform_core.modules.organization.service import (
     InvitationService,
     MembershipService,
@@ -90,6 +91,10 @@ def get_collection_center_service(
     session: Session, bus: Bus, audit: Audit
 ) -> CollectionCenterService:
     return CollectionCenterService(session, bus, audit)
+
+
+def get_readiness_service(session: Session, bus: Bus, audit: Audit) -> OperationalReadinessService:
+    return OperationalReadinessService(session, bus, audit)
 
 
 @dataclass(frozen=True)

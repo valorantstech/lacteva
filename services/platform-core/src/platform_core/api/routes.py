@@ -26,6 +26,17 @@ from platform_core.modules.collection_center.service import (
 from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.identity.schemas import RegisterUserCommand, UserView
 from platform_core.modules.identity.service import IdentityService
+from platform_core.modules.operational_readiness.models import DEVICE_CATEGORIES
+from platform_core.modules.operational_readiness.service import (
+    READINESS_RULES,
+    DeviceDetailView,
+    DevicePage,
+    DeviceView,
+    OperationalReadinessService,
+    OperatorView,
+    ReadinessResult,
+    RegisterDeviceCommand,
+)
 from platform_core.modules.organization.service import (
     BranchView,
     CreateOrganizationCommand,
@@ -372,6 +383,119 @@ async def remove_center_calendar_entry(
     await service.remove_calendar_entry(center_id, entry_id, actor_id=p.id)
 
 
+# --- Operational readiness (devices, operators, readiness engine) ----------
+ops_router = APIRouter(tags=["operational-readiness"])
+DeviceManage = Annotated[Principal, Depends(require_permission("operations.device.manage"))]
+DeviceRead = Annotated[Principal, Depends(require_permission("operations.device.read"))]
+ReadinessRead = Annotated[Principal, Depends(require_permission("operations.readiness.read"))]
+OpsSvc = Annotated[OperationalReadinessService, Depends(deps.get_readiness_service)]
+
+
+@ops_router.get("/device-categories")
+async def list_device_categories(_: DeviceRead) -> dict[str, dict]:
+    return DEVICE_CATEGORIES
+
+
+@ops_router.post("/devices", response_model=DeviceView, status_code=201)
+async def register_device(cmd: RegisterDeviceCommand, service: OpsSvc, p: DeviceManage) -> Any:
+    return await service.register_device(cmd, actor_id=p.id)
+
+
+@ops_router.get("/devices", response_model=DevicePage)
+async def list_devices(
+    service: OpsSvc,
+    _: DeviceRead,
+    center_id: uuid.UUID | None = None,
+    category: str | None = None,
+    status: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> DevicePage:
+    return await service.list_devices(
+        center_id=center_id, category=category, status=status, limit=limit, offset=offset
+    )
+
+
+@ops_router.get("/devices/{device_id}", response_model=DeviceDetailView)
+async def get_device_detail(
+    device_id: uuid.UUID, service: OpsSvc, _: DeviceRead
+) -> DeviceDetailView:
+    return await service.device_detail(device_id)
+
+
+class AssignDeviceRequest(BaseModel):
+    center_id: uuid.UUID
+
+
+@ops_router.post("/devices/{device_id}/assign", response_model=DeviceView)
+async def assign_device(
+    device_id: uuid.UUID, body: AssignDeviceRequest, service: OpsSvc, p: DeviceManage
+) -> Any:
+    return await service.assign_device(device_id, body.center_id, actor_id=p.id)
+
+
+class DeviceStatusRequest(BaseModel):
+    status: str
+
+
+@ops_router.post("/devices/{device_id}/status", response_model=DeviceView)
+async def set_device_status(
+    device_id: uuid.UUID, body: DeviceStatusRequest, service: OpsSvc, p: DeviceManage
+) -> Any:
+    return await service.set_device_status(device_id, body.status, actor_id=p.id)
+
+
+class HealthReportRequest(BaseModel):
+    state: str
+    note: str = ""
+
+
+@ops_router.post("/devices/{device_id}/health", status_code=201)
+async def report_device_health(
+    device_id: uuid.UUID, body: HealthReportRequest, service: OpsSvc, p: DeviceManage
+) -> dict:
+    report = await service.report_health(device_id, body.state, body.note, actor_id=p.id)
+    return {"id": str(report.id), "state": report.state}
+
+
+class AssignOperatorRequest(BaseModel):
+    user_id: uuid.UUID
+    role_label: str = "operator"
+
+
+@ops_router.post("/collection-centers/{center_id}/operators", status_code=201)
+async def assign_operator(
+    center_id: uuid.UUID, body: AssignOperatorRequest, service: OpsSvc, p: DeviceManage
+) -> dict:
+    a = await service.assign_operator(center_id, body.user_id, body.role_label, actor_id=p.id)
+    return {"user_id": str(a.user_id), "role_label": a.role_label}
+
+
+@ops_router.get("/collection-centers/{center_id}/operators", response_model=list[OperatorView])
+async def list_operators(center_id: uuid.UUID, service: OpsSvc, _: DeviceRead) -> Any:
+    return await service.list_operators(center_id)
+
+
+@ops_router.delete("/collection-centers/{center_id}/operators/{user_id}", status_code=204)
+async def remove_operator(
+    center_id: uuid.UUID, user_id: uuid.UUID, service: OpsSvc, p: DeviceManage
+) -> None:
+    await service.remove_operator(center_id, user_id, actor_id=p.id)
+
+
+@ops_router.get("/readiness/rules")
+async def list_readiness_rules(_: ReadinessRead) -> dict[str, dict]:
+    return READINESS_RULES
+
+
+@ops_router.get("/collection-centers/{center_id}/readiness", response_model=ReadinessResult)
+async def evaluate_center_readiness(
+    center_id: uuid.UUID, service: OpsSvc, _: ReadinessRead
+) -> ReadinessResult:
+    """The Operational Status API: evaluates the center now, on demand."""
+    return await service.evaluate_readiness(center_id)
+
+
 # --- Authorization --------------------------------------------------------
 authz_router = APIRouter(prefix="/authz", tags=["authz"])
 
@@ -476,6 +600,7 @@ for sub in (
     structure_router,
     member_router,
     center_router,
+    ops_router,
     authz_router,
     config_router,
     audit_router,

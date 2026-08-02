@@ -111,6 +111,37 @@ export const createCenter = (body: { branch_id: string; name: string; code: stri
 export const updateCenter = (id: string, body: { name: string; timezone: string }) =>
   api<Center>(`/v1/collection-centers/${id}`, { method: "PUT", body: JSON.stringify(body) });
 
+export type ReadinessCheck = {
+  rule: string;
+  severity: "blocking" | "warning";
+  passed: boolean;
+  detail: string;
+};
+
+export type ReadinessResult = {
+  center_id: string;
+  status: "READY" | "NOT_READY" | "WARNING";
+  evaluated_at: string;
+  checks: ReadinessCheck[];
+};
+
+export type Device = {
+  id: string;
+  center_id: string | null;
+  category: string;
+  name: string;
+  serial_number: string;
+  status: string;
+};
+
+export const getReadiness = (centerId: string) =>
+  api<ReadinessResult>(`/v1/collection-centers/${centerId}/readiness`);
+
+export const listCenterDevices = (centerId: string) =>
+  api<{ items: Device[]; total: number }>(
+    `/v1/devices?center_id=${centerId}&limit=100&offset=0`,
+  );
+
 export const setCenterStatus = (id: string, status: string) =>
   api<Center>(`/v1/collection-centers/${id}/status`, {
     method: "POST",

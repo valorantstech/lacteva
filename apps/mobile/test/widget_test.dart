@@ -38,6 +38,16 @@ void main() {
     expect(find.text('KH — Kilima Hill'), findsOneWidget);
   });
 
+  testWidgets('readiness screen shows status and checks', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: ReadinessScreen(client: _ReadinessFake(), centerId: 'c1')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('WARNING'), findsOneWidget);
+    expect(find.text('1 of 2 checks passing'), findsOneWidget);
+    expect(find.text('device.printer'), findsOneWidget);
+  });
+
   testWidgets('edit form shows timezone instead of code', (tester) async {
     final center = CenterSummary(
       id: 'c1',
@@ -56,3 +66,22 @@ void main() {
     expect(find.text('Branch'), findsNothing);
   });
 }
+
+class _ReadinessFake extends ApiClient {
+  @override
+  Future<ReadinessResultView> readiness(String centerId) async =>
+      ReadinessResultView(status: 'WARNING', checks: [
+        ReadinessCheckView(
+            rule: 'center.active',
+            severity: 'blocking',
+            passed: true,
+            detail: 'center status is active'),
+        ReadinessCheckView(
+            rule: 'device.printer',
+            severity: 'warning',
+            passed: false,
+            detail: '0 usable printer(s) of 0 active'),
+      ]);
+}
+
+

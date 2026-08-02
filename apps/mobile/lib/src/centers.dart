@@ -463,7 +463,21 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
   Widget build(BuildContext context) {
     final detail = _detail;
     return Scaffold(
-      appBar: AppBar(title: Text(detail?.center.name ?? 'Center')),
+      appBar: AppBar(
+        title: Text(detail?.center.name ?? 'Center'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.fact_check_outlined),
+            tooltip: 'Operational readiness',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ReadinessScreen(
+                    client: widget.client, centerId: widget.centerId),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: detail == null
           ? Center(
               child: _error != null
@@ -534,6 +548,108 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+/// Operational readiness evaluation for one center (SPRINT-004).
+class ReadinessScreen extends StatefulWidget {
+  const ReadinessScreen(
+      {super.key, required this.client, required this.centerId});
+
+  final ApiClient client;
+  final String centerId;
+
+  @override
+  State<ReadinessScreen> createState() => _ReadinessScreenState();
+}
+
+class _ReadinessScreenState extends State<ReadinessScreen> {
+  ReadinessResultView? _result;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final result = await widget.client.readiness(widget.centerId);
+      if (mounted) {
+        setState(() {
+          _result = result;
+          _error = null;
+        });
+      }
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.detail);
+    }
+  }
+
+  Color _statusColor(String status) => switch (status) {
+        'READY' => Colors.green,
+        'WARNING' => Colors.orange,
+        _ => Colors.red,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final result = _result;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Operational readiness')),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: result == null
+            ? Center(
+                child: _error != null
+                    ? Text(_error!)
+                    : const CircularProgressIndicator(),
+              )
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Card(
+                    color: _statusColor(result.status).withValues(alpha: 0.12),
+                    child: ListTile(
+                      leading: Icon(
+                        result.status == 'READY'
+                            ? Icons.check_circle
+                            : result.status == 'WARNING'
+                                ? Icons.warning_amber
+                                : Icons.cancel,
+                        color: _statusColor(result.status),
+                        size: 36,
+                      ),
+                      title: Text(
+                        result.status,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      subtitle: Text(
+                          '${result.checks.where((c) => c.passed).length}'
+                          ' of ${result.checks.length} checks passing'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...result.checks.map(
+                    (check) => ListTile(
+                      leading: Icon(
+                        check.passed ? Icons.check_circle_outline : Icons.error_outline,
+                        color: check.passed
+                            ? Colors.green
+                            : (check.severity == 'blocking'
+                                ? Colors.red
+                                : Colors.orange),
+                      ),
+                      title: Text(check.rule),
+                      subtitle: Text(check.detail),
+                      trailing: Text(check.severity),
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }

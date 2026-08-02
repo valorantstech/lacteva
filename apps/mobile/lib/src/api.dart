@@ -116,6 +116,12 @@ class ApiClient {
         body: {'status': status}) as Map<String, dynamic>;
     return CenterSummary.fromJson(result);
   }
+
+  Future<ReadinessResultView> readiness(String centerId) async {
+    final result = await _send('GET', '/v1/collection-centers/$centerId/readiness')
+        as Map<String, dynamic>;
+    return ReadinessResultView.fromJson(result);
+  }
 }
 
 class CenterSummary {
@@ -217,3 +223,41 @@ class CenterDetail {
   final List<OperatingWindowView> windows;
   final List<Map<String, dynamic>> calendar;
 }
+
+class ReadinessCheckView {
+  ReadinessCheckView({
+    required this.rule,
+    required this.severity,
+    required this.passed,
+    required this.detail,
+  });
+
+  factory ReadinessCheckView.fromJson(Map<String, dynamic> json) =>
+      ReadinessCheckView(
+        rule: json['rule'] as String,
+        severity: json['severity'] as String,
+        passed: json['passed'] as bool,
+        detail: json['detail'] as String,
+      );
+
+  final String rule;
+  final String severity;
+  final bool passed;
+  final String detail;
+}
+
+class ReadinessResultView {
+  ReadinessResultView({required this.status, required this.checks});
+
+  factory ReadinessResultView.fromJson(Map<String, dynamic> json) =>
+      ReadinessResultView(
+        status: json['status'] as String,
+        checks: (json['checks'] as List<dynamic>)
+            .map((e) => ReadinessCheckView.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+
+  final String status;
+  final List<ReadinessCheckView> checks;
+}
+

@@ -25,8 +25,12 @@ import {
   Branch,
   Center,
   CenterPage,
+  Device,
+  ReadinessResult,
   createCenter,
+  getReadiness,
   listBranches,
+  listCenterDevices,
   listCenters,
   setCenterStatus,
   updateCenter,
@@ -51,6 +55,24 @@ export default function CentersPage() {
   const [offset, setOffset] = useState(0);
   const [form, setForm] = useState<FormState>({ mode: "closed" });
   const [error, setError] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<{
+    center: Center;
+    result: ReadinessResult;
+    devices: Device[];
+  } | null>(null);
+
+  async function showReadiness(center: Center) {
+    try {
+      const [result, devices] = await Promise.all([
+        getReadiness(center.id),
+        listCenterDevices(center.id),
+      ]);
+      setReadiness({ center, result, devices: devices.items });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Readiness evaluation failed");
+    }
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -161,6 +183,9 @@ export default function CentersPage() {
                   </TableCell>
                   <TableCell>{c.timezone}</TableCell>
                   <TableCell className="flex justify-end gap-2">
+                    <Button size="sm" variant="outline" onClick={() => showReadiness(c)}>
+                      Readiness
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -199,6 +224,62 @@ export default function CentersPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {readiness && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-3">
+              Readiness — {readiness.center.code}
+              <Badge
+                variant={
+                  readiness.result.status === "READY"
+                    ? "default"
+                    : readiness.result.status === "WARNING"
+                      ? "secondary"
+                      : "destructive"
+                }
+              >
+                {readiness.result.status}
+              </Badge>
+            </CardTitle>
+            <CardDescription>
+              Evaluated {new Date(readiness.result.evaluated_at).toLocaleTimeString()} ·{" "}
+              {readiness.devices.length} device(s) at this center
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <ul className="flex flex-col gap-2">
+              {readiness.result.checks.map((check) => (
+                <li key={check.rule} className="flex items-center justify-between text-sm">
+                  <span>
+                    <span className={check.passed ? "text-green-600" : "text-destructive"}>
+                      {check.passed ? "✓" : "✗"}
+                    </span>{" "}
+                    <span className="font-mono">{check.rule}</span>{" "}
+                    <span className="text-muted-foreground">— {check.detail}</span>
+                  </span>
+                  <Badge variant={check.severity === "blocking" ? "outline" : "secondary"}>
+                    {check.severity}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+            {readiness.devices.length > 0 && (
+              <div className="text-sm text-muted-foreground">
+                Devices:{" "}
+                {readiness.devices
+                  .map((d) => `${d.category} ${d.serial_number} (${d.status})`)
+                  .join(" · ")}
+              </div>
+            )}
+            <div>
+              <Button size="sm" variant="ghost" onClick={() => setReadiness(null)}>
+                Close
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <footer className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground">
