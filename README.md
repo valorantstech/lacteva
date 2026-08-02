@@ -29,6 +29,8 @@ Lacteva is an AI-first, cloud-native, multi-tenant **Dairy Intelligence Platform
 
 ## Getting Started
 
+**Run the platform:** `make dev` — one command; full guide in [`RUNNING.md`](RUNNING.md); developer workflow in [`DEVELOPMENT.md`](DEVELOPMENT.md).
+
 1. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) — how work enters this repository.
 2. Read the standards in [`docs/00-standards/`](docs/00-standards/README.md) — non-negotiable authoring rules.
 3. Find the right template in [`docs/02-templates/`](docs/02-templates/README.md) — never start a document from a blank page.

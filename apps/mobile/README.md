@@ -1,17 +1,30 @@
 # mobile
 
-Flutter application for field users — the future home of Lacteva Collect's operator experience (shift control, member check-in, collection recording per `docs/13-products/lacteva-collect/`).
+Lacteva Flutter application — the future home of Lacteva Collect's operator experience (shift control, member check-in, collection recording per `docs/13-products/lacteva-collect/`). Currently ships the SPRINT-001 bootstrap: a platform-status screen polling `platform-core`'s readiness endpoint.
 
-**Status: scaffold pending (roadmap M2).** Generate with official tooling:
+Scaffolded with `flutter create` (org `com.lacteva`, project `lacteva_mobile`, platforms android/ios/web), Flutter 3.38 stable.
+
+## Run
 
 ```bash
-cd apps/mobile
-flutter create . --org com.lacteva --project-name lacteva_mobile --platforms android,ios
+flutter devices                                            # list targets
+flutter run --dart-define=LACTEVA_API_URL=http://10.0.2.2:8000   # Android emulator
+flutter run -d chrome --dart-define=LACTEVA_API_URL=http://localhost:8000
+# or from the repo root: make mobile [DEVICE=<id>]
 ```
 
-Non-negotiable architecture constraints (from the product package, before any feature code):
+`10.0.2.2` is the Android emulator's route to the host machine. The API URL is a compile-time define (`lib/main.dart`), defaulting to `http://localhost:8000`.
 
-- **Offline-first** (Collect rule R09): local queue + sync engine is the first infrastructure slice, not an afterthought.
-- **Localization from day one** (`flutter_localizations` + ARB files; locales en/sw/hi to start, per platform i18n).
+## Quality gates (CI-enforced)
+
+```bash
+flutter analyze
+flutter test
+```
+
+## Architecture constraints before feature work (from the Collect package)
+
+- **Offline-first** (rule R09): the local queue + sync engine is the first M2 infrastructure slice — features must not assume connectivity.
+- **Localization from day one**: `flutter_localizations` + ARB files (en/sw/hi to start), matching platform i18n.
 - Auth against platform-core (`/v1/auth/token` + refresh), tenant-scoped.
-- TODO(M2): device-profile abstraction for hardware integration (scale/analyzer, PSP-0007) behind a platform channel interface.
+- Hardware integration (scales/analyzers per PSP-0007) goes behind a device-profile platform-channel interface — M2+.

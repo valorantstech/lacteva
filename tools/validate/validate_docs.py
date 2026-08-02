@@ -30,7 +30,9 @@ VALID_STATUS = {"Draft", "In Review", "Approved", "Deprecated", "Superseded"}
 CONTEXT_REQUIRED_TYPES = {"agg", "ent", "val", "rep", "pol", "spc"}
 # Files exempt from front matter (indexes are docs; these are infrastructure)
 FM_EXEMPT = {"README.md", "CONTRIBUTING.md", "CHANGELOG.md",
-             "PULL_REQUEST_TEMPLATE.md", "CODEOWNERS"}
+             "PULL_REQUEST_TEMPLATE.md", "CODEOWNERS",
+             # Tool-generated agent guidance files inside app scaffolds
+             "AGENTS.md", "CLAUDE.md"}
 # Auto-generated files: front matter required, change-log section not
 # (their history is the generator run, recorded in front matter)
 GENERATED = {"XREF.md"}

@@ -1,7 +1,7 @@
 # Lacteva local development stack.
-# Usage:
+# Usage (or just `make dev` / `make infra` from the repo root):
 #   docker compose up -d postgres redis rabbitmq minio      # infra only
-#   docker compose up --build platform-core                 # full stack
+#   docker compose --profile apps up --build                # full stack (backend + portal)
 # OpenSearch is behind a profile (heavy): docker compose --profile search up
 
 name: lacteva
@@ -72,12 +72,28 @@ services:
       LACTEVA_ENV: dev
       LACTEVA_EVENT_BUS: rabbitmq
     ports: ["8000:8000"]
+    profiles: ["apps"]
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
       rabbitmq: {condition: service_healthy}
       minio: {condition: service_healthy}
 
+  admin-portal:
+    image: node:22-alpine
+    profiles: ["apps"]
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    volumes:
+      - ./apps/admin-portal:/app
+      - portal_node_modules:/app/node_modules
+    ports: ["3000:3000"]
+    depends_on:
+      platform-core: {condition: service_started}
+
 volumes:
   pgdata:
   miniodata:
+  portal_node_modules:

@@ -1,21 +1,30 @@
 # admin-portal
 
-Next.js administration portal for platform and tenant administrators: organization management, roles/permissions, configuration, and audit views — driven entirely by the platform-core API and its permission registry.
+Lacteva administration portal — Next.js 16 (App Router, TypeScript, Tailwind CSS 4, shadcn/ui on Base UI). Currently ships the SPRINT-001 bootstrap: a live platform-status dashboard polling `platform-core`'s readiness endpoint, with links to OpenAPI and metrics.
 
-**Status: scaffold pending (roadmap M2).** The scaffold is intentionally not hand-written — generate it with the official tooling so lockfiles and config are authentic:
+## Run
 
 ```bash
-cd apps/admin-portal
-npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --use-npm
-npx shadcn@latest init
+npm install
+npm run dev            # http://localhost:3000
+# or from the repo root: make portal   (containerized: part of `make dev`)
 ```
 
-Planned first slices (each maps to platform-core endpoints that already exist):
+Backend URL via `NEXT_PUBLIC_API_URL` (see `.env.example`; defaults to `http://localhost:8000`).
 
-1. Auth: login against `POST /v1/auth/token`, session via refresh flow; permission-aware navigation from `GET /v1/auth/me`.
-2. Organizations: list/create (`/v1/organizations`, requires `organization.manage`).
-3. Roles & assignments: `GET /v1/authz/permissions` renders the registry; role builder posts to `/v1/authz/roles`.
-4. Configuration editor: `/v1/config/{key}` with scope selection.
-5. Audit browser: `/v1/audit`.
+## Quality gates (CI-enforced)
 
-TODO(M2): generate a typed API client from platform-core's `/openapi.json` (openapi-typescript) — never hand-write API types.
+```bash
+npm run build
+npx eslint src --max-warnings 0
+```
+
+## Conventions
+
+- **Next.js 16**: conventions differ from older versions — consult `node_modules/next/dist/docs/` (notably: `params` is async in server components; strict `react-hooks/set-state-in-effect` lint).
+- **shadcn/ui wraps Base UI, not Radix**: no `asChild`; use the `render` prop or plain elements. Components live in `src/components/ui/` and are owned code — edit them.
+- **API types**: to be generated from platform-core's `/openapi.json` (roadmap M2) — never hand-written.
+
+## Planned next slices (M2, per DEVELOPMENT_ROADMAP.md)
+
+Auth (login via `POST /v1/auth/token`, session refresh, permission-aware nav from `/v1/auth/me`) → organizations → roles & assignments (rendering the permission registry) → configuration editor → audit browser.

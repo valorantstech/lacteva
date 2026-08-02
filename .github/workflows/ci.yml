@@ -39,6 +39,45 @@ jobs:
         run: uv run ruff format --check .
       - name: Tests
         run: uv run pytest
+      - name: Migrations apply cleanly
+        run: LACTEVA_DATABASE_URL=sqlite+aiosqlite:///./ci-migrate.db uv run alembic upgrade head
+
+  admin-portal:
+    name: admin-portal (build + lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/admin-portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/admin-portal/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Lint
+        run: npx eslint src --max-warnings 0
+
+  mobile:
+    name: mobile (analyze + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Analyze
+        run: flutter analyze
+      - name: Tests
+        run: flutter test
 
   platform-core-image:
     name: platform-core (docker build)
