@@ -19,7 +19,10 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.forbidden": "You do not have permission to perform this action.",
         "error.invalid_credentials": "Email or password is incorrect.",
         "error.validation": "The request is invalid.",
+        "error.invalid_token": "This link is invalid or has expired.",
         "notification.welcome.subject": "Welcome to Lacteva",
+        "notification.password_reset.subject": "Reset your Lacteva password",
+        "notification.invitation.subject": "You have been invited to Lacteva",
     },
     "sw": {  # Kiswahili — starter subset; full catalog is a market-pack task
         "error.not_found": "Rasilimali haikupatikana.",

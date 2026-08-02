@@ -4,7 +4,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from platform_core.api import deps
 from platform_core.api.deps import CurrentPrincipal, Principal, require_permission
@@ -15,9 +15,14 @@ from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.identity.schemas import RegisterUserCommand, UserView
 from platform_core.modules.identity.service import IdentityService
 from platform_core.modules.organization.service import (
+    BranchView,
     CreateOrganizationCommand,
+    InvitationService,
+    MembershipService,
     OrganizationService,
     OrganizationView,
+    StructureService,
+    WorkspaceView,
 )
 
 router = APIRouter(prefix="/v1")
@@ -55,6 +60,43 @@ async def refresh(
     body: RefreshRequest, service: Annotated[AuthService, Depends(deps.get_auth_service)]
 ) -> TokenPair:
     return await service.refresh(body.refresh_token)
+
+
+@auth.post("/logout", status_code=204)
+async def logout(
+    principal: CurrentPrincipal,
+    service: Annotated[AuthService, Depends(deps.get_auth_service)],
+) -> None:
+    await service.logout(principal.session_id, actor_id=principal.id)
+
+
+class PasswordResetRequest(BaseModel):
+    email: str
+    tenant_id: uuid.UUID | None = None
+
+
+@auth.post("/password-reset/request", status_code=202)
+async def request_password_reset(
+    body: PasswordResetRequest,
+    service: Annotated[AuthService, Depends(deps.get_auth_service)],
+) -> dict:
+    """Always 202 — never reveals whether the account exists. Delivery via
+    the notification channel (logging adapter until M2)."""
+    await service.request_password_reset(body.email, body.tenant_id)
+    return {"status": "accepted"}
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str = Field(min_length=10, max_length=128)
+
+
+@auth.post("/password-reset/confirm", status_code=204)
+async def confirm_password_reset(
+    body: PasswordResetConfirm,
+    service: Annotated[AuthService, Depends(deps.get_auth_service)],
+) -> None:
+    await service.confirm_password_reset(body.token, body.new_password)
 
 
 class MeView(BaseModel):
@@ -109,6 +151,124 @@ async def get_organization(
     _: Annotated[Principal, Depends(require_permission("organization.read"))],
 ) -> Any:
     return await service.get_organization(org_id)
+
+
+# --- Organization structure (workspaces, branches) ------------------------
+structure_router = APIRouter(tags=["organization-structure"])
+
+
+class CreateWorkspaceRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,78}[a-z0-9]$")
+
+
+@structure_router.post("/workspaces", response_model=WorkspaceView, status_code=201)
+async def create_workspace(
+    body: CreateWorkspaceRequest,
+    service: Annotated[StructureService, Depends(deps.get_structure_service)],
+    principal: Annotated[Principal, Depends(require_permission("organization.structure.manage"))],
+) -> Any:
+    return await service.create_workspace(name=body.name, slug=body.slug, actor_id=principal.id)
+
+
+@structure_router.get("/workspaces", response_model=list[WorkspaceView])
+async def list_workspaces(
+    service: Annotated[StructureService, Depends(deps.get_structure_service)],
+    _: Annotated[Principal, Depends(require_permission("organization.structure.read"))],
+) -> Any:
+    return await service.list_workspaces()
+
+
+class CreateBranchRequest(BaseModel):
+    workspace_id: uuid.UUID
+    name: str = Field(min_length=2, max_length=200)
+    code: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$")
+
+
+@structure_router.post("/branches", response_model=BranchView, status_code=201)
+async def create_branch(
+    body: CreateBranchRequest,
+    service: Annotated[StructureService, Depends(deps.get_structure_service)],
+    principal: Annotated[Principal, Depends(require_permission("organization.structure.manage"))],
+) -> Any:
+    return await service.create_branch(
+        workspace_id=body.workspace_id, name=body.name, code=body.code, actor_id=principal.id
+    )
+
+
+@structure_router.get("/branches", response_model=list[BranchView])
+async def list_branches(
+    service: Annotated[StructureService, Depends(deps.get_structure_service)],
+    _: Annotated[Principal, Depends(require_permission("organization.structure.read"))],
+) -> Any:
+    return await service.list_branches()
+
+
+# --- Members & invitations -------------------------------------------------
+member_router = APIRouter(tags=["members"])
+
+
+@member_router.get("/members")
+async def list_members(
+    service: Annotated[MembershipService, Depends(deps.get_membership_service)],
+    _: Annotated[Principal, Depends(require_permission("organization.member.read"))],
+) -> list[dict]:
+    return [
+        {
+            "user_id": str(m.user_id),
+            "status": m.status,
+            "joined_at": m.joined_at.isoformat(),
+        }
+        for m in await service.list_members()
+    ]
+
+
+class InviteRequest(BaseModel):
+    email: str
+    role_name: str = "tenant-viewer"
+
+
+@member_router.post("/invitations", status_code=201)
+async def create_invitation(
+    body: InviteRequest,
+    service: Annotated[InvitationService, Depends(deps.get_invitation_service)],
+    principal: Annotated[Principal, Depends(require_permission("organization.member.manage"))],
+) -> dict:
+    invitation, raw_token = await service.invite(
+        email=body.email, role_name=body.role_name, actor_id=principal.id
+    )
+    # FOUNDATION ONLY: token in the response until real delivery lands (M2).
+    return {
+        "id": str(invitation.id),
+        "email": invitation.email,
+        "expires_at": invitation.expires_at.isoformat(),
+        "invitation_token": raw_token,
+    }
+
+
+class AcceptInvitationRequest(BaseModel):
+    token: str
+    password: str = Field(min_length=10, max_length=128)
+    full_name: str = Field(min_length=1, max_length=200)
+
+
+@member_router.post("/invitations/accept", response_model=UserView, status_code=201)
+async def accept_invitation(
+    body: AcceptInvitationRequest,
+    service: Annotated[InvitationService, Depends(deps.get_invitation_service)],
+    identity: Annotated[IdentityService, Depends(deps.get_identity_service)],
+    authz: Annotated[AuthzService, Depends(deps.get_authz_service)],
+    membership: Annotated[MembershipService, Depends(deps.get_membership_service)],
+) -> Any:
+    """Public: how invited people join their organization."""
+    return await service.accept(
+        token=body.token,
+        password=body.password,
+        full_name=body.full_name,
+        identity=identity,
+        authz=authz,
+        membership=membership,
+    )
 
 
 # --- Authorization --------------------------------------------------------
@@ -208,5 +368,14 @@ async def list_audit(
     ]
 
 
-for sub in (auth, identity_router, org_router, authz_router, config_router, audit_router):
+for sub in (
+    auth,
+    identity_router,
+    org_router,
+    structure_router,
+    member_router,
+    authz_router,
+    config_router,
+    audit_router,
+):
     router.include_router(sub)

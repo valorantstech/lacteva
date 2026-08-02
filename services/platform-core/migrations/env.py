@@ -18,6 +18,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import platform_core.modules.audit.models
+import platform_core.modules.auth.models
 import platform_core.modules.authz.models
 import platform_core.modules.configuration.models
 import platform_core.modules.identity.models

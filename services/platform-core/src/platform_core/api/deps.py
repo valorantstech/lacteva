@@ -16,15 +16,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from platform_core.core.db import get_session
 from platform_core.core.errors import ForbiddenError, UnauthorizedError
 from platform_core.core.security import decode_token
-from platform_core.core.tenancy import set_current_tenant
+from platform_core.core.tenancy import get_current_tenant, set_current_tenant
 from platform_core.infrastructure.events import EventBus, get_event_bus
+from platform_core.infrastructure.notifications import get_notifier
 from platform_core.modules.audit.service import AuditService
+from platform_core.modules.auth.models import AuthSession
 from platform_core.modules.auth.service import AuthService
 from platform_core.modules.authz.service import AuthzService, PermissionEngine
 from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.identity.models import User
 from platform_core.modules.identity.service import IdentityService
-from platform_core.modules.organization.service import OrganizationService
+from platform_core.modules.organization.service import (
+    InvitationService,
+    MembershipService,
+    OrganizationService,
+    StructureService,
+)
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 Bus = Annotated[EventBus, Depends(get_event_bus)]
@@ -46,8 +53,20 @@ def get_identity_service(session: Session, bus: Bus, audit: Audit) -> IdentitySe
 Identity = Annotated[IdentityService, Depends(get_identity_service)]
 
 
-def get_auth_service(identity: Identity, audit: Audit) -> AuthService:
-    return AuthService(identity, audit)
+def get_membership_service(session: Session) -> MembershipService:
+    return MembershipService(session)
+
+
+def get_auth_service(session: Session, identity: Identity, audit: Audit, bus: Bus) -> AuthService:
+    return AuthService(session, identity, MembershipService(session), audit, bus, get_notifier())
+
+
+def get_structure_service(session: Session, bus: Bus, audit: Audit) -> StructureService:
+    return StructureService(session, bus, audit)
+
+
+def get_invitation_service(session: Session, bus: Bus, audit: Audit) -> InvitationService:
+    return InvitationService(session, bus, audit, get_notifier())
 
 
 def get_organization_service(session: Session, bus: Bus, audit: Audit) -> OrganizationService:
@@ -70,6 +89,7 @@ def get_configuration_service(session: Session, audit: Audit) -> ConfigurationSe
 class Principal:
     user: User
     tenant_id: uuid.UUID | None
+    session_id: uuid.UUID
 
     @property
     def id(self) -> uuid.UUID:
@@ -77,6 +97,7 @@ class Principal:
 
 
 async def get_current_principal(
+    session: Session,
     identity: Identity,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> Principal:
@@ -84,14 +105,33 @@ async def get_current_principal(
         raise UnauthorizedError()
     try:
         payload = decode_token(credentials.credentials, expected_type="access")
-    except pyjwt.InvalidTokenError as exc:
+        session_id = uuid.UUID(payload["sid"])
+    except (pyjwt.InvalidTokenError, KeyError, ValueError) as exc:
         raise UnauthorizedError() from exc
+    # Access tokens die with their session: logout/reset revokes immediately.
+    # TODO(M2): cache active-session lookups in Redis (one DB hit per request now).
+    auth_session = await session.get(AuthSession, session_id)
+    from platform_core.core.db import as_utc, utcnow
+
+    if (
+        auth_session is None
+        or auth_session.revoked_at is not None
+        or as_utc(auth_session.expires_at) < utcnow()
+    ):
+        raise UnauthorizedError()
     user = await identity.get_user(uuid.UUID(payload["sub"]))
     if not user.is_active:
         raise UnauthorizedError()
     tenant_id = uuid.UUID(payload["tenant_id"]) if payload.get("tenant_id") else None
-    set_current_tenant(tenant_id)  # token is authoritative over the header
-    return Principal(user=user, tenant_id=tenant_id)
+    if tenant_id is not None:
+        # Tenant-scoped tokens are authoritative — the header cannot override.
+        set_current_tenant(tenant_id)
+        principal_tenant = tenant_id
+    else:
+        # Platform-level principals may act inside a tenant via X-Tenant-ID
+        # (bootstrap/administration path, permission-guarded per route).
+        principal_tenant = get_current_tenant()
+    return Principal(user=user, tenant_id=principal_tenant, session_id=session_id)
 
 
 CurrentPrincipal = Annotated[Principal, Depends(get_current_principal)]

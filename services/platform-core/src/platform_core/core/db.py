@@ -28,6 +28,12 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def as_utc(dt: datetime) -> datetime:
+    """Normalize a stored datetime for comparison: SQLite returns naive
+    datetimes even for timezone-aware columns; all stored values are UTC."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 

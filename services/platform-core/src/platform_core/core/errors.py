@@ -45,6 +45,14 @@ class ForbiddenError(AppError):
     message_key = "error.forbidden"
 
 
+class InvalidTokenError(AppError):
+    """Invalid/expired one-time token (reset, invitation)."""
+
+    status_code = 400
+    code = "invalid_token"
+    message_key = "error.invalid_token"
+
+
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:

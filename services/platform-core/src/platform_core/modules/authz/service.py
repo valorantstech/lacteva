@@ -51,7 +51,11 @@ class AuthzService:
         self._session = session
 
     async def ensure_system_roles(self) -> None:
-        """Idempotent bootstrap of system roles (called at startup)."""
+        """Idempotent bootstrap/sync of system roles (called at startup).
+
+        Creates missing roles and adds newly registered permissions to
+        existing ones, so registry growth reaches running deployments.
+        """
         for name, perms in SYSTEM_ROLES.items():
             role = await self._session.scalar(
                 select(Role).where(Role.tenant_id.is_(None), Role.name == name)
@@ -60,7 +64,17 @@ class AuthzService:
                 role = Role(tenant_id=None, name=name, description=f"System role {name}")
                 self._session.add(role)
                 await self._session.flush()
-                for key in perms:
+            existing = set(
+                (
+                    await self._session.scalars(
+                        select(RolePermission.permission_key).where(
+                            RolePermission.role_id == role.id
+                        )
+                    )
+                ).all()
+            )
+            for key in perms:
+                if key not in existing:
                     self._session.add(RolePermission(role_id=role.id, permission_key=key))
 
     async def assign_role(
