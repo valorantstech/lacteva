@@ -3,7 +3,7 @@ id: INDEX
 title: Master Documentation Index
 type: reference
 status: Approved
-version: "1.4"
+version: "1.5"
 owner: Documentation Engineering
 created: 2026-08-02
 last-updated: 2026-08-03
@@ -22,6 +22,7 @@ Snapshot: 2026-08-02 — 87 markdown files (47 with formal document IDs, plus RE
 | --- | --- |
 | [`ARCHITECTURE_BASELINE_V1.md`](../ARCHITECTURE_BASELINE_V1.md) | **Official source of truth** — locked architecture + precedence rules |
 | [`docs/ai/CLAUDE_CONTEXT.md`](ai/CLAUDE_CONTEXT.md) | **Permanent AI-engineer onboarding guide** — read first when joining |
+| [`docs/03-architecture/01-business-layer/BUSINESS-RULES.md`](03-architecture/01-business-layer/BUSINESS-RULES.md) | **Business Rules Register** — source of truth for BR-NNNN platform invariants |
 | [`REPOSITORY_AUDIT.md`](../REPOSITORY_AUDIT.md) | Baseline-migration audit (findings F-A1…F-A6, health score) |
 | [`REPOSITORY_MIGRATION_PLAN.md`](../REPOSITORY_MIGRATION_PLAN.md) | Migration steps, manual-review queue MR-1…MR-8, deprecation ledger |
 | [`DEVELOPMENT_ROADMAP.md`](../DEVELOPMENT_ROADMAP.md) | Code implementation sequence M0–M4 |
@@ -158,6 +159,7 @@ Empty pending Phase 3–4 of the roadmap. Indexes: [API](06-api/README.md) · [D
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.5 | 2026-08-03 | Architecture Board | Added the Business Rules Register (BR-REGISTER, business layer). |
 | 1.4 | 2026-08-03 | Engineering | Added docs/ai/CLAUDE_CONTEXT.md (permanent AI-engineer onboarding guide). |
 | 1.3 | 2026-08-02 | Lacteva Collect Product Team | Added 13-products section (Lacteva Collect package: PSP-0001…0010, PDT-0001); refreshed version columns. |
 | 1.2 | 2026-08-02 | Documentation Engineering | Added navigation page, XREF map, QR-0005/0006; own Change Log section added (validator finding). |

@@ -469,8 +469,8 @@ class PricingMatrixService:
     async def _require_no_overlap(
         self, matrix_id: uuid.UUID, cmd: RowInput, *, exclude_row_id: uuid.UUID | None = None
     ) -> None:
-        """Active bands must not overlap (duplicates are total overlaps).
-        Inactive rows are parked data and do not participate."""
+        """BR-0004: active bands must never overlap (duplicates are total
+        overlaps). Inactive rows are parked data and do not participate."""
         if not cmd.active:
             return
         for other in await self._rows(matrix_id):

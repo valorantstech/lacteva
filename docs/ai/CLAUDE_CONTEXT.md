@@ -3,7 +3,7 @@ id: CLAUDE-CONTEXT
 title: Lacteva AI Engineering Context — Permanent Onboarding Guide
 type: reference
 status: Approved
-version: "1.1"
+version: "1.2"
 owner: Engineering
 created: 2026-08-03
 last-updated: 2026-08-03
@@ -49,6 +49,7 @@ baseline: ARCH-BASELINE-V1
 - **Modular monolith.** One deployable (`services/platform-core`), many modules. Modules are the future service seams; the split criteria live in the roadmap. Do not extract services prematurely; do not couple modules so they cannot be extracted.
 - **Relay / transactional outbox (SPRINT-008A).** The DI-injected `Bus` is `OutboxEventBus`: publishing writes an `event_outbox` row *inside the caller's transaction*. Rollback discards the event with the business change; commit guarantees delivery (dispatcher → CAS claim → retry with exponential backoff → dead-letter queue → replay). The event id is the message id is the idempotency key. **Never bypass it** — `get_event_bus()` is the transport, not the API.
 - **Test-first mindset.** Behavior is specified by API-level tests against an in-memory stack (SQLite + in-memory bus + inline outbox — no infrastructure needed). Every work order sets a minimum test count; every bug fix lands with a regression test; the suite is green on every commit.
+- **Business rules are register-defined.** The [Business Rules Register](../03-architecture/01-business-layer/BUSINESS-RULES.md) (`BR-NNNN` IDs) is the source of truth for platform invariants — BR-0001 published-card immutability, BR-0002 single active card per scope, BR-0003 exactly-one resolution, BR-0004 non-overlapping bands, and growing. New rules get a register entry, enforcing code citing the ID, and verifying tests in the same change; register↔code divergence is a defect.
 - **Business objects & canonical data model.** One canonical model per concept, owned by one module (Supplier by `supplier`, RateCard by `pricing`, …). Other modules reference by id and consume events. Immutability is a first-class state: completed milk transactions, published rate cards, and active matrices are never edited — corrections are new versions or (future) adjustment transactions.
 - **Concurrency by CAS.** State transitions that must not race use `UPDATE … WHERE status = <expected>` with a rowcount check (transaction accept/reject, rate card publish, outbox claim). Prefer this over `SELECT FOR UPDATE` — it is portable to the SQLite test stack.
 
@@ -194,5 +195,6 @@ Current test posture: **196 backend tests, 15 Flutter widget tests**, portal bui
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-08-03 | Engineering | Business Rules Register (BR-NNNN) added to the engineering philosophy as the source of truth for platform invariants. |
 | 1.1 | 2026-08-03 | Engineering | PRC-003 Pricing Resolution Engine recorded (module table, evolution §7 item 13, roadmap next = PRC-004 Pricing Calculator). |
 | 1.0 | 2026-08-03 | Engineering (AI context initialization work order) | Initial permanent onboarding guide: vision, philosophies, architecture, structure, standards, history, roadmap, prohibitions, AI working instructions, future vision, divergence register. |

@@ -1,9 +1,10 @@
 # Layer 01 — Business Layer
 
-What the business does and how work flows through it. Two artifact families:
+What the business does and how work flows through it. Three artifact families:
 
 - **Business capabilities (`CAP`)** — the stable abilities. They live in [`docs/05-capabilities/`](../../05-capabilities/README.md) (their own documentation domain, established before this workspace) and are *referenced* from here, never duplicated.
 - **Business processes (`BPR`)** — this folder. Ordered flows of work that exercise capabilities to produce an outcome: e.g. "morning collection round", "monthly settlement run", "new member onboarding". A capability is an ability; a process is a journey through abilities.
+- **Business rules (`BR-NNNN`)** — the [Business Rules Register](BUSINESS-RULES.md), this folder. Normative invariants the platform enforces (e.g. BR-0001 "A published Rate Card is immutable"). The register is the source of truth; code cites rule IDs beside the enforcing guards.
 
 ## Capability vs Process — the boundary
 

@@ -3,10 +3,10 @@ id: STD-0003
 title: Document Numbering Conventions
 type: standard
 status: Approved
-version: "1.3"
+version: "1.4"
 owner: Architecture Board
 created: 2026-08-02
-last-updated: 2026-08-02
+last-updated: 2026-08-03
 baseline: ARCH-BASELINE-V1
 ---
 
@@ -79,6 +79,10 @@ Within requirements documents, individual requirements get stable sub-IDs:
 
 These sub-IDs are the anchor for traceability matrices linking BRD → PRD → SRS → design → tests.
 
+### Business rule IDs (`BR-NNNN`)
+
+Platform business rules carry permanent identifiers `BR-NNNN`. Like capability IDs, they identify *entries in a register*, not standalone documents: the source of truth is the [Business Rules Register](../03-architecture/01-business-layer/BUSINESS-RULES.md) (`docs/03-architecture/01-business-layer/BUSINESS-RULES.md`). Numbers are allocated by appending to the register, are never reused, and are cited from code (`# BR-NNNN` beside the enforcing guard), tests, and documents.
+
 ## 6. Citing Documents
 
 - In prose: link the ID on first mention (pattern `[<DOC-ID>](<relative-path>.md)`); plain ID text thereafter.
@@ -88,6 +92,7 @@ These sub-IDs are the anchor for traceability matrices linking BRD → PRD → S
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.4 | 2026-08-03 | Architecture Board | Registered the `BR-NNNN` business-rule identifier scheme (register-entry IDs, source of truth: business-layer BUSINESS-RULES.md). |
 | 1.3 | 2026-08-02 | Documentation Engineering | Registered `PSP` prefix for product specification packages (`docs/13-products/`). |
 | 1.2 | 2026-08-02 | Architecture Board | Registered 11 Enterprise Architecture prefixes (CON, BPR, AGG, ENT, VAL, REP, POL, SPC, PSV, PDT, AGT) with the EA workspace. |
 | 1.1 | 2026-08-02 | Documentation Engineering | Added `QR` prefix for quality review reports; editorial link-example fix (QR-0001 finding). |

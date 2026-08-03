@@ -6,10 +6,12 @@ decision layer between master pricing data and the future Pricing
 Calculator (PRC-004). It calculates nothing, mutates nothing, and emits no
 events.
 
-Rule: exactly one published rate card, one active matrix, one active band
-must match. Zero matches raise a structured business exception naming the
-failing stage; multiple matches raise a business *integrity* exception.
-The engine never silently chooses and never guesses.
+BR-0003 (see docs/03-architecture/01-business-layer/BUSINESS-RULES.md):
+exactly one published rate card, one active matrix, one active band must
+match. Zero matches raise a structured business exception naming the
+failing stage; multiple matches raise a business *integrity* exception
+(defending BR-0002/BR-0004 at read time). The engine never silently
+chooses and never guesses.
 """
 
 import uuid

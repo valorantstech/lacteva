@@ -472,8 +472,8 @@ class RateCardService:
     async def _assert_no_published_overlap(
         self, card: RateCard, center_ids: list[uuid.UUID], product_codes: list[str]
     ) -> None:
-        """Only one published version may be active for a given collection
-        center + product + effective date combination."""
+        """BR-0002: only one published rate card may be active for the same
+        scope — (collection center, product) with overlapping effective dates."""
         stmt = (
             select(RateCard)
             .join(RateCardCenterAssignment, RateCardCenterAssignment.rate_card_id == RateCard.id)
@@ -627,6 +627,8 @@ class RateCardService:
 
     @staticmethod
     def _require_draft(card: RateCard) -> None:
+        # BR-0001: a published rate card is immutable (docs/03-architecture/
+        # 01-business-layer/BUSINESS-RULES.md); editing already ends at submission.
         if card.status == "published":
             raise ConflictError("published rate cards are immutable — create a new version")
         if card.status != "draft":
