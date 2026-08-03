@@ -621,6 +621,92 @@ export const collectSettlementPeriod = (id: string) =>
 export const settlementAction = (id: string, action: string) =>
   api<Settlement>(`/v1/settlements/${id}/${action}`, { method: "POST", body: "{}" });
 
+// --- Reports (read-only summaries) ------------------------------------------
+
+export type DailyCollectionSummary = {
+  date_from: string;
+  date_to: string;
+  transactions: number;
+  accepted: number;
+  rejected: number;
+  cancelled: number;
+  in_progress: number;
+  suppliers_served: number;
+  total_net_weight_kg: number;
+  payable_by_currency: Record<string, string | number>;
+  unpriced_accepted: number;
+  weighted_avg_fat: number | null;
+  weighted_avg_snf: number | null;
+};
+
+export type CenterSummaryRow = {
+  center_id: string;
+  center_code: string;
+  center_name: string;
+  transactions: number;
+  accepted: number;
+  total_net_weight_kg: number;
+  payable_amount: string | number;
+  currency: string | null;
+  weighted_avg_fat: number | null;
+};
+
+export type SupplierSummaryRow = {
+  supplier_id: string;
+  supplier_code: string;
+  supplier_name: string;
+  deliveries: number;
+  accepted: number;
+  total_net_weight_kg: number;
+  payable_amount: string | number;
+  currency: string | null;
+  weighted_avg_fat: number | null;
+};
+
+export type ReportPage<T> = { items: T[]; total: number; limit: number; offset: number };
+
+export type SettlementReport = {
+  by_status: { status: string; count: number; net_amount: string | number }[];
+  finalized_net_total: string | number;
+  total_settlements: number;
+  total_lines: number;
+};
+
+export type PricingReport = {
+  priced_transactions: number;
+  unpriced_transactions: number;
+  gross_by_currency: Record<string, string | number>;
+  avg_unit_price: number | null;
+  min_unit_price: string | number | null;
+  max_unit_price: string | number | null;
+  published_rate_cards: number;
+  active_matrices: number;
+  active_bands: number;
+};
+
+const reportQuery = (params: Record<string, string | undefined>) => {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) if (value) search.set(key, value);
+  return search.toString();
+};
+
+export const getDailyReport = (params: Record<string, string | undefined>) =>
+  api<DailyCollectionSummary>(`/v1/reports/collection/daily?${reportQuery(params)}`);
+
+export const getCenterReport = (params: Record<string, string | undefined>) =>
+  api<ReportPage<CenterSummaryRow>>(`/v1/reports/collection/by-center?${reportQuery(params)}`);
+
+export const getSupplierReport = (params: Record<string, string | undefined>) =>
+  api<ReportPage<SupplierSummaryRow>>(
+    `/v1/reports/collection/by-supplier?${reportQuery(params)}`,
+  );
+
+export const getSettlementReport = (params: Record<string, string | undefined>) =>
+  api<SettlementReport>(`/v1/reports/settlements?${reportQuery(params)}`);
+
+export const getPricingReport = (params: Record<string, string | undefined>) =>
+  api<PricingReport>(`/v1/reports/pricing?${reportQuery(params)}`);
+
 // --- Milk transactions ------------------------------------------------------
 
 export type MilkTransaction = {

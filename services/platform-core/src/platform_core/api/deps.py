@@ -41,6 +41,7 @@ from platform_core.modules.pricing.calculator import PricingCalculationService
 from platform_core.modules.pricing.matrix import PricingMatrixService
 from platform_core.modules.pricing.resolution import PricingResolutionService
 from platform_core.modules.pricing.service import RateCardService
+from platform_core.modules.reporting.service import ReportingService
 from platform_core.modules.settlement.service import SettlementService
 from platform_core.modules.supplier.service import SupplierService
 
@@ -140,6 +141,11 @@ def get_pricing_calculation_service(
     session: Session, bus: Bus, audit: Audit
 ) -> PricingCalculationService:
     return PricingCalculationService(session, bus, ConfigurationService(session, audit))
+
+
+def get_reporting_service(session: Session) -> ReportingService:
+    # Read-only: no bus, no audit — reports mutate nothing.
+    return ReportingService(session)
 
 
 def get_settlement_service(session: Session, bus: Bus, audit: Audit) -> SettlementService:

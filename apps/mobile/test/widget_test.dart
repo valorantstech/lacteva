@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lacteva_mobile/main.dart';
 import 'package:lacteva_mobile/src/api.dart';
+import 'package:lacteva_mobile/src/center_summary.dart';
 import 'package:lacteva_mobile/src/centers.dart';
 import 'package:lacteva_mobile/src/collection_wizard.dart';
 import 'package:lacteva_mobile/src/pricing_matrices.dart';
@@ -311,6 +312,19 @@ void main() {
     expect(find.textContaining('cannot be undone'), findsOneWidget);
   });
 
+  testWidgets('center today summary shows tiles and pricing warning',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: CenterTodayScreen(client: _ReportFake(), centerId: 'c1')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('40.0 kg'), findsOneWidget);
+    expect(find.text('1725.00 KES'), findsOneWidget);
+    expect(find.text('2 / 1'), findsOneWidget);
+    expect(find.text('3.94'), findsOneWidget);
+    expect(find.text('1 accepted without pricing'), findsOneWidget);
+  });
+
   testWidgets('edit form shows timezone instead of code', (tester) async {
     final center = CenterSummary(
       id: 'c1',
@@ -493,6 +507,22 @@ class _ResolveFake extends ApiClient {
               detail: 'HALF_UP to 2 decimal place(s)',
               values: const {'rounded_amount': '5647.50'}),
         ],
+      );
+}
+
+class _ReportFake extends ApiClient {
+  @override
+  Future<DailySummaryView> dailyReport(String centerId) async =>
+      DailySummaryView(
+        transactions: 3,
+        accepted: 2,
+        rejected: 1,
+        suppliersServed: 1,
+        totalNetWeightKg: 40.0,
+        payable: '1725.00 KES',
+        unpricedAccepted: 1,
+        avgFat: 3.94,
+        avgSnf: 8.5,
       );
 }
 

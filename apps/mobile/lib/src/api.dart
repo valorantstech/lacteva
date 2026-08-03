@@ -370,6 +370,14 @@ class ApiClient {
     await _send('DELETE', '/v1/pricing-matrices/$matrixId/rows/$rowId');
   }
 
+  /// Lightweight center summary for operators (REP-001). Defaults to today.
+  Future<DailySummaryView> dailyReport(String centerId) async {
+    final result = await _send(
+            'GET', '/v1/reports/collection/daily?center_id=$centerId')
+        as Map<String, dynamic>;
+    return DailySummaryView.fromJson(result);
+  }
+
   Future<SettlementPageResult> listSettlements({
     String query = '',
     String status = '',
@@ -810,6 +818,47 @@ class MatrixDetailResult {
   final List<MatrixRowView> rows;
   final List<Map<String, dynamic>> gaps;
   final bool editable;
+}
+
+class DailySummaryView {
+  DailySummaryView({
+    required this.transactions,
+    required this.accepted,
+    required this.rejected,
+    required this.suppliersServed,
+    required this.totalNetWeightKg,
+    required this.payable,
+    required this.unpricedAccepted,
+    required this.avgFat,
+    required this.avgSnf,
+  });
+
+  factory DailySummaryView.fromJson(Map<String, dynamic> json) {
+    final payableMap = (json['payable_by_currency'] as Map<String, dynamic>);
+    return DailySummaryView(
+      transactions: json['transactions'] as int,
+      accepted: json['accepted'] as int,
+      rejected: json['rejected'] as int,
+      suppliersServed: json['suppliers_served'] as int,
+      totalNetWeightKg: (json['total_net_weight_kg'] as num).toDouble(),
+      payable: payableMap.entries
+          .map((e) => '${e.value} ${e.key}')
+          .join(' · '),
+      unpricedAccepted: json['unpriced_accepted'] as int,
+      avgFat: (json['weighted_avg_fat'] as num?)?.toDouble(),
+      avgSnf: (json['weighted_avg_snf'] as num?)?.toDouble(),
+    );
+  }
+
+  final int transactions;
+  final int accepted;
+  final int rejected;
+  final int suppliersServed;
+  final double totalNetWeightKg;
+  final String payable;
+  final int unpricedAccepted;
+  final double? avgFat;
+  final double? avgSnf;
 }
 
 class SettlementSummary {

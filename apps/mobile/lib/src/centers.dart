@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'center_summary.dart';
 import 'collection_wizard.dart';
 import 'pricing_resolution.dart';
 import 'rate_cards.dart';
@@ -534,6 +535,16 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => ReadinessScreen(
+                    client: widget.client, centerId: widget.centerId),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.insights_outlined),
+            tooltip: "Today's summary",
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => CenterTodayScreen(
                     client: widget.client, centerId: widget.centerId),
               ),
             ),

@@ -55,6 +55,9 @@ export default function RootLayout({
             <a className="text-muted-foreground hover:text-foreground" href="/settlements">
               Settlements
             </a>
+            <a className="text-muted-foreground hover:text-foreground" href="/reports">
+              Reports
+            </a>
             <a className="ml-auto text-muted-foreground hover:text-foreground" href="/login">
               Sign in
             </a>

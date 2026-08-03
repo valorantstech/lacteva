@@ -3,7 +3,7 @@ id: CLAUDE-CONTEXT
 title: Lacteva AI Engineering Context — Permanent Onboarding Guide
 type: reference
 status: Approved
-version: "1.6"
+version: "1.7"
 owner: Engineering
 created: 2026-08-03
 last-updated: 2026-08-04
@@ -136,6 +136,8 @@ The repository was built in strictly ordered phases — documentation first, pla
 14. **PRC-004 Pricing Calculator.** The first monetary calculation: pure deterministic domain service computing gross = unit price × quantity in Decimal only (float factors rejected by type guard), configurable rounding (HALF_UP default / HALF_EVEN / DOWN; request → tenant config → default), complete 4-step trace with exact raw amounts, server-side re-verification of the resolved band (clients send row ids, never prices), `pricing.calculated.v1` through the outbox; stateless — the event is the record. Rules BR-0005…0007 catalogued.
 15. **SET-001 Settlement Foundation.** The `settlement` module: supplier+center+period payables whose lines are built from the durable calculation events (via `RelayService.find_aggregate_event` — amounts never client-supplied), exact `Money.plus` totals with a finalize-time integrity gate, draft→calculated→finalized (CAS, immutable) plus history-preserving cancel that releases calculations and periods; supplier-wide period-overlap ban; Numeric money columns (first schema under the new precision policy); BR-0008…0012. No payment (SET-002).
 16. **MVP-001 End-to-End Procurement Integration.** No new modules — the seams closed: milk transactions invoke resolution (FAT) + calculator at their pricing step (never blocking collection; `pricing_unavailable` degrades gracefully) and persist verified amounts + `calculation_id`; settlements bulk-collect eligible period transactions idempotently; the `awaiting_pricing_engine` placeholder is retired. Portal global nav + procurement dashboard; wizard shows payable amounts. `test_procurement_e2e.py` proves the whole journey including the event chain and audit trail.
+17. **REP-001 Reporting Foundation.** Read-only `reporting` module: SQL aggregation over live transactional data (documented boundary exception — owns nothing, writes nothing), five `/v1/reports` endpoints (daily, by-center, by-supplier, settlements, pricing) with weighted quality averages and fixed query budgets; portal /reports section; mobile "Today" center summary.
+
 
 Current test posture: **196 backend tests, 15 Flutter widget tests**, portal build+lint, docs validator + XREF — all green, enforced by CI, verified before every commit.
 
@@ -200,6 +202,7 @@ Current test posture: **196 backend tests, 15 Flutter widget tests**, portal bui
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.7 | 2026-08-04 | Engineering | REP-001 Reporting Foundation recorded (reporting module, /v1/reports, boundary-exception decision). |
 | 1.6 | 2026-08-04 | Engineering | Master multi-platform roadmap recorded (Procurement→Processing→Inventory→Sales→AI→Finance→Enterprise; MVP completes with Reporting/Offline/Notifications/Payments). |
 | 1.5 | 2026-08-04 | Engineering | MVP-001 integration recorded: milk→pricing→settlement wired end-to-end; `awaiting_pricing_engine` retired. |
 | 1.4 | 2026-08-04 | Engineering | SET-001 Settlement Foundation recorded (settlement module, BR-0008…0012, Money.plus); roadmap next = SET-002 / PRC-005. |

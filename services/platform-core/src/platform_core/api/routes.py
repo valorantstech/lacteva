@@ -97,6 +97,13 @@ from platform_core.modules.pricing.service import (
     RateCardService,
     RateCardView,
 )
+from platform_core.modules.reporting.service import (
+    DailyCollectionSummary,
+    PricingSummary,
+    ReportingService,
+    SettlementSummary,
+    SummaryPage,
+)
 from platform_core.modules.settlement.service import (
     AddCalculationCommand,
     CreateSettlementCommand,
@@ -1233,6 +1240,90 @@ async def cancel_settlement(
     return (await service.detail(settlement.id)).settlement
 
 
+# --- Reports (read-only operational summaries — REP-001) --------------------
+report_router = APIRouter(prefix="/reports", tags=["reporting"])
+ReportRead = Annotated[Principal, Depends(require_permission("reporting.read"))]
+ReportSvc = Annotated[ReportingService, Depends(deps.get_reporting_service)]
+
+
+@report_router.get("/collection/daily", response_model=DailyCollectionSummary)
+async def report_daily_collection(
+    service: ReportSvc,
+    _: ReportRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    center_id: uuid.UUID | None = None,
+    branch_id: uuid.UUID | None = None,
+    supplier_id: uuid.UUID | None = None,
+) -> DailyCollectionSummary:
+    """Answers: milk collected, payable amount, accepted/rejected counts,
+    weighted average FAT/SNF — defaults to today."""
+    return await service.daily_summary(
+        date_from=date_from,
+        date_to=date_to,
+        center_id=center_id,
+        branch_id=branch_id,
+        supplier_id=supplier_id,
+    )
+
+
+@report_router.get("/collection/by-center", response_model=SummaryPage)
+async def report_collection_by_center(
+    service: ReportSvc,
+    _: ReportRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    branch_id: uuid.UUID | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> SummaryPage:
+    """Per-center collection totals, ordered by milk collected (desc)."""
+    return await service.center_summary(
+        date_from=date_from, date_to=date_to, branch_id=branch_id, limit=limit, offset=offset
+    )
+
+
+@report_router.get("/collection/by-supplier", response_model=SummaryPage)
+async def report_collection_by_supplier(
+    service: ReportSvc,
+    _: ReportRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    center_id: uuid.UUID | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> SummaryPage:
+    """Per-supplier collection totals, ordered by milk supplied (desc)."""
+    return await service.supplier_summary(
+        date_from=date_from, date_to=date_to, center_id=center_id, limit=limit, offset=offset
+    )
+
+
+@report_router.get("/settlements", response_model=SettlementSummary)
+async def report_settlements(
+    service: ReportSvc,
+    _: ReportRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    supplier_id: uuid.UUID | None = None,
+    center_id: uuid.UUID | None = None,
+) -> SettlementSummary:
+    return await service.settlement_summary(
+        date_from=date_from, date_to=date_to, supplier_id=supplier_id, center_id=center_id
+    )
+
+
+@report_router.get("/pricing", response_model=PricingSummary)
+async def report_pricing(
+    service: ReportSvc,
+    _: ReportRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    center_id: uuid.UUID | None = None,
+) -> PricingSummary:
+    return await service.pricing_summary(date_from=date_from, date_to=date_to, center_id=center_id)
+
+
 # --- Event relay (internal platform operations) -----------------------------
 relay_router = APIRouter(prefix="/_relay", tags=["event-relay"])
 RelayOps = Annotated[Principal, Depends(require_permission("platform.relay.manage"))]
@@ -1389,6 +1480,7 @@ for sub in (
     pricing_router,
     matrix_router,
     settlement_router,
+    report_router,
     relay_router,
     authz_router,
     config_router,
