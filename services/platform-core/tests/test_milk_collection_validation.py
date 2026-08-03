@@ -234,7 +234,7 @@ async def test_mock_analyzer_adapter_fills_quality(client):
     body = r.json()
     assert 3.0 <= body["fat"] <= 6.5
     assert 7.5 <= body["snf"] <= 9.5
-    assert body["pricing_status"] == "awaiting_pricing_engine"
+    assert body["pricing_status"] == "pricing_unavailable"  # no rate card in fixture
 
 
 # --- list & audit ------------------------------------------------------------

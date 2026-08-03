@@ -13,6 +13,14 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+type Overview = {
+  centers: number;
+  suppliers: number;
+  transactions: number;
+  draftSettlements: number;
+  finalizedSettlements: number;
+};
+
 type Readiness = {
   status: "ok" | "degraded";
   checks: Record<string, boolean>;
@@ -26,6 +34,45 @@ type PlatformStatus =
 export default function Home() {
   const [status, setStatus] = useState<PlatformStatus>({ state: "loading" });
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
+  const [overview, setOverview] = useState<Overview | null>(null);
+
+  const loadOverview = useCallback(async () => {
+    // Procurement snapshot — only renders when a session token exists.
+    const token =
+      typeof window !== "undefined" ? window.localStorage.getItem("lacteva.access_token") : null;
+    if (!token) return;
+    const count = async (path: string) => {
+      const res = await fetch(`${API_URL}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      return ((await res.json()) as { total: number }).total;
+    };
+    try {
+      const [centers, suppliers, transactions, drafts, finalized] = await Promise.all([
+        count("/v1/collection-centers?limit=1&offset=0"),
+        count("/v1/suppliers?limit=1&offset=0"),
+        count("/v1/milk-transactions?limit=1&offset=0"),
+        count("/v1/settlements?status=draft&limit=1&offset=0"),
+        count("/v1/settlements?status=finalized&limit=1&offset=0"),
+      ]);
+      setOverview({
+        centers,
+        suppliers,
+        transactions,
+        draftSettlements: drafts,
+        finalizedSettlements: finalized,
+      });
+    } catch {
+      setOverview(null); // not signed in for this tenant — hide the row
+    }
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => void loadOverview(), 0);
+    return () => clearTimeout(t);
+  }, [loadOverview]);
 
   const refresh = useCallback(async () => {
     try {
@@ -59,13 +106,36 @@ export default function Home() {
             Lacteva Admin Portal
           </h1>
           <p className="text-sm text-muted-foreground">
-            Platform bootstrap — SPRINT-001
+            Procurement operations dashboard
           </p>
         </div>
         <Button variant="outline" onClick={() => void refresh()}>
           Refresh
         </Button>
       </header>
+
+      {overview && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          {(
+            [
+              ["Centers", overview.centers, "/centers"],
+              ["Suppliers", overview.suppliers, "/suppliers"],
+              ["Transactions", overview.transactions, "/transactions"],
+              ["Draft settlements", overview.draftSettlements, "/settlements"],
+              ["Finalized", overview.finalizedSettlements, "/settlements"],
+            ] as const
+          ).map(([label, value, href]) => (
+            <a key={label} href={href}>
+              <Card className="transition-colors hover:bg-muted/50">
+                <CardContent className="pt-4">
+                  <p className="text-2xl font-semibold">{value}</p>
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                </CardContent>
+              </Card>
+            </a>
+          ))}
+        </div>
+      )}
 
       <Card>
         <CardHeader>

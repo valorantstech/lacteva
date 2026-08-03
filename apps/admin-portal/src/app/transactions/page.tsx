@@ -159,6 +159,7 @@ export default function TransactionsPage() {
                 <TableHead className="text-right">Net kg</TableHead>
                 <TableHead className="text-right">FAT</TableHead>
                 <TableHead className="text-right">SNF</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
                 <TableHead className="text-right">Timeline</TableHead>
               </TableRow>
             </TableHeader>
@@ -173,6 +174,9 @@ export default function TransactionsPage() {
                   <TableCell className="text-right">{t.net_weight ?? "—"}</TableCell>
                   <TableCell className="text-right">{t.fat ?? "—"}</TableCell>
                   <TableCell className="text-right">{t.snf ?? "—"}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap">
+                    {t.gross_amount != null ? `${t.gross_amount} ${t.currency ?? ""}` : "—"}
+                  </TableCell>
                   <TableCell className="text-right">
                     <Button size="sm" variant="outline" onClick={() => openDetail(t)}>
                       View
@@ -182,7 +186,7 @@ export default function TransactionsPage() {
               ))}
               {page && page.items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
                     No transactions match.
                   </TableCell>
                 </TableRow>
@@ -202,6 +206,10 @@ export default function TransactionsPage() {
             <CardDescription>
               {detail.tx.id} · net {detail.tx.net_weight ?? "—"} kg ·{" "}
               {detail.tx.pricing_status ?? "no pricing"}
+              {detail.tx.gross_amount != null
+                ? ` · ${detail.tx.unit_price}/kg → ${detail.tx.gross_amount} ${detail.tx.currency}`
+                : ""}
+              {detail.tx.pricing_detail ? ` · ${detail.tx.pricing_detail}` : ""}
               {detail.tx.rejected_reason
                 ? ` · rejected: ${detail.tx.rejected_reason}`
                 : ""}

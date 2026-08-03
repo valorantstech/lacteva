@@ -28,6 +28,7 @@ import {
   SettlementPageResult,
   Supplier,
   addSettlementCalculation,
+  collectSettlementPeriod,
   createSettlement,
   getSettlementDetail,
   listCenters,
@@ -380,6 +381,23 @@ function SettlementDetailCard({
 
         {editable && (
           <div className="flex items-end gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                try {
+                  const result = await collectSettlementPeriod(s.id);
+                  onError(
+                    `Collected: ${result.added} added, ${result.skipped} skipped`,
+                  );
+                  await onRefresh();
+                } catch (err) {
+                  onError(err instanceof ApiError ? err.detail : "Collect failed");
+                }
+              }}
+            >
+              Collect period transactions
+            </Button>
             <div className="flex flex-col gap-1">
               <Label htmlFor="s-calc">Pricing calculation ID</Label>
               <Input

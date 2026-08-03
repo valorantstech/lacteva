@@ -3,7 +3,7 @@ id: CLAUDE-CONTEXT
 title: Lacteva AI Engineering Context — Permanent Onboarding Guide
 type: reference
 status: Approved
-version: "1.4"
+version: "1.5"
 owner: Engineering
 created: 2026-08-03
 last-updated: 2026-08-03
@@ -135,6 +135,7 @@ The repository was built in strictly ordered phases — documentation first, pla
 13. **PRC-003 Pricing Resolution Engine.** Read-side selection: (center, product, date, dimension, reading) → exactly one published card → one active matrix → one band, via a fixed 3-query pipeline with an explicit reusable repository; structured `pricing_no_match` (stage/reason/inputs) and `pricing_integrity` (candidates) exceptions — never a silent choice; platform `Money`/`Quantity` value objects introduced (arithmetic-free until PRC-004). Portal playground + mobile test screen.
 14. **PRC-004 Pricing Calculator.** The first monetary calculation: pure deterministic domain service computing gross = unit price × quantity in Decimal only (float factors rejected by type guard), configurable rounding (HALF_UP default / HALF_EVEN / DOWN; request → tenant config → default), complete 4-step trace with exact raw amounts, server-side re-verification of the resolved band (clients send row ids, never prices), `pricing.calculated.v1` through the outbox; stateless — the event is the record. Rules BR-0005…0007 catalogued.
 15. **SET-001 Settlement Foundation.** The `settlement` module: supplier+center+period payables whose lines are built from the durable calculation events (via `RelayService.find_aggregate_event` — amounts never client-supplied), exact `Money.plus` totals with a finalize-time integrity gate, draft→calculated→finalized (CAS, immutable) plus history-preserving cancel that releases calculations and periods; supplier-wide period-overlap ban; Numeric money columns (first schema under the new precision policy); BR-0008…0012. No payment (SET-002).
+16. **MVP-001 End-to-End Procurement Integration.** No new modules — the seams closed: milk transactions invoke resolution (FAT) + calculator at their pricing step (never blocking collection; `pricing_unavailable` degrades gracefully) and persist verified amounts + `calculation_id`; settlements bulk-collect eligible period transactions idempotently; the `awaiting_pricing_engine` placeholder is retired. Portal global nav + procurement dashboard; wizard shows payable amounts. `test_procurement_e2e.py` proves the whole journey including the event chain and audit trail.
 
 Current test posture: **196 backend tests, 15 Flutter widget tests**, portal build+lint, docs validator + XREF — all green, enforced by CI, verified before every commit.
 
@@ -142,7 +143,7 @@ Current test posture: **196 backend tests, 15 Flutter widget tests**, portal bui
 
 - **Current milestone (platform):** between M0 and M1 — outbox (M1 item) and clients (M2 scaffolds) landed early by sprint order; remaining M1 hardening: consumer framework, Postgres RLS, Redis caching/throttling, RS256, bootstrap flow, real notification channels.
 - **Current platform / product:** Procurement → **Pricing Platform → Rate Management**.
-- **SET-001 (Settlement Foundation) is delivered**; next per work orders: **SET-002 — Payment Engine** (paying finalized settlements) and/or **PRC-005 — Bonus Engine** (adjustments composing on the calculator's gross — the settlement `adjustments_amount` placeholder is their landing zone). The milk transaction's `awaiting_pricing_engine` placeholder remains unwired by design; multi-dimension combination policy and matrix completeness gates remain open.
+- **MVP-001 (End-to-End Procurement Integration) is delivered** — the full journey login→collection→auto-pricing→settlement→finalize runs and is E2E-tested; the `awaiting_pricing_engine` placeholder is retired (milk prices on FAT until the multi-dimension policy lands). Next per work orders: **SET-002 — Payment Engine** and/or **PRC-005 — Bonus Engine** (the settlement `adjustments_amount` placeholder is their landing zone). Still open: consumer framework (SPRINT-008B), offline sync, multi-dimension combination policy, matrix completeness gates.
 - **Pricing epic ahead (names may evolve per work order):** rate tables/versioning/assignment/approval refinements → Formula Engine → Bonus Engine → Penalty Engine → Tax Engine → Simulation → the Pricing Calculator that finally feeds `milk_collection`'s `awaiting_pricing_engine` placeholder.
 - **Parallel debt queue:** SPRINT-008B consumer framework; offline sync engine for Flutter (Collect prerequisite); money-precision policy (values are `Float` today by documented decision — the calculation increment must define `Numeric`/rounding); governance ratification (MR-1/MR-3) and founding ADR backfill (B4).
 - **Sequencing authority:** [QR-0006](../12-quality/QR-0006-next-work-queue.md) (merged queue), [DEVELOPMENT_ROADMAP](../../DEVELOPMENT_ROADMAP.md) (code), QR-0004 (docs). **User work orders override the queue and are the actual sequencing mechanism** — record any divergence honestly.
@@ -198,6 +199,7 @@ Current test posture: **196 backend tests, 15 Flutter widget tests**, portal bui
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.5 | 2026-08-04 | Engineering | MVP-001 integration recorded: milk→pricing→settlement wired end-to-end; `awaiting_pricing_engine` retired. |
 | 1.4 | 2026-08-04 | Engineering | SET-001 Settlement Foundation recorded (settlement module, BR-0008…0012, Money.plus); roadmap next = SET-002 / PRC-005. |
 | 1.3 | 2026-08-03 | Engineering | PRC-004 Pricing Calculator recorded; money precision policy resolved (divergence #8 downgraded); roadmap next = PRC-005 Bonus Engine. |
 | 1.2 | 2026-08-03 | Engineering | Business Rules Register (BR-NNNN) added to the engineering philosophy as the source of truth for platform invariants. |

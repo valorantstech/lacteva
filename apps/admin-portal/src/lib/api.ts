@@ -611,6 +611,12 @@ export const addSettlementCalculation = (id: string, calculationId: string) =>
 export const removeSettlementLine = (id: string, lineId: string) =>
   api(`/v1/settlements/${id}/lines/${lineId}`, { method: "DELETE" });
 
+export const collectSettlementPeriod = (id: string) =>
+  api<{ added: number; skipped: number }>(`/v1/settlements/${id}/collect`, {
+    method: "POST",
+    body: "{}",
+  });
+
 /** action: calculate | finalize | cancel */
 export const settlementAction = (id: string, action: string) =>
   api<Settlement>(`/v1/settlements/${id}/${action}`, { method: "POST", body: "{}" });
@@ -629,6 +635,11 @@ export type MilkTransaction = {
   snf: number | null;
   clr: number | null;
   pricing_status: string | null;
+  unit_price: string | number | null;
+  gross_amount: string | number | null;
+  currency: string | null;
+  calculation_id: string | null;
+  pricing_detail: string | null;
   rejected_reason: string | null;
   created_at: string;
   completed_at: string | null;

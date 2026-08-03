@@ -147,8 +147,16 @@ def get_settlement_service(session: Session, bus: Bus, audit: Audit) -> Settleme
 
 
 def get_milk_collection_service(session: Session, bus: Bus, audit: Audit) -> MilkCollectionService:
+    # MVP-001: the transaction engine invokes the Pricing Platform at the
+    # pricing step (resolution -> calculator), composed here — no module
+    # reaches into another's internals.
     return MilkCollectionService(
-        session, bus, audit, OperationalReadinessService(session, bus, audit)
+        session,
+        bus,
+        audit,
+        OperationalReadinessService(session, bus, audit),
+        PricingResolutionService(session),
+        PricingCalculationService(session, bus, ConfigurationService(session, audit)),
     )
 
 

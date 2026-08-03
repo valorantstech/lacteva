@@ -11,13 +11,14 @@ to the ordered transaction event log, audited, and published on the bus.
 
 import uuid
 from datetime import datetime
-from typing import Any
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from platform_core.core.db import utcnow
+from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import ConflictError, ForbiddenError, NotFoundError
 from platform_core.core.tenancy import get_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
@@ -41,6 +42,10 @@ from platform_core.modules.supplier.models import (
 )
 from platform_core.modules.supplier.service import parse_qr_payload
 
+if TYPE_CHECKING:
+    from platform_core.modules.pricing.calculator import PricingCalculationService
+    from platform_core.modules.pricing.resolution import PricingResolutionService
+
 MAX_GROSS_KG = 200.0
 QUALITY_RANGES = {  # raw plausibility bounds; grading/calculations come later
     "fat": (0.0, 15.0),
@@ -58,11 +63,23 @@ BUS_EVENTS = {
     "WeightCaptured": "collection.weight-captured.v1",
     "QualityCaptured": "collection.quality-captured.v1",
     "PricingRequested": "collection.pricing-requested.v1",
+    "PricingCompleted": "collection.pricing-completed.v1",
+    "PricingUnavailable": "collection.pricing-unavailable.v1",
     "TransactionAccepted": "collection.transaction-accepted.v1",
     "TransactionRejected": "collection.transaction-rejected.v1",
     "TransactionCompleted": "collection.transaction-completed.v1",
     "TransactionCancelled": "collection.transaction-cancelled.v1",
 }
+
+# MVP-001: milk is priced on FAT until the multi-dimension combination policy
+# lands (a future pricing increment); product codes derive from the milk type.
+PRICING_DIMENSION = "FAT"
+
+
+def product_code_for(milk_type: str | None) -> str | None:
+    if not milk_type or milk_type == "custom":
+        return None
+    return f"RAW-{milk_type.upper()}-MILK"
 
 
 # --- DTOs ------------------------------------------------------------------
@@ -134,6 +151,11 @@ class TransactionView(BaseModel):
     clr: float | None
     density: float | None
     pricing_status: str | None
+    unit_price: Decimal | None
+    gross_amount: Decimal | None
+    currency: str | None
+    calculation_id: uuid.UUID | None
+    pricing_detail: str | None
     rejected_reason: str | None
     created_at: datetime
     completed_at: datetime | None
@@ -165,11 +187,15 @@ class MilkCollectionService:
         bus: EventBus,
         audit: AuditService,
         readiness: OperationalReadinessService,
+        pricing_resolution: "PricingResolutionService",
+        pricing_calculator: "PricingCalculationService",
     ):
         self._session = session
         self._bus = bus
         self._audit = audit
         self._readiness = readiness
+        self._pricing_resolution = pricing_resolution
+        self._pricing_calculator = pricing_calculator
 
     # --- collection sessions ----------------------------------------------
 
@@ -417,12 +443,84 @@ class MilkCollectionService:
             {"fat": tx.fat, "snf": tx.snf, "clr": tx.clr},
             actor_id,
         )
-        # Pricing placeholder: request now; the engine arrives in a later sprint.
-        tx.state = "PRICING_PENDING"
-        tx.pricing_status = "awaiting_pricing_engine"
-        await self._record(tx, "PricingRequested", {"pricing_status": tx.pricing_status}, actor_id)
-        tx.state = "PRICED"
+        await self._apply_pricing(tx, actor_id)
         return tx
+
+    async def _apply_pricing(self, tx: MilkCollectionTransaction, actor_id: uuid.UUID) -> None:
+        """MVP-001 integration: invoke the Pricing Platform (resolution ->
+        calculator) at the pricing step. Failure to price NEVER blocks the
+        collection flow — milk is perishable; the transaction proceeds with
+        pricing_status='pricing_unavailable' and can be settled later once
+        pricing data exists."""
+        from platform_core.modules.pricing.calculator import (
+            CalculationRequest,
+            PricingCalculationError,
+        )
+        from platform_core.modules.pricing.resolution import (
+            PricingIntegrityError,
+            PricingResolutionError,
+            ResolutionQuery,
+        )
+
+        tx.state = "PRICING_PENDING"
+        await self._record(tx, "PricingRequested", {"dimension": PRICING_DIMENSION}, actor_id)
+        product_code = product_code_for(tx.milk_type)
+        tx_date = as_utc(tx.created_at).date()
+        try:
+            if product_code is None:
+                raise PricingResolutionError(
+                    {"stage": "product", "reason": "no product mapping for this milk type"}
+                )
+            resolution = await self._pricing_resolution.resolve(
+                ResolutionQuery(
+                    center_id=tx.center_id,
+                    product_code=product_code,
+                    transaction_date=tx_date,
+                    dimension_code=PRICING_DIMENSION,
+                    value=tx.fat,
+                )
+            )
+            calculation = await self._pricing_calculator.calculate(
+                CalculationRequest(
+                    row_id=resolution.row_id,
+                    quantity=tx.net_weight,
+                    quantity_unit=tx.weight_unit or "kg",
+                    transaction_date=tx_date,
+                ),
+                actor_id=actor_id,
+            )
+            tx.pricing_status = "priced"
+            tx.unit_price = calculation.unit_price.amount
+            tx.gross_amount = calculation.gross_amount.amount
+            tx.currency = calculation.currency
+            tx.calculation_id = calculation.calculation_id
+            tx.pricing_detail = (
+                f"{calculation.resolution.rate_card_code} "
+                f"v{calculation.resolution.rate_card_version} band "
+                f"[{calculation.resolution.range_from}, {calculation.resolution.range_to})"
+            )
+            await self._record(
+                tx,
+                "PricingCompleted",
+                {
+                    "unit_price": str(tx.unit_price),
+                    "gross_amount": str(tx.gross_amount),
+                    "currency": tx.currency,
+                    "calculation_id": str(tx.calculation_id),
+                },
+                actor_id,
+            )
+        except (PricingResolutionError, PricingIntegrityError, PricingCalculationError) as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {"reason": str(exc.detail)}
+            tx.pricing_status = "pricing_unavailable"
+            tx.pricing_detail = str(detail.get("reason", ""))[:300]
+            await self._record(
+                tx,
+                "PricingUnavailable",
+                {"stage": detail.get("stage"), "reason": tx.pricing_detail},
+                actor_id,
+            )
+        tx.state = "PRICED"
 
     async def accept(self, tx_id: uuid.UUID, *, actor_id: uuid.UUID) -> MilkCollectionTransaction:
         tx = await self._decide(tx_id, "ACCEPTED", actor_id=actor_id)
@@ -671,7 +769,14 @@ class MilkCollectionService:
                 "remarks": tx.quality_remarks,
                 "source": tx.quality_source,
             },
-            "pricing": {"status": tx.pricing_status},
+            "pricing": {
+                "status": tx.pricing_status,
+                "unit_price": str(tx.unit_price) if tx.unit_price is not None else None,
+                "gross_amount": str(tx.gross_amount) if tx.gross_amount is not None else None,
+                "currency": tx.currency,
+                "calculation_id": str(tx.calculation_id) if tx.calculation_id else None,
+                "detail": tx.pricing_detail,
+            },
             "rejected_reason": tx.rejected_reason,
             "created_at": tx.created_at.isoformat(),
             "completed_at": tx.completed_at.isoformat() if tx.completed_at else None,

@@ -174,7 +174,8 @@ async def test_full_lifecycle_accept_complete(client, bus):
     detail = (await client.get(f"/v1/milk-transactions/{tid}", headers=headers)).json()
     assert detail["net_weight"] == 25.0
     assert detail["supplier_id"] == supplier["id"]
-    assert detail["pricing_status"] == "awaiting_pricing_engine"
+    # MVP-001: pricing runs inline; without a rate card it degrades gracefully.
+    assert detail["pricing_status"] == "pricing_unavailable"
 
     # Ordered event log covers every mandated business event.
     events = (await client.get(f"/v1/milk-transactions/{tid}/events", headers=headers)).json()
@@ -186,6 +187,7 @@ async def test_full_lifecycle_accept_complete(client, bus):
         "WeightCaptured",
         "QualityCaptured",
         "PricingRequested",
+        "PricingUnavailable",
         "TransactionAccepted",
         "TransactionCompleted",
     ]

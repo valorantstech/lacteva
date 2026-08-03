@@ -238,7 +238,20 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                     children: [
                       Text('Net weight: ${tx['net_weight']} kg'),
                       Text('FAT ${tx['fat']} · SNF ${tx['snf']} · CLR ${tx['clr']}'),
-                      Text('Pricing: ${tx['pricing_status']}'),
+                      const Divider(),
+                      if (tx['pricing_status'] == 'priced') ...[
+                        Text(
+                          '${tx['gross_amount']} ${tx['currency']}',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        Text('${tx['unit_price']} ${tx['currency']}/kg · '
+                            '${tx['pricing_detail']}'),
+                      ] else ...[
+                        Text('Pricing: ${tx['pricing_status']}'),
+                        if (tx['pricing_detail'] != null)
+                          Text('${tx['pricing_detail']}',
+                              style: Theme.of(context).textTheme.bodySmall),
+                      ],
                     ],
                   ),
                 ),
@@ -269,6 +282,19 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                     style: Theme.of(context).textTheme.titleLarge),
               ),
               Center(child: Text('Net ${tx['net_weight']} kg')),
+              if (tx['rejected_reason'] == null &&
+                  tx['pricing_status'] == 'priced')
+                Center(
+                  child: Text(
+                    'Payable: ${tx['gross_amount']} ${tx['currency']}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              if (tx['rejected_reason'] == null &&
+                  tx['pricing_status'] == 'priced')
+                const Center(
+                  child: Text('Will appear in the next supplier settlement.'),
+                ),
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: () => Navigator.of(context).pop(true),

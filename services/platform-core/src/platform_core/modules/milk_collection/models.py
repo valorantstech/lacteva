@@ -13,9 +13,10 @@ extend it — this table is its forward-compatible seed.
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Float, Integer, String, UniqueConstraint, Uuid
+from sqlalchemy import JSON, DateTime, Float, Integer, Numeric, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.core.db import Base, IdMixin, utcnow
@@ -88,8 +89,15 @@ class MilkCollectionTransaction(Base, IdMixin):
     quality_remarks: Mapped[str] = mapped_column(String(300), default="")
     quality_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
-    # Pricing (placeholder — engine arrives in a future sprint)
+    # Pricing (wired to the Pricing Platform in MVP-001: resolution +
+    # calculator run at the pricing step; amounts are copies of the verified
+    # calculation, Numeric per the money precision policy)
     pricing_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    unit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    gross_amount: Mapped[Decimal | None] = mapped_column(Numeric(16, 2), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    calculation_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
+    pricing_detail: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     # Decision (ACCEPTED / REJECTED)
     rejected_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)

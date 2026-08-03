@@ -1168,6 +1168,33 @@ async def add_settlement_calculation(
     return await service.add_calculation(settlement_id, cmd, actor_id=p.id)
 
 
+class AddTransactionRequest(BaseModel):
+    transaction_id: uuid.UUID
+
+
+@settlement_router.post(
+    "/{settlement_id}/transactions", response_model=SettlementLineView, status_code=201
+)
+async def add_settlement_transaction(
+    settlement_id: uuid.UUID,
+    body: AddTransactionRequest,
+    service: SettlementSvc,
+    p: SettlementManage,
+) -> Any:
+    """MVP-001: settle a completed milk transaction by id (uses its own
+    verified pricing calculation)."""
+    return await service.add_transaction(settlement_id, body.transaction_id, actor_id=p.id)
+
+
+@settlement_router.post("/{settlement_id}/collect")
+async def collect_settlement_period(
+    settlement_id: uuid.UUID, service: SettlementSvc, p: SettlementManage
+) -> dict:
+    """MVP-001: bulk-add every eligible milk transaction of the supplier,
+    center, and period. Idempotent — already-settled transactions are skipped."""
+    return await service.collect_period(settlement_id, actor_id=p.id)
+
+
 @settlement_router.delete("/{settlement_id}/lines/{line_id}", status_code=204)
 async def remove_settlement_line(
     settlement_id: uuid.UUID, line_id: uuid.UUID, service: SettlementSvc, p: SettlementManage

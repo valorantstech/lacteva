@@ -190,6 +190,81 @@ class SettlementService:
         await self._record(settlement, "updated", {"line_added": str(cmd.calculation_id)}, actor_id)
         return line
 
+    async def add_transaction(
+        self, settlement_id: uuid.UUID, transaction_id: uuid.UUID, *, actor_id: uuid.UUID
+    ) -> SettlementLine:
+        """MVP-001 integration: settle a completed, accepted, priced milk
+        transaction — delegates to add_calculation with the transaction's own
+        verified calculation."""
+        settlement = await self.get(settlement_id)
+        tx = await self._eligible_transaction(settlement, transaction_id)
+        return await self.add_calculation(
+            settlement_id,
+            AddCalculationCommand(calculation_id=tx.calculation_id, transaction_id=tx.id),
+            actor_id=actor_id,
+        )
+
+    async def collect_period(
+        self, settlement_id: uuid.UUID, *, actor_id: uuid.UUID
+    ) -> dict[str, int]:
+        """MVP-001 integration: add every eligible (completed, accepted,
+        priced, unsettled) milk transaction of the settlement's supplier,
+        center, and period. Already-settled and conflicting transactions are
+        skipped, not errors — the operation is idempotent."""
+        from datetime import timedelta
+
+        from platform_core.modules.milk_collection.models import MilkCollectionTransaction
+
+        settlement = await self.get(settlement_id)
+        self._require_open(settlement)
+        rows = await self._session.scalars(
+            select(MilkCollectionTransaction).where(
+                MilkCollectionTransaction.tenant_id == settlement.tenant_id,
+                MilkCollectionTransaction.supplier_id == settlement.supplier_id,
+                MilkCollectionTransaction.center_id == settlement.center_id,
+                MilkCollectionTransaction.state == "COMPLETED",
+                MilkCollectionTransaction.rejected_reason.is_(None),
+                MilkCollectionTransaction.calculation_id.is_not(None),
+                MilkCollectionTransaction.created_at
+                >= datetime.combine(settlement.period_from, datetime.min.time()),
+                MilkCollectionTransaction.created_at
+                < datetime.combine(settlement.period_to + timedelta(days=1), datetime.min.time()),
+            )
+        )
+        added = skipped = 0
+        for tx in rows.all():
+            try:
+                await self.add_calculation(
+                    settlement_id,
+                    AddCalculationCommand(calculation_id=tx.calculation_id, transaction_id=tx.id),
+                    actor_id=actor_id,
+                )
+                added += 1
+            except ConflictError:
+                skipped += 1  # already settled elsewhere or duplicate reference
+        return {"added": added, "skipped": skipped}
+
+    async def _eligible_transaction(self, settlement: Settlement, transaction_id: uuid.UUID):
+        from platform_core.modules.milk_collection.models import MilkCollectionTransaction
+
+        tx = await self._session.get(MilkCollectionTransaction, transaction_id)
+        if tx is None or tx.tenant_id != settlement.tenant_id:
+            raise NotFoundError("milk transaction not found")
+        problems = []
+        if tx.state != "COMPLETED":
+            problems.append(f"transaction is {tx.state}, not COMPLETED")
+        if tx.rejected_reason is not None:
+            problems.append("rejected milk is not payable")
+        if tx.calculation_id is None:
+            problems.append("transaction has no pricing calculation")
+        if tx.supplier_id != settlement.supplier_id:
+            problems.append("transaction belongs to a different supplier")
+        if tx.center_id != settlement.center_id:
+            problems.append("transaction belongs to a different center")
+        if problems:
+            raise ConflictError("; ".join(problems))
+        return tx
+
     async def remove_line(
         self, settlement_id: uuid.UUID, line_id: uuid.UUID, *, actor_id: uuid.UUID
     ) -> None:
