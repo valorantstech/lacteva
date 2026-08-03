@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     minio_secure: bool = False
     opensearch_url: str = "http://localhost:9200"
 
+    # CORS — browser origins allowed to call the API (the admin portal).
+    # Dev defaults cover the local portal; set LACTEVA_CORS_ORIGINS in
+    # staging/prod (JSON list, e.g. '["https://admin.lacteva.example"]').
+    cors_origins: tuple[str, ...] = ("http://localhost:3000", "http://127.0.0.1:3000")
+
     # Observability
     otel_exporter_endpoint: str = ""  # empty = OTel hook disabled
 
