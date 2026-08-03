@@ -3,7 +3,7 @@ id: CLAUDE-CONTEXT
 title: Lacteva AI Engineering Context — Permanent Onboarding Guide
 type: reference
 status: Approved
-version: "1.8"
+version: "1.9"
 owner: Engineering
 created: 2026-08-03
 last-updated: 2026-08-04
@@ -147,6 +147,7 @@ Current test posture: **196 backend tests, 15 Flutter widget tests**, portal bui
 - **Current platform / product:** Procurement → **Pricing Platform → Rate Management**.
 - **MVP-001 (End-to-End Procurement Integration) is delivered** — the full journey login→collection→auto-pricing→settlement→finalize runs and is E2E-tested; the `awaiting_pricing_engine` placeholder is retired (milk prices on FAT until the multi-dimension policy lands).
 - **Five-year architecture plan (user-issued 2026-08-04 — "Lacteva: Dairy Operating System"; supersedes prior roadmap pastes).** Layers, in build order: **Platform Foundation** (identity, organizations, RBAC, audit, Relay ✅; plus Notifications, Documents, Search, Workflow, Configuration ✅, and a Rules Engine — the executable counterpart to the BR register); **Procurement** (suppliers/centers/sessions/collection/pricing/settlement ✅, reports ✅; remaining: payments, receipts, offline); **Processing** (reception, milk tanks, quality lab — consumer of the quality-dimension registry, batch processing, production, packaging); **Inventory** (warehouse, raw milk, finished goods, packaging, transfers, expiry, stock audit); **Sales** (customers, distributors, orders, invoices, dispatch, collections); **Finance** (ledger, journal, GST/tax, receivables, payables, bank, reconciliation); **AI Platform** (forecasting, dynamic pricing, fraud detection, milk/demand/quality prediction, route optimization, LLM assistant — the first `AGT` customer); **Enterprise** (API gateway, SDK, plugins, marketplace, integrations, webhooks — near-free once the consumer framework exists, reporting warehouse, analytics). Platforms map onto CAP-0001 domains; work orders arrive one at a time and always override this summary's ordering.
+- **Execution plan to 1.0 (user-issued 2026-08-04): five phases.** **A — Complete the MVP:** consumer framework (SPRINT-008B) → Notifications → Payments → Receipts → Offline sync (outcome: complete procurement lifecycle). **B — Production hardening:** monitoring/alerting dashboards, backups + DR drills, security hardening (RLS, RS256, rate limiting), performance tuning, deployment automation (`infra/`), logging/health completion (outcome: production-trustworthy; note: B's deployment automation is a prerequisite for D's weekly releases). **C — Commercial readiness:** onboarding, licensing/entitlements, billing + litre metering, trial management, documentation/training, demo environment, support runbooks (outcome: buyable and adoptable). **D — Pilot:** one dairy, 30 days, daily feedback, weekly releases. **E — Lacteva Collect 1.0** only after: pilot success, critical bugs resolved, docs complete, deployment repeatable, support process defined.
 - **Pricing epic ahead (names may evolve per work order):** rate tables/versioning/assignment/approval refinements → Formula Engine → Bonus Engine → Penalty Engine → Tax Engine → Simulation → the Pricing Calculator that finally feeds `milk_collection`'s `awaiting_pricing_engine` placeholder.
 - **Parallel debt queue:** SPRINT-008B consumer framework; offline sync engine for Flutter (Collect prerequisite); money-precision policy (values are `Float` today by documented decision — the calculation increment must define `Numeric`/rounding); governance ratification (MR-1/MR-3) and founding ADR backfill (B4).
 - **Sequencing authority:** [QR-0006](../12-quality/QR-0006-next-work-queue.md) (merged queue), [DEVELOPMENT_ROADMAP](../../DEVELOPMENT_ROADMAP.md) (code), QR-0004 (docs). **User work orders override the queue and are the actual sequencing mechanism** — record any divergence honestly.
@@ -202,6 +203,7 @@ Current test posture: **196 backend tests, 15 Flutter widget tests**, portal bui
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.9 | 2026-08-04 | Engineering | Five-phase execution plan to Lacteva Collect 1.0 recorded (MVP completion -> hardening -> commercial readiness -> pilot -> launch gates). |
 | 1.8 | 2026-08-04 | Engineering | Five-year "Dairy Operating System" architecture plan recorded (foundation grows Notifications/Documents/Search/Workflow/Rules Engine; Receipts, Quality Lab, LLM Assistant, API Gateway/SDK/Webhooks added). |
 | 1.7 | 2026-08-04 | Engineering | REP-001 Reporting Foundation recorded (reporting module, /v1/reports, boundary-exception decision). |
 | 1.6 | 2026-08-04 | Engineering | Master multi-platform roadmap recorded (Procurement→Processing→Inventory→Sales→AI→Finance→Enterprise; MVP completes with Reporting/Offline/Notifications/Payments). |
