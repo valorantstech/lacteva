@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'pricing_matrices.dart';
 
 /// Rate Card lifecycle — Pricing Increment-001 (no calculations).
 class RateCardsListScreen extends StatefulWidget {
@@ -374,6 +375,20 @@ class _RateCardDetailScreenState extends State<RateCardDetailScreen> {
       appBar: AppBar(
         title: Text(card?.name ?? 'Rate card'),
         actions: [
+          if (card != null)
+            IconButton(
+              icon: const Icon(Icons.grid_on_outlined),
+              tooltip: 'Pricing matrices',
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => MatrixListScreen(
+                        client: widget.client, rateCardId: card.id),
+                  ),
+                );
+                await _load();
+              },
+            ),
           if (card != null && card.status == 'draft')
             IconButton(
               icon: const Icon(Icons.edit_outlined),

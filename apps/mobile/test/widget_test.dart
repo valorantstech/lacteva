@@ -4,6 +4,7 @@ import 'package:lacteva_mobile/main.dart';
 import 'package:lacteva_mobile/src/api.dart';
 import 'package:lacteva_mobile/src/centers.dart';
 import 'package:lacteva_mobile/src/collection_wizard.dart';
+import 'package:lacteva_mobile/src/pricing_matrices.dart';
 import 'package:lacteva_mobile/src/rate_cards.dart';
 import 'package:lacteva_mobile/src/suppliers.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -127,6 +128,54 @@ void main() {
     expect(find.text('Products: RAW-COW-MILK'), findsOneWidget);
   });
 
+  testWidgets('matrix list shows bands and dimension', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MatrixListScreen(client: _MatrixFake(), rateCardId: 'card-1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Cow Milk FAT Bands'), findsOneWidget);
+    expect(find.textContaining('FAT · 2 band(s)'), findsOneWidget);
+  });
+
+  testWidgets('editable matrix detail offers the row editor', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MatrixDetailScreen(client: _MatrixFake(), matrixId: 'm-draft'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('[3.0 – 4.0)'), findsOneWidget);
+    expect(find.text('Add band'), findsWidgets);
+    expect(find.textContaining('Continuity gaps'), findsOneWidget);
+  });
+
+  testWidgets('locked matrix detail is read-only', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MatrixDetailScreen(client: _MatrixFake(), matrixId: 'm-active'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Add band'), findsNothing);
+    expect(find.textContaining('Read-only'), findsOneWidget);
+  });
+
+  testWidgets('matrix form validates and loads dimensions', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MatrixFormScreen(client: _MatrixFake(), rateCardId: 'card-1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
+    await tester.pump();
+    expect(find.text('Name needs at least 2 characters'), findsOneWidget);
+    expect(find.text('Product code is required'), findsOneWidget);
+    expect(find.text('Pick a dimension'), findsOneWidget);
+  });
+
   testWidgets('edit form shows timezone instead of code', (tester) async {
     final center = CenterSummary(
       id: 'c1',
@@ -183,6 +232,67 @@ class _SupplierFake extends ApiClient {
 }
 
 class _WizardFake extends ApiClient {}
+
+class _MatrixFake extends ApiClient {
+  static final _summary = MatrixSummary(
+    id: 'm-draft',
+    rateCardCode: 'MILK-STD',
+    name: 'Cow Milk FAT Bands',
+    productCode: 'RAW-COW-MILK',
+    productName: 'Raw Cow Milk',
+    dimensionCode: 'FAT',
+    status: 'draft',
+    version: 1,
+    rowCount: 2,
+  );
+
+  static final _rows = [
+    MatrixRowView(
+        id: 'r1', fromValue: 3.0, toValue: 4.0, unitPrice: 40.0, active: true),
+    MatrixRowView(
+        id: 'r2', fromValue: 5.0, toValue: 6.0, unitPrice: 50.0, active: true),
+  ];
+
+  @override
+  Future<MatrixPageResult> listMatrices({
+    String query = '',
+    String rateCardId = '',
+    int limit = 20,
+    int offset = 0,
+  }) async =>
+      MatrixPageResult(items: [_summary], total: 1);
+
+  @override
+  Future<MatrixDetailResult> matrixDetail(String id) async =>
+      MatrixDetailResult(
+        matrix: id == 'm-draft'
+            ? _summary
+            : MatrixSummary(
+                id: id,
+                rateCardCode: 'MILK-STD',
+                name: 'Published Bands',
+                productCode: 'RAW-COW-MILK',
+                productName: '',
+                dimensionCode: 'FAT',
+                status: 'active',
+                version: 1,
+                rowCount: 2,
+              ),
+        dimensionLabel: 'FAT (%)',
+        rows: _rows,
+        gaps: const [
+          {'from_value': 4.0, 'to_value': 5.0}
+        ],
+        editable: id == 'm-draft',
+      );
+
+  @override
+  Future<List<DimensionSummary>> listQualityDimensions() async => [
+        DimensionSummary(code: 'FAT', name: 'Fat', unit: '%', active: true),
+        DimensionSummary(
+            code: 'SNF', name: 'Solids-Not-Fat', unit: '%', active: true),
+      ];
+}
 
 class _RateCardFake extends ApiClient {
   static final _published = RateCardSummary(

@@ -24,6 +24,8 @@ from platform_core.modules.audit.service import AuditService
 from platform_core.modules.collection_center.models import CollectionCenter
 from platform_core.modules.organization.models import Branch
 from platform_core.modules.pricing.models import (
+    PricingMatrix,
+    PricingMatrixRow,
     RateCard,
     RateCardCenterAssignment,
     RateCardProductAssignment,
@@ -216,6 +218,7 @@ class RateCardService:
         if claim.rowcount != 1:
             raise ConflictError("rate card is no longer approved")
         await self._session.refresh(card)
+        await self._transition_matrices(card, "draft", "active", actor_id=actor_id)
         await self._record(
             card,
             "RateCardPublished",
@@ -237,6 +240,8 @@ class RateCardService:
         previous = card.status
         card.status = "archived"
         card.archived_at = utcnow()
+        await self._transition_matrices(card, "draft", "archived", actor_id=actor_id)
+        await self._transition_matrices(card, "active", "archived", actor_id=actor_id)
         await self._record(card, "RateCardArchived", {"from": previous}, actor_id)
         return card
 
@@ -294,6 +299,7 @@ class RateCardService:
                     product_name=product.product_name,
                 )
             )
+        await self._copy_matrices(source, card, actor_id=actor_id)
         await self._session.flush()
         await self._record(
             card,
@@ -529,6 +535,88 @@ class RateCardService:
 
     async def _product_codes(self, card_id: uuid.UUID) -> list[str]:
         return [p.product_code for p in await self._products(card_id)]
+
+    async def _transition_matrices(
+        self, card: RateCard, from_status: str, to_status: str, *, actor_id: uuid.UUID
+    ) -> None:
+        """Matrices follow their rate card: active on publish, archived with it."""
+        from platform_core.modules.pricing.matrix import MATRIX_BUS_EVENTS
+
+        matrices = await self._session.scalars(
+            select(PricingMatrix).where(
+                PricingMatrix.rate_card_id == card.id, PricingMatrix.status == from_status
+            )
+        )
+        event = "PricingMatrixArchived" if to_status == "archived" else "PricingMatrixUpdated"
+        for matrix in matrices.all():
+            matrix.status = to_status
+            await self._bus.publish(
+                EventEnvelope.new(
+                    MATRIX_BUS_EVENTS[event],
+                    {
+                        "matrix_id": str(matrix.id),
+                        "rate_card_id": str(card.id),
+                        "product_code": matrix.product_code,
+                        "dimension_code": matrix.dimension_code,
+                        "status": to_status,
+                    },
+                    actor_id=actor_id,
+                    aggregate_type="pricing_matrix",
+                    aggregate_id=matrix.id,
+                )
+            )
+
+    async def _copy_matrices(
+        self, source: RateCard, card: RateCard, *, actor_id: uuid.UUID
+    ) -> None:
+        """New card versions carry their pricing data forward as fresh drafts."""
+        from platform_core.modules.pricing.matrix import MATRIX_BUS_EVENTS
+
+        matrices = await self._session.scalars(
+            select(PricingMatrix).where(PricingMatrix.rate_card_id == source.id)
+        )
+        for old in matrices.all():
+            copy = PricingMatrix(
+                tenant_id=card.tenant_id,
+                rate_card_id=card.id,
+                name=old.name,
+                product_code=old.product_code,
+                product_name=old.product_name,
+                dimension_code=old.dimension_code,
+                status="draft",
+                version=card.version,
+            )
+            self._session.add(copy)
+            await self._session.flush()
+            rows = await self._session.scalars(
+                select(PricingMatrixRow).where(PricingMatrixRow.matrix_id == old.id)
+            )
+            for row in rows.all():
+                self._session.add(
+                    PricingMatrixRow(
+                        matrix_id=copy.id,
+                        sequence=row.sequence,
+                        from_value=row.from_value,
+                        to_value=row.to_value,
+                        unit_price=row.unit_price,
+                        active=row.active,
+                    )
+                )
+            await self._bus.publish(
+                EventEnvelope.new(
+                    MATRIX_BUS_EVENTS["PricingMatrixCreated"],
+                    {
+                        "matrix_id": str(copy.id),
+                        "rate_card_id": str(card.id),
+                        "product_code": copy.product_code,
+                        "dimension_code": copy.dimension_code,
+                        "copied_from": str(old.id),
+                    },
+                    actor_id=actor_id,
+                    aggregate_type="pricing_matrix",
+                    aggregate_id=copy.id,
+                )
+            )
 
     async def _check_branch(self, branch_id: uuid.UUID | None, tenant_id: uuid.UUID) -> None:
         if branch_id is None:

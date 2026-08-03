@@ -307,6 +307,116 @@ export const assignRateCardProduct = (id: string, productCode: string, productNa
     body: JSON.stringify({ product_code: productCode, product_name: productName }),
   });
 
+// --- Pricing matrices (pricing data only — no calculation) ------------------
+
+export type QualityDimension = {
+  id: string;
+  code: string;
+  name: string;
+  unit: string;
+  min_value: number | null;
+  max_value: number | null;
+  active: boolean;
+};
+
+export type PricingMatrix = {
+  id: string;
+  rate_card_id: string;
+  rate_card_code: string;
+  name: string;
+  product_code: string;
+  product_name: string;
+  dimension_code: string;
+  status: "draft" | "active" | "archived";
+  version: number;
+  row_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MatrixRow = {
+  id: string;
+  sequence: number;
+  from_value: number;
+  to_value: number;
+  unit_price: number;
+  active: boolean;
+};
+
+export type MatrixDetail = {
+  matrix: PricingMatrix;
+  dimension: QualityDimension;
+  rows: MatrixRow[];
+  gaps: { from_value: number; to_value: number }[];
+  editable: boolean;
+};
+
+export type MatrixPage = {
+  items: PricingMatrix[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export const listQualityDimensions = () =>
+  api<QualityDimension[]>("/v1/quality-dimensions");
+
+export function listMatrices(params: {
+  q?: string;
+  status?: string;
+  rate_card_id?: string;
+  limit: number;
+  offset: number;
+}): Promise<MatrixPage> {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.status) search.set("status", params.status);
+  if (params.rate_card_id) search.set("rate_card_id", params.rate_card_id);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<MatrixPage>(`/v1/pricing-matrices?${search.toString()}`);
+}
+
+export const createMatrix = (body: {
+  rate_card_id: string;
+  name: string;
+  product_code: string;
+  product_name?: string;
+  dimension_code: string;
+}) => api<PricingMatrix>("/v1/pricing-matrices", { method: "POST", body: JSON.stringify(body) });
+
+export const updateMatrix = (
+  id: string,
+  body: { name: string; product_code: string; product_name?: string; dimension_code: string },
+) => api<PricingMatrix>(`/v1/pricing-matrices/${id}`, { method: "PUT", body: JSON.stringify(body) });
+
+export const deleteMatrix = (id: string) =>
+  api(`/v1/pricing-matrices/${id}`, { method: "DELETE" });
+
+export const getMatrixDetail = (id: string) => api<MatrixDetail>(`/v1/pricing-matrices/${id}`);
+
+export type MatrixRowInput = {
+  from_value: number;
+  to_value: number;
+  unit_price: number;
+  active?: boolean;
+};
+
+export const createMatrixRow = (matrixId: string, body: MatrixRowInput) =>
+  api<MatrixRow>(`/v1/pricing-matrices/${matrixId}/rows`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateMatrixRow = (matrixId: string, rowId: string, body: MatrixRowInput) =>
+  api<MatrixRow>(`/v1/pricing-matrices/${matrixId}/rows/${rowId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const deleteMatrixRow = (matrixId: string, rowId: string) =>
+  api(`/v1/pricing-matrices/${matrixId}/rows/${rowId}`, { method: "DELETE" });
+
 // --- Milk transactions ------------------------------------------------------
 
 export type MilkTransaction = {

@@ -273,6 +273,95 @@ class ApiClient {
     await _send('POST', '/v1/rate-cards/$id/products',
         body: {'product_code': productCode});
   }
+
+  Future<List<DimensionSummary>> listQualityDimensions() async {
+    final result = await _send('GET', '/v1/quality-dimensions') as List<dynamic>;
+    return result
+        .map((e) => DimensionSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<MatrixPageResult> listMatrices({
+    String query = '',
+    String rateCardId = '',
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final params = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      if (query.isNotEmpty) 'q': query,
+      if (rateCardId.isNotEmpty) 'rate_card_id': rateCardId,
+    };
+    final qs = Uri(queryParameters: params).query;
+    final result =
+        await _send('GET', '/v1/pricing-matrices?$qs') as Map<String, dynamic>;
+    return MatrixPageResult.fromJson(result);
+  }
+
+  Future<MatrixSummary> createMatrix({
+    required String rateCardId,
+    required String name,
+    required String productCode,
+    required String dimensionCode,
+    String productName = '',
+  }) async {
+    final result = await _send('POST', '/v1/pricing-matrices', body: {
+      'rate_card_id': rateCardId,
+      'name': name,
+      'product_code': productCode,
+      'product_name': productName,
+      'dimension_code': dimensionCode,
+    }) as Map<String, dynamic>;
+    return MatrixSummary.fromJson(result);
+  }
+
+  Future<MatrixDetailResult> matrixDetail(String id) async {
+    final result =
+        await _send('GET', '/v1/pricing-matrices/$id') as Map<String, dynamic>;
+    return MatrixDetailResult.fromJson(result);
+  }
+
+  Future<void> deleteMatrix(String id) async {
+    await _send('DELETE', '/v1/pricing-matrices/$id');
+  }
+
+  Future<MatrixRowView> addMatrixRow(
+    String matrixId, {
+    required double fromValue,
+    required double toValue,
+    required double unitPrice,
+  }) async {
+    final result = await _send('POST', '/v1/pricing-matrices/$matrixId/rows',
+        body: {
+          'from_value': fromValue,
+          'to_value': toValue,
+          'unit_price': unitPrice,
+        }) as Map<String, dynamic>;
+    return MatrixRowView.fromJson(result);
+  }
+
+  Future<MatrixRowView> updateMatrixRow(
+    String matrixId,
+    String rowId, {
+    required double fromValue,
+    required double toValue,
+    required double unitPrice,
+    bool active = true,
+  }) async {
+    final result =
+        await _send('PUT', '/v1/pricing-matrices/$matrixId/rows/$rowId', body: {
+      'from_value': fromValue,
+      'to_value': toValue,
+      'unit_price': unitPrice,
+      'active': active,
+    }) as Map<String, dynamic>;
+    return MatrixRowView.fromJson(result);
+  }
+
+  Future<void> deleteMatrixRow(String matrixId, String rowId) async {
+    await _send('DELETE', '/v1/pricing-matrices/$matrixId/rows/$rowId');
+  }
 }
 
 class CenterSummary {
@@ -518,6 +607,135 @@ class RateCardPageResult {
 
   final List<RateCardSummary> items;
   final int total;
+}
+
+class DimensionSummary {
+  DimensionSummary({
+    required this.code,
+    required this.name,
+    required this.unit,
+    required this.active,
+  });
+
+  factory DimensionSummary.fromJson(Map<String, dynamic> json) =>
+      DimensionSummary(
+        code: json['code'] as String,
+        name: json['name'] as String,
+        unit: (json['unit'] ?? '').toString(),
+        active: json['active'] as bool,
+      );
+
+  final String code;
+  final String name;
+  final String unit;
+  final bool active;
+}
+
+class MatrixSummary {
+  MatrixSummary({
+    required this.id,
+    required this.rateCardCode,
+    required this.name,
+    required this.productCode,
+    required this.productName,
+    required this.dimensionCode,
+    required this.status,
+    required this.version,
+    required this.rowCount,
+  });
+
+  factory MatrixSummary.fromJson(Map<String, dynamic> json) => MatrixSummary(
+        id: json['id'] as String,
+        rateCardCode: json['rate_card_code'] as String,
+        name: json['name'] as String,
+        productCode: json['product_code'] as String,
+        productName: (json['product_name'] ?? '').toString(),
+        dimensionCode: json['dimension_code'] as String,
+        status: json['status'] as String,
+        version: json['version'] as int,
+        rowCount: json['row_count'] as int,
+      );
+
+  final String id;
+  final String rateCardCode;
+  final String name;
+  final String productCode;
+  final String productName;
+  final String dimensionCode;
+  final String status;
+  final int version;
+  final int rowCount;
+}
+
+class MatrixPageResult {
+  MatrixPageResult({required this.items, required this.total});
+
+  factory MatrixPageResult.fromJson(Map<String, dynamic> json) =>
+      MatrixPageResult(
+        items: (json['items'] as List<dynamic>)
+            .map((e) => MatrixSummary.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        total: json['total'] as int,
+      );
+
+  final List<MatrixSummary> items;
+  final int total;
+}
+
+class MatrixRowView {
+  MatrixRowView({
+    required this.id,
+    required this.fromValue,
+    required this.toValue,
+    required this.unitPrice,
+    required this.active,
+  });
+
+  factory MatrixRowView.fromJson(Map<String, dynamic> json) => MatrixRowView(
+        id: json['id'] as String,
+        fromValue: (json['from_value'] as num).toDouble(),
+        toValue: (json['to_value'] as num).toDouble(),
+        unitPrice: (json['unit_price'] as num).toDouble(),
+        active: json['active'] as bool,
+      );
+
+  final String id;
+  final double fromValue;
+  final double toValue;
+  final double unitPrice;
+  final bool active;
+}
+
+class MatrixDetailResult {
+  MatrixDetailResult({
+    required this.matrix,
+    required this.dimensionLabel,
+    required this.rows,
+    required this.gaps,
+    required this.editable,
+  });
+
+  factory MatrixDetailResult.fromJson(Map<String, dynamic> json) {
+    final dim = json['dimension'] as Map<String, dynamic>;
+    return MatrixDetailResult(
+      matrix: MatrixSummary.fromJson(json['matrix'] as Map<String, dynamic>),
+      dimensionLabel:
+          '${dim['code']}${(dim['unit'] ?? '') != '' ? ' (${dim['unit']})' : ''}',
+      rows: (json['rows'] as List<dynamic>)
+          .map((e) => MatrixRowView.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      gaps: (json['gaps'] as List<dynamic>)
+          .map((e) => e as Map<String, dynamic>)
+          .toList(),
+      editable: json['editable'] as bool,
+    );
+  }
+
+  final MatrixSummary matrix;
+  final String dimensionLabel;
+  final List<MatrixRowView> rows;
+  final List<Map<String, dynamic>> gaps;
+  final bool editable;
 }
 
 class RateCardDetailResult {

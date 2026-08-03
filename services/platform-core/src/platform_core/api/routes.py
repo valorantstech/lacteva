@@ -66,6 +66,18 @@ from platform_core.modules.organization.service import (
     StructureService,
     WorkspaceView,
 )
+from platform_core.modules.pricing.matrix import (
+    CreateMatrixCommand,
+    DimensionInput,
+    DimensionView,
+    MatrixDetailView,
+    MatrixPage,
+    MatrixView,
+    PricingMatrixService,
+    RowInput,
+    RowView,
+    UpdateMatrixCommand,
+)
 from platform_core.modules.pricing.service import (
     AssignProductCommand,
     CreateRateCardCommand,
@@ -959,6 +971,102 @@ async def unassign_rate_card_product(
     await service.unassign_product(card_id, product_code, actor_id=p.id)
 
 
+# --- Pricing matrices (pricing DATA only — no calculation, Increment-002) ---
+matrix_router = APIRouter(tags=["pricing"])
+MatrixSvc = Annotated[PricingMatrixService, Depends(deps.get_pricing_matrix_service)]
+
+
+@matrix_router.get("/quality-dimensions", response_model=list[DimensionView])
+async def list_quality_dimensions(service: MatrixSvc, _: RateCardRead) -> Any:
+    """Configurable dimensions (FAT, SNF, …) — seeded per tenant on first use."""
+    return await service.list_dimensions()
+
+
+@matrix_router.post("/quality-dimensions", response_model=DimensionView, status_code=201)
+async def create_quality_dimension(
+    cmd: DimensionInput, service: MatrixSvc, p: RateCardManage
+) -> Any:
+    return await service.create_dimension(cmd, actor_id=p.id)
+
+
+@matrix_router.post("/pricing-matrices", response_model=MatrixView, status_code=201)
+async def create_pricing_matrix(
+    cmd: CreateMatrixCommand, service: MatrixSvc, p: RateCardManage
+) -> Any:
+    matrix = await service.create_matrix(cmd, actor_id=p.id)
+    return (await service.detail(matrix.id)).matrix
+
+
+@matrix_router.get("/pricing-matrices", response_model=MatrixPage)
+async def search_pricing_matrices(
+    service: MatrixSvc,
+    _: RateCardRead,
+    q: str | None = None,
+    rate_card_id: uuid.UUID | None = None,
+    product_code: str | None = None,
+    dimension_code: str | None = None,
+    status: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> MatrixPage:
+    return await service.search(
+        q=q,
+        rate_card_id=rate_card_id,
+        product_code=product_code,
+        dimension_code=dimension_code,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@matrix_router.get("/pricing-matrices/{matrix_id}", response_model=MatrixDetailView)
+async def get_pricing_matrix_detail(
+    matrix_id: uuid.UUID, service: MatrixSvc, _: RateCardRead
+) -> MatrixDetailView:
+    return await service.detail(matrix_id)
+
+
+@matrix_router.put("/pricing-matrices/{matrix_id}", response_model=MatrixView)
+async def update_pricing_matrix(
+    matrix_id: uuid.UUID, cmd: UpdateMatrixCommand, service: MatrixSvc, p: RateCardManage
+) -> Any:
+    matrix = await service.update_matrix(matrix_id, cmd, actor_id=p.id)
+    return (await service.detail(matrix.id)).matrix
+
+
+@matrix_router.delete("/pricing-matrices/{matrix_id}", status_code=204)
+async def delete_pricing_matrix(
+    matrix_id: uuid.UUID, service: MatrixSvc, p: RateCardManage
+) -> None:
+    await service.delete_matrix(matrix_id, actor_id=p.id)
+
+
+@matrix_router.post("/pricing-matrices/{matrix_id}/rows", response_model=RowView, status_code=201)
+async def create_pricing_matrix_row(
+    matrix_id: uuid.UUID, cmd: RowInput, service: MatrixSvc, p: RateCardManage
+) -> Any:
+    return await service.add_row(matrix_id, cmd, actor_id=p.id)
+
+
+@matrix_router.put("/pricing-matrices/{matrix_id}/rows/{row_id}", response_model=RowView)
+async def update_pricing_matrix_row(
+    matrix_id: uuid.UUID,
+    row_id: uuid.UUID,
+    cmd: RowInput,
+    service: MatrixSvc,
+    p: RateCardManage,
+) -> Any:
+    return await service.update_row(matrix_id, row_id, cmd, actor_id=p.id)
+
+
+@matrix_router.delete("/pricing-matrices/{matrix_id}/rows/{row_id}", status_code=204)
+async def delete_pricing_matrix_row(
+    matrix_id: uuid.UUID, row_id: uuid.UUID, service: MatrixSvc, p: RateCardManage
+) -> None:
+    await service.delete_row(matrix_id, row_id, actor_id=p.id)
+
+
 # --- Event relay (internal platform operations) -----------------------------
 relay_router = APIRouter(prefix="/_relay", tags=["event-relay"])
 RelayOps = Annotated[Principal, Depends(require_permission("platform.relay.manage"))]
@@ -1113,6 +1221,7 @@ for sub in (
     supplier_router,
     milk_router,
     pricing_router,
+    matrix_router,
     relay_router,
     authz_router,
     config_router,
