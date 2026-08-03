@@ -6,7 +6,7 @@ status: Approved
 version: "1.6"
 owner: Engineering
 created: 2026-08-03
-last-updated: 2026-08-03
+last-updated: 2026-08-04
 related: [CAP-0001, PDT-0001, QR-0006]
 baseline: ARCH-BASELINE-V1
 ---
