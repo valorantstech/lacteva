@@ -3,7 +3,7 @@ id: CLAUDE-CONTEXT
 title: Lacteva AI Engineering Context — Permanent Onboarding Guide
 type: reference
 status: Approved
-version: "1.5"
+version: "1.6"
 owner: Engineering
 created: 2026-08-03
 last-updated: 2026-08-03
@@ -143,7 +143,8 @@ Current test posture: **196 backend tests, 15 Flutter widget tests**, portal bui
 
 - **Current milestone (platform):** between M0 and M1 — outbox (M1 item) and clients (M2 scaffolds) landed early by sprint order; remaining M1 hardening: consumer framework, Postgres RLS, Redis caching/throttling, RS256, bootstrap flow, real notification channels.
 - **Current platform / product:** Procurement → **Pricing Platform → Rate Management**.
-- **MVP-001 (End-to-End Procurement Integration) is delivered** — the full journey login→collection→auto-pricing→settlement→finalize runs and is E2E-tested; the `awaiting_pricing_engine` placeholder is retired (milk prices on FAT until the multi-dimension policy lands). Next per work orders: **SET-002 — Payment Engine** and/or **PRC-005 — Bonus Engine** (the settlement `adjustments_amount` placeholder is their landing zone). Still open: consumer framework (SPRINT-008B), offline sync, multi-dimension combination policy, matrix completeness gates.
+- **MVP-001 (End-to-End Procurement Integration) is delivered** — the full journey login→collection→auto-pricing→settlement→finalize runs and is E2E-tested; the `awaiting_pricing_engine` placeholder is retired (milk prices on FAT until the multi-dimension policy lands).
+- **Master roadmap (user-issued 2026-08-04, supersedes earlier sequences).** Procurement Platform: Centers/Suppliers/Sessions/Collection/Pricing/Settlement ✅; **next four — Reporting, Offline, Notifications, Payments — complete the MVP** (they align with the MVP-002 recommendation; the consumer framework/SPRINT-008B underpins Notifications). Then the client-product tier: Farmer App, Collection Manager, Regional Dashboard. Subsequent platforms, each mapping onto CAP-0001 domains: **Processing** (reception, tanks, batch tracking, pasteurization, production, packaging, finished goods), **Inventory** (dairy products, warehouse, stock movement/audit, expiry), **Sales** (customers, distributors, orders, invoices, dispatch, collections, CRM), **Procurement AI** (milk/supplier prediction, quality anomaly, fraud detection, dynamic pricing, demand forecasting — trained on the immutable transaction + trace + event data), **Finance** (ledger, journal, tax/GST, receivables/payables, bank, reconciliation), **Enterprise** (workflow engine, notification engine, document engine, search, analytics, data warehouse, API marketplace, plugins, low-code rules). Work orders arrive one at a time and always override this summary's ordering.
 - **Pricing epic ahead (names may evolve per work order):** rate tables/versioning/assignment/approval refinements → Formula Engine → Bonus Engine → Penalty Engine → Tax Engine → Simulation → the Pricing Calculator that finally feeds `milk_collection`'s `awaiting_pricing_engine` placeholder.
 - **Parallel debt queue:** SPRINT-008B consumer framework; offline sync engine for Flutter (Collect prerequisite); money-precision policy (values are `Float` today by documented decision — the calculation increment must define `Numeric`/rounding); governance ratification (MR-1/MR-3) and founding ADR backfill (B4).
 - **Sequencing authority:** [QR-0006](../12-quality/QR-0006-next-work-queue.md) (merged queue), [DEVELOPMENT_ROADMAP](../../DEVELOPMENT_ROADMAP.md) (code), QR-0004 (docs). **User work orders override the queue and are the actual sequencing mechanism** — record any divergence honestly.
@@ -199,6 +200,7 @@ Current test posture: **196 backend tests, 15 Flutter widget tests**, portal bui
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.6 | 2026-08-04 | Engineering | Master multi-platform roadmap recorded (Procurement→Processing→Inventory→Sales→AI→Finance→Enterprise; MVP completes with Reporting/Offline/Notifications/Payments). |
 | 1.5 | 2026-08-04 | Engineering | MVP-001 integration recorded: milk→pricing→settlement wired end-to-end; `awaiting_pricing_engine` retired. |
 | 1.4 | 2026-08-04 | Engineering | SET-001 Settlement Foundation recorded (settlement module, BR-0008…0012, Money.plus); roadmap next = SET-002 / PRC-005. |
 | 1.3 | 2026-08-03 | Engineering | PRC-004 Pricing Calculator recorded; money precision policy resolved (divergence #8 downgraded); roadmap next = PRC-005 Bonus Engine. |
