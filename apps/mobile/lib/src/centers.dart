@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'collection_wizard.dart';
+import 'pricing_resolution.dart';
 import 'rate_cards.dart';
 import 'suppliers.dart';
 
@@ -523,6 +524,16 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => ReadinessScreen(
+                    client: widget.client, centerId: widget.centerId),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.calculate_outlined),
+            tooltip: 'Pricing resolution test',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ResolutionTestScreen(
                     client: widget.client, centerId: widget.centerId),
               ),
             ),

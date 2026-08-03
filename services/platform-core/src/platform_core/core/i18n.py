@@ -20,6 +20,10 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.invalid_credentials": "Email or password is incorrect.",
         "error.validation": "The request is invalid.",
         "error.invalid_token": "This link is invalid or has expired.",
+        "error.pricing_no_match": "No applicable pricing was found for this transaction.",
+        "error.pricing_integrity": (
+            "Pricing data is ambiguous for this transaction — contact an administrator."
+        ),
         "notification.welcome.subject": "Welcome to Lacteva",
         "notification.password_reset.subject": "Reset your Lacteva password",
         "notification.invitation.subject": "You have been invited to Lacteva",

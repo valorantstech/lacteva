@@ -5,9 +5,12 @@ import 'package:http/http.dart' as http;
 import '../main.dart' show apiUrl;
 
 class ApiException implements Exception {
-  ApiException(this.status, this.detail);
+  ApiException(this.status, this.detail, {this.extra});
   final int status;
   final String detail;
+
+  /// Structured problem-detail payload (e.g. pricing resolution stage info).
+  final Map<String, dynamic>? extra;
 
   @override
   String toString() => detail;
@@ -36,11 +39,15 @@ class ApiClient {
     final response = await http.Response.fromStream(streamed);
     if (response.statusCode >= 400) {
       String detail = 'Request failed (${response.statusCode})';
+      Map<String, dynamic>? extra;
       try {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
         detail = (decoded['detail'] ?? decoded['title'] ?? detail).toString();
+        if (decoded['extra'] is Map<String, dynamic>) {
+          extra = decoded['extra'] as Map<String, dynamic>;
+        }
       } catch (_) {}
-      throw ApiException(response.statusCode, detail);
+      throw ApiException(response.statusCode, detail, extra: extra);
     }
     if (response.body.isEmpty) return null;
     return jsonDecode(response.body);
@@ -361,6 +368,25 @@ class ApiClient {
 
   Future<void> deleteMatrixRow(String matrixId, String rowId) async {
     await _send('DELETE', '/v1/pricing-matrices/$matrixId/rows/$rowId');
+  }
+
+  /// Read-side pricing resolution (PRC-003). Throws [ApiException] with a
+  /// structured `extra` map ({stage, reason, inputs}) when nothing matches.
+  Future<ResolutionResultView> resolvePricing({
+    required String centerId,
+    required String productCode,
+    required String transactionDate,
+    required String dimensionCode,
+    required double value,
+  }) async {
+    final result = await _send('POST', '/v1/pricing/resolve', body: {
+      'center_id': centerId,
+      'product_code': productCode,
+      'transaction_date': transactionDate,
+      'dimension_code': dimensionCode,
+      'value': value,
+    }) as Map<String, dynamic>;
+    return ResolutionResultView.fromJson(result);
   }
 }
 
@@ -736,6 +762,47 @@ class MatrixDetailResult {
   final List<MatrixRowView> rows;
   final List<Map<String, dynamic>> gaps;
   final bool editable;
+}
+
+class ResolutionResultView {
+  ResolutionResultView({
+    required this.rateCardCode,
+    required this.rateCardVersion,
+    required this.matrixName,
+    required this.rangeFrom,
+    required this.rangeTo,
+    required this.priceAmount,
+    required this.currency,
+    required this.readingValue,
+    required this.readingUnit,
+  });
+
+  factory ResolutionResultView.fromJson(Map<String, dynamic> json) {
+    final range = json['matching_range'] as Map<String, dynamic>;
+    final price = json['unit_price'] as Map<String, dynamic>;
+    final reading = json['reading'] as Map<String, dynamic>;
+    return ResolutionResultView(
+      rateCardCode: json['rate_card_code'] as String,
+      rateCardVersion: json['rate_card_version'] as int,
+      matrixName: json['matrix_name'] as String,
+      rangeFrom: (range['from_value'] as num).toDouble(),
+      rangeTo: (range['to_value'] as num).toDouble(),
+      priceAmount: price['amount'].toString(),
+      currency: price['currency'] as String,
+      readingValue: (reading['value'] as num).toDouble(),
+      readingUnit: (reading['unit'] ?? '').toString(),
+    );
+  }
+
+  final String rateCardCode;
+  final int rateCardVersion;
+  final String matrixName;
+  final double rangeFrom;
+  final double rangeTo;
+  final String priceAmount;
+  final String currency;
+  final double readingValue;
+  final String readingUnit;
 }
 
 class RateCardDetailResult {

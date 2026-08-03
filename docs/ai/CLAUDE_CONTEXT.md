@@ -3,7 +3,7 @@ id: CLAUDE-CONTEXT
 title: Lacteva AI Engineering Context — Permanent Onboarding Guide
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Engineering
 created: 2026-08-03
 last-updated: 2026-08-03
@@ -75,7 +75,7 @@ baseline: ARCH-BASELINE-V1
 | `supplier` | Suppliers, profiles, documents, bank accounts, m:n center placement, HMAC-signed QR identity, search, bulk import |
 | `milk_collection` | Collection sessions (readiness-gated) + the immutable milk transaction engine (state machine NEW→…→COMPLETED, snapshot, ordered event log, metrics; pricing placeholder `awaiting_pricing_engine`) |
 | `event_relay` | Transactional outbox, dispatcher, retry, DLQ, replay, `/_relay` operations API |
-| `pricing` | Rate cards (workflow draft→under_review→approved→published→archived, versioning, center+product scope, effective-date overlap rule) and pricing matrices (configurable quality dimensions, half-open price bands) |
+| `pricing` | Rate cards (workflow draft→under_review→approved→published→archived, versioning, center+product scope, effective-date overlap rule), pricing matrices (configurable quality dimensions, half-open price bands), and the read-side Resolution Engine (PRC-003: exactly-one band selection with structured no-match/integrity exceptions; repository reusable by the future Pricing Calculator) |
 
 **Products.** *Platform products:* platform-core API, admin portal, mobile app. *Business products:* **Lacteva Collect** (specified in PSP-0001…0010; partially realized by the milk-collection engine) and the **Pricing Platform / Rate Management** (Increments 001–002 delivered). The documented product object is [PDT-0001](../03-architecture/03-application-layer/PDT-0001-lacteva-collect.md).
 
@@ -130,6 +130,7 @@ The repository was built in strictly ordered phases — documentation first, pla
 10. **SPRINT-008A Relay.** The transactional outbox retrofitted *behind* the existing bus port — ~40 publish sites became durable with zero call-site changes; CAS dispatch, retries, DLQ, replay, relay ops API.
 11. **Pricing Increment-001 Rate Card Foundation.** The rate card aggregate: five-status review workflow, immutable-once-published, versioning with copied scope, center+product assignment, effective-date overlap rule (one published card per center+product+date).
 12. **Pricing Increment-002 Pricing Matrix Foundation.** Configurable quality dimensions as tenant data (FAT is not hardcoded); per product×dimension matrices of half-open `[from, to)` price bands with overlap rejection, dimension bounds, continuity gap reporting; lifecycle riding the rate card (draft-editable → active on publish → archived with card → copied by new versions). **Definitions only — no calculation exists anywhere.**
+13. **PRC-003 Pricing Resolution Engine.** Read-side selection: (center, product, date, dimension, reading) → exactly one published card → one active matrix → one band, via a fixed 3-query pipeline with an explicit reusable repository; structured `pricing_no_match` (stage/reason/inputs) and `pricing_integrity` (candidates) exceptions — never a silent choice; platform `Money`/`Quantity` value objects introduced (arithmetic-free until PRC-004). Portal playground + mobile test screen.
 
 Current test posture: **196 backend tests, 15 Flutter widget tests**, portal build+lint, docs validator + XREF — all green, enforced by CI, verified before every commit.
 
@@ -137,7 +138,7 @@ Current test posture: **196 backend tests, 15 Flutter widget tests**, portal bui
 
 - **Current milestone (platform):** between M0 and M1 — outbox (M1 item) and clients (M2 scaffolds) landed early by sprint order; remaining M1 hardening: consumer framework, Postgres RLS, Redis caching/throttling, RS256, bootstrap flow, real notification channels.
 - **Current platform / product:** Procurement → **Pricing Platform → Rate Management**.
-- **Next increment: Increment-003 — Pricing Resolution Engine** (per the Increment-002 closing order): resolve (center, product, date, quality readings) → active rate card → matching band → unit price, with a "why this price" trace; hard completeness gates (no gaps) at publish; still *no* settlement integration.
+- **PRC-003 (Pricing Resolution Engine) is delivered**; next: **PRC-004 — Pricing Calculator** (the first increment allowed to calculate: money-precision/rounding policy on the `Money` VO, amount = price × quantity composition, multi-dimension combination policy, wiring the milk transaction's `awaiting_pricing_engine` placeholder). Publish-time completeness gates (no matrix gaps) also remain open.
 - **Pricing epic ahead (names may evolve per work order):** rate tables/versioning/assignment/approval refinements → Formula Engine → Bonus Engine → Penalty Engine → Tax Engine → Simulation → the Pricing Calculator that finally feeds `milk_collection`'s `awaiting_pricing_engine` placeholder.
 - **Parallel debt queue:** SPRINT-008B consumer framework; offline sync engine for Flutter (Collect prerequisite); money-precision policy (values are `Float` today by documented decision — the calculation increment must define `Numeric`/rounding); governance ratification (MR-1/MR-3) and founding ADR backfill (B4).
 - **Sequencing authority:** [QR-0006](../12-quality/QR-0006-next-work-queue.md) (merged queue), [DEVELOPMENT_ROADMAP](../../DEVELOPMENT_ROADMAP.md) (code), QR-0004 (docs). **User work orders override the queue and are the actual sequencing mechanism** — record any divergence honestly.
@@ -193,4 +194,5 @@ Current test posture: **196 backend tests, 15 Flutter widget tests**, portal bui
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-03 | Engineering | PRC-003 Pricing Resolution Engine recorded (module table, evolution §7 item 13, roadmap next = PRC-004 Pricing Calculator). |
 | 1.0 | 2026-08-03 | Engineering (AI context initialization work order) | Initial permanent onboarding guide: vision, philosophies, architecture, structure, standards, history, roadmap, prohibitions, AI working instructions, future vision, divergence register. |

@@ -78,6 +78,11 @@ from platform_core.modules.pricing.matrix import (
     RowView,
     UpdateMatrixCommand,
 )
+from platform_core.modules.pricing.resolution import (
+    PricingResolutionService,
+    ResolutionQuery,
+    ResolutionResult,
+)
 from platform_core.modules.pricing.service import (
     AssignProductCommand,
     CreateRateCardCommand,
@@ -1065,6 +1070,18 @@ async def delete_pricing_matrix_row(
     matrix_id: uuid.UUID, row_id: uuid.UUID, service: MatrixSvc, p: RateCardManage
 ) -> None:
     await service.delete_row(matrix_id, row_id, actor_id=p.id)
+
+
+# --- Pricing resolution (read-side selection only — PRC-003) ----------------
+ResolutionSvc = Annotated[PricingResolutionService, Depends(deps.get_pricing_resolution_service)]
+
+
+@matrix_router.post("/pricing/resolve", response_model=ResolutionResult)
+async def resolve_pricing(q: ResolutionQuery, service: ResolutionSvc, _: RateCardRead) -> Any:
+    """Select the ONE pricing-matrix band applying to (center, product, date,
+    dimension, reading). 422 with {stage, reason, inputs} when nothing
+    matches; 409 when pricing data is ambiguous. Calculates nothing."""
+    return await service.resolve(q)
 
 
 # --- Event relay (internal platform operations) -----------------------------

@@ -19,6 +19,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public detail: string,
+    /** Structured problem-detail payload (e.g. pricing resolution stage info). */
+    public extra?: unknown,
   ) {
     super(detail);
   }
@@ -41,13 +43,15 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     let detail = res.statusText;
+    let extra: unknown;
     try {
-      const body = (await res.json()) as { detail?: string; title?: string };
+      const body = (await res.json()) as { detail?: string; title?: string; extra?: unknown };
       detail = body.detail ?? body.title ?? detail;
+      extra = body.extra;
     } catch {
       // non-JSON error body — keep statusText
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, extra);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -416,6 +420,72 @@ export const updateMatrixRow = (matrixId: string, rowId: string, body: MatrixRow
 
 export const deleteMatrixRow = (matrixId: string, rowId: string) =>
   api(`/v1/pricing-matrices/${matrixId}/rows/${rowId}`, { method: "DELETE" });
+
+// --- Pricing resolution (read-side selection only) --------------------------
+
+export type ResolutionResult = {
+  rate_card_id: string;
+  rate_card_code: string;
+  rate_card_version: number;
+  matrix_id: string;
+  matrix_name: string;
+  row_id: string;
+  row_sequence: number;
+  matching_range: { from_value: number; to_value: number };
+  unit_price: {
+    amount: string | number;
+    currency: string;
+    precision: number;
+    rounding_policy: string;
+  };
+  reading: { value: number; unit: string; precision: number };
+  metadata: Record<string, unknown>;
+};
+
+export type ResolutionFailure = {
+  status: number;
+  title: string;
+  stage?: string;
+  reason?: string;
+  inputs?: Record<string, unknown>;
+  candidates?: string[];
+};
+
+export type ResolutionOutcome =
+  | { ok: true; result: ResolutionResult }
+  | { ok: false; failure: ResolutionFailure };
+
+export async function resolvePricing(body: {
+  center_id: string;
+  product_code: string;
+  transaction_date: string;
+  dimension_code: string;
+  value: number;
+}): Promise<ResolutionOutcome> {
+  try {
+    const result = await api<ResolutionResult>("/v1/pricing/resolve", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return { ok: true, result };
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 422 || err.status === 409)) {
+      const extra = (err.extra ?? {}) as Record<string, unknown>;
+      return {
+        ok: false,
+        failure: {
+          status: err.status,
+          title: err.detail,
+          stage: extra.stage as string | undefined,
+          reason: extra.reason as string | undefined,
+          inputs: extra.inputs as Record<string, unknown> | undefined,
+          candidates: extra.candidates as string[] | undefined,
+        },
+      };
+    }
+    throw err;
+  }
+}
 
 // --- Milk transactions ------------------------------------------------------
 

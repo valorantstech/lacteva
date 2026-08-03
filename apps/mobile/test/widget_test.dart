@@ -5,6 +5,7 @@ import 'package:lacteva_mobile/src/api.dart';
 import 'package:lacteva_mobile/src/centers.dart';
 import 'package:lacteva_mobile/src/collection_wizard.dart';
 import 'package:lacteva_mobile/src/pricing_matrices.dart';
+import 'package:lacteva_mobile/src/pricing_resolution.dart';
 import 'package:lacteva_mobile/src/rate_cards.dart';
 import 'package:lacteva_mobile/src/suppliers.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -176,6 +177,64 @@ void main() {
     expect(find.text('Pick a dimension'), findsOneWidget);
   });
 
+  testWidgets('resolution screen validates inputs', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ResolutionTestScreen(client: _ResolveFake(), centerId: 'c1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Resolve'));
+    await tester.pump();
+    expect(find.text('Product code is required'), findsOneWidget);
+    expect(find.text('Pick a dimension'), findsOneWidget);
+    expect(find.text('Enter a numeric reading'), findsOneWidget);
+  });
+
+  testWidgets('resolution screen shows a match', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ResolutionTestScreen(client: _ResolveFake(), centerId: 'c1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Product code'), 'RAW-COW-MILK');
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('FAT — Fat').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Reading value (e.g. 4.2)'), '4.2');
+    await tester.tap(find.widgetWithText(FilledButton, 'Resolve'));
+    await tester.pumpAndSettle();
+    expect(find.text('Rate card: MILK-STD v1'), findsOneWidget);
+    expect(find.text('Unit price: 45 KES'), findsOneWidget);
+    expect(find.textContaining('no amount is calculated'), findsOneWidget);
+  });
+
+  testWidgets('resolution screen shows structured failure', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ResolutionTestScreen(
+            client: _ResolveFake(failStage: 'band'), centerId: 'c1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Product code'), 'RAW-COW-MILK');
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('FAT — Fat').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Reading value (e.g. 4.2)'), '9.9');
+    await tester.tap(find.widgetWithText(FilledButton, 'Resolve'));
+    await tester.pumpAndSettle();
+    expect(find.text('No resolution (failed at: band)'), findsOneWidget);
+    expect(find.textContaining('no band contains'), findsOneWidget);
+  });
+
   testWidgets('edit form shows timezone instead of code', (tester) async {
     final center = CenterSummary(
       id: 'c1',
@@ -292,6 +351,44 @@ class _MatrixFake extends ApiClient {
         DimensionSummary(
             code: 'SNF', name: 'Solids-Not-Fat', unit: '%', active: true),
       ];
+}
+
+class _ResolveFake extends ApiClient {
+  _ResolveFake({this.failStage});
+
+  final String? failStage;
+
+  @override
+  Future<List<DimensionSummary>> listQualityDimensions() async => [
+        DimensionSummary(code: 'FAT', name: 'Fat', unit: '%', active: true),
+      ];
+
+  @override
+  Future<ResolutionResultView> resolvePricing({
+    required String centerId,
+    required String productCode,
+    required String transactionDate,
+    required String dimensionCode,
+    required double value,
+  }) async {
+    if (failStage != null) {
+      throw ApiException(422, 'No applicable pricing was found.', extra: {
+        'stage': failStage,
+        'reason': 'no band contains the reading $value',
+      });
+    }
+    return ResolutionResultView(
+      rateCardCode: 'MILK-STD',
+      rateCardVersion: 1,
+      matrixName: 'Cow Milk FAT Bands',
+      rangeFrom: 4.0,
+      rangeTo: 5.0,
+      priceAmount: '45',
+      currency: 'KES',
+      readingValue: value,
+      readingUnit: '%',
+    );
+  }
 }
 
 class _RateCardFake extends ApiClient {
