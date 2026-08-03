@@ -25,8 +25,7 @@ from sqlalchemy import case, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
-from platform_core.core.errors import ForbiddenError
-from platform_core.core.tenancy import get_current_tenant
+from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.collection_center.models import CollectionCenter
 from platform_core.modules.milk_collection.models import MilkCollectionTransaction as Tx
 from platform_core.modules.pricing.models import PricingMatrix, PricingMatrixRow, RateCard
@@ -133,7 +132,7 @@ class ReportingService:
         branch_id: uuid.UUID | None = None,
         supplier_id: uuid.UUID | None = None,
     ) -> DailyCollectionSummary:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         date_from = date_from or utcnow().date()
         date_to = date_to or date_from
         conditions = self._tx_conditions(
@@ -211,7 +210,7 @@ class ReportingService:
         limit: int = 20,
         offset: int = 0,
     ) -> SummaryPage:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         date_from = date_from or utcnow().date()
         date_to = date_to or date_from
         limit = max(1, min(limit, 100))
@@ -278,7 +277,7 @@ class ReportingService:
         limit: int = 20,
         offset: int = 0,
     ) -> SummaryPage:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         date_from = date_from or utcnow().date()
         date_to = date_to or date_from
         limit = max(1, min(limit, 100))
@@ -343,7 +342,7 @@ class ReportingService:
         supplier_id: uuid.UUID | None = None,
         center_id: uuid.UUID | None = None,
     ) -> SettlementSummary:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         conditions = [Settlement.tenant_id == tenant_id]
         if date_from is not None:
             conditions.append(Settlement.period_to >= date_from)
@@ -390,7 +389,7 @@ class ReportingService:
         date_to: date | None = None,
         center_id: uuid.UUID | None = None,
     ) -> PricingSummary:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         date_from = date_from or utcnow().date()
         date_to = date_to or date_from
         conditions = self._tx_conditions(tenant_id, date_from, date_to, center_id=center_id)
@@ -474,10 +473,3 @@ class ReportingService:
         if not value_sum or not weight_sum:
             return None
         return round(float(value_sum) / float(weight_sum), 2)
-
-    @staticmethod
-    def _require_tenant() -> uuid.UUID:
-        tenant_id = get_current_tenant()
-        if tenant_id is None:
-            raise ForbiddenError("tenant context required")
-        return tenant_id

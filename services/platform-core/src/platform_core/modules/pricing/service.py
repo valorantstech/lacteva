@@ -17,8 +17,8 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
-from platform_core.core.errors import ConflictError, ForbiddenError, NotFoundError
-from platform_core.core.tenancy import get_current_tenant
+from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.tenancy import require_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.collection_center.models import CollectionCenter
@@ -141,7 +141,7 @@ class RateCardService:
     # --- lifecycle --------------------------------------------------------
 
     async def create(self, cmd: CreateRateCardCommand, *, actor_id: uuid.UUID) -> RateCard:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         await self._check_branch(cmd.branch_id, tenant_id)
         code = cmd.code.upper() if cmd.code else await self._generate_code(tenant_id)
         existing = await self._session.scalar(
@@ -398,7 +398,7 @@ class RateCardService:
     # --- queries -----------------------------------------------------------
 
     async def get(self, card_id: uuid.UUID) -> RateCard:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         card = await self._session.get(RateCard, card_id)
         if card is None or card.tenant_id != tenant_id:
             raise NotFoundError("rate card not found")
@@ -427,7 +427,7 @@ class RateCardService:
         limit: int = 20,
         offset: int = 0,
     ) -> RateCardPage:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         limit = max(1, min(limit, 100))
         stmt = select(RateCard).where(RateCard.tenant_id == tenant_id)
         if q:
@@ -643,10 +643,3 @@ class RateCardService:
             if exists is None:
                 return candidate
         raise ConflictError("could not generate a unique rate card code")
-
-    @staticmethod
-    def _require_tenant() -> uuid.UUID:
-        tenant_id = get_current_tenant()
-        if tenant_id is None:
-            raise ForbiddenError("tenant context required")
-        return tenant_id

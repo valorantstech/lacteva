@@ -26,8 +26,8 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
-from platform_core.core.errors import AppError, ForbiddenError, NotFoundError
-from platform_core.core.tenancy import get_current_tenant
+from platform_core.core.errors import AppError, NotFoundError
+from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import (
     DEFAULT_ROUNDING_POLICY,
     ROUNDING_POLICIES,
@@ -223,7 +223,7 @@ class PricingCalculationService:
         self._calculator = PricingCalculator()
 
     async def calculate(self, req: CalculationRequest, *, actor_id: uuid.UUID) -> CalculationResult:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         row, matrix, card = await self._verified_band(tenant_id, req)
         policy = await self._rounding_policy(req)
         calculation = self._calculator.calculate(
@@ -332,10 +332,3 @@ class PricingCalculationService:
                 }
             )
         return configured
-
-    @staticmethod
-    def _require_tenant() -> uuid.UUID:
-        tenant_id = get_current_tenant()
-        if tenant_id is None:
-            raise ForbiddenError("tenant context required")
-        return tenant_id

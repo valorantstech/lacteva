@@ -44,6 +44,26 @@ def backoff_delay(attempts: int) -> float:
     return min(BACKOFF_BASE_SECONDS**attempts, BACKOFF_CAP_SECONDS)
 
 
+def envelope_from_outbox(row: OutboxEvent) -> EventEnvelope:
+    """Rebuild the wire envelope from its durable outbox record. Shared by
+    the dispatcher (transport delivery) and the consumer framework."""
+    return EventEnvelope(
+        id=row.id,  # stable Event ID = transport message_id = idempotency key
+        type=row.event_name,
+        source=get_settings().service_name,
+        time=as_utc(row.occurred_at).isoformat(),
+        tenant_id=row.tenant_id,
+        actor_id=row.created_by,
+        trace_id=row.correlation_id,
+        correlation_id=row.correlation_id,
+        causation_id=row.causation_id,
+        aggregate_type=row.aggregate_type,
+        aggregate_id=row.aggregate_id,
+        version=row.version,
+        data=row.payload,
+    )
+
+
 class OutboxEventBus:
     """EventBus implementation that stores events transactionally.
 
@@ -216,21 +236,7 @@ class RelayService:
         await self._session.flush()  # outcome must be visible before return
 
     def _envelope_of(self, row: OutboxEvent) -> EventEnvelope:
-        return EventEnvelope(
-            id=row.id,  # stable Event ID = transport message_id = idempotency key
-            type=row.event_name,
-            source=get_settings().service_name,
-            time=as_utc(row.occurred_at).isoformat(),
-            tenant_id=row.tenant_id,
-            actor_id=row.created_by,
-            trace_id=row.correlation_id,
-            correlation_id=row.correlation_id,
-            causation_id=row.causation_id,
-            aggregate_type=row.aggregate_type,
-            aggregate_id=row.aggregate_id,
-            version=row.version,
-            data=row.payload,
-        )
+        return envelope_from_outbox(row)
 
     # --- replay & operations ----------------------------------------------
 

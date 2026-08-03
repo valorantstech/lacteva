@@ -19,6 +19,18 @@ from starlette.requests import Request
 _current_tenant: ContextVar[uuid.UUID | None] = ContextVar("current_tenant", default=None)
 
 
+def require_current_tenant() -> uuid.UUID:
+    """The tenant demanded: raises ForbiddenError outside tenant context.
+    Single source for the guard every tenant-scoped service needs
+    (SPRINT-008B engineering review: was copied in 11 services)."""
+    from platform_core.core.errors import ForbiddenError
+
+    tenant_id = get_current_tenant()
+    if tenant_id is None:
+        raise ForbiddenError("tenant context required")
+    return tenant_id
+
+
 def get_current_tenant() -> uuid.UUID | None:
     return _current_tenant.get()
 

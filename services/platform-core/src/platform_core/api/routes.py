@@ -25,6 +25,11 @@ from platform_core.modules.collection_center.service import (
     UpdateCenterCommand,
 )
 from platform_core.modules.configuration.service import ConfigurationService
+from platform_core.modules.event_relay.consumers import (
+    ConsumerRunner,
+    ConsumersHealth,
+    ExecutionView,
+)
 from platform_core.modules.event_relay.service import (
     DeadLetterView,
     OutboxEventView,
@@ -1370,6 +1375,48 @@ async def relay_dispatch_now(service: RelaySvc, _: RelayOps) -> dict:
     return {"delivered": delivered}
 
 
+# --- Consumer framework operations (SPRINT-008B) ----------------------------
+consumers_router = APIRouter(prefix="/_consumers", tags=["event-consumers"])
+ConsumerRun = Annotated[ConsumerRunner, Depends(deps.get_consumer_runner)]
+
+
+@consumers_router.get("/status", response_model=ConsumersHealth)
+async def consumers_health(runner: ConsumerRun, _: RelayOps) -> ConsumersHealth:
+    """Per-consumer health: lag behind the log head, execution counts, dead
+    letters. Overall degraded when anything is dead or badly lagging."""
+    return await runner.health()
+
+
+@consumers_router.post("/run")
+async def consumers_run_now(runner: ConsumerRun, _: RelayOps) -> dict:
+    return await runner.run_once()
+
+
+@consumers_router.get("/executions", response_model=list[ExecutionView])
+async def consumer_executions(
+    runner: ConsumerRun,
+    _: RelayOps,
+    consumer: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+) -> Any:
+    return await runner.list_executions(consumer_name=consumer, status=status, limit=limit)
+
+
+@consumers_router.get("/dead-letters", response_model=list[ExecutionView])
+async def consumer_dead_letters(
+    runner: ConsumerRun, _: RelayOps, consumer: str | None = None, limit: int = 50
+) -> Any:
+    return await runner.list_executions(consumer_name=consumer, status="dead", limit=limit)
+
+
+@consumers_router.post("/executions/{execution_id}/replay", response_model=ExecutionView)
+async def replay_consumer_execution(
+    execution_id: uuid.UUID, runner: ConsumerRun, _: RelayOps
+) -> Any:
+    return await runner.replay_execution(execution_id)
+
+
 # --- Authorization --------------------------------------------------------
 authz_router = APIRouter(prefix="/authz", tags=["authz"])
 
@@ -1482,6 +1529,7 @@ for sub in (
     settlement_router,
     report_router,
     relay_router,
+    consumers_router,
     authz_router,
     config_router,
     audit_router,

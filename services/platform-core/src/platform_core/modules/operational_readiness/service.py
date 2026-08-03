@@ -9,8 +9,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
-from platform_core.core.errors import ConflictError, ForbiddenError, NotFoundError
-from platform_core.core.tenancy import get_current_tenant
+from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.tenancy import require_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.collection_center.models import CalendarEntry, CollectionCenter
@@ -135,7 +135,7 @@ class OperationalReadinessService:
     # --- device registry --------------------------------------------------
 
     async def register_device(self, cmd: RegisterDeviceCommand, *, actor_id: uuid.UUID) -> Device:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         existing = await self._session.scalar(
             select(Device).where(
                 Device.tenant_id == tenant_id, Device.serial_number == cmd.serial_number
@@ -243,7 +243,7 @@ class OperationalReadinessService:
         return report
 
     async def get_device(self, device_id: uuid.UUID) -> Device:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         device = await self._session.get(Device, device_id)
         if device is None or device.tenant_id != tenant_id:
             raise NotFoundError("device not found")
@@ -268,7 +268,7 @@ class OperationalReadinessService:
         limit: int = 20,
         offset: int = 0,
     ) -> DevicePage:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         limit = max(1, min(limit, 100))
         stmt = select(Device).where(Device.tenant_id == tenant_id)
         if center_id:
@@ -298,7 +298,7 @@ class OperationalReadinessService:
         *,
         actor_id: uuid.UUID,
     ) -> OperatorAssignment:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         if role_label not in ("operator", "supervisor"):
             raise ConflictError("role_label must be operator or supervisor")
         center = await self._get_center(center_id)
@@ -471,15 +471,8 @@ class OperationalReadinessService:
     # --- helpers -----------------------------------------------------------
 
     async def _get_center(self, center_id: uuid.UUID) -> CollectionCenter:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         center = await self._session.get(CollectionCenter, center_id)
         if center is None or center.tenant_id != tenant_id:
             raise NotFoundError("collection center not found")
         return center
-
-    @staticmethod
-    def _require_tenant() -> uuid.UUID:
-        tenant_id = get_current_tenant()
-        if tenant_id is None:
-            raise ForbiddenError("tenant context required")
-        return tenant_id

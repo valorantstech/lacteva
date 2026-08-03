@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Float, Index, Integer, String, Uuid
+from sqlalchemy import JSON, DateTime, Float, Index, Integer, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.core.db import Base, IdMixin, utcnow
@@ -21,7 +21,12 @@ class OutboxEvent(Base, IdMixin):
     """The id doubles as the Event ID on the wire (message_id, idempotency key)."""
 
     __tablename__ = "event_outbox"
-    __table_args__ = (Index("ix_outbox_dispatch", "status", "next_attempt_at"),)
+    __table_args__ = (
+        Index("ix_outbox_dispatch", "status", "next_attempt_at"),
+        # Consumer-cursor pagination: WHERE (created_at, id) > watermark
+        # ORDER BY created_at, id (SPRINT-008B).
+        Index("ix_outbox_consume", "created_at", "id"),
+    )
 
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
     aggregate_type: Mapped[str | None] = mapped_column(String(60), nullable=True)
@@ -54,6 +59,49 @@ class EventDelivery(Base, IdMixin):
     transport: Mapped[str] = mapped_column(String(30), default="")
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ConsumerCursor(Base, IdMixin):
+    """Per-consumer position in the outbox log (SPRINT-008B). Consumers read
+    the durable log in (created_at, id) order; the cursor is their watermark."""
+
+    __tablename__ = "consumer_cursor"
+
+    consumer_name: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    position_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    position_event_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ConsumerExecution(Base, IdMixin):
+    """One consumer's processing record for one event (SPRINT-008B).
+
+    Triple duty: idempotency ledger (unique consumer+event — an event is
+    never successfully processed twice), execution history, and the
+    consumer-side dead letter queue (status='dead' rows are the DLQ;
+    replay resets them to 'failed' with a fresh attempt budget)."""
+
+    __tablename__ = "consumer_execution"
+    __table_args__ = (
+        UniqueConstraint("consumer_name", "event_id", name="uq_consumer_execution"),
+        Index("ix_consumer_execution_status", "consumer_name", "status"),
+    )
+
+    consumer_name: Mapped[str] = mapped_column(String(80), index=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    event_name: Mapped[str] = mapped_column(String(120))
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
+    status: Mapped[str] = mapped_column(String(12), default="failed")  # succeeded|failed|dead
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

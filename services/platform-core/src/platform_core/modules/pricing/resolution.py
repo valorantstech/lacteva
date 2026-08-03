@@ -22,8 +22,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
-from platform_core.core.errors import AppError, ForbiddenError
-from platform_core.core.tenancy import get_current_tenant
+from platform_core.core.errors import AppError
+from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money, Quantity
 from platform_core.modules.pricing.models import (
     PricingMatrix,
@@ -204,7 +204,7 @@ class PricingResolutionService:
         """Three fixed queries: dimension → the ONE applicable rate card →
         the ONE matrix x band candidate. Every stage enforces exactly-one:
         the engine never silently chooses between candidates."""
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         dimension = await self.repository.dimension(tenant_id, q.dimension_code)
         if dimension is None:
             raise PricingResolutionError(
@@ -314,10 +314,3 @@ class PricingResolutionService:
                 "center_id": str(q.center_id),
             },
         )
-
-    @staticmethod
-    def _require_tenant() -> uuid.UUID:
-        tenant_id = get_current_tenant()
-        if tenant_id is None:
-            raise ForbiddenError("tenant context required")
-        return tenant_id

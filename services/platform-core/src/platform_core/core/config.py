@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     event_bus: Literal["rabbitmq", "memory", "null"] = "memory"
     outbox_mode: Literal["inline", "background"] = "background"
     outbox_poll_seconds: float = 1.0
+    consumers_enabled: bool = True  # background consumer loop (never runs in test env)
+    consumer_poll_seconds: float = 1.0
     rabbitmq_url: str = "amqp://lacteva:lacteva@localhost:5672/"
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "lacteva"

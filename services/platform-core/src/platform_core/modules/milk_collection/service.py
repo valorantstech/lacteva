@@ -19,8 +19,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import as_utc, utcnow
-from platform_core.core.errors import ConflictError, ForbiddenError, NotFoundError
-from platform_core.core.tenancy import get_current_tenant
+from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.tenancy import require_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.infrastructure.hardware import mock_analyzer, mock_scale
 from platform_core.modules.audit.service import AuditService
@@ -202,7 +202,7 @@ class MilkCollectionService:
     async def open_session(
         self, center_id: uuid.UUID, label: str, *, actor_id: uuid.UUID
     ) -> CollectionSession:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         center = await self._session.get(CollectionCenter, center_id)
         if center is None or center.tenant_id != tenant_id:
             raise NotFoundError("collection center not found")
@@ -278,7 +278,7 @@ class MilkCollectionService:
     async def list_sessions(
         self, *, center_id: uuid.UUID | None, status: str | None
     ) -> list[CollectionSession]:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         stmt = select(CollectionSession).where(CollectionSession.tenant_id == tenant_id)
         if center_id:
             stmt = stmt.where(CollectionSession.center_id == center_id)
@@ -596,7 +596,21 @@ class MilkCollectionService:
             )
         )
         await self._record(
-            tx, "TransactionCompleted", {"decision": decision, "duration_s": duration}, actor_id
+            tx,
+            "TransactionCompleted",
+            {
+                # Enriched for downstream consumers (SPRINT-008B): projections
+                # and notifications read the FACT from the event, never tables.
+                "decision": decision,
+                "duration_s": duration,
+                "center_id": str(tx.center_id),
+                "supplier_id": str(tx.supplier_id) if tx.supplier_id else None,
+                "net_weight": tx.net_weight,
+                "gross_amount": str(tx.gross_amount) if tx.gross_amount is not None else None,
+                "currency": tx.currency,
+                "rejected": tx.rejected_reason is not None,
+            },
+            actor_id,
         )
         return tx
 
@@ -627,7 +641,7 @@ class MilkCollectionService:
         limit: int = 20,
         offset: int = 0,
     ) -> TransactionPage:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         limit = max(1, min(limit, 100))
         stmt = select(MilkCollectionTransaction).where(
             MilkCollectionTransaction.tenant_id == tenant_id
@@ -663,7 +677,7 @@ class MilkCollectionService:
     # --- internals ----------------------------------------------------------
 
     async def _resolve_supplier(self, cmd: IdentifySupplierCommand) -> Supplier:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         if cmd.method == "manual":
             if cmd.supplier_id is None:
                 raise ConflictError("manual identification requires supplier_id")
@@ -734,6 +748,8 @@ class MilkCollectionService:
                 BUS_EVENTS[event_type],
                 {"transaction_id": str(tx.id), **data},
                 actor_id=actor_id,
+                aggregate_type="milk_collection_transaction",
+                aggregate_id=tx.id,
             )
         )
 
@@ -783,7 +799,7 @@ class MilkCollectionService:
         }
 
     async def _get_tx(self, tx_id: uuid.UUID) -> MilkCollectionTransaction:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         tx = await self._session.get(MilkCollectionTransaction, tx_id)
         if tx is None or tx.tenant_id != tenant_id:
             raise NotFoundError("transaction not found")
@@ -798,15 +814,8 @@ class MilkCollectionService:
         return tx
 
     async def _get_session(self, session_id: uuid.UUID) -> CollectionSession:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         session = await self._session.get(CollectionSession, session_id)
         if session is None or session.tenant_id != tenant_id:
             raise NotFoundError("collection session not found")
         return session
-
-    @staticmethod
-    def _require_tenant() -> uuid.UUID:
-        tenant_id = get_current_tenant()
-        if tenant_id is None:
-            raise ForbiddenError("tenant context required")
-        return tenant_id

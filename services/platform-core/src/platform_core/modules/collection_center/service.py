@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from platform_core.core.errors import ConflictError, ForbiddenError, NotFoundError
-from platform_core.core.tenancy import get_current_tenant
+from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.tenancy import require_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.collection_center.models import (
@@ -118,7 +118,7 @@ class CollectionCenterService:
     # --- lifecycle --------------------------------------------------------
 
     async def create(self, cmd: CreateCenterCommand, *, actor_id: uuid.UUID) -> CollectionCenter:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         branch = await self._session.get(Branch, cmd.branch_id)
         if branch is None or branch.tenant_id != tenant_id:
             raise NotFoundError("branch not found")
@@ -210,7 +210,7 @@ class CollectionCenterService:
     # --- queries ----------------------------------------------------------
 
     async def get(self, center_id: uuid.UUID) -> CollectionCenter:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         center = await self._session.get(CollectionCenter, center_id)
         if center is None or center.tenant_id != tenant_id:
             raise NotFoundError("collection center not found")
@@ -225,7 +225,7 @@ class CollectionCenterService:
         limit: int = 20,
         offset: int = 0,
     ) -> CenterPage:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         limit = max(1, min(limit, 100))
         stmt = select(CollectionCenter).where(CollectionCenter.tenant_id == tenant_id)
         if q:
@@ -372,10 +372,3 @@ class CollectionCenterService:
             resource_id=center.id,
             actor_id=actor_id,
         )
-
-    @staticmethod
-    def _require_tenant() -> uuid.UUID:
-        tenant_id = get_current_tenant()
-        if tenant_id is None:
-            raise ForbiddenError("tenant context required")
-        return tenant_id

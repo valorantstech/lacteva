@@ -24,8 +24,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
-from platform_core.core.errors import ConflictError, ForbiddenError, NotFoundError
-from platform_core.core.tenancy import get_current_tenant
+from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
@@ -135,7 +135,7 @@ class SettlementService:
     # --- lifecycle --------------------------------------------------------
 
     async def create(self, cmd: CreateSettlementCommand, *, actor_id: uuid.UUID) -> Settlement:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         supplier = await self._session.get(Supplier, cmd.supplier_id)
         if supplier is None or supplier.tenant_id != tenant_id:
             raise NotFoundError("supplier not found")
@@ -351,7 +351,7 @@ class SettlementService:
     # --- queries -----------------------------------------------------------
 
     async def get(self, settlement_id: uuid.UUID) -> Settlement:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         settlement = await self._session.get(Settlement, settlement_id)
         if settlement is None or settlement.tenant_id != tenant_id:
             raise NotFoundError("settlement not found")
@@ -378,7 +378,7 @@ class SettlementService:
         limit: int = 20,
         offset: int = 0,
     ) -> SettlementPage:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         limit = max(1, min(limit, 100))
         stmt = select(Settlement).where(Settlement.tenant_id == tenant_id)
         if q:
@@ -586,10 +586,3 @@ class SettlementService:
             if exists is None:
                 return candidate
         raise ConflictError("could not generate a unique settlement number")
-
-    @staticmethod
-    def _require_tenant() -> uuid.UUID:
-        tenant_id = get_current_tenant()
-        if tenant_id is None:
-            raise ForbiddenError("tenant context required")
-        return tenant_id

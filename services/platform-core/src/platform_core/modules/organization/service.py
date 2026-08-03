@@ -16,7 +16,11 @@ from platform_core.core.errors import (
     InvalidTokenError,
     NotFoundError,
 )
-from platform_core.core.tenancy import get_current_tenant, set_current_tenant
+from platform_core.core.tenancy import (
+    get_current_tenant,
+    require_current_tenant,
+    set_current_tenant,
+)
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.infrastructure.notifications import Notification, Notifier
 from platform_core.modules.audit.service import AuditService
@@ -128,7 +132,7 @@ class StructureService:
         self._audit = audit
 
     async def create_workspace(self, *, name: str, slug: str, actor_id: uuid.UUID) -> Workspace:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         existing = await self._session.scalar(
             select(Workspace).where(Workspace.tenant_id == tenant_id, Workspace.slug == slug)
         )
@@ -153,14 +157,14 @@ class StructureService:
         return workspace
 
     async def list_workspaces(self) -> list[Workspace]:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         stmt = select(Workspace).where(Workspace.tenant_id == tenant_id).order_by(Workspace.name)
         return list((await self._session.scalars(stmt)).all())
 
     async def create_branch(
         self, *, workspace_id: uuid.UUID, name: str, code: str, actor_id: uuid.UUID
     ) -> Branch:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         workspace = await self._session.get(Workspace, workspace_id)
         if workspace is None or workspace.tenant_id != tenant_id:
             raise NotFoundError("workspace not found")
@@ -188,16 +192,9 @@ class StructureService:
         return branch
 
     async def list_branches(self) -> list[Branch]:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         stmt = select(Branch).where(Branch.tenant_id == tenant_id).order_by(Branch.code)
         return list((await self._session.scalars(stmt)).all())
-
-    @staticmethod
-    def _require_tenant() -> uuid.UUID:
-        tenant_id = get_current_tenant()
-        if tenant_id is None:
-            raise ForbiddenError("tenant context required")
-        return tenant_id
 
 
 class MembershipService:

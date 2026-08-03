@@ -17,8 +17,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from platform_core.core.errors import ConflictError, ForbiddenError, NotFoundError
-from platform_core.core.tenancy import get_current_tenant
+from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.tenancy import require_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.pricing.models import (
@@ -199,7 +199,7 @@ class PricingMatrixService:
     # --- quality dimensions (business data, seeded once per tenant) --------
 
     async def list_dimensions(self) -> list[QualityDimension]:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         await self._ensure_default_dimensions(tenant_id)
         rows = await self._session.scalars(
             select(QualityDimension)
@@ -211,7 +211,7 @@ class PricingMatrixService:
     async def create_dimension(
         self, cmd: DimensionInput, *, actor_id: uuid.UUID
     ) -> QualityDimension:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         await self._ensure_default_dimensions(tenant_id)
         existing = await self._session.scalar(
             select(QualityDimension).where(
@@ -386,7 +386,7 @@ class PricingMatrixService:
     # --- queries ------------------------------------------------------------
 
     async def get(self, matrix_id: uuid.UUID) -> PricingMatrix:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         matrix = await self._session.get(PricingMatrix, matrix_id)
         if matrix is None or matrix.tenant_id != tenant_id:
             raise NotFoundError("pricing matrix not found")
@@ -425,7 +425,7 @@ class PricingMatrixService:
         limit: int = 20,
         offset: int = 0,
     ) -> MatrixPage:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         limit = max(1, min(limit, 100))
         stmt = (
             select(PricingMatrix, RateCard.code)
@@ -510,7 +510,7 @@ class PricingMatrixService:
             )
 
     async def _get_card(self, rate_card_id: uuid.UUID) -> RateCard:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         card = await self._session.get(RateCard, rate_card_id)
         if card is None or card.tenant_id != tenant_id:
             raise NotFoundError("rate card not found")
@@ -610,10 +610,3 @@ class PricingMatrixService:
                 aggregate_id=matrix.id,
             )
         )
-
-    @staticmethod
-    def _require_tenant() -> uuid.UUID:
-        tenant_id = get_current_tenant()
-        if tenant_id is None:
-            raise ForbiddenError("tenant context required")
-        return tenant_id

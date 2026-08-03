@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.2"
+version: "1.3"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-03
@@ -165,6 +165,30 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0013 — Consumers never affect business transactions.
+
+**Clarification.** Event consumers process the durable outbox log AFTER business transactions commit, in their own isolated per-event transactions. No consumer failure, retry, or dead-letter can roll back, block, or slow a business write. Producers never know consumers exist (consumers live in the separate `platform_core.consumers` package; business modules import nothing from it).
+
+**Enforcement.** `event_relay/consumers.py` — `ConsumerRunner` (own session factory, per-event commit, failure recorded out-of-band); package separation.
+
+**Verification.** `test_event_consumers.py::test_consumer_failure_never_affects_business_flow`, `::test_handler_writes_roll_back_on_failure`, `::test_multiple_consumers_isolated`.
+
+**Status:** Active (since SPRINT-008B).
+
+---
+
+## BR-0014 — An event is processed at most once per consumer.
+
+**Clarification.** The idempotency ledger (`consumer_execution`, unique per consumer+event) guarantees exactly-once effects per consumer even under duplicate delivery, cursor rewinds, replays, or crash-recovery reruns. Handler writes commit atomically with the ledger entry: an event is either fully processed with its record, or not at all. Dead-lettered events (after 5 attempts with exponential backoff) advance the cursor to unblock ordering and remain replayable forever.
+
+**Enforcement.** `event_relay/consumers.py` — `_process()` ledger check, atomic outcome recording, `replay_execution()`; DB unique `(consumer_name, event_id)`.
+
+**Verification.** `test_event_consumers.py::test_idempotency_run_twice_no_double_counting`, `::test_duplicate_delivery_of_same_event_id_skipped`, `::test_crash_recovery_resumes_from_cursor`, `::test_replay_dead_execution`.
+
+**Status:** Active (since SPRINT-008B).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -178,6 +202,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.3 | 2026-08-04 | Architecture Board | SPRINT-008B rules: BR-0013 (consumers never affect business transactions), BR-0014 (at-most-once processing per consumer). |
 | 1.2 | 2026-08-04 | Architecture Board | SET-001 rules: BR-0008 (one settlement per calculation), BR-0009 (no supplier-period overlap), BR-0010 (finalized immutable), BR-0011 (totals equal line sum), BR-0012 (no duplicate transaction references). |
 | 1.1 | 2026-08-03 | Architecture Board | PRC-004 rules: BR-0005 (Decimal-only money with explicit rounding policy), BR-0006 (complete calculation trace), BR-0007 (deterministic calculation). |
 | 1.0 | 2026-08-03 | Architecture Board | Register established with BR-0001…BR-0004 (rate card immutability, single-active-card scope, exactly-one resolution, non-overlapping bands). |

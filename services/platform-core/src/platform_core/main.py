@@ -18,6 +18,24 @@ from platform_core.modules.authz.service import AuthzService
 log = get_logger("app")
 
 
+async def _consumer_loop() -> None:
+    """Background consumer runner (SPRINT-008B): processes the outbox log
+    for every registered consumer, forever. Failures are isolated per event
+    and per consumer — this loop only logs and continues."""
+    import asyncio
+
+    from platform_core.modules.event_relay.consumers import ConsumerRunner
+
+    settings = get_settings()
+    runner = ConsumerRunner(get_session_factory())
+    while True:
+        try:
+            await runner.run_once()
+        except Exception:
+            log.exception("consumer_loop_error")
+        await asyncio.sleep(settings.consumer_poll_seconds)
+
+
 async def _relay_loop() -> None:
     """Background dispatcher: delivers committed outbox events forever."""
     import asyncio
@@ -48,15 +66,26 @@ async def lifespan(app: FastAPI):
     async with get_session_factory()() as session:
         await AuthzService(session).ensure_system_roles()
         await session.commit()
+    from platform_core.modules.event_relay.consumers import discover_consumers
+
+    discovered = discover_consumers()
+    log.info("consumers_discovered", consumers=discovered)
     relay_task = None
+    consumer_task = None
     if settings.outbox_mode == "background" and settings.env != "test":
         import asyncio
 
         relay_task = asyncio.create_task(_relay_loop())
+    if settings.consumers_enabled and settings.env != "test":
+        import asyncio
+
+        consumer_task = asyncio.create_task(_consumer_loop())
     log.info("startup_complete", env=settings.env, version=__version__)
     yield
     if relay_task is not None:
         relay_task.cancel()
+    if consumer_task is not None:
+        consumer_task.cancel()
     # TODO(M1): graceful shutdown — drain event-bus connection, dispose engine.
 
 

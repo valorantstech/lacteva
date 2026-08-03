@@ -15,11 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from platform_core.core.config import get_settings
 from platform_core.core.errors import (
     ConflictError,
-    ForbiddenError,
     InvalidTokenError,
     NotFoundError,
 )
-from platform_core.core.tenancy import get_current_tenant
+from platform_core.core.tenancy import require_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.infrastructure.storage import ObjectStorage, tenant_key
 from platform_core.modules.audit.service import AuditService
@@ -182,7 +181,7 @@ class SupplierService:
     # --- lifecycle --------------------------------------------------------
 
     async def create(self, cmd: CreateSupplierCommand, *, actor_id: uuid.UUID) -> Supplier:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         if cmd.branch_id is not None:
             branch = await self._session.get(Branch, cmd.branch_id)
             if branch is None or branch.tenant_id != tenant_id:
@@ -287,7 +286,7 @@ class SupplierService:
     async def assign_center(
         self, supplier_id: uuid.UUID, center_id: uuid.UUID, *, actor_id: uuid.UUID
     ) -> SupplierCenterAssignment:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         supplier = await self.get(supplier_id)
         center = await self._session.get(CollectionCenter, center_id)
         if center is None or center.tenant_id != tenant_id:
@@ -345,7 +344,7 @@ class SupplierService:
     async def set_branch(
         self, supplier_id: uuid.UUID, branch_id: uuid.UUID, *, actor_id: uuid.UUID
     ) -> Supplier:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         supplier = await self.get(supplier_id)
         branch = await self._session.get(Branch, branch_id)
         if branch is None or branch.tenant_id != tenant_id:
@@ -466,7 +465,7 @@ class SupplierService:
     # --- queries -----------------------------------------------------------
 
     async def get(self, supplier_id: uuid.UUID) -> Supplier:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         supplier = await self._session.get(Supplier, supplier_id)
         if supplier is None or supplier.tenant_id != tenant_id:
             raise NotFoundError("supplier not found")
@@ -507,7 +506,7 @@ class SupplierService:
         limit: int = 20,
         offset: int = 0,
     ) -> SupplierPage:
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         limit = max(1, min(limit, 100))
         stmt = (
             select(Supplier, SupplierProfile)
@@ -549,7 +548,7 @@ class SupplierService:
         """Rows are validated individually so one bad row cannot fail the batch."""
         if len(rows) > MAX_IMPORT_ROWS:
             raise ConflictError(f"import limited to {MAX_IMPORT_ROWS} rows")
-        tenant_id = self._require_tenant()
+        tenant_id = require_current_tenant()
         results: list[ImportRowResult] = []
         centers_by_code = {
             c.code: c
@@ -621,10 +620,3 @@ class SupplierService:
             if exists is None:
                 return candidate
         raise ConflictError("could not generate a unique supplier code")
-
-    @staticmethod
-    def _require_tenant() -> uuid.UUID:
-        tenant_id = get_current_tenant()
-        if tenant_id is None:
-            raise ForbiddenError("tenant context required")
-        return tenant_id
