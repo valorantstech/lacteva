@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.1"
+version: "1.2"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-03
@@ -105,6 +105,66 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0008 — A Pricing Calculation can belong to only one Settlement.
+
+**Clarification.** Among *live* (non-cancelled) settlements, a calculation id appears in at most one settlement line; cancelling a settlement releases its calculations for re-settlement. Lines are built from the server-verified calculation record (the durable `pricing.calculated.v1` event) — amounts are never client-supplied.
+
+**Enforcement.** `settlement/service.py` — `_assert_calculation_unsettled()`, `_verified_calculation()`; DB unique `(settlement_id, calculation_id)`.
+
+**Verification.** `test_settlements.py::test_calculation_settled_elsewhere_rejected`, `::test_same_calculation_twice_in_settlement_rejected`, `::test_cancel_releases_calculations`; `test_settlement_lifecycle.py::test_finalized_calculation_stays_settled`.
+
+**Status:** Active (since SET-001).
+
+---
+
+## BR-0009 — Settlements cannot overlap for the same supplier and period.
+
+**Clarification.** Periods are CLOSED date ranges (sharing a single day overlaps); the rule keys on the supplier alone — a different collection center does not permit an overlapping settlement. Cancelled settlements release their period.
+
+**Enforcement.** `settlement/service.py` — `_assert_no_period_overlap()` at create.
+
+**Verification.** `test_settlements.py::test_overlapping_period_same_supplier_rejected`, `::test_shared_boundary_day_overlaps`, `::test_adjacent_period_allowed`, `::test_overlap_rule_is_supplier_wide_across_centers`, `::test_cancelled_settlement_releases_period`.
+
+**Status:** Active (since SET-001).
+
+---
+
+## BR-0010 — Finalized Settlements are immutable.
+
+**Clarification.** Finalization (CAS-protected, requires calculated status and ≥1 line) permanently freezes the settlement: no line changes, no recalculation, no cancellation. Cancelled preserves history (lines remain visible) but is equally terminal.
+
+**Enforcement.** `settlement/service.py` — `_require_open()` on every mutation; CAS `finalize()`.
+
+**Verification.** `test_settlement_lifecycle.py::test_finalized_settlement_is_immutable`, `::test_cancel_preserves_history`, `::test_cancel_twice_rejected`.
+
+**Status:** Active (since SET-001).
+
+---
+
+## BR-0011 — Settlement totals must equal the sum of Settlement Lines.
+
+**Clarification.** Totals are exact Decimal sums (BR-0005 applies — `Money.plus`, no rounding step); any line change reverts the settlement to draft so stale totals cannot be finalized; `finalize()` re-verifies the equality as an integrity gate; the detail view surfaces `totals_match_lines` for review screens. Net = gross + adjustments (adjustments fixed at 0 until the bonus/penalty/tax engines).
+
+**Enforcement.** `settlement/service.py` — `calculate_totals()`, `_sum_lines()`, the draft-revert in `add_calculation()`/`remove_line()`, the finalize integrity gate.
+
+**Verification.** `test_settlement_lifecycle.py::test_calculate_totals_sums_lines_exactly`, `::test_line_change_reverts_to_draft`, `::test_finalize_integrity_gate_detects_tampered_lines`, `::test_detail_flags_totals_mismatch_after_tamper`.
+
+**Status:** Active (since SET-001).
+
+---
+
+## BR-0012 — Duplicate transaction references are not allowed.
+
+**Clarification.** A collection-transaction id may be referenced by at most one line among live settlements (double settlement = double payment); lines without a transaction reference may coexist freely. DB uniqueness backs the in-settlement case; the cross-settlement case is service-enforced.
+
+**Enforcement.** `settlement/service.py` — `_assert_transaction_unsettled()`; DB unique `(settlement_id, transaction_id)`.
+
+**Verification.** `test_settlements.py::test_duplicate_transaction_reference_rejected`, `::test_duplicate_transaction_across_settlements_rejected`, `::test_lines_without_transaction_ids_can_coexist`.
+
+**Status:** Active (since SET-001).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -118,5 +178,6 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-08-04 | Architecture Board | SET-001 rules: BR-0008 (one settlement per calculation), BR-0009 (no supplier-period overlap), BR-0010 (finalized immutable), BR-0011 (totals equal line sum), BR-0012 (no duplicate transaction references). |
 | 1.1 | 2026-08-03 | Architecture Board | PRC-004 rules: BR-0005 (Decimal-only money with explicit rounding policy), BR-0006 (complete calculation trace), BR-0007 (deterministic calculation). |
 | 1.0 | 2026-08-03 | Architecture Board | Register established with BR-0001…BR-0004 (rate card immutability, single-active-card scope, exactly-one resolution, non-overlapping bands). |

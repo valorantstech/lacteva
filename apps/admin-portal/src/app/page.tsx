@@ -137,6 +137,9 @@ export default function Home() {
             <a className="text-primary underline-offset-4 hover:underline" href="/resolve">
               Resolution playground →
             </a>
+            <a className="text-primary underline-offset-4 hover:underline" href="/settlements">
+              Settlements →
+            </a>
             <a
               className="text-primary underline-offset-4 hover:underline"
               href={`${API_URL}/docs`}

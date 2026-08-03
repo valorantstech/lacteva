@@ -528,6 +528,93 @@ export const calculatePricing = (body: {
     body: JSON.stringify(body),
   });
 
+// --- Settlements (payable amounts — no payment) -----------------------------
+
+export type SettlementStatus = "draft" | "calculated" | "finalized" | "cancelled";
+
+export type Settlement = {
+  id: string;
+  settlement_number: string;
+  supplier_id: string;
+  center_id: string;
+  period_from: string;
+  period_to: string;
+  currency: string;
+  gross_amount: string | number;
+  adjustments_amount: string | number;
+  net_amount: string | number;
+  status: SettlementStatus;
+  line_count: number;
+  created_at: string;
+  finalized_at: string | null;
+  cancelled_at: string | null;
+};
+
+export type SettlementLine = {
+  id: string;
+  calculation_id: string;
+  transaction_id: string | null;
+  transaction_date: string;
+  quantity: string | number;
+  quantity_unit: string;
+  unit_price: string | number;
+  gross_amount: string | number;
+  trace_reference: string;
+};
+
+export type SettlementDetail = {
+  settlement: Settlement;
+  lines: SettlementLine[];
+  totals_match_lines: boolean;
+};
+
+export type SettlementPageResult = {
+  items: Settlement[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export function listSettlements(params: {
+  q?: string;
+  status?: string;
+  supplier_id?: string;
+  limit: number;
+  offset: number;
+}): Promise<SettlementPageResult> {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.status) search.set("status", params.status);
+  if (params.supplier_id) search.set("supplier_id", params.supplier_id);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<SettlementPageResult>(`/v1/settlements?${search.toString()}`);
+}
+
+export const createSettlement = (body: {
+  supplier_id: string;
+  center_id: string;
+  period_from: string;
+  period_to: string;
+  currency: string;
+}) => api<Settlement>("/v1/settlements", { method: "POST", body: JSON.stringify(body) });
+
+export const getSettlementDetail = (id: string) =>
+  api<SettlementDetail>(`/v1/settlements/${id}`);
+
+export const addSettlementCalculation = (id: string, calculationId: string) =>
+  api<SettlementLine>(`/v1/settlements/${id}/calculations`, {
+    method: "POST",
+    body: JSON.stringify({ calculation_id: calculationId }),
+  });
+
+export const removeSettlementLine = (id: string, lineId: string) =>
+  api(`/v1/settlements/${id}/lines/${lineId}`, { method: "DELETE" });
+
+/** action: calculate | finalize | cancel */
+export const settlementAction = (id: string, action: string) =>
+  api<Settlement>(`/v1/settlements/${id}/${action}`, { method: "POST", body: "{}" });
+
 // --- Milk transactions ------------------------------------------------------
 
 export type MilkTransaction = {

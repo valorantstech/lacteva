@@ -66,6 +66,28 @@ class Money(BaseModel):
         value = amount if isinstance(amount, Decimal) else Decimal(str(amount))
         return cls(amount=value, currency=currency, precision=precision)
 
+    def plus(self, other: "Money") -> "Money":
+        """Exact addition of same-currency, same-precision amounts (SET-001).
+
+        Sums of already-quantized amounts stay exact, so no rounding step is
+        involved — which is why this method needs no policy parameter.
+        Mixed currencies or precisions are errors, never conversions."""
+        if not isinstance(other, Money):
+            raise TypeError("monetary addition requires Money operands (BR-0005)")
+        if other.currency != self.currency:
+            raise ValueError(
+                f"cannot add {other.currency} to {self.currency} — "
+                "currency conversion is not a Money operation"
+            )
+        if other.precision != self.precision:
+            raise ValueError("cannot add Money values of different precision")
+        return Money(
+            amount=self.amount + other.amount,
+            currency=self.currency,
+            precision=self.precision,
+            rounding_policy=self.rounding_policy,
+        )
+
     def multiplied_by(self, factor: Decimal, *, rounding_policy: str) -> "Money":
         """amount x factor, quantized to this Money's precision under an
         explicit rounding policy (BR-0005: Decimal only, policy named)."""

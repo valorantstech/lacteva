@@ -4,6 +4,7 @@ import 'api.dart';
 import 'collection_wizard.dart';
 import 'pricing_resolution.dart';
 import 'rate_cards.dart';
+import 'settlements.dart';
 import 'suppliers.dart';
 
 /// Login screen — SPRINT-003: first real auth flow in the mobile app.
@@ -183,6 +184,15 @@ class _CentersListScreenState extends State<CentersListScreen> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => RateCardsListScreen(client: widget.client),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.receipt_long_outlined),
+            tooltip: 'Settlements',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SettlementListScreen(client: widget.client),
               ),
             ),
           ),

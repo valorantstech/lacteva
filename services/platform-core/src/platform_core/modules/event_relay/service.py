@@ -297,6 +297,19 @@ class RelayService:
             stmt = stmt.where(OutboxEvent.status == status)
         return list((await self._session.scalars(stmt)).all())
 
+    async def find_aggregate_event(
+        self, aggregate_type: str, aggregate_id: uuid.UUID, *, tenant_id: uuid.UUID
+    ) -> OutboxEvent | None:
+        """Look up the durable event record of an aggregate (platform read
+        API — e.g. settlement verifying a pricing calculation, SET-001)."""
+        return await self._session.scalar(
+            select(OutboxEvent).where(
+                OutboxEvent.aggregate_type == aggregate_type,
+                OutboxEvent.aggregate_id == aggregate_id,
+                OutboxEvent.tenant_id == tenant_id,
+            )
+        )
+
     async def list_dead_letters(self, *, limit: int = 50) -> list[DeadLetter]:
         stmt = select(DeadLetter).order_by(DeadLetter.dead_at.desc()).limit(min(limit, 200))
         return list((await self._session.scalars(stmt)).all())

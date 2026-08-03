@@ -112,6 +112,38 @@ def test_money_negative_amounts_representable():
     assert Money.of("-5.25", "KES").amount == Decimal("-5.25")
 
 
+def test_money_plus_exact_addition():
+    """SET-001: settlement totals are exact sums of quantized amounts."""
+    total = Money.of("5647.50", "KES").plus(Money.of("2250.00", "KES"))
+    assert total.amount == Decimal("7897.50")
+    assert total.currency == "KES"
+
+
+def test_money_plus_chain():
+    total = Money.of("0.01", "KES").plus(Money.of("0.02", "KES")).plus(Money.of("0.03", "KES"))
+    assert total.amount == Decimal("0.06")
+
+
+def test_money_plus_zero_identity():
+    money = Money.of("42.50", "KES")
+    assert money.plus(Money.of("0.00", "KES")).amount == money.amount
+
+
+def test_money_plus_currency_mismatch_rejected():
+    with pytest.raises(ValueError, match="currency conversion"):
+        Money.of("1.00", "KES").plus(Money.of("1.00", "USD"))
+
+
+def test_money_plus_precision_mismatch_rejected():
+    with pytest.raises(ValueError, match="precision"):
+        Money.of("1.00", "KES").plus(Money.of("1.00", "KES", precision=4))
+
+
+def test_money_plus_rejects_non_money():
+    with pytest.raises(TypeError, match="Money"):
+        Money.of("1.00", "KES").plus(Decimal("1.00"))  # type: ignore[arg-type]
+
+
 def test_quantity_as_decimal_is_artifact_free():
     assert Quantity(value=125.5, unit="kg").as_decimal() == Decimal("125.5")
     assert Quantity(value=0.1, unit="kg").as_decimal() == Decimal("0.1")

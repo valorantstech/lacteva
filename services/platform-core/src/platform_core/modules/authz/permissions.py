@@ -32,6 +32,9 @@ PERMISSIONS: dict[str, str] = {
     "pricing.ratecard.read": "Read rate cards and their assignments",
     "pricing.ratecard.manage": "Create, edit, submit, version, and archive rate cards",
     "pricing.ratecard.approve": "Approve and publish rate cards",
+    "settlement.read": "Read settlements and their lines",
+    "settlement.manage": "Create settlements, manage lines, calculate totals, cancel",
+    "settlement.finalize": "Finalize settlements (makes them immutable)",
     "platform.relay.manage": (
         "Operate the event relay (replay, retry, dead letters) — platform staff only"
     ),
@@ -68,6 +71,9 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "pricing.ratecard.read",
         "pricing.ratecard.manage",
         "pricing.ratecard.approve",
+        "settlement.read",
+        "settlement.manage",
+        "settlement.finalize",
     ],
     "tenant-viewer": [
         "identity.user.read",
@@ -81,6 +87,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "supplier.read",
         "collection.transaction.read",
         "pricing.ratecard.read",
+        "settlement.read",
     ],
 }
 

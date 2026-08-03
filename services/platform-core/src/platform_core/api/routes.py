@@ -97,6 +97,15 @@ from platform_core.modules.pricing.service import (
     RateCardService,
     RateCardView,
 )
+from platform_core.modules.settlement.service import (
+    AddCalculationCommand,
+    CreateSettlementCommand,
+    SettlementDetailView,
+    SettlementLineView,
+    SettlementPage,
+    SettlementService,
+    SettlementView,
+)
 from platform_core.modules.supplier.service import (
     AddBankAccountCommand,
     BankAccountView,
@@ -1101,6 +1110,102 @@ async def calculate_pricing(req: CalculationRequest, service: CalcSvc, p: RateCa
     return await service.calculate(req, actor_id=p.id)
 
 
+# --- Settlements (payable amounts — lifecycle only, no payment, SET-001) ----
+settlement_router = APIRouter(prefix="/settlements", tags=["settlement"])
+SettlementManage = Annotated[Principal, Depends(require_permission("settlement.manage"))]
+SettlementFinalize = Annotated[Principal, Depends(require_permission("settlement.finalize"))]
+SettlementRead = Annotated[Principal, Depends(require_permission("settlement.read"))]
+SettlementSvc = Annotated[SettlementService, Depends(deps.get_settlement_service)]
+
+
+@settlement_router.post("", response_model=SettlementView, status_code=201)
+async def create_settlement(
+    cmd: CreateSettlementCommand, service: SettlementSvc, p: SettlementManage
+) -> Any:
+    settlement = await service.create(cmd, actor_id=p.id)
+    return (await service.detail(settlement.id)).settlement
+
+
+@settlement_router.get("", response_model=SettlementPage)
+async def search_settlements(
+    service: SettlementSvc,
+    _: SettlementRead,
+    q: str | None = None,
+    supplier_id: uuid.UUID | None = None,
+    center_id: uuid.UUID | None = None,
+    status: str | None = None,
+    overlapping_on: date | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> SettlementPage:
+    return await service.search(
+        q=q,
+        supplier_id=supplier_id,
+        center_id=center_id,
+        status=status,
+        overlapping_on=overlapping_on,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@settlement_router.get("/{settlement_id}", response_model=SettlementDetailView)
+async def get_settlement_detail(
+    settlement_id: uuid.UUID, service: SettlementSvc, _: SettlementRead
+) -> SettlementDetailView:
+    return await service.detail(settlement_id)
+
+
+@settlement_router.post(
+    "/{settlement_id}/calculations", response_model=SettlementLineView, status_code=201
+)
+async def add_settlement_calculation(
+    settlement_id: uuid.UUID,
+    cmd: AddCalculationCommand,
+    service: SettlementSvc,
+    p: SettlementManage,
+) -> Any:
+    return await service.add_calculation(settlement_id, cmd, actor_id=p.id)
+
+
+@settlement_router.delete("/{settlement_id}/lines/{line_id}", status_code=204)
+async def remove_settlement_line(
+    settlement_id: uuid.UUID, line_id: uuid.UUID, service: SettlementSvc, p: SettlementManage
+) -> None:
+    await service.remove_line(settlement_id, line_id, actor_id=p.id)
+
+
+@settlement_router.post("/{settlement_id}/calculate", response_model=SettlementView)
+async def calculate_settlement_totals(
+    settlement_id: uuid.UUID, service: SettlementSvc, p: SettlementManage
+) -> Any:
+    settlement = await service.calculate_totals(settlement_id, actor_id=p.id)
+    return (await service.detail(settlement.id)).settlement
+
+
+@settlement_router.post("/{settlement_id}/finalize", response_model=SettlementView)
+async def finalize_settlement(
+    settlement_id: uuid.UUID, service: SettlementSvc, p: SettlementFinalize
+) -> Any:
+    settlement = await service.finalize(settlement_id, actor_id=p.id)
+    return (await service.detail(settlement.id)).settlement
+
+
+class CancelSettlementRequest(BaseModel):
+    reason: str = Field(default="", max_length=300)
+
+
+@settlement_router.post("/{settlement_id}/cancel", response_model=SettlementView)
+async def cancel_settlement(
+    settlement_id: uuid.UUID,
+    body: CancelSettlementRequest,
+    service: SettlementSvc,
+    p: SettlementManage,
+) -> Any:
+    settlement = await service.cancel(settlement_id, body.reason, actor_id=p.id)
+    return (await service.detail(settlement.id)).settlement
+
+
 # --- Event relay (internal platform operations) -----------------------------
 relay_router = APIRouter(prefix="/_relay", tags=["event-relay"])
 RelayOps = Annotated[Principal, Depends(require_permission("platform.relay.manage"))]
@@ -1256,6 +1361,7 @@ for sub in (
     milk_router,
     pricing_router,
     matrix_router,
+    settlement_router,
     relay_router,
     authz_router,
     config_router,

@@ -7,6 +7,7 @@ import 'package:lacteva_mobile/src/collection_wizard.dart';
 import 'package:lacteva_mobile/src/pricing_matrices.dart';
 import 'package:lacteva_mobile/src/pricing_resolution.dart';
 import 'package:lacteva_mobile/src/rate_cards.dart';
+import 'package:lacteva_mobile/src/settlements.dart';
 import 'package:lacteva_mobile/src/suppliers.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -263,6 +264,53 @@ void main() {
     expect(find.textContaining('no band contains'), findsOneWidget);
   });
 
+  testWidgets('settlement list shows periods and totals', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: SettlementListScreen(client: _SettlementFake())),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('STL-AB12CD'), findsOneWidget);
+    expect(find.textContaining('net 7897.50 KES'), findsOneWidget);
+    expect(find.text('calculated'), findsOneWidget);
+  });
+
+  testWidgets('calculated settlement detail offers finalize', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettlementDetailScreen(
+            client: _SettlementFake(), settlementId: 's-calc'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Calculate totals'), findsOneWidget);
+    expect(find.text('Finalize'), findsOneWidget);
+    expect(find.text('Lines (2)'), findsOneWidget);
+    expect(find.text('125.5 kg @ 45'), findsOneWidget);
+  });
+
+  testWidgets('finalized settlement detail is read-only', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettlementDetailScreen(
+            client: _SettlementFake(), settlementId: 's-final'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Finalize'), findsNothing);
+    expect(find.text('Calculate totals'), findsNothing);
+    expect(find.text('Cancel settlement'), findsNothing);
+  });
+
+  testWidgets('finalize screen warns about permanence', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FinalizeSettlementScreen(settlement: _SettlementFake.calculated),
+      ),
+    );
+    expect(find.text('Net payable: 7897.50 KES'), findsOneWidget);
+    expect(find.textContaining('cannot be undone'), findsOneWidget);
+  });
+
   testWidgets('edit form shows timezone instead of code', (tester) async {
     final center = CenterSummary(
       id: 'c1',
@@ -445,6 +493,64 @@ class _ResolveFake extends ApiClient {
               detail: 'HALF_UP to 2 decimal place(s)',
               values: const {'rounded_amount': '5647.50'}),
         ],
+      );
+}
+
+class _SettlementFake extends ApiClient {
+  static final calculated = SettlementSummary(
+    id: 's-calc',
+    number: 'STL-AB12CD',
+    periodFrom: '2026-10-01',
+    periodTo: '2026-10-31',
+    currency: 'KES',
+    grossAmount: '7897.50',
+    netAmount: '7897.50',
+    status: 'calculated',
+    lineCount: 2,
+  );
+
+  static final _lines = [
+    SettlementLineSummary(
+        transactionDate: '2026-10-05',
+        quantity: '125.5',
+        quantityUnit: 'kg',
+        unitPrice: '45',
+        grossAmount: '5647.50'),
+    SettlementLineSummary(
+        transactionDate: '2026-10-20',
+        quantity: '50',
+        quantityUnit: 'kg',
+        unitPrice: '45',
+        grossAmount: '2250.00'),
+  ];
+
+  @override
+  Future<SettlementPageResult> listSettlements({
+    String query = '',
+    String status = '',
+    int limit = 20,
+    int offset = 0,
+  }) async =>
+      SettlementPageResult(items: [calculated], total: 1);
+
+  @override
+  Future<SettlementDetailResult> settlementDetail(String id) async =>
+      SettlementDetailResult(
+        settlement: id == 's-final'
+            ? SettlementSummary(
+                id: id,
+                number: 'STL-FINAL1',
+                periodFrom: '2026-09-01',
+                periodTo: '2026-09-30',
+                currency: 'KES',
+                grossAmount: '1000.00',
+                netAmount: '1000.00',
+                status: 'finalized',
+                lineCount: 2,
+              )
+            : calculated,
+        lines: _lines,
+        totalsMatch: true,
       );
 }
 

@@ -370,6 +370,35 @@ class ApiClient {
     await _send('DELETE', '/v1/pricing-matrices/$matrixId/rows/$rowId');
   }
 
+  Future<SettlementPageResult> listSettlements({
+    String query = '',
+    String status = '',
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final params = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      if (query.isNotEmpty) 'q': query,
+      if (status.isNotEmpty) 'status': status,
+    };
+    final qs = Uri(queryParameters: params).query;
+    final result = await _send('GET', '/v1/settlements?$qs') as Map<String, dynamic>;
+    return SettlementPageResult.fromJson(result);
+  }
+
+  Future<SettlementDetailResult> settlementDetail(String id) async {
+    final result = await _send('GET', '/v1/settlements/$id') as Map<String, dynamic>;
+    return SettlementDetailResult.fromJson(result);
+  }
+
+  /// action: calculate | finalize | cancel
+  Future<SettlementSummary> settlementAction(String id, String action) async {
+    final result = await _send('POST', '/v1/settlements/$id/$action', body: {})
+        as Map<String, dynamic>;
+    return SettlementSummary.fromJson(result);
+  }
+
   /// Pricing calculation (PRC-004): gross = unit price x quantity for a
   /// previously resolved band. Decimal math server-side, full trace back.
   Future<CalculationResultView> calculatePricing({
@@ -781,6 +810,106 @@ class MatrixDetailResult {
   final List<MatrixRowView> rows;
   final List<Map<String, dynamic>> gaps;
   final bool editable;
+}
+
+class SettlementSummary {
+  SettlementSummary({
+    required this.id,
+    required this.number,
+    required this.periodFrom,
+    required this.periodTo,
+    required this.currency,
+    required this.grossAmount,
+    required this.netAmount,
+    required this.status,
+    required this.lineCount,
+  });
+
+  factory SettlementSummary.fromJson(Map<String, dynamic> json) =>
+      SettlementSummary(
+        id: json['id'] as String,
+        number: json['settlement_number'] as String,
+        periodFrom: json['period_from'] as String,
+        periodTo: json['period_to'] as String,
+        currency: json['currency'] as String,
+        grossAmount: json['gross_amount'].toString(),
+        netAmount: json['net_amount'].toString(),
+        status: json['status'] as String,
+        lineCount: json['line_count'] as int,
+      );
+
+  final String id;
+  final String number;
+  final String periodFrom;
+  final String periodTo;
+  final String currency;
+  final String grossAmount;
+  final String netAmount;
+  final String status;
+  final int lineCount;
+}
+
+class SettlementPageResult {
+  SettlementPageResult({required this.items, required this.total});
+
+  factory SettlementPageResult.fromJson(Map<String, dynamic> json) =>
+      SettlementPageResult(
+        items: (json['items'] as List<dynamic>)
+            .map((e) => SettlementSummary.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        total: json['total'] as int,
+      );
+
+  final List<SettlementSummary> items;
+  final int total;
+}
+
+class SettlementLineSummary {
+  SettlementLineSummary({
+    required this.transactionDate,
+    required this.quantity,
+    required this.quantityUnit,
+    required this.unitPrice,
+    required this.grossAmount,
+  });
+
+  factory SettlementLineSummary.fromJson(Map<String, dynamic> json) =>
+      SettlementLineSummary(
+        transactionDate: json['transaction_date'] as String,
+        quantity: json['quantity'].toString(),
+        quantityUnit: (json['quantity_unit'] ?? '').toString(),
+        unitPrice: json['unit_price'].toString(),
+        grossAmount: json['gross_amount'].toString(),
+      );
+
+  final String transactionDate;
+  final String quantity;
+  final String quantityUnit;
+  final String unitPrice;
+  final String grossAmount;
+}
+
+class SettlementDetailResult {
+  SettlementDetailResult({
+    required this.settlement,
+    required this.lines,
+    required this.totalsMatch,
+  });
+
+  factory SettlementDetailResult.fromJson(Map<String, dynamic> json) =>
+      SettlementDetailResult(
+        settlement: SettlementSummary.fromJson(
+            json['settlement'] as Map<String, dynamic>),
+        lines: (json['lines'] as List<dynamic>)
+            .map((e) =>
+                SettlementLineSummary.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        totalsMatch: json['totals_match_lines'] as bool,
+      );
+
+  final SettlementSummary settlement;
+  final List<SettlementLineSummary> lines;
+  final bool totalsMatch;
 }
 
 class CalculationTraceStepView {
