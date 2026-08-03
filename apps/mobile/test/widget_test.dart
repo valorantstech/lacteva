@@ -210,7 +210,35 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Rate card: MILK-STD v1'), findsOneWidget);
     expect(find.text('Unit price: 45 KES'), findsOneWidget);
-    expect(find.textContaining('no amount is calculated'), findsOneWidget);
+    expect(find.text('Calculate gross amount'), findsOneWidget);
+  });
+
+  testWidgets('calculator computes gross with trace after resolution',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ResolutionTestScreen(client: _ResolveFake(), centerId: 'c1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Product code'), 'RAW-COW-MILK');
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('FAT — Fat').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Reading value (e.g. 4.2)'), '4.2');
+    await tester.tap(find.widgetWithText(FilledButton, 'Resolve'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Quantity (kg)'), '125.5');
+    await tester.tap(find.text('Calculate'));
+    await tester.pumpAndSettle();
+    expect(find.text('Gross: 5647.50 KES'), findsOneWidget);
+    expect(find.textContaining('HALF_UP'), findsWidgets);
+    expect(find.text('Trace'), findsOneWidget);
+    expect(find.textContaining('multiply:'), findsOneWidget);
   });
 
   testWidgets('resolution screen shows structured failure', (tester) async {
@@ -378,6 +406,7 @@ class _ResolveFake extends ApiClient {
       });
     }
     return ResolutionResultView(
+      rowId: 'row-1',
       rateCardCode: 'MILK-STD',
       rateCardVersion: 1,
       matrixName: 'Cow Milk FAT Bands',
@@ -389,6 +418,34 @@ class _ResolveFake extends ApiClient {
       readingUnit: '%',
     );
   }
+
+  @override
+  Future<CalculationResultView> calculatePricing({
+    required String rowId,
+    required double quantity,
+    required String transactionDate,
+    String quantityUnit = 'kg',
+    String? roundingPolicy,
+  }) async =>
+      CalculationResultView(
+        grossAmount: '5647.50',
+        unitPrice: '45',
+        currency: 'KES',
+        quantityValue: quantity,
+        quantityUnit: quantityUnit,
+        roundingPolicy: 'HALF_UP',
+        calculatorVersion: '1.0.0',
+        trace: [
+          CalculationTraceStepView(
+              operation: 'multiply',
+              detail: 'gross = unit price x quantity',
+              values: const {'raw_amount': '5647.500'}),
+          CalculationTraceStepView(
+              operation: 'round',
+              detail: 'HALF_UP to 2 decimal place(s)',
+              values: const {'rounded_amount': '5647.50'}),
+        ],
+      );
 }
 
 class _RateCardFake extends ApiClient {

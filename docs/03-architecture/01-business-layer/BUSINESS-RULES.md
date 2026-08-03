@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-03
@@ -69,6 +69,42 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0005 — Monetary calculation is Decimal-only under an explicit rounding policy.
+
+**Clarification.** No float arithmetic may touch money: values enter the money domain via `Decimal(str(x))` (artifact-free), and arithmetic methods reject non-Decimal factors with `TypeError`. Every rounding step names a policy from the platform registry (`HALF_UP` default — commercial convention; `HALF_EVEN`; `DOWN`), resolved request-override → tenant configuration (`pricing.rounding_policy`) → platform default, and quantizes to the currency's minor units (`Money.precision`, default 2).
+
+**Enforcement.** `core/types.py` — `Money.multiplied_by()` (TypeError guard, policy registry, quantize); `pricing/calculator.py` — `PricingCalculator`, `_rounding_policy()`.
+
+**Verification.** `test_pricing_types.py::test_money_multiplied_by_rejects_float_factor`, `::test_money_multiplied_by_policies_differ_on_ties`; `test_pricing_calculator_domain.py` (precision/rounding suite); `test_pricing_calculation_api.py` policy-resolution tests.
+
+**Status:** Active (since PRC-004).
+
+---
+
+## BR-0006 — Every calculation result carries a complete trace.
+
+**Clarification.** A monetary result without its explanation is unauditable. Each calculation returns an ordered trace (`inputs → normalize → multiply → round`) with exact Decimal string values at every step, including the unrounded raw amount, the policy, and the precision applied — plus the resolution provenance (which rate card, matrix, and band produced the unit price).
+
+**Enforcement.** `pricing/calculator.py` — `TraceStep`, `Calculation.trace`, `ResolutionTraceRef` (frozen value objects).
+
+**Verification.** `test_pricing_calculator_domain.py::test_trace_*`; `test_pricing_calculation_api.py::test_trace_via_api`.
+
+**Status:** Active (since PRC-004).
+
+---
+
+## BR-0007 — Pricing calculation is deterministic.
+
+**Clarification.** The same input always produces the same monetary output and the same trace. The domain calculator is pure — no I/O, no clock, no randomness (timestamps and calculation ids are applied by the application layer and are explicitly *identity*, not money).
+
+**Enforcement.** `pricing/calculator.py` — `PricingCalculator` (pure domain service).
+
+**Verification.** `test_pricing_calculator_domain.py::test_same_input_same_output`; `test_pricing_calculation_api.py::test_deterministic_via_api`.
+
+**Status:** Active (since PRC-004).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -82,4 +118,5 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-03 | Architecture Board | PRC-004 rules: BR-0005 (Decimal-only money with explicit rounding policy), BR-0006 (complete calculation trace), BR-0007 (deterministic calculation). |
 | 1.0 | 2026-08-03 | Architecture Board | Register established with BR-0001…BR-0004 (rate card immutability, single-active-card scope, exactly-one resolution, non-overlapping bands). |

@@ -37,6 +37,7 @@ from platform_core.modules.organization.service import (
     OrganizationService,
     StructureService,
 )
+from platform_core.modules.pricing.calculator import PricingCalculationService
 from platform_core.modules.pricing.matrix import PricingMatrixService
 from platform_core.modules.pricing.resolution import PricingResolutionService
 from platform_core.modules.pricing.service import RateCardService
@@ -132,6 +133,12 @@ def get_pricing_matrix_service(session: Session, bus: Bus, audit: Audit) -> Pric
 def get_pricing_resolution_service(session: Session) -> PricingResolutionService:
     # Read-side only: no bus, no audit — resolution mutates nothing.
     return PricingResolutionService(session)
+
+
+def get_pricing_calculation_service(
+    session: Session, bus: Bus, audit: Audit
+) -> PricingCalculationService:
+    return PricingCalculationService(session, bus, ConfigurationService(session, audit))
 
 
 def get_milk_collection_service(session: Session, bus: Bus, audit: Audit) -> MilkCollectionService:

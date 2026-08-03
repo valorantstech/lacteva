@@ -487,6 +487,47 @@ export async function resolvePricing(body: {
   }
 }
 
+// --- Pricing calculation (Decimal money math, PRC-004) ----------------------
+
+export type TraceStep = {
+  sequence: number;
+  operation: string;
+  detail: string;
+  values: Record<string, string>;
+};
+
+export type CalculationResult = {
+  calculation_id: string;
+  unit_price: { amount: string | number; currency: string; rounding_policy: string };
+  quantity: { value: number; unit: string };
+  gross_amount: { amount: string | number; currency: string; rounding_policy: string };
+  currency: string;
+  rounding_policy: string;
+  calculator_version: string;
+  calculated_at: string;
+  resolution: {
+    rate_card_code: string;
+    rate_card_version: number;
+    matrix_name: string;
+    row_id: string;
+    range_from: number;
+    range_to: number;
+  };
+  trace: TraceStep[];
+};
+
+export const calculatePricing = (body: {
+  row_id: string;
+  quantity: number;
+  quantity_unit?: string;
+  transaction_date: string;
+  rounding_policy?: string;
+}) =>
+  api<CalculationResult>("/v1/pricing/calculate", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
 // --- Milk transactions ------------------------------------------------------
 
 export type MilkTransaction = {

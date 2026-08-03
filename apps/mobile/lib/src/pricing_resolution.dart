@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 
-/// Resolution Test Screen — PRC-003. Operators check which pricing matrix
-/// band a transaction WOULD use. Selection only: no amounts are calculated.
+/// Resolution + Calculator Test Screen (PRC-003/PRC-004). Operators check
+/// which pricing band a transaction WOULD use, then calculate the gross
+/// amount for a quantity — with the full calculation trace.
 class ResolutionTestScreen extends StatefulWidget {
   const ResolutionTestScreen(
       {super.key, required this.client, required this.centerId});
@@ -19,12 +20,21 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
   final _formKey = GlobalKey<FormState>();
   final _product = TextEditingController();
   final _value = TextEditingController();
+  final _quantity = TextEditingController();
   List<DimensionSummary> _dimensions = const [];
   String? _dimensionCode;
   ResolutionResultView? _result;
+  CalculationResultView? _calculation;
   String? _failureMessage;
   String? _failureStage;
   bool _busy = false;
+
+  String get _today {
+    final now = DateTime.now();
+    return '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+  }
 
   @override
   void initState() {
@@ -48,18 +58,15 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
     setState(() {
       _busy = true;
       _result = null;
+      _calculation = null;
       _failureMessage = null;
       _failureStage = null;
     });
-    final today = DateTime.now();
-    final date = '${today.year.toString().padLeft(4, '0')}-'
-        '${today.month.toString().padLeft(2, '0')}-'
-        '${today.day.toString().padLeft(2, '0')}';
     try {
       final result = await widget.client.resolvePricing(
         centerId: widget.centerId,
         productCode: _product.text.trim().toUpperCase(),
-        transactionDate: date,
+        transactionDate: _today,
         dimensionCode: _dimensionCode!,
         value: double.parse(_value.text.trim()),
       );
@@ -77,11 +84,34 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
     }
   }
 
+  Future<void> _calculate() async {
+    final result = _result;
+    final quantity = double.tryParse(_quantity.text.trim());
+    if (result == null || quantity == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter a numeric quantity')));
+      return;
+    }
+    try {
+      final calculation = await widget.client.calculatePricing(
+        rowId: result.rowId,
+        quantity: quantity,
+        transactionDate: _today,
+      );
+      if (mounted) setState(() => _calculation = calculation);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text((e.extra?['reason'] ?? e.detail).toString())));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final result = _result;
+    final calculation = _calculation;
     return Scaffold(
-      appBar: AppBar(title: const Text('Pricing resolution test')),
+      appBar: AppBar(title: const Text('Pricing test')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -155,9 +185,60 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
                         'Unit price: ${result.priceAmount} ${result.currency}',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
+                      const Divider(height: 24),
+                      Text('Calculate gross amount',
+                          style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _quantity,
+                              decoration: const InputDecoration(
+                                  labelText: 'Quantity (kg)'),
+                              keyboardType: TextInputType.number,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.tonal(
+                            onPressed: _calculate,
+                            child: const Text('Calculate'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (calculation != null)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Gross: ${calculation.grossAmount} '
+                        '${calculation.currency}',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      Text('${calculation.unitPrice} ${calculation.currency}'
+                          ' x ${calculation.quantityValue}'
+                          ' ${calculation.quantityUnit}'
+                          ' · ${calculation.roundingPolicy}'
+                          ' · calculator v${calculation.calculatorVersion}'),
+                      const SizedBox(height: 12),
+                      Text('Trace',
+                          style: Theme.of(context).textTheme.titleSmall),
+                      ...calculation.trace.map(
+                        (step) => Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text('${step.operation}: ${step.detail}'),
+                        ),
+                      ),
                       const SizedBox(height: 8),
                       Text(
-                        'Selection only — no amount is calculated.',
+                        'No bonuses, penalties, or taxes — PRC-005+.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],

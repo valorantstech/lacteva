@@ -66,6 +66,11 @@ from platform_core.modules.organization.service import (
     StructureService,
     WorkspaceView,
 )
+from platform_core.modules.pricing.calculator import (
+    CalculationRequest,
+    CalculationResult,
+    PricingCalculationService,
+)
 from platform_core.modules.pricing.matrix import (
     CreateMatrixCommand,
     DimensionInput,
@@ -1082,6 +1087,18 @@ async def resolve_pricing(q: ResolutionQuery, service: ResolutionSvc, _: RateCar
     dimension, reading). 422 with {stage, reason, inputs} when nothing
     matches; 409 when pricing data is ambiguous. Calculates nothing."""
     return await service.resolve(q)
+
+
+CalcSvc = Annotated[PricingCalculationService, Depends(deps.get_pricing_calculation_service)]
+
+
+@matrix_router.post("/pricing/calculate", response_model=CalculationResult)
+async def calculate_pricing(req: CalculationRequest, service: CalcSvc, p: RateCardRead) -> Any:
+    """Gross = unit price x quantity for a previously RESOLVED band (send the
+    row_id from /pricing/resolve — prices are never client-supplied).
+    Decimal arithmetic, explicit rounding policy, full trace (BR-0005/6/7).
+    Emits pricing.calculated.v1. No bonuses/penalties/taxes (PRC-005+)."""
+    return await service.calculate(req, actor_id=p.id)
 
 
 # --- Event relay (internal platform operations) -----------------------------

@@ -14,9 +14,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   ApiError,
+  CalculationResult,
   Center,
   QualityDimension,
   ResolutionOutcome,
+  calculatePricing,
   listCenters,
   listQualityDimensions,
   resolvePricing,
@@ -40,6 +42,11 @@ export default function ResolutionPlaygroundPage() {
   const [outcome, setOutcome] = useState<ResolutionOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [quantity, setQuantity] = useState("");
+  const [policy, setPolicy] = useState("");
+  const [calc, setCalc] = useState<CalculationResult | null>(null);
+  const [calcError, setCalcError] = useState<string | null>(null);
+  const [calcBusy, setCalcBusy] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -58,6 +65,8 @@ export default function ResolutionPlaygroundPage() {
     setBusy(true);
     setError(null);
     setOutcome(null);
+    setCalc(null);
+    setCalcError(null);
     try {
       setOutcome(
         await resolvePricing({
@@ -211,9 +220,104 @@ export default function ResolutionPlaygroundPage() {
               <span className="font-medium">Unit price:</span>{" "}
               {String(outcome.result.unit_price.amount)} {outcome.result.unit_price.currency}
             </div>
-            <p className="text-muted-foreground">
-              No amount is calculated — the Pricing Calculator (PRC-004) will consume this
-              selection.
+            <div className="flex flex-wrap items-end gap-2 border-t border-border pt-3">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="c-quantity">Quantity (kg)</Label>
+                <Input
+                  id="c-quantity"
+                  type="number"
+                  step="any"
+                  min="0"
+                  className="h-8 w-32"
+                  placeholder="e.g. 125.5"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="c-policy">Rounding</Label>
+                <select
+                  id="c-policy"
+                  className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+                  value={policy}
+                  onChange={(e) => setPolicy(e.target.value)}
+                >
+                  <option value="">Tenant default</option>
+                  <option value="HALF_UP">HALF_UP</option>
+                  <option value="HALF_EVEN">HALF_EVEN</option>
+                  <option value="DOWN">DOWN</option>
+                </select>
+              </div>
+              <Button
+                size="sm"
+                disabled={calcBusy || !quantity}
+                onClick={async () => {
+                  setCalcBusy(true);
+                  setCalcError(null);
+                  try {
+                    setCalc(
+                      await calculatePricing({
+                        row_id: outcome.result.row_id,
+                        quantity: Number(quantity),
+                        transaction_date: date,
+                        ...(policy ? { rounding_policy: policy } : {}),
+                      }),
+                    );
+                  } catch (err) {
+                    setCalcError(
+                      err instanceof ApiError ? err.detail : "Calculation failed",
+                    );
+                  } finally {
+                    setCalcBusy(false);
+                  }
+                }}
+              >
+                {calcBusy ? "Calculating…" : "Calculate"}
+              </Button>
+              {calcError && <p className="text-sm text-destructive">{calcError}</p>}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {calc && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-3">
+              Gross amount: {String(calc.gross_amount.amount)} {calc.currency}
+              <Badge variant="outline">{calc.rounding_policy}</Badge>
+            </CardTitle>
+            <CardDescription>
+              {String(calc.unit_price.amount)} {calc.currency} × {calc.quantity.value}{" "}
+              {calc.quantity.unit} · calculator v{calc.calculator_version} ·{" "}
+              {calc.resolution.rate_card_code} v{calc.resolution.rate_card_version} /{" "}
+              {calc.resolution.matrix_name}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm">
+            <p className="mb-2 font-medium">Calculation trace</p>
+            <ol className="flex flex-col gap-1">
+              {calc.trace.map((step) => (
+                <li key={step.sequence} className="flex gap-2">
+                  <Badge variant="secondary">{step.operation}</Badge>
+                  <span>
+                    {step.detail}
+                    {step.values.raw_amount && step.operation === "multiply" && (
+                      <> — raw: <code className="rounded bg-muted px-1">{step.values.raw_amount}</code></>
+                    )}
+                    {step.operation === "round" && (
+                      <>
+                        {" "}
+                        — <code className="rounded bg-muted px-1">{step.values.raw_amount}</code> →{" "}
+                        <code className="rounded bg-muted px-1">{step.values.rounded_amount}</code>
+                      </>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-3 text-muted-foreground">
+              No bonuses, penalties, or taxes — those arrive with PRC-005+.
             </p>
           </CardContent>
         </Card>

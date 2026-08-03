@@ -370,6 +370,25 @@ class ApiClient {
     await _send('DELETE', '/v1/pricing-matrices/$matrixId/rows/$rowId');
   }
 
+  /// Pricing calculation (PRC-004): gross = unit price x quantity for a
+  /// previously resolved band. Decimal math server-side, full trace back.
+  Future<CalculationResultView> calculatePricing({
+    required String rowId,
+    required double quantity,
+    required String transactionDate,
+    String quantityUnit = 'kg',
+    String? roundingPolicy,
+  }) async {
+    final result = await _send('POST', '/v1/pricing/calculate', body: {
+      'row_id': rowId,
+      'quantity': quantity,
+      'quantity_unit': quantityUnit,
+      'transaction_date': transactionDate,
+      'rounding_policy': ?roundingPolicy,
+    }) as Map<String, dynamic>;
+    return CalculationResultView.fromJson(result);
+  }
+
   /// Read-side pricing resolution (PRC-003). Throws [ApiException] with a
   /// structured `extra` map ({stage, reason, inputs}) when nothing matches.
   Future<ResolutionResultView> resolvePricing({
@@ -764,8 +783,70 @@ class MatrixDetailResult {
   final bool editable;
 }
 
+class CalculationTraceStepView {
+  CalculationTraceStepView({
+    required this.operation,
+    required this.detail,
+    required this.values,
+  });
+
+  factory CalculationTraceStepView.fromJson(Map<String, dynamic> json) =>
+      CalculationTraceStepView(
+        operation: json['operation'] as String,
+        detail: json['detail'] as String,
+        values: (json['values'] as Map<String, dynamic>)
+            .map((k, v) => MapEntry(k, v.toString())),
+      );
+
+  final String operation;
+  final String detail;
+  final Map<String, String> values;
+}
+
+class CalculationResultView {
+  CalculationResultView({
+    required this.grossAmount,
+    required this.unitPrice,
+    required this.currency,
+    required this.quantityValue,
+    required this.quantityUnit,
+    required this.roundingPolicy,
+    required this.calculatorVersion,
+    required this.trace,
+  });
+
+  factory CalculationResultView.fromJson(Map<String, dynamic> json) {
+    final price = json['unit_price'] as Map<String, dynamic>;
+    final gross = json['gross_amount'] as Map<String, dynamic>;
+    final quantity = json['quantity'] as Map<String, dynamic>;
+    return CalculationResultView(
+      grossAmount: gross['amount'].toString(),
+      unitPrice: price['amount'].toString(),
+      currency: json['currency'] as String,
+      quantityValue: (quantity['value'] as num).toDouble(),
+      quantityUnit: (quantity['unit'] ?? '').toString(),
+      roundingPolicy: json['rounding_policy'] as String,
+      calculatorVersion: json['calculator_version'] as String,
+      trace: (json['trace'] as List<dynamic>)
+          .map((e) =>
+              CalculationTraceStepView.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  final String grossAmount;
+  final String unitPrice;
+  final String currency;
+  final double quantityValue;
+  final String quantityUnit;
+  final String roundingPolicy;
+  final String calculatorVersion;
+  final List<CalculationTraceStepView> trace;
+}
+
 class ResolutionResultView {
   ResolutionResultView({
+    required this.rowId,
     required this.rateCardCode,
     required this.rateCardVersion,
     required this.matrixName,
@@ -782,6 +863,7 @@ class ResolutionResultView {
     final price = json['unit_price'] as Map<String, dynamic>;
     final reading = json['reading'] as Map<String, dynamic>;
     return ResolutionResultView(
+      rowId: json['row_id'] as String,
       rateCardCode: json['rate_card_code'] as String,
       rateCardVersion: json['rate_card_version'] as int,
       matrixName: json['matrix_name'] as String,
@@ -794,6 +876,7 @@ class ResolutionResultView {
     );
   }
 
+  final String rowId;
   final String rateCardCode;
   final int rateCardVersion;
   final String matrixName;
