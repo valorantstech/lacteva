@@ -20,6 +20,7 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.invalid_credentials": "Email or password is incorrect.",
         "error.validation": "The request is invalid.",
         "error.invalid_token": "This link is invalid or has expired.",
+        "error.rate_limited": "Too many requests. Please wait and try again.",
         "error.pricing_no_match": "No applicable pricing was found for this transaction.",
         "error.pricing_integrity": (
             "Pricing data is ambiguous for this transaction — contact an administrator."
@@ -33,12 +34,14 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.unauthorized": "Uthibitisho unahitajika.",
         "error.forbidden": "Huna ruhusa ya kufanya kitendo hiki.",
         "error.invalid_credentials": "Barua pepe au nenosiri si sahihi.",
+        "error.rate_limited": "Maombi mengi mno. Tafadhali subiri kisha ujaribu tena.",
     },
     "hi": {  # Hindi — starter subset
         "error.not_found": "अनुरोधित संसाधन नहीं मिला।",
         "error.unauthorized": "प्रमाणीकरण आवश्यक है।",
         "error.forbidden": "आपको यह कार्य करने की अनुमति नहीं है।",
         "error.invalid_credentials": "ईमेल या पासवर्ड गलत है।",
+        "error.rate_limited": "बहुत अधिक अनुरोध। कृपया प्रतीक्षा करें और पुनः प्रयास करें।",
     },
 }
 

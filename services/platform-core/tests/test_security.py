@@ -470,6 +470,8 @@ async def test_login_is_rate_limited_with_structured_retry_information(client):
     assert problem["extra"]["rule"] == "login"
     assert problem["extra"]["limit"] == rate_limit.LOGIN.limit
     assert problem["extra"]["retry_after_seconds"] >= 1
+    # A human-readable message, not the raw translation key.
+    assert problem["detail"] == "Too many requests. Please wait and try again."
     assert last.headers["Retry-After"]  # machine-honourable, not just a body
 
 
