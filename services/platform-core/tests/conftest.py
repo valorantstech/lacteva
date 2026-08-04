@@ -8,6 +8,10 @@ os.environ["LACTEVA_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["LACTEVA_EVENT_BUS"] = "memory"
 os.environ["LACTEVA_OUTBOX_MODE"] = "inline"
 os.environ["LACTEVA_JWT_SECRET"] = "test-secret-0123456789abcdef0123456789abcdef"
+# SEC-001: tests run the in-process rate limiter (no Redis) and reset it
+# between tests, so a limit is only ever exercised by the test that asks for
+# one — otherwise 600+ logins would exhaust the login budget.
+os.environ["LACTEVA_RATE_LIMIT_BACKEND"] = "memory"
 
 import uuid
 
@@ -17,6 +21,16 @@ from httpx import ASGITransport, AsyncClient
 from platform_core.core import db
 from platform_core.infrastructure import events
 from platform_core.main import create_app
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """A fresh limiter per test: budgets must not leak between tests."""
+    from platform_core.core import rate_limit
+
+    rate_limit.set_rate_limiter(rate_limit.MemoryRateLimiter())
+    yield
+    rate_limit.set_rate_limiter(None)
 
 
 @pytest.fixture

@@ -247,6 +247,11 @@ async def get_current_principal(
     if tenant_id is not None:
         # Tenant-scoped tokens are authoritative — the header cannot override.
         set_current_tenant(tenant_id)
+        # SEC-001: re-bind the database session now that the tenant is proven,
+        # so RLS enforces the token's tenant rather than the caller's header.
+        from platform_core.core.rls import bind_tenant
+
+        await bind_tenant(session, tenant_id)
         principal_tenant = tenant_id
     else:
         # Platform-level principals may act inside a tenant via X-Tenant-ID
@@ -264,8 +269,21 @@ def require_permission(permission: str):
     async def guard(
         principal: CurrentPrincipal,
         engine: Annotated[PermissionEngine, Depends(get_permission_engine)],
+        session: Session,
     ) -> Principal:
         if not await engine.check(principal.id, principal.tenant_id, permission):
+            # SEC-001: a denial is a security event. Privilege-escalation
+            # attempts are invisible unless the refusals are recorded.
+            from platform_core.core.security_audit import PERMISSION_DENIED, record_security_event
+
+            await record_security_event(
+                session,
+                action=PERMISSION_DENIED,
+                subject=permission,
+                actor_id=principal.id,
+                detail={"tenant_id": str(principal.tenant_id) if principal.tenant_id else None},
+            )
+            await session.commit()
             raise ForbiddenError(permission)
         return principal
 

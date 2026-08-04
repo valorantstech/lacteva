@@ -7,6 +7,7 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_JWT_SECRET = "dev-secret-change-me"  # noqa: S105 - sentinel, refused in prod
+DEV_MINIO_SECRET = "lacteva-secret"  # noqa: S105 - sentinel, refused in prod
 
 
 class Settings(BaseSettings):
@@ -17,11 +18,38 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     service_name: str = "platform-core"
 
-    # Security
+    # --- Security (SEC-001) ------------------------------------------------
+    # RS256 is the production signing algorithm; keys come from the registry
+    # (see core/keys.py). HS256 remains ONLY as a documented rollback path and
+    # is refused in prod.
+    jwt_algorithm: Literal["RS256", "HS256"] = "RS256"
+    # Shared secret for the HS256 rollback path only. Never used under RS256.
     jwt_secret: str = DEV_JWT_SECRET
+    # JSON array of signing keys — the sole source of key material. Empty in
+    # dev/test means "generate an ephemeral keypair"; empty in prod is fatal.
+    jwt_keys: str = ""
     jwt_access_ttl_seconds: int = 900
     jwt_refresh_ttl_seconds: int = 14 * 24 * 3600
-    jwt_algorithm: str = "HS256"  # TODO(M1): move to RS256 with key rotation (platform ADR)
+    jwt_leeway_seconds: int = 30  # clock skew tolerance between nodes
+
+    # Rate limiting (per-IP / per-user / per-endpoint, Redis-backed).
+    rate_limit_enabled: bool = True
+    rate_limit_backend: Literal["redis", "memory"] = "redis"
+    # Fail-open keeps milk collection working when Redis is down; a deployment
+    # that prefers to fail closed sets this to False (see SECURITY.md).
+    rate_limit_fail_open: bool = True
+
+    # Security headers. HSTS is only meaningful behind TLS, so it is opt-in
+    # and off by default in dev.
+    security_headers_enabled: bool = True
+    hsts_enabled: bool = False
+    hsts_max_age_seconds: int = 31536000
+    content_security_policy: str = (
+        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+    )
+
+    # Row Level Security (PostgreSQL only; SQLite has no equivalent).
+    rls_enabled: bool = True
 
     # Data stores
     database_url: str = "postgresql+asyncpg://lacteva:lacteva@localhost:5432/lacteva"
@@ -43,7 +71,7 @@ class Settings(BaseSettings):
     rabbitmq_url: str = "amqp://lacteva:lacteva@localhost:5672/"
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "lacteva"
-    minio_secret_key: str = "lacteva-secret"  # noqa: S105 - dev default
+    minio_secret_key: str = DEV_MINIO_SECRET
     minio_secure: bool = False
     opensearch_url: str = "http://localhost:9200"
 
@@ -61,8 +89,28 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _refuse_dev_secrets_in_prod(self) -> "Settings":
-        if self.env == "prod" and self.jwt_secret == DEV_JWT_SECRET:
-            raise ValueError("LACTEVA_JWT_SECRET must be set in prod")
+        """Production refuses to start on development credentials.
+
+        Every one of these has a safe default that is convenient in dev and
+        catastrophic in prod, so the check is a startup failure rather than a
+        warning nobody reads.
+        """
+        if self.env != "prod":
+            return self
+        problems = []
+        if self.jwt_algorithm == "HS256":
+            if self.jwt_secret == DEV_JWT_SECRET:
+                problems.append("LACTEVA_JWT_SECRET must be set when using the HS256 fallback")
+        elif not self.jwt_keys:
+            problems.append("LACTEVA_JWT_KEYS must be configured (RS256 signing keys)")
+        if self.minio_secret_key == DEV_MINIO_SECRET:
+            problems.append("LACTEVA_MINIO_SECRET_KEY must be set in prod")
+        if self.debug:
+            problems.append("LACTEVA_DEBUG must be false in prod")
+        if any(origin in ("*", "") for origin in self.cors_origins):
+            problems.append("LACTEVA_CORS_ORIGINS must name explicit origins in prod")
+        if problems:
+            raise ValueError("insecure production configuration: " + "; ".join(problems))
         return self
 
 

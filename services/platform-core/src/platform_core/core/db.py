@@ -59,9 +59,19 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
-    """FastAPI dependency: one session per request, commit on success."""
+    """FastAPI dependency: one session per request, commit on success.
+
+    SEC-001: the request's tenant is bound to the transaction so PostgreSQL
+    row-level security can enforce isolation in the database. Authentication
+    re-binds once it establishes the authoritative tenant from the token —
+    the header-derived value is only a starting point.
+    """
+    from platform_core.core.rls import bind_tenant
+    from platform_core.core.tenancy import get_current_tenant
+
     async with get_session_factory()() as session:
         try:
+            await bind_tenant(session, get_current_tenant())
             yield session
             await session.commit()
         except Exception:

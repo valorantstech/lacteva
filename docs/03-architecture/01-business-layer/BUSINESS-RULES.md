@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.8"
+version: "1.9"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-05
@@ -273,6 +273,30 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0022 — Tenant isolation is enforced by the database, not only by the application.
+
+**Clarification.** Every tenant-owned table carries a PostgreSQL row-level security policy comparing its `tenant_id` against a transaction-scoped session setting, so a query that forgets its filter returns NOTHING rather than another tenant's data. The application's own `tenant_id` predicates remain in place and become defense-in-depth: correctness no longer depends on every future query remembering them. The policy covers reads, updates, and deletes through `USING`, and writes through `WITH CHECK` — without the latter a caller could move a row INTO another tenant, succeeding silently. `FORCE` is mandatory because the application connects as the table owner, which would otherwise bypass its own policies. An unbound session matches nothing and therefore fails CLOSED. Cross-tenant machinery (relay dispatch, consumers, projection rebuilds, platform administration) may set an explicit, transaction-scoped, logged bypass — never a superuser connection. A new tenant-owned table without a policy is a build failure, not a latent leak.
+
+**Enforcement.** `core/rls.py` — `bind_tenant()` (`SET LOCAL`, so a pooled connection cannot carry a tenant across requests), `bind_platform_context()`, `policy_statements()`; `core/db.py` — per-request binding; `api/deps.py` — re-binding once the token's tenant is proven; migration `a1c7f3b90e22` — the policy set.
+
+**Verification.** `test_security.py::test_every_tenant_owned_table_is_covered_by_a_policy`, `::test_the_rls_policy_denies_by_default_and_checks_writes`, `::test_application_level_tenant_isolation_holds`; `test_rls_postgres.py::test_a_query_that_forgets_its_filter_still_cannot_leak`, `::test_cross_tenant_update_affects_nothing`, `::test_cross_tenant_delete_affects_nothing`, `::test_a_row_cannot_be_written_into_another_tenant`, `::test_no_tenant_bound_means_no_rows` (PostgreSQL job — a skip fails CI).
+
+**Status:** Active (since SEC-001).
+
+---
+
+## BR-0023 — A token is trusted only when a named, live key verifies it.
+
+**Clarification.** Tokens are signed RS256 and carry the `kid` of the key that signed them. Verification resolves exactly that key from the registry — an unknown, retired, or expired `kid` is a rejection, never a fallback to another key, and never an algorithm chosen from the token's own header (which is how `alg: none` and HS256-with-the-public-key downgrades succeed elsewhere). Rotation is additive: a new key signs while every unexpired predecessor still verifies, so no live session is invalidated by routine rotation; retirement is the emergency lever that kills every token a key signed, at once. Access tokens remain bound to a server-side session, so revocation is immediate rather than waiting out expiry, and a refresh token is single-use — presenting a spent one revokes the whole family, because the platform cannot distinguish the legitimate holder from a thief and must assume theft. Private key material never appears in source, in the JWKS document, or in the operations API.
+
+**Enforcement.** `core/keys.py` — `KeyRegistry.current()/verification_key()/jwks()`; `core/security.py` — `decode_token()` (fixed algorithm list, issuer check, required claims, explicit skew leeway); `api/routes.py` — `/.well-known/jwks.json`, `/v1/_security/keys`.
+
+**Verification.** `test_security.py::test_a_forged_token_signed_with_an_attacker_key_is_rejected`, `::test_algorithm_confusion_is_rejected`, `::test_an_unknown_kid_is_rejected`, `::test_rotation_keeps_existing_sessions_alive`, `::test_a_retired_key_stops_verifying_immediately`, `::test_refresh_replay_is_treated_as_theft`, `::test_jwks_publishes_only_public_material`.
+
+**Status:** Active (since SEC-001).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -286,6 +310,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.9 | 2026-08-05 | Architecture Board | SEC-001 rules: BR-0022 (database-enforced tenant isolation), BR-0023 (tokens trusted only via a named live key). |
 | 1.8 | 2026-08-05 | Architecture Board | OFF-001 rule: BR-0021 (offline changes transport, never business decisions). |
 | 1.7 | 2026-08-05 | Architecture Board | RCP-001 rule: BR-0020 (receipts are generated only from completed payments and never change). |
 | 1.6 | 2026-08-05 | Architecture Board | PAY-001 rules: BR-0018 (payments consume finalized settlements, never exceeding the payable), BR-0019 (completed payments are immutable; every attempt recorded). |

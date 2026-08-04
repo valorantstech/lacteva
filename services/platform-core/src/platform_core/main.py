@@ -10,6 +10,7 @@ from platform_core.api.routes import router as api_router
 from platform_core.core.config import get_settings
 from platform_core.core.db import Base, get_engine, get_session_factory
 from platform_core.core.errors import register_error_handlers
+from platform_core.core.http_security import SecurityHeadersMiddleware
 from platform_core.core.logging import configure_logging, get_logger
 from platform_core.core.observability import RequestContextMiddleware, setup_observability
 from platform_core.core.tenancy import TenantContextMiddleware
@@ -113,13 +114,22 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         docs_url="/docs" if settings.env != "prod" else None,  # no swagger in prod
     )
+    # CORS is an allow-list of exact origins — never a wildcard, and never
+    # reflected from the request. `allow_credentials` with a wildcard is
+    # rejected by browsers anyway, and reflecting an origin would defeat the
+    # point of having a list (SEC-001).
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],  # Authorization, Content-Type, X-Tenant-ID
+        # Only the verbs and headers this API actually uses. A wildcard here
+        # would also authorise anything a future vulnerability needs.
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Tenant-ID", "X-Request-ID"],
+        expose_headers=["X-Request-ID", "Retry-After"],
+        max_age=600,
     )
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(TenantContextMiddleware)
     app.add_middleware(RequestContextMiddleware)  # outermost: request id + metrics
     register_error_handlers(app)

@@ -66,5 +66,16 @@ def register_error_handlers(app: FastAPI) -> None:
                 "extra": exc.detail,
             },
             media_type="application/problem+json",
-            headers={"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None,
+            headers=_error_headers(exc),
         )
+
+
+def _error_headers(exc: AppError) -> dict[str, str] | None:
+    if exc.status_code == 401:
+        return {"WWW-Authenticate": "Bearer"}
+    # RFC 9110: a 429 tells the caller when to come back, in a header a
+    # generic HTTP client can honour without parsing the body.
+    retry_after = getattr(exc, "retry_after", None)
+    if exc.status_code == 429 and retry_after is not None:
+        return {"Retry-After": str(retry_after)}
+    return None

@@ -4,11 +4,16 @@ import uuid
 from datetime import date
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
 from platform_core.api import deps
 from platform_core.api.deps import CurrentPrincipal, Principal, require_permission
+from platform_core.core import rate_limit, security_audit
+from platform_core.core.errors import AppError
+from platform_core.core.http_security import client_ip
+from platform_core.core.keys import get_key_registry
+from platform_core.core.security_audit import record_security_event
 from platform_core.modules.auth.service import AuthService, LoginCommand, TokenPair
 from platform_core.modules.authz.permissions import PERMISSIONS
 from platform_core.modules.authz.service import AuthzService, PermissionEngine
@@ -178,6 +183,33 @@ from platform_core.modules.sync.service import (
 
 router = APIRouter(prefix="/v1")
 
+# --- Public key discovery (SEC-001) -----------------------------------------
+# Unauthenticated by design: the JWKS document is public key material, and a
+# resource server must be able to fetch it without already holding a token.
+wellknown = APIRouter(tags=["security"])
+
+
+@wellknown.get("/.well-known/jwks.json")
+async def jwks() -> dict:
+    """Public keys for verifying platform tokens (RFC 7517).
+
+    Only ACTIVE keys appear: a retired or expired key must never be presented
+    as trustworthy. Rotation is therefore visible here first — a new kid shows
+    up before any token carries it."""
+    return get_key_registry().jwks()
+
+
+security_router = APIRouter(prefix="/_security", tags=["security"])
+SecurityAdmin = Annotated[Principal, Depends(require_permission("platform.security.manage"))]
+
+
+@security_router.get("/keys")
+async def list_signing_keys(_: SecurityAdmin) -> list[dict]:
+    """Registry status for operators — kid, window, and which key signs.
+    Private material is never returned, by construction."""
+    return get_key_registry().describe()
+
+
 # --- Authentication -------------------------------------------------------
 auth = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -197,9 +229,40 @@ async def register(
 
 @auth.post("/token", response_model=TokenPair)
 async def login(
-    cmd: LoginCommand, service: Annotated[AuthService, Depends(deps.get_auth_service)]
+    cmd: LoginCommand,
+    request: Request,
+    service: Annotated[AuthService, Depends(deps.get_auth_service)],
+    session: deps.Session,
 ) -> TokenPair:
-    return await service.login(cmd)
+    """Rate limited per-IP AND per-identifier: one host hammering many
+    accounts (credential stuffing) and many hosts hammering one account
+    (distributed brute force) are different attacks and neither is caught by
+    a purely per-IP budget."""
+    ip = client_ip(request)
+    await rate_limit.enforce(rate_limit.LOGIN, ip=ip, user=None, endpoint="login")
+    await rate_limit.enforce(
+        rate_limit.LOGIN_PER_USER, ip=ip, user=cmd.email.lower(), endpoint="login"
+    )
+    try:
+        pair = await service.login(cmd)
+    except AppError:
+        # A failed login is a security event whether or not the account
+        # exists — and the response still must not reveal which.
+        await record_security_event(
+            session,
+            action=security_audit.LOGIN_FAILED,
+            subject=cmd.email.lower(),
+            detail={"ip": ip},
+        )
+        await session.commit()
+        raise
+    await record_security_event(
+        session,
+        action=security_audit.LOGIN_SUCCEEDED,
+        subject=cmd.email.lower(),
+        detail={"ip": ip},
+    )
+    return pair
 
 
 class RefreshRequest(BaseModel):
@@ -208,17 +271,33 @@ class RefreshRequest(BaseModel):
 
 @auth.post("/refresh", response_model=TokenPair)
 async def refresh(
-    body: RefreshRequest, service: Annotated[AuthService, Depends(deps.get_auth_service)]
+    body: RefreshRequest,
+    request: Request,
+    service: Annotated[AuthService, Depends(deps.get_auth_service)],
+    session: deps.Session,
 ) -> TokenPair:
-    return await service.refresh(body.refresh_token)
+    ip = client_ip(request)
+    await rate_limit.enforce(rate_limit.REFRESH, ip=ip, user=None, endpoint="refresh")
+    pair = await service.refresh(body.refresh_token)
+    await record_security_event(
+        session, action=security_audit.TOKEN_REFRESHED, subject="refresh", detail={"ip": ip}
+    )
+    return pair
 
 
 @auth.post("/logout", status_code=204)
 async def logout(
     principal: CurrentPrincipal,
     service: Annotated[AuthService, Depends(deps.get_auth_service)],
+    session: deps.Session,
 ) -> None:
     await service.logout(principal.session_id, actor_id=principal.id)
+    await record_security_event(
+        session,
+        action=security_audit.LOGOUT,
+        subject=str(principal.session_id),
+        actor_id=principal.id,
+    )
 
 
 class PasswordResetRequest(BaseModel):
@@ -229,11 +308,21 @@ class PasswordResetRequest(BaseModel):
 @auth.post("/password-reset/request", status_code=202)
 async def request_password_reset(
     body: PasswordResetRequest,
+    request: Request,
     service: Annotated[AuthService, Depends(deps.get_auth_service)],
+    session: deps.Session,
 ) -> dict:
     """Always 202 — never reveals whether the account exists. Delivery via
     the notification channel (logging adapter until M2)."""
+    ip = client_ip(request)
+    await rate_limit.enforce(rate_limit.PASSWORD_RESET, ip=ip, user=None, endpoint="password-reset")
     await service.request_password_reset(body.email, body.tenant_id)
+    await record_security_event(
+        session,
+        action=security_audit.PASSWORD_RESET_REQUESTED,
+        subject=body.email.lower(),
+        detail={"ip": ip},
+    )
     return {"status": "accepted"}
 
 
@@ -245,9 +334,17 @@ class PasswordResetConfirm(BaseModel):
 @auth.post("/password-reset/confirm", status_code=204)
 async def confirm_password_reset(
     body: PasswordResetConfirm,
+    request: Request,
     service: Annotated[AuthService, Depends(deps.get_auth_service)],
+    session: deps.Session,
 ) -> None:
+    await rate_limit.enforce(
+        rate_limit.PASSWORD_RESET, ip=client_ip(request), user=None, endpoint="password-reset"
+    )
     await service.confirm_password_reset(body.token, body.new_password)
+    await record_security_event(
+        session, action=security_audit.PASSWORD_RESET_COMPLETED, subject="reset-confirm"
+    )
 
 
 class MeView(BaseModel):
@@ -406,12 +503,19 @@ class AcceptInvitationRequest(BaseModel):
 @member_router.post("/invitations/accept", response_model=UserView, status_code=201)
 async def accept_invitation(
     body: AcceptInvitationRequest,
+    request: Request,
     service: Annotated[InvitationService, Depends(deps.get_invitation_service)],
     identity: Annotated[IdentityService, Depends(deps.get_identity_service)],
     authz: Annotated[AuthzService, Depends(deps.get_authz_service)],
     membership: Annotated[MembershipService, Depends(deps.get_membership_service)],
 ) -> Any:
     """Public: how invited people join their organization."""
+    await rate_limit.enforce(
+        rate_limit.INVITATION_ACCEPT,
+        ip=client_ip(request),
+        user=None,
+        endpoint="invitation-accept",
+    )
     return await service.accept(
         token=body.token,
         password=body.password,
@@ -1480,9 +1584,19 @@ class TemplatePreviewRequest(BaseModel):
 
 @notification_router.post("/notification-templates/{key}/preview", response_model=RenderedPreview)
 async def preview_notification_template(
-    key: str, body: TemplatePreviewRequest, service: NotificationSvc, _: NotificationRead
+    key: str,
+    body: TemplatePreviewRequest,
+    request: Request,
+    service: NotificationSvc,
+    p: NotificationRead,
 ) -> RenderedPreview:
     """Render a template with supplied (or placeholder) variables."""
+    await rate_limit.enforce(
+        rate_limit.NOTIFICATION_PREVIEW,
+        ip=client_ip(request),
+        user=str(p.id),
+        endpoint="notification-preview",
+    )
     return service.preview(key, body.channel, body.language, body.variables)
 
 
@@ -1812,8 +1926,14 @@ async def consumer_dead_letters(
 
 @consumers_router.post("/executions/{execution_id}/replay", response_model=ExecutionView)
 async def replay_consumer_execution(
-    execution_id: uuid.UUID, runner: ConsumerRun, _: RelayOps
+    execution_id: uuid.UUID, request: Request, runner: ConsumerRun, p: RelayOps
 ) -> Any:
+    await rate_limit.enforce(
+        rate_limit.CONSUMER_REPLAY,
+        ip=client_ip(request),
+        user=str(p.id),
+        endpoint="consumer-replay",
+    )
     return await runner.replay_execution(execution_id)
 
 
@@ -1831,12 +1951,19 @@ async def list_projections(rebuilder: Rebuilder, _: RelayOps) -> Any:
 
 @projections_router.post("/rebuild-all", response_model=list[RebuildResult])
 async def rebuild_all_projections(
+    request: Request,
     rebuilder: Rebuilder,
-    _: RelayOps,
+    p: RelayOps,
     dry_run: bool = False,
     batch_size: int = 500,
 ) -> Any:
     """Rebuild every projection in declared replay order."""
+    await rate_limit.enforce(
+        rate_limit.PROJECTION_REBUILD,
+        ip=client_ip(request),
+        user=str(p.id),
+        endpoint="projection-rebuild",
+    )
     return await rebuilder.rebuild_all(dry_run=dry_run, batch_size=batch_size)
 
 
@@ -1848,13 +1975,20 @@ async def get_projection_status(name: str, rebuilder: Rebuilder, _: RelayOps) ->
 @projections_router.post("/{name}/rebuild", response_model=RebuildResult)
 async def rebuild_projection(
     name: str,
+    request: Request,
     rebuilder: Rebuilder,
-    _: RelayOps,
+    p: RelayOps,
     dry_run: bool = False,
     batch_size: int = 500,
 ) -> Any:
     """Replay the event log into this projection. `dry_run=true` reports the
     work and an ETA without touching data."""
+    await rate_limit.enforce(
+        rate_limit.PROJECTION_REBUILD,
+        ip=client_ip(request),
+        user=str(p.id),
+        endpoint="projection-rebuild",
+    )
     return await rebuilder.rebuild(name, dry_run=dry_run, batch_size=batch_size)
 
 
@@ -1978,6 +2112,8 @@ async def list_audit(
 
 
 for sub in (
+    wellknown,
+    security_router,
     auth,
     identity_router,
     org_router,

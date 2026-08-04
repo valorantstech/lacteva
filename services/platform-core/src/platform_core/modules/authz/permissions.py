@@ -46,6 +46,9 @@ PERMISSIONS: dict[str, str] = {
     "receipt.manage": "Mark receipts delivered and archive them",
     "receipt.download": "Render and download receipt artifacts",
     "sync.read": "Read the offline sync monitor (queue status, conflicts, statistics)",
+    "platform.security.manage": (
+        "Inspect signing keys and security configuration — platform staff only"
+    ),
     "platform.relay.manage": (
         "Operate the event relay (replay, retry, dead letters) — platform staff only"
     ),

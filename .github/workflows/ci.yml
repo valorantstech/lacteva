@@ -42,6 +42,53 @@ jobs:
       - name: Migrations apply cleanly
         run: LACTEVA_DATABASE_URL=sqlite+aiosqlite:///./ci-migrate.db uv run alembic upgrade head
 
+  # SEC-001: row-level security cannot execute on SQLite, so the policies are
+  # proven against a real PostgreSQL. A SKIP in this job is a configuration
+  # failure, not an expected outcome — hence the explicit assertion below.
+  row-level-security:
+    name: platform-core (PostgreSQL RLS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/platform-core
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lacteva
+          POSTGRES_PASSWORD: lacteva
+          POSTGRES_DB: lacteva_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      LACTEVA_TEST_POSTGRES_URL: postgresql+asyncpg://lacteva:lacteva@localhost:5432/lacteva_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: services/platform-core/pyproject.toml
+      - name: Install dependencies
+        run: uv sync
+      - name: Migrations apply cleanly on PostgreSQL (including RLS policies)
+        run: LACTEVA_DATABASE_URL=$LACTEVA_TEST_POSTGRES_URL uv run alembic upgrade head
+      - name: RLS policy enforcement
+        # -p no:randomly keeps the fixture order deterministic; the assertion
+        # on "no tests ran" is what turns a silent skip into a red build.
+        run: uv run pytest tests/test_rls_postgres.py -v --no-header -rs
+      - name: Fail if the RLS suite was skipped
+        run: |
+          uv run pytest tests/test_rls_postgres.py -q 2>&1 | tee /tmp/rls.log
+          if grep -q "skipped" /tmp/rls.log; then
+            echo "::error::RLS tests skipped — PostgreSQL was not reachable"
+            exit 1
+          fi
+
   admin-portal:
     name: admin-portal (build + lint)
     runs-on: ubuntu-latest
