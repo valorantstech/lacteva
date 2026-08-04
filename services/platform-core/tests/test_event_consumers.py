@@ -74,8 +74,9 @@ async def test_production_consumers_discovered(client):
     from platform_core.modules.event_relay.consumers import discover_consumers
 
     names = discover_consumers()
-    assert "notification-placeholder" in names
+    assert "notification-dispatch" in names  # the real engine (NOT-001)
     assert "reporting-projection" in names
+    assert "notification-recipient-directory" in names
 
 
 async def test_registration_validates(registry_guard):
@@ -110,7 +111,7 @@ async def test_normal_flow_notification_and_projection(client):
             )
         ).all()
         by_consumer = {e.consumer_name for e in executions}
-        assert {"notification-placeholder", "reporting-projection"} <= by_consumer
+        assert {"notification-dispatch", "reporting-projection"} <= by_consumer
         assert all(e.latency_ms is not None for e in executions)
 
         daily = (await s.scalars(select(DailyTotalsProjection))).one()
@@ -396,7 +397,7 @@ async def test_multiple_consumers_isolated(client, registry_guard):
     async with db.get_session_factory()() as s:
         rows = (await s.scalars(select(ConsumerExecution))).all()
         by_name = {r.consumer_name: r.status for r in rows}
-        assert by_name["notification-placeholder"] == "succeeded"
+        assert by_name["notification-dispatch"] == "succeeded"
         assert by_name["reporting-projection"] == "succeeded"
         assert by_name["test-failing"] == "failed"
 
@@ -445,7 +446,9 @@ async def test_crash_recovery_resumes_from_cursor(client):
     await _accept_complete(client, headers, second["id"])
     runner_b = _runner()
     result = await runner_b.run_once()
-    assert result["processed"] >= 2  # only the new event, per consumer
+    # Only the NEW event is processed (the projection consumes completions;
+    # the notification dispatcher does not subscribe to them).
+    assert result["processed"] >= 1
 
     from platform_core.core import db
     from platform_core.modules.reporting.models import DailyTotalsProjection
@@ -526,7 +529,7 @@ async def test_consumer_disabled_via_configuration(client):
     async with db.get_session_factory()() as s:
         note = await s.scalar(
             select(ConsumerExecution).where(
-                ConsumerExecution.consumer_name == "notification-placeholder"
+                ConsumerExecution.consumer_name == "notification-dispatch"
             )
         )
         assert note is not None and note.status == "succeeded"
@@ -541,7 +544,7 @@ async def test_health_endpoint(client):
     body = (await client.get("/v1/_consumers/status", headers=root)).json()
     assert body["status"] == "ok"
     names = {c["name"] for c in body["consumers"]}
-    assert {"notification-placeholder", "reporting-projection"} <= names
+    assert {"notification-dispatch", "reporting-projection"} <= names
     projection = next(c for c in body["consumers"] if c["name"] == "reporting-projection")
     assert projection["lag_events"] > 0  # not yet run
     r = await client.post("/v1/_consumers/run", headers=root)

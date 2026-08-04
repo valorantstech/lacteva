@@ -14,7 +14,6 @@ from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import InvalidCredentialsError, InvalidTokenError
 from platform_core.core.security import create_token, hash_password, verify_password
 from platform_core.infrastructure.events import EventBus, EventEnvelope
-from platform_core.infrastructure.notifications import Notification, Notifier
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.auth.models import AuthSession, PasswordResetToken
 from platform_core.modules.identity.service import IdentityService
@@ -47,14 +46,12 @@ class AuthService:
         membership: MembershipService,
         audit: AuditService,
         bus: EventBus,
-        notifier: Notifier,
     ):
         self._session = session
         self._identity = identity
         self._membership = membership
         self._audit = audit
         self._bus = bus
-        self._notifier = notifier
 
     # --- sessions ---------------------------------------------------------
 
@@ -166,8 +163,10 @@ class AuthService:
 
     async def request_password_reset(self, email: str, tenant_id: uuid.UUID | None) -> str | None:
         """Always succeeds outwardly (no account oracle). Returns the raw token
-        to the CALLER (service layer) only — the API never exposes it; delivery
-        goes through the notifier. Real email/SMS channels land in M2."""
+        to the CALLER (service layer) only — the API never exposes it.
+
+        Delivery is NOT this module's business (NOT-001/BR-0016): the event
+        carries the address and the notification consumer renders and sends."""
         user = await self._identity.get_by_email(email, tenant_id)
         if user is None or not user.is_active:
             return None
@@ -179,19 +178,15 @@ class AuthService:
                 expires_at=utcnow() + RESET_TOKEN_TTL,
             )
         )
-        await self._notifier.send(
-            Notification(
-                channel="email",
-                recipient=user.email,
-                template_key="notification.password_reset",
-                locale=user.locale,
-                payload={"expires_hours": 2},
-            )
-        )
         await self._bus.publish(
             EventEnvelope.new(
                 "identity.password-reset-requested.v1",
-                {"user_id": str(user.id)},
+                {
+                    "user_id": str(user.id),
+                    "email": user.email,
+                    "locale": user.locale,
+                    "expires_hours": int(RESET_TOKEN_TTL.total_seconds() // 3600),
+                },
                 actor_id=user.id,
             )
         )

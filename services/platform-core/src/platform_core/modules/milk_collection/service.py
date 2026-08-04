@@ -531,7 +531,17 @@ class MilkCollectionService:
         self, tx_id: uuid.UUID, cmd: RejectCommand, *, actor_id: uuid.UUID
     ) -> MilkCollectionTransaction:
         tx = await self._decide(tx_id, "REJECTED", actor_id=actor_id, reason=cmd.reason)
-        await self._record(tx, "TransactionRejected", {"reason": cmd.reason}, actor_id)
+        await self._record(
+            tx,
+            "TransactionRejected",
+            {
+                "reason": cmd.reason,
+                # Who to tell (NOT-001) — consumers resolve contact details
+                # from their own directory, never from this module.
+                "supplier_id": str(tx.supplier_id) if tx.supplier_id else None,
+            },
+            actor_id,
+        )
         return tx
 
     async def _decide(

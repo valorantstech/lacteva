@@ -3,10 +3,10 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.4"
+version: "1.5"
 owner: Architecture Board
 created: 2026-08-03
-last-updated: 2026-08-03
+last-updated: 2026-08-05
 related: [STD-0003, CAP-0001]
 baseline: ARCH-BASELINE-V1
 ---
@@ -201,6 +201,30 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0016 — A business module never sends a message; notifications originate only from durable domain events.
+
+**Clarification.** No business module may call an SMS, email, or push provider — directly or through a helper. A module's only obligation is to emit its domain event through the outbox with enough payload for a message to be composed later. The notification consumer reads that durable log and decides what to send. This makes messaging a consequence of committed business facts rather than a side effect of a request: a rolled-back transaction can never produce a message, an unsent message can always be replayed from the log, and a provider outage can never fail a milk collection. Recipients are resolved from a rebuildable directory projection (BR-0015), never by calling back into a business module.
+
+**Enforcement.** `consumers/notification_dispatch.py` (the sole dispatch path); `notification/service.py` — `NotificationRequest` accepts a template key, never a message; producers (`auth`, `organization`, `supplier`, `settlement`, `milk_collection`) hold no notifier dependency; `consumers/supplier_directory.py` resolves recipients from projected data.
+
+**Verification.** `test_notifications.py::test_business_modules_never_send_directly`, `::test_supplier_registration_sends_a_welcome_sms`, `::test_password_reset_notification_from_the_event`, `::test_settlement_finalized_notification`, `::test_recipient_directory_is_rebuildable`.
+
+**Status:** Active (since NOT-001).
+
+---
+
+## BR-0017 — Every outbound message is rendered from a registered template and delivered at most once.
+
+**Clarification.** No message text exists outside the template registry: a template is identified by (key, channel, language), declares the variables it needs, and refuses to render when any are missing — a farmer never receives a half-substituted message. Language resolves to the requested locale or falls back to the platform default, so a market can ship one locale at a time without breaking delivery. Delivery is idempotent on (event, template, channel): duplicate consumption, cursor rewinds, and consumer replays re-examine an existing notification rather than sending a second message. Delivery failure is a property of the notification, not of the event — the event was processed correctly — so a failed send retries on the consumer framework's backoff schedule and dies after the same attempt budget, leaving its history intact.
+
+**Enforcement.** `notification/templates.py` — `get_template()` fallback, `render()` missing-variable error; `notification/models.py` — unique `(event_id, template_key, channel)`; `notification/service.py` — `dispatch()` idempotency check, `_record_failure()` using `backoff_delay` and `MAX_CONSUMER_ATTEMPTS`.
+
+**Verification.** `test_notifications.py::test_missing_variables_are_an_error_not_a_broken_message`, `::test_language_resolution_and_fallback`, `::test_duplicate_event_processing_does_not_resend`, `::test_consumer_replay_does_not_resend`, `::test_failed_delivery_retries_and_succeeds`, `::test_delivery_dies_after_max_attempts`, `::test_backoff_grows_between_attempts`.
+
+**Status:** Active (since NOT-001).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -214,6 +238,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.5 | 2026-08-05 | Architecture Board | NOT-001 rules: BR-0016 (business modules never send messages; notifications originate only from durable domain events), BR-0017 (every message rendered from a registered template, delivered at most once). |
 | 1.4 | 2026-08-04 | Architecture Board | PLT-001 rule: BR-0015 (every projection is fully rebuildable from the event log). |
 | 1.3 | 2026-08-04 | Architecture Board | SPRINT-008B rules: BR-0013 (consumers never affect business transactions), BR-0014 (at-most-once processing per consumer). |
 | 1.2 | 2026-08-04 | Architecture Board | SET-001 rules: BR-0008 (one settlement per calculation), BR-0009 (no supplier-period overlap), BR-0010 (finalized immutable), BR-0011 (totals equal line sum), BR-0012 (no duplicate transaction references). |

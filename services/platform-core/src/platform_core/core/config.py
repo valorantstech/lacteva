@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     outbox_poll_seconds: float = 1.0
     consumers_enabled: bool = True  # background consumer loop (never runs in test env)
     consumer_poll_seconds: float = 1.0
+    # Notification channel adapters (NOT-001): logging | placeholder. Real
+    # gateways implement the same provider protocol at deployment time.
+    notification_sms_provider: Literal["logging", "placeholder"] = "logging"
+    notification_email_provider: Literal["logging", "placeholder"] = "logging"
     rabbitmq_url: str = "amqp://lacteva:lacteva@localhost:5672/"
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "lacteva"

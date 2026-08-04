@@ -18,4 +18,7 @@ What belongs here: deployment topology views (C4 deployment diagrams per [STD-00
 
 | File | Shows | Backing ADRs | Status |
 | --- | --- | --- | --- |
-| — | *None yet — first entries follow the founding platform ADRs (roadmap Phase 1.2, [QR-0004](../../12-quality/QR-0004-documentation-roadmap.md)).* | | |
+| [PROJECTION-LIFECYCLE.md](PROJECTION-LIFECYCLE.md) | How derived read models are built, rebuilt, verified, and versioned from the event log ([BR-0015](../01-business-layer/BUSINESS-RULES.md)) | — (realizes the event-backbone baseline) | Approved |
+| [NOTIFICATION-ENGINE.md](NOTIFICATION-ENGINE.md) | How outbound messages are composed, delivered, retried, and audited as a consumer of the event log ([BR-0016](../01-business-layer/BUSINESS-RULES.md), BR-0017) | — (realizes the event-backbone baseline) | Approved |
+
+*Deployment topology views still follow the founding platform ADRs (roadmap Phase 1.2, [QR-0004](../../12-quality/QR-0004-documentation-roadmap.md)).*

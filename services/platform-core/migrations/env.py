@@ -25,6 +25,7 @@ import platform_core.modules.configuration.models
 import platform_core.modules.event_relay.models
 import platform_core.modules.identity.models
 import platform_core.modules.milk_collection.models
+import platform_core.modules.notification.models
 import platform_core.modules.operational_readiness.models
 import platform_core.modules.organization.models
 import platform_core.modules.pricing.models

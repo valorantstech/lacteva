@@ -216,7 +216,15 @@ class SupplierService:
         await self._bus.publish(
             EventEnvelope.new(
                 "supplier.supplier-registered.v1",
-                {"supplier_id": str(supplier.id), "code": code},
+                {
+                    "supplier_id": str(supplier.id),
+                    "code": code,
+                    # Contact details for the notification recipient directory
+                    # (NOT-001) — consumers must never query this module.
+                    "full_name": cmd.full_name,
+                    "phone": cmd.phone,
+                    "locale": cmd.locale,
+                },
                 actor_id=actor_id,
             )
         )
@@ -275,7 +283,12 @@ class SupplierService:
         await self._bus.publish(
             EventEnvelope.new(
                 "supplier.supplier-status-changed.v1",
-                {"supplier_id": str(supplier.id), "from": previous, "to": new_status},
+                {
+                    "supplier_id": str(supplier.id),
+                    "code": supplier.code,
+                    "from": previous,
+                    "to": new_status,
+                },
                 actor_id=actor_id,
             )
         )

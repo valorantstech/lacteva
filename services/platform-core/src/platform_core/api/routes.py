@@ -57,6 +57,14 @@ from platform_core.modules.milk_collection.service import (
     TransactionView,
     WeightCommand,
 )
+from platform_core.modules.notification.service import (
+    NotificationPage,
+    NotificationService,
+    NotificationStats,
+    NotificationView,
+    RenderedPreview,
+    TemplateView,
+)
 from platform_core.modules.operational_readiness.models import DEVICE_CATEGORIES
 from platform_core.modules.operational_readiness.service import (
     READINESS_RULES,
@@ -1252,6 +1260,84 @@ async def cancel_settlement(
     return (await service.detail(settlement.id)).settlement
 
 
+# --- Notifications (delivery history & operations — NOT-001) ----------------
+notification_router = APIRouter(tags=["notifications"])
+NotificationRead = Annotated[Principal, Depends(require_permission("notification.read"))]
+NotificationManage = Annotated[Principal, Depends(require_permission("notification.manage"))]
+NotificationSvc = Annotated[NotificationService, Depends(deps.get_notification_service)]
+
+
+@notification_router.get("/notifications", response_model=NotificationPage)
+async def search_notifications(
+    service: NotificationSvc,
+    _: NotificationRead,
+    q: str | None = None,
+    status: str | None = None,
+    channel: str | None = None,
+    template_key: str | None = None,
+    event_id: uuid.UUID | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> NotificationPage:
+    """Delivery history: search by recipient/text, filter by status (sent |
+    failed | dead | pending), channel, template, or originating event."""
+    return await service.search(
+        q=q,
+        status=status,
+        channel=channel,
+        template_key=template_key,
+        event_id=event_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@notification_router.get("/notifications/stats", response_model=NotificationStats)
+async def notification_stats(service: NotificationSvc, _: NotificationRead) -> NotificationStats:
+    return await service.stats()
+
+
+@notification_router.get("/notification-templates", response_model=list[TemplateView])
+async def list_notification_templates(service: NotificationSvc, _: NotificationRead) -> Any:
+    """The template registry — every message the platform can send."""
+    return service.templates()
+
+
+class TemplatePreviewRequest(BaseModel):
+    channel: str = "sms"
+    language: str | None = None
+    variables: dict = {}
+
+
+@notification_router.post("/notification-templates/{key}/preview", response_model=RenderedPreview)
+async def preview_notification_template(
+    key: str, body: TemplatePreviewRequest, service: NotificationSvc, _: NotificationRead
+) -> RenderedPreview:
+    """Render a template with supplied (or placeholder) variables."""
+    return service.preview(key, body.channel, body.language, body.variables)
+
+
+@notification_router.get("/notifications/{notification_id}", response_model=NotificationView)
+async def get_notification(
+    notification_id: uuid.UUID, service: NotificationSvc, _: NotificationRead
+) -> Any:
+    return await service.get(notification_id)
+
+
+@notification_router.post("/notifications/{notification_id}/retry", response_model=NotificationView)
+async def retry_notification(
+    notification_id: uuid.UUID, service: NotificationSvc, _: NotificationManage
+) -> Any:
+    """Retry a failed or dead notification now (bypasses the backoff wait)."""
+    return await service.retry(notification_id)
+
+
+@notification_router.post("/notifications/retry-pending")
+async def retry_pending_notifications(service: NotificationSvc, _: NotificationManage) -> dict:
+    """Run the due-retry sweep immediately (the background loop does this)."""
+    return await service.retry_pending()
+
+
 # --- Reports (read-only operational summaries — REP-001) --------------------
 report_router = APIRouter(prefix="/reports", tags=["reporting"])
 ReportRead = Annotated[Principal, Depends(require_permission("reporting.read"))]
@@ -1598,6 +1684,7 @@ for sub in (
     matrix_router,
     settlement_router,
     report_router,
+    notification_router,
     relay_router,
     consumers_router,
     projections_router,

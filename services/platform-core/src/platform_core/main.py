@@ -25,12 +25,18 @@ async def _consumer_loop() -> None:
     import asyncio
 
     from platform_core.modules.event_relay.consumers import ConsumerRunner
+    from platform_core.modules.notification.service import NotificationService
 
     settings = get_settings()
     runner = ConsumerRunner(get_session_factory())
     while True:
         try:
             await runner.run_once()
+            # Delivery retries (NOT-001) ride the same loop: a failed send is
+            # a notification-level concern, never an event-processing failure.
+            async with get_session_factory()() as session:
+                await NotificationService(session).retry_pending()
+                await session.commit()
         except Exception:
             log.exception("consumer_loop_error")
         await asyncio.sleep(settings.consumer_poll_seconds)

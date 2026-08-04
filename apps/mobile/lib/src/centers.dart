@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'center_summary.dart';
 import 'collection_wizard.dart';
+import 'notifications.dart';
 import 'pricing_resolution.dart';
 import 'rate_cards.dart';
 import 'settlements.dart';
@@ -71,8 +72,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     controller: _email,
                     decoration: const InputDecoration(labelText: 'Email'),
                     keyboardType: TextInputType.emailAddress,
-                    validator: (v) =>
-                        (v == null || !v.contains('@')) ? 'Enter your email' : null,
+                    validator: (v) => (v == null || !v.contains('@'))
+                        ? 'Enter your email'
+                        : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -97,7 +99,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Text(
                         _error!,
                         style: TextStyle(
-                            color: Theme.of(context).colorScheme.error),
+                          color: Theme.of(context).colorScheme.error,
+                        ),
                       ),
                     ),
                   FilledButton(
@@ -197,6 +200,16 @@ class _CentersListScreenState extends State<CentersListScreen> {
               ),
             ),
           ),
+          IconButton(
+            icon: const Icon(Icons.notifications_none),
+            tooltip: 'Notifications',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    NotificationHistoryScreen(client: widget.client),
+              ),
+            ),
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -222,8 +235,10 @@ class _CentersListScreenState extends State<CentersListScreen> {
             ),
             const SizedBox(height: 12),
             if (_error != null)
-              Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             if (page == null && _error == null)
               const Padding(
                 padding: EdgeInsets.all(32),
@@ -249,7 +264,9 @@ class _CentersListScreenState extends State<CentersListScreen> {
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => CenterDetailScreen(
-                            client: widget.client, centerId: c.id),
+                          client: widget.client,
+                          centerId: c.id,
+                        ),
                       ),
                     ),
                   ),
@@ -269,7 +286,8 @@ class _CentersListScreenState extends State<CentersListScreen> {
                     child: const Text('Previous'),
                   ),
                   Text(
-                      '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}'),
+                    '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}',
+                  ),
                   TextButton(
                     onPressed: _offset + pageSize >= page.total
                         ? null
@@ -301,10 +319,7 @@ class StatusChip extends StatelessWidget {
       'archived' => Colors.grey,
       _ => Colors.blueGrey,
     };
-    return CircleAvatar(
-      radius: 6,
-      backgroundColor: color,
-    );
+    return CircleAvatar(radius: 6, backgroundColor: color);
   }
 }
 
@@ -323,12 +338,15 @@ class CenterFormScreen extends StatefulWidget {
 
 class _CenterFormScreenState extends State<CenterFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _name =
-      TextEditingController(text: widget.center?.name ?? '');
-  late final TextEditingController _code =
-      TextEditingController(text: widget.center?.code ?? '');
-  late final TextEditingController _timezone =
-      TextEditingController(text: widget.center?.timezone ?? 'UTC');
+  late final TextEditingController _name = TextEditingController(
+    text: widget.center?.name ?? '',
+  );
+  late final TextEditingController _code = TextEditingController(
+    text: widget.center?.code ?? '',
+  );
+  late final TextEditingController _timezone = TextEditingController(
+    text: widget.center?.timezone ?? 'UTC',
+  );
   List<BranchSummary> _branches = const [];
   String? _branchId;
   String? _error;
@@ -338,13 +356,16 @@ class _CenterFormScreenState extends State<CenterFormScreen> {
   void initState() {
     super.initState();
     if (!widget.isEdit) {
-      widget.client.listBranches().then((branches) {
-        if (!mounted) return;
-        setState(() {
-          _branches = branches;
-          _branchId = branches.isEmpty ? null : branches.first.id;
-        });
-      }).catchError((_) {});
+      widget.client
+          .listBranches()
+          .then((branches) {
+            if (!mounted) return;
+            setState(() {
+              _branches = branches;
+              _branchId = branches.isEmpty ? null : branches.first.id;
+            });
+          })
+          .catchError((_) {});
     }
   }
 
@@ -380,9 +401,11 @@ class _CenterFormScreenState extends State<CenterFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEdit
-            ? 'Edit ${widget.center!.code}'
-            : 'New collection center'),
+        title: Text(
+          widget.isEdit
+              ? 'Edit ${widget.center!.code}'
+              : 'New collection center',
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -396,8 +419,12 @@ class _CenterFormScreenState extends State<CenterFormScreen> {
                   initialValue: _branchId,
                   decoration: const InputDecoration(labelText: 'Branch'),
                   items: _branches
-                      .map((b) => DropdownMenuItem(
-                          value: b.id, child: Text('${b.code} — ${b.name}')))
+                      .map(
+                        (b) => DropdownMenuItem(
+                          value: b.id,
+                          child: Text('${b.code} — ${b.name}'),
+                        ),
+                      )
                       .toList(),
                   onChanged: (v) => setState(() => _branchId = v),
                   validator: (v) => v == null ? 'Select a branch' : null,
@@ -433,9 +460,12 @@ class _CenterFormScreenState extends State<CenterFormScreen> {
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(_error!,
-                      style:
-                          TextStyle(color: Theme.of(context).colorScheme.error)),
+                  child: Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ),
               FilledButton(
                 onPressed: _busy ? null : _submit,
@@ -451,8 +481,11 @@ class _CenterFormScreenState extends State<CenterFormScreen> {
 
 /// Read-only detail: status actions, operating hours, calendar, settings.
 class CenterDetailScreen extends StatefulWidget {
-  const CenterDetailScreen(
-      {super.key, required this.client, required this.centerId});
+  const CenterDetailScreen({
+    super.key,
+    required this.client,
+    required this.centerId,
+  });
 
   final ApiClient client;
   final String centerId;
@@ -491,8 +524,9 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
       await _load();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.detail)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.detail)));
     }
   }
 
@@ -508,11 +542,14 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
             tooltip: 'Collect milk',
             onPressed: () async {
               try {
-                final sessions =
-                    await widget.client.listOpenSessions(widget.centerId);
+                final sessions = await widget.client.listOpenSessions(
+                  widget.centerId,
+                );
                 final session = sessions.isNotEmpty
                     ? sessions.first
-                    : await widget.client.openCollectionSession(widget.centerId);
+                    : await widget.client.openCollectionSession(
+                        widget.centerId,
+                      );
                 if (!context.mounted) return;
                 await Navigator.of(context).push(
                   MaterialPageRoute(
@@ -524,8 +561,9 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                 );
               } on ApiException catch (e) {
                 if (!context.mounted) return;
-                ScaffoldMessenger.of(context)
-                    .showSnackBar(SnackBar(content: Text(e.detail)));
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(e.detail)));
               }
             },
           ),
@@ -535,7 +573,9 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => ReadinessScreen(
-                    client: widget.client, centerId: widget.centerId),
+                  client: widget.client,
+                  centerId: widget.centerId,
+                ),
               ),
             ),
           ),
@@ -545,7 +585,9 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => CenterTodayScreen(
-                    client: widget.client, centerId: widget.centerId),
+                  client: widget.client,
+                  centerId: widget.centerId,
+                ),
               ),
             ),
           ),
@@ -555,7 +597,9 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => ResolutionTestScreen(
-                    client: widget.client, centerId: widget.centerId),
+                  client: widget.client,
+                  centerId: widget.centerId,
+                ),
               ),
             ),
           ),
@@ -575,7 +619,8 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                     leading: StatusChip(status: detail.center.status),
                     title: Text(detail.center.code),
                     subtitle: Text(
-                        '${detail.center.status} · ${detail.center.timezone}'),
+                      '${detail.center.status} · ${detail.center.timezone}',
+                    ),
                   ),
                 ),
                 if (detail.center.status != 'archived')
@@ -600,13 +645,18 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                     ],
                   ),
                 const SizedBox(height: 16),
-                Text('Operating hours',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Operating hours',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 if (detail.windows.isEmpty)
                   const ListTile(
-                      dense: true,
-                      title: Text('No operating hours set — '
-                          'the center cannot be activated yet.')),
+                    dense: true,
+                    title: Text(
+                      'No operating hours set — '
+                      'the center cannot be activated yet.',
+                    ),
+                  ),
                 ...detail.windows.map(
                   (w) => ListTile(
                     dense: true,
@@ -615,8 +665,10 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text('Business calendar',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Business calendar',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 if (detail.calendar.isEmpty)
                   const ListTile(dense: true, title: Text('No entries.')),
                 ...detail.calendar.map(
@@ -637,8 +689,11 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
 
 /// Operational readiness evaluation for one center (SPRINT-004).
 class ReadinessScreen extends StatefulWidget {
-  const ReadinessScreen(
-      {super.key, required this.client, required this.centerId});
+  const ReadinessScreen({
+    super.key,
+    required this.client,
+    required this.centerId,
+  });
 
   final ApiClient client;
   final String centerId;
@@ -672,10 +727,10 @@ class _ReadinessScreenState extends State<ReadinessScreen> {
   }
 
   Color _statusColor(String status) => switch (status) {
-        'READY' => Colors.green,
-        'WARNING' => Colors.orange,
-        _ => Colors.red,
-      };
+    'READY' => Colors.green,
+    'WARNING' => Colors.orange,
+    _ => Colors.red,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -700,8 +755,8 @@ class _ReadinessScreenState extends State<ReadinessScreen> {
                         result.status == 'READY'
                             ? Icons.check_circle
                             : result.status == 'WARNING'
-                                ? Icons.warning_amber
-                                : Icons.cancel,
+                            ? Icons.warning_amber
+                            : Icons.cancel,
                         color: _statusColor(result.status),
                         size: 36,
                       ),
@@ -710,20 +765,23 @@ class _ReadinessScreenState extends State<ReadinessScreen> {
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       subtitle: Text(
-                          '${result.checks.where((c) => c.passed).length}'
-                          ' of ${result.checks.length} checks passing'),
+                        '${result.checks.where((c) => c.passed).length}'
+                        ' of ${result.checks.length} checks passing',
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
                   ...result.checks.map(
                     (check) => ListTile(
                       leading: Icon(
-                        check.passed ? Icons.check_circle_outline : Icons.error_outline,
+                        check.passed
+                            ? Icons.check_circle_outline
+                            : Icons.error_outline,
                         color: check.passed
                             ? Colors.green
                             : (check.severity == 'blocking'
-                                ? Colors.red
-                                : Colors.orange),
+                                  ? Colors.red
+                                  : Colors.orange),
                       ),
                       title: Text(check.rule),
                       subtitle: Text(check.detail),

@@ -1,0 +1,431 @@
+"""Notification dispatcher and history (NOT-001).
+
+The dispatcher is the ONLY thing in the platform that sends messages.
+Business modules never call it — notifications originate exclusively from
+durable domain events, consumed by the notification consumer (BR-0016).
+
+Retry reuses the consumer framework's semantics and constants
+(`backoff_delay`, `MAX_CONSUMER_ATTEMPTS`): failed → wait → retry → …→ dead.
+It is applied to the NOTIFICATION rather than to the event, because event
+processing succeeded — it is the delivery that failed, and raising would
+roll back the very history this module exists to keep.
+"""
+
+import uuid
+from datetime import datetime
+from decimal import Decimal
+
+import structlog
+from prometheus_client import Counter
+from pydantic import BaseModel
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from platform_core.core.db import as_utc, utcnow
+from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.tenancy import require_current_tenant
+from platform_core.modules.event_relay.consumers import MAX_CONSUMER_ATTEMPTS
+from platform_core.modules.event_relay.service import backoff_delay
+from platform_core.modules.notification.models import Notification, NotificationRecipient
+from platform_core.modules.notification.providers import (
+    OutboundMessage,
+    ProviderSendError,
+    get_provider,
+)
+from platform_core.modules.notification.templates import (
+    TemplateNotFoundError,
+    TemplateRenderError,
+    catalog,
+    get_template,
+    render,
+)
+
+log = structlog.get_logger("notification")
+
+NOTIFICATIONS_SENT = Counter(
+    "notifications_sent_total", "Notifications delivered", ["channel", "template"]
+)
+NOTIFICATIONS_FAILED = Counter(
+    "notifications_failed_total", "Notification delivery failures", ["channel", "template"]
+)
+NOTIFICATIONS_DEAD = Counter(
+    "notifications_dead_total", "Notifications that exhausted retries", ["channel", "template"]
+)
+
+
+class NotificationRequest(BaseModel):
+    """What the consumer asks for — never a message, always a template."""
+
+    event_id: uuid.UUID
+    event_name: str
+    tenant_id: uuid.UUID | None = None
+    template_key: str
+    channel: str
+    recipient_ref: uuid.UUID | None = None  # supplier/user id, resolved via the directory
+    recipient: str | None = None  # explicit address when the event carries it
+    language: str | None = None
+    variables: dict = {}
+
+
+class NotificationView(BaseModel):
+    id: uuid.UUID
+    event_id: uuid.UUID
+    event_name: str
+    template_key: str
+    channel: str
+    language: str
+    recipient: str | None
+    recipient_ref: uuid.UUID | None
+    title: str | None
+    rendered_text: str | None
+    status: str
+    provider: str | None
+    provider_reference: str | None
+    attempt_count: int
+    next_attempt_at: datetime | None
+    error: str | None
+    payload: dict
+    created_at: datetime
+    sent_at: datetime | None
+    failed_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class NotificationPage(BaseModel):
+    items: list[NotificationView]
+    total: int
+    limit: int
+    offset: int
+
+
+class NotificationStats(BaseModel):
+    total: int
+    by_status: dict[str, int]
+    by_channel: dict[str, int]
+    retryable: int
+
+
+class TemplateView(BaseModel):
+    key: str
+    channel: str
+    language: str
+    title: str
+    body: str
+    variables: list[str]
+
+
+class RenderedPreview(BaseModel):
+    key: str
+    channel: str
+    language: str
+    title: str
+    body: str
+    variables_used: dict
+
+
+class NotificationService:
+    def __init__(self, session: AsyncSession):
+        self._session = session
+
+    # --- dispatch -----------------------------------------------------------
+
+    async def dispatch(self, request: NotificationRequest) -> Notification | None:
+        """Create (idempotently) and attempt one notification.
+
+        Returns None when the event already produced this notification — a
+        consumer replay or duplicate delivery must never re-send.
+        """
+        existing = await self._session.scalar(
+            select(Notification).where(
+                Notification.event_id == request.event_id,
+                Notification.template_key == request.template_key,
+                Notification.channel == request.channel,
+            )
+        )
+        if existing is not None:
+            return None
+        notification = Notification(
+            tenant_id=request.tenant_id,
+            event_id=request.event_id,
+            event_name=request.event_name,
+            template_key=request.template_key,
+            channel=request.channel,
+            language=(request.language or "en"),
+            recipient_ref=request.recipient_ref,
+            recipient=request.recipient,
+            payload=_jsonable(request.variables),
+        )
+        self._session.add(notification)
+        await self._session.flush()
+        await self._attempt(notification)
+        return notification
+
+    async def retry(self, notification_id: uuid.UUID) -> Notification:
+        """Operator-triggered retry of a failed or dead notification."""
+        notification = await self._session.get(Notification, notification_id)
+        if notification is None:
+            raise NotFoundError("notification not found")
+        if notification.status == "sent":
+            raise ConflictError("notification was already delivered")
+        await self._attempt(notification, forced=True)
+        return notification
+
+    async def retry_pending(self, *, limit: int = 100, now: datetime | None = None) -> dict:
+        """Sweep due failed notifications. Driven by the background loop."""
+        now = now or utcnow()
+        rows = await self._session.scalars(
+            select(Notification)
+            .where(
+                Notification.status == "failed",
+                or_(
+                    Notification.next_attempt_at.is_(None),
+                    Notification.next_attempt_at <= now,
+                ),
+            )
+            .order_by(Notification.next_attempt_at)
+            .limit(limit)
+        )
+        sent = failed = 0
+        for notification in rows.all():
+            await self._attempt(notification, now=now)
+            if notification.status == "sent":
+                sent += 1
+            else:
+                failed += 1
+        return {"retried": sent + failed, "sent": sent, "failed": failed}
+
+    async def _attempt(
+        self, notification: Notification, *, forced: bool = False, now: datetime | None = None
+    ) -> None:
+        now = now or utcnow()
+        notification.attempt_count += 1
+        try:
+            recipient = notification.recipient or await self._resolve_recipient(notification)
+            if not recipient:
+                raise ProviderSendError("no recipient address on file")
+            notification.recipient = recipient
+            template = get_template(
+                notification.template_key, notification.channel, notification.language
+            )
+            variables = dict(notification.payload)
+            if "name" in template.variables and "name" not in variables:
+                variables["name"] = await self._recipient_name(notification)
+            message = render(template, variables)
+            provider = get_provider(notification.channel)
+            reference = await provider.send(
+                OutboundMessage(
+                    channel=notification.channel,
+                    recipient=recipient,
+                    title=message.title,
+                    body=message.body,
+                    language=message.language,
+                    template_key=notification.template_key,
+                    notification_id=notification.id,
+                )
+            )
+        except (
+            ProviderSendError,
+            TemplateRenderError,
+            TemplateNotFoundError,
+            Exception,
+        ) as exc:  # a provider must never break the consumer
+            self._record_failure(notification, str(exc)[:500], now=now, forced=forced)
+            return
+        notification.language = message.language
+        notification.title = message.title
+        notification.rendered_text = message.body
+        notification.provider = provider.name
+        notification.provider_reference = reference
+        notification.status = "sent"
+        notification.sent_at = now
+        notification.next_attempt_at = None
+        notification.error = None
+        NOTIFICATIONS_SENT.labels(notification.channel, notification.template_key).inc()
+
+    def _record_failure(
+        self, notification: Notification, error: str, *, now: datetime, forced: bool
+    ) -> None:
+        notification.error = error
+        notification.failed_at = now
+        notification.provider = notification.provider or None
+        exhausted = notification.attempt_count >= MAX_CONSUMER_ATTEMPTS and not forced
+        if exhausted:
+            notification.status = "dead"
+            notification.next_attempt_at = None
+            NOTIFICATIONS_DEAD.labels(notification.channel, notification.template_key).inc()
+            log.error(
+                "notification_dead",
+                notification_id=str(notification.id),
+                template=notification.template_key,
+                error=error,
+            )
+        else:
+            notification.status = "failed"
+            notification.next_attempt_at = now + _timedelta_seconds(
+                backoff_delay(notification.attempt_count)
+            )
+            NOTIFICATIONS_FAILED.labels(notification.channel, notification.template_key).inc()
+            log.warning(
+                "notification_failed",
+                notification_id=str(notification.id),
+                attempt=notification.attempt_count,
+                error=error,
+            )
+
+    # --- recipients ----------------------------------------------------------
+
+    async def _directory_entry(self, notification: Notification) -> NotificationRecipient | None:
+        if notification.recipient_ref is None:
+            return None
+        return await self._session.scalar(
+            select(NotificationRecipient).where(
+                NotificationRecipient.subject_id == notification.recipient_ref
+            )
+        )
+
+    async def _resolve_recipient(self, notification: Notification) -> str | None:
+        entry = await self._directory_entry(notification)
+        if entry is None:
+            return None
+        if not notification.language or notification.language == "en":
+            notification.language = entry.language or "en"
+        return entry.phone if notification.channel == "sms" else entry.email
+
+    async def _recipient_name(self, notification: Notification) -> str:
+        entry = await self._directory_entry(notification)
+        return (entry.display_name if entry else "") or "supplier"
+
+    # --- history queries ------------------------------------------------------
+
+    async def get(self, notification_id: uuid.UUID) -> Notification:
+        tenant_id = require_current_tenant()
+        notification = await self._session.get(Notification, notification_id)
+        if notification is None or notification.tenant_id not in (tenant_id, None):
+            raise NotFoundError("notification not found")
+        return notification
+
+    async def search(
+        self,
+        *,
+        q: str | None = None,
+        status: str | None = None,
+        channel: str | None = None,
+        template_key: str | None = None,
+        event_id: uuid.UUID | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> NotificationPage:
+        tenant_id = require_current_tenant()
+        limit = max(1, min(limit, 100))
+        stmt = select(Notification).where(
+            or_(Notification.tenant_id == tenant_id, Notification.tenant_id.is_(None))
+        )
+        if q:
+            like = f"%{q.lower()}%"
+            stmt = stmt.where(
+                or_(
+                    func.lower(Notification.recipient).like(like),
+                    func.lower(Notification.rendered_text).like(like),
+                    func.lower(Notification.title).like(like),
+                )
+            )
+        if status:
+            stmt = stmt.where(Notification.status == status)
+        if channel:
+            stmt = stmt.where(Notification.channel == channel)
+        if template_key:
+            stmt = stmt.where(Notification.template_key == template_key)
+        if event_id:
+            stmt = stmt.where(Notification.event_id == event_id)
+        total = await self._session.scalar(select(func.count()).select_from(stmt.subquery()))
+        rows = await self._session.scalars(
+            stmt.order_by(Notification.created_at.desc()).limit(limit).offset(offset)
+        )
+        return NotificationPage(
+            items=[NotificationView.model_validate(row) for row in rows.all()],
+            total=total or 0,
+            limit=limit,
+            offset=offset,
+        )
+
+    async def stats(self) -> NotificationStats:
+        tenant_id = require_current_tenant()
+        scope = or_(Notification.tenant_id == tenant_id, Notification.tenant_id.is_(None))
+        by_status = dict(
+            (
+                await self._session.execute(
+                    select(Notification.status, func.count())
+                    .where(scope)
+                    .group_by(Notification.status)
+                )
+            ).all()
+        )
+        by_channel = dict(
+            (
+                await self._session.execute(
+                    select(Notification.channel, func.count())
+                    .where(scope)
+                    .group_by(Notification.channel)
+                )
+            ).all()
+        )
+        return NotificationStats(
+            total=sum(by_status.values()),
+            by_status=by_status,
+            by_channel=by_channel,
+            retryable=by_status.get("failed", 0),
+        )
+
+    # --- template catalog ------------------------------------------------------
+
+    @staticmethod
+    def templates() -> list[TemplateView]:
+        return [
+            TemplateView(
+                key=template.key,
+                channel=template.channel,
+                language=template.language,
+                title=template.title,
+                body=template.body,
+                variables=list(template.variables),
+            )
+            for template in catalog()
+        ]
+
+    @staticmethod
+    def preview(key: str, channel: str, language: str | None, variables: dict) -> RenderedPreview:
+        """Render a template with supplied (or placeholder) variables."""
+        try:
+            template = get_template(key, channel, language)
+        except TemplateNotFoundError as exc:
+            raise NotFoundError(str(exc)) from exc
+        values = {name: f"<{name}>" for name in template.variables}
+        values.update({k: v for k, v in variables.items() if v is not None})
+        message = render(template, values)
+        return RenderedPreview(
+            key=template.key,
+            channel=template.channel,
+            language=template.language,
+            title=message.title,
+            body=message.body,
+            variables_used=values,
+        )
+
+
+def _timedelta_seconds(seconds: float):
+    from datetime import timedelta
+
+    return timedelta(seconds=seconds)
+
+
+def _jsonable(variables: dict) -> dict:
+    """Template variables live in a JSON column — keep them transport-safe."""
+    return {
+        key: (str(value) if isinstance(value, Decimal | uuid.UUID | datetime) else value)
+        for key, value in variables.items()
+    }
+
+
+def as_utc_safe(value: datetime | None) -> datetime | None:
+    return as_utc(value) if value is not None else None

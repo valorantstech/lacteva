@@ -92,7 +92,20 @@ def unregister_consumer(name: str) -> None:
 
 
 def registered_consumers() -> list[EventConsumer]:
-    return list(_REGISTRY.values())
+    """Projections first (in replay order), then plain consumers.
+
+    Read models are inputs to other consumers — the notification dispatcher
+    resolves recipients from a directory projection — so a projection must
+    never run after a consumer that depends on it within the same pass.
+    """
+
+    def order(consumer: EventConsumer) -> tuple[int, int, str]:
+        replay_order = getattr(consumer, "replay_order", None)
+        if replay_order is None:  # a plain consumer
+            return (1, 0, consumer.name)
+        return (0, replay_order, consumer.name)
+
+    return sorted(_REGISTRY.values(), key=order)
 
 
 def discover_consumers() -> list[str]:

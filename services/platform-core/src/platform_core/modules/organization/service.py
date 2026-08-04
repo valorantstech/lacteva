@@ -22,7 +22,6 @@ from platform_core.core.tenancy import (
     set_current_tenant,
 )
 from platform_core.infrastructure.events import EventBus, EventEnvelope
-from platform_core.infrastructure.notifications import Notification, Notifier
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.authz.service import AuthzService
 from platform_core.modules.identity.models import User
@@ -246,12 +245,10 @@ class InvitationService:
         session: AsyncSession,
         bus: EventBus,
         audit: AuditService,
-        notifier: Notifier,
     ):
         self._session = session
         self._bus = bus
         self._audit = audit
-        self._notifier = notifier
 
     async def invite(
         self, *, email: str, role_name: str, actor_id: uuid.UUID
@@ -273,14 +270,6 @@ class InvitationService:
         )
         self._session.add(invitation)
         await self._session.flush()
-        await self._notifier.send(
-            Notification(
-                channel="email",
-                recipient=invitation.email,
-                template_key="notification.invitation",
-                payload={"role": role_name},
-            )
-        )
         await self._audit.record(
             action="organization.invitation.issued",
             resource_type="invitation",
@@ -291,7 +280,14 @@ class InvitationService:
         await self._bus.publish(
             EventEnvelope.new(
                 "organization.invitation-issued.v1",
-                {"invitation_id": str(invitation.id), "role": role_name},
+                {
+                    "invitation_id": str(invitation.id),
+                    "role": role_name,
+                    # Delivery data for the notification consumer (NOT-001):
+                    # this module no longer sends anything itself.
+                    "email": invitation.email,
+                    "expires_days": INVITATION_TTL.days,
+                },
                 actor_id=actor_id,
             )
         )
@@ -339,7 +335,12 @@ class InvitationService:
         await self._bus.publish(
             EventEnvelope.new(
                 "organization.member-added.v1",
-                {"user_id": str(user.id), "role": invitation.role_name},
+                {
+                    "user_id": str(user.id),
+                    "role": invitation.role_name,
+                    "email": user.email,
+                    "locale": user.locale,
+                },
                 actor_id=user.id,
             )
         )

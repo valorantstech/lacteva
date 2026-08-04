@@ -8,7 +8,6 @@ async def _request_reset_token(email: str) -> str | None:
     from platform_core.api.deps import get_auth_service  # noqa: F401 (doc pointer)
     from platform_core.core.db import get_session_factory
     from platform_core.infrastructure.events import get_event_bus
-    from platform_core.infrastructure.notifications import get_notifier
     from platform_core.modules.audit.service import AuditService
     from platform_core.modules.auth.service import AuthService
     from platform_core.modules.identity.service import IdentityService
@@ -22,7 +21,6 @@ async def _request_reset_token(email: str) -> str | None:
             MembershipService(session),
             audit,
             get_event_bus(),
-            get_notifier(),
         )
         token = await service.request_password_reset(email, None)
         await session.commit()

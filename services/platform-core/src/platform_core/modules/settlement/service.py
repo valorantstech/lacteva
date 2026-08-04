@@ -331,6 +331,7 @@ class SettlementService:
             {
                 "gross_amount": str(settlement.gross_amount),
                 "net_amount": str(settlement.net_amount),
+                "currency": settlement.currency,
                 "line_count": line_count,
             },
             actor_id,

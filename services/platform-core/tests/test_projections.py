@@ -161,7 +161,10 @@ async def test_status_reports_derived_position_and_counts(client):
 
 async def test_status_all_returns_every_projection(client):
     statuses = await _rebuilder().status_all()
-    assert [s.name for s in statuses] == ["reporting-projection"]
+    names = [s.name for s in statuses]
+    # Replay order decides the sequence: the recipient directory (5) is a
+    # dependency of notification dispatch, so it precedes reporting (10).
+    assert names == ["notification-recipient-directory", "reporting-projection"]
 
 
 # --- rebuild ------------------------------------------------------------------
@@ -224,7 +227,10 @@ async def test_rebuild_repopulates_ledger_and_cursor(client):
 async def test_rebuild_all_runs_in_replay_order(client):
     await _collections(client, count=1)
     results = await _rebuilder().rebuild_all()
-    assert [r.projection for r in results] == ["reporting-projection"]
+    assert [r.projection for r in results] == [
+        "notification-recipient-directory",
+        "reporting-projection",
+    ]
     assert all(r.status == "completed" for r in results)
 
 
@@ -527,9 +533,11 @@ async def test_registry_endpoint(client):
     await _collections(client, count=2)
     root = await _root_headers(client)
     body = (await client.get("/v1/_projections", headers=root)).json()
-    assert len(body) == 1
-    entry = body[0]
-    assert entry["name"] == "reporting-projection"
+    assert {p["name"] for p in body} == {
+        "notification-recipient-directory",
+        "reporting-projection",
+    }
+    entry = next(p for p in body if p["name"] == "reporting-projection")
     assert entry["owner_module"] == "reporting"
     assert entry["event_types"] == [COMPLETED]
     assert entry["pending_events"] == 2
@@ -560,7 +568,7 @@ async def test_rebuild_endpoints(client):
     assert (await _daily_rows())[0].transactions == 2
 
     every = (await client.post("/v1/_projections/rebuild-all", headers=root)).json()
-    assert len(every) == 1 and every[0]["status"] == "completed"
+    assert len(every) == 2 and all(r["status"] == "completed" for r in every)
 
 
 async def test_verify_and_reset_endpoints(client):

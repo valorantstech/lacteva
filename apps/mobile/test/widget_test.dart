@@ -5,6 +5,7 @@ import 'package:lacteva_mobile/src/api.dart';
 import 'package:lacteva_mobile/src/center_summary.dart';
 import 'package:lacteva_mobile/src/centers.dart';
 import 'package:lacteva_mobile/src/collection_wizard.dart';
+import 'package:lacteva_mobile/src/notifications.dart';
 import 'package:lacteva_mobile/src/pricing_matrices.dart';
 import 'package:lacteva_mobile/src/pricing_resolution.dart';
 import 'package:lacteva_mobile/src/rate_cards.dart';
@@ -14,8 +15,9 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 class _FakeClient extends ApiClient {
   @override
-  Future<List<BranchSummary>> listBranches() async =>
-      [BranchSummary(id: 'b1', name: 'Kilima Hill', code: 'KH')];
+  Future<List<BranchSummary>> listBranches() async => [
+    BranchSummary(id: 'b1', name: 'Kilima Hill', code: 'KH'),
+  ];
 }
 
 void main() {
@@ -26,7 +28,9 @@ void main() {
   });
 
   testWidgets('login form validates required fields', (tester) async {
-    await tester.pumpWidget(MaterialApp(home: LoginScreen(client: ApiClient())));
+    await tester.pumpWidget(
+      MaterialApp(home: LoginScreen(client: ApiClient())),
+    );
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pump();
     expect(find.text('Enter your email'), findsOneWidget);
@@ -48,7 +52,9 @@ void main() {
 
   testWidgets('readiness screen shows status and checks', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(home: ReadinessScreen(client: _ReadinessFake(), centerId: 'c1')),
+      MaterialApp(
+        home: ReadinessScreen(client: _ReadinessFake(), centerId: 'c1'),
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.text('WARNING'), findsOneWidget);
@@ -85,7 +91,9 @@ void main() {
       MaterialApp(home: RateCardFormScreen(client: ApiClient())),
     );
     await tester.enterText(
-        find.widgetWithText(TextFormField, 'Currency (ISO 4217)'), 'KESH');
+      find.widgetWithText(TextFormField, 'Currency (ISO 4217)'),
+      'KESH',
+    );
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pump();
     expect(find.text('Name needs at least 2 characters'), findsOneWidget);
@@ -93,8 +101,9 @@ void main() {
     expect(find.text('Enter a date as YYYY-MM-DD'), findsOneWidget);
   });
 
-  testWidgets('rate card list shows status chips and effective range',
-      (tester) async {
+  testWidgets('rate card list shows status chips and effective range', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(home: RateCardsListScreen(client: _RateCardFake())),
     );
@@ -104,8 +113,9 @@ void main() {
     expect(find.textContaining('2026-09-01 → open'), findsOneWidget);
   });
 
-  testWidgets('draft rate card detail offers submit and archive',
-      (tester) async {
+  testWidgets('draft rate card detail offers submit and archive', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: RateCardDetailScreen(client: _RateCardFake(), cardId: 'rc-2'),
@@ -118,8 +128,9 @@ void main() {
     expect(find.textContaining('Increment-002'), findsOneWidget);
   });
 
-  testWidgets('published rate card detail offers new version only',
-      (tester) async {
+  testWidgets('published rate card detail offers new version only', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: RateCardDetailScreen(client: _RateCardFake(), cardId: 'rc-1'),
@@ -201,13 +212,17 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.widgetWithText(TextFormField, 'Product code'), 'RAW-COW-MILK');
+      find.widgetWithText(TextFormField, 'Product code'),
+      'RAW-COW-MILK',
+    );
     await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('FAT — Fat').last);
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.widgetWithText(TextFormField, 'Reading value (e.g. 4.2)'), '4.2');
+      find.widgetWithText(TextFormField, 'Reading value (e.g. 4.2)'),
+      '4.2',
+    );
     await tester.tap(find.widgetWithText(FilledButton, 'Resolve'));
     await tester.pumpAndSettle();
     expect(find.text('Rate card: MILK-STD v1'), findsOneWidget);
@@ -215,8 +230,9 @@ void main() {
     expect(find.text('Calculate gross amount'), findsOneWidget);
   });
 
-  testWidgets('calculator computes gross with trace after resolution',
-      (tester) async {
+  testWidgets('calculator computes gross with trace after resolution', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: ResolutionTestScreen(client: _ResolveFake(), centerId: 'c1'),
@@ -224,17 +240,23 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.widgetWithText(TextFormField, 'Product code'), 'RAW-COW-MILK');
+      find.widgetWithText(TextFormField, 'Product code'),
+      'RAW-COW-MILK',
+    );
     await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('FAT — Fat').last);
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.widgetWithText(TextFormField, 'Reading value (e.g. 4.2)'), '4.2');
+      find.widgetWithText(TextFormField, 'Reading value (e.g. 4.2)'),
+      '4.2',
+    );
     await tester.tap(find.widgetWithText(FilledButton, 'Resolve'));
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.widgetWithText(TextField, 'Quantity (kg)'), '125.5');
+      find.widgetWithText(TextField, 'Quantity (kg)'),
+      '125.5',
+    );
     await tester.tap(find.text('Calculate'));
     await tester.pumpAndSettle();
     expect(find.text('Gross: 5647.50 KES'), findsOneWidget);
@@ -247,18 +269,24 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: ResolutionTestScreen(
-            client: _ResolveFake(failStage: 'band'), centerId: 'c1'),
+          client: _ResolveFake(failStage: 'band'),
+          centerId: 'c1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.widgetWithText(TextFormField, 'Product code'), 'RAW-COW-MILK');
+      find.widgetWithText(TextFormField, 'Product code'),
+      'RAW-COW-MILK',
+    );
     await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('FAT — Fat').last);
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.widgetWithText(TextFormField, 'Reading value (e.g. 4.2)'), '9.9');
+      find.widgetWithText(TextFormField, 'Reading value (e.g. 4.2)'),
+      '9.9',
+    );
     await tester.tap(find.widgetWithText(FilledButton, 'Resolve'));
     await tester.pumpAndSettle();
     expect(find.text('No resolution (failed at: band)'), findsOneWidget);
@@ -279,7 +307,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: SettlementDetailScreen(
-            client: _SettlementFake(), settlementId: 's-calc'),
+          client: _SettlementFake(),
+          settlementId: 's-calc',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -293,7 +323,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: SettlementDetailScreen(
-            client: _SettlementFake(), settlementId: 's-final'),
+          client: _SettlementFake(),
+          settlementId: 's-final',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -312,10 +344,39 @@ void main() {
     expect(find.textContaining('cannot be undone'), findsOneWidget);
   });
 
-  testWidgets('center today summary shows tiles and pricing warning',
-      (tester) async {
+  testWidgets('notification history shows delivery status and recipient', (
+    tester,
+  ) async {
     await tester.pumpWidget(
-      MaterialApp(home: CenterTodayScreen(client: _ReportFake(), centerId: 'c1')),
+      MaterialApp(home: NotificationHistoryScreen(client: _NotificationFake())),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Settlement STL-AB12CD ready'), findsOneWidget);
+    expect(find.textContaining('+254700000001'), findsOneWidget);
+    expect(find.text('×3'), findsOneWidget); // the retried one
+  });
+
+  testWidgets('notification detail explains which event caused the message', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NotificationDetailScreen(notification: _NotificationFake.dead),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('settlement.finalized.v1'), findsOneWidget);
+    expect(find.text('dead after 5 attempt(s)'), findsOneWidget);
+    expect(find.text('provider rejected the number'), findsOneWidget);
+  });
+
+  testWidgets('center today summary shows tiles and pricing warning', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CenterTodayScreen(client: _ReportFake(), centerId: 'c1'),
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.text('40.0 kg'), findsOneWidget);
@@ -335,7 +396,9 @@ void main() {
       timezone: 'UTC',
     );
     await tester.pumpWidget(
-      MaterialApp(home: CenterFormScreen(client: _FakeClient(), center: center)),
+      MaterialApp(
+        home: CenterFormScreen(client: _FakeClient(), center: center),
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.text('Edit KH-C1'), findsOneWidget);
@@ -347,21 +410,24 @@ void main() {
 class _ReadinessFake extends ApiClient {
   @override
   Future<ReadinessResultView> readiness(String centerId) async =>
-      ReadinessResultView(status: 'WARNING', checks: [
-        ReadinessCheckView(
+      ReadinessResultView(
+        status: 'WARNING',
+        checks: [
+          ReadinessCheckView(
             rule: 'center.active',
             severity: 'blocking',
             passed: true,
-            detail: 'center status is active'),
-        ReadinessCheckView(
+            detail: 'center status is active',
+          ),
+          ReadinessCheckView(
             rule: 'device.printer',
             severity: 'warning',
             passed: false,
-            detail: '0 usable printer(s) of 0 active'),
-      ]);
+            detail: '0 usable printer(s) of 0 active',
+          ),
+        ],
+      );
 }
-
-
 
 class _SupplierFake extends ApiClient {
   @override
@@ -397,9 +463,19 @@ class _MatrixFake extends ApiClient {
 
   static final _rows = [
     MatrixRowView(
-        id: 'r1', fromValue: 3.0, toValue: 4.0, unitPrice: 40.0, active: true),
+      id: 'r1',
+      fromValue: 3.0,
+      toValue: 4.0,
+      unitPrice: 40.0,
+      active: true,
+    ),
     MatrixRowView(
-        id: 'r2', fromValue: 5.0, toValue: 6.0, unitPrice: 50.0, active: true),
+      id: 'r2',
+      fromValue: 5.0,
+      toValue: 6.0,
+      unitPrice: 50.0,
+      active: true,
+    ),
   ];
 
   @override
@@ -408,8 +484,7 @@ class _MatrixFake extends ApiClient {
     String rateCardId = '',
     int limit = 20,
     int offset = 0,
-  }) async =>
-      MatrixPageResult(items: [_summary], total: 1);
+  }) async => MatrixPageResult(items: [_summary], total: 1);
 
   @override
   Future<MatrixDetailResult> matrixDetail(String id) async =>
@@ -430,17 +505,21 @@ class _MatrixFake extends ApiClient {
         dimensionLabel: 'FAT (%)',
         rows: _rows,
         gaps: const [
-          {'from_value': 4.0, 'to_value': 5.0}
+          {'from_value': 4.0, 'to_value': 5.0},
         ],
         editable: id == 'm-draft',
       );
 
   @override
   Future<List<DimensionSummary>> listQualityDimensions() async => [
-        DimensionSummary(code: 'FAT', name: 'Fat', unit: '%', active: true),
-        DimensionSummary(
-            code: 'SNF', name: 'Solids-Not-Fat', unit: '%', active: true),
-      ];
+    DimensionSummary(code: 'FAT', name: 'Fat', unit: '%', active: true),
+    DimensionSummary(
+      code: 'SNF',
+      name: 'Solids-Not-Fat',
+      unit: '%',
+      active: true,
+    ),
+  ];
 }
 
 class _ResolveFake extends ApiClient {
@@ -450,8 +529,8 @@ class _ResolveFake extends ApiClient {
 
   @override
   Future<List<DimensionSummary>> listQualityDimensions() async => [
-        DimensionSummary(code: 'FAT', name: 'Fat', unit: '%', active: true),
-      ];
+    DimensionSummary(code: 'FAT', name: 'Fat', unit: '%', active: true),
+  ];
 
   @override
   Future<ResolutionResultView> resolvePricing({
@@ -462,10 +541,14 @@ class _ResolveFake extends ApiClient {
     required double value,
   }) async {
     if (failStage != null) {
-      throw ApiException(422, 'No applicable pricing was found.', extra: {
-        'stage': failStage,
-        'reason': 'no band contains the reading $value',
-      });
+      throw ApiException(
+        422,
+        'No applicable pricing was found.',
+        extra: {
+          'stage': failStage,
+          'reason': 'no band contains the reading $value',
+        },
+      );
     }
     return ResolutionResultView(
       rowId: 'row-1',
@@ -488,26 +571,27 @@ class _ResolveFake extends ApiClient {
     required String transactionDate,
     String quantityUnit = 'kg',
     String? roundingPolicy,
-  }) async =>
-      CalculationResultView(
-        grossAmount: '5647.50',
-        unitPrice: '45',
-        currency: 'KES',
-        quantityValue: quantity,
-        quantityUnit: quantityUnit,
-        roundingPolicy: 'HALF_UP',
-        calculatorVersion: '1.0.0',
-        trace: [
-          CalculationTraceStepView(
-              operation: 'multiply',
-              detail: 'gross = unit price x quantity',
-              values: const {'raw_amount': '5647.500'}),
-          CalculationTraceStepView(
-              operation: 'round',
-              detail: 'HALF_UP to 2 decimal place(s)',
-              values: const {'rounded_amount': '5647.50'}),
-        ],
-      );
+  }) async => CalculationResultView(
+    grossAmount: '5647.50',
+    unitPrice: '45',
+    currency: 'KES',
+    quantityValue: quantity,
+    quantityUnit: quantityUnit,
+    roundingPolicy: 'HALF_UP',
+    calculatorVersion: '1.0.0',
+    trace: [
+      CalculationTraceStepView(
+        operation: 'multiply',
+        detail: 'gross = unit price x quantity',
+        values: const {'raw_amount': '5647.500'},
+      ),
+      CalculationTraceStepView(
+        operation: 'round',
+        detail: 'HALF_UP to 2 decimal place(s)',
+        values: const {'rounded_amount': '5647.50'},
+      ),
+    ],
+  );
 }
 
 class _ReportFake extends ApiClient {
@@ -541,17 +625,19 @@ class _SettlementFake extends ApiClient {
 
   static final _lines = [
     SettlementLineSummary(
-        transactionDate: '2026-10-05',
-        quantity: '125.5',
-        quantityUnit: 'kg',
-        unitPrice: '45',
-        grossAmount: '5647.50'),
+      transactionDate: '2026-10-05',
+      quantity: '125.5',
+      quantityUnit: 'kg',
+      unitPrice: '45',
+      grossAmount: '5647.50',
+    ),
     SettlementLineSummary(
-        transactionDate: '2026-10-20',
-        quantity: '50',
-        quantityUnit: 'kg',
-        unitPrice: '45',
-        grossAmount: '2250.00'),
+      transactionDate: '2026-10-20',
+      quantity: '50',
+      quantityUnit: 'kg',
+      unitPrice: '45',
+      grossAmount: '2250.00',
+    ),
   ];
 
   @override
@@ -560,8 +646,7 @@ class _SettlementFake extends ApiClient {
     String status = '',
     int limit = 20,
     int offset = 0,
-  }) async =>
-      SettlementPageResult(items: [calculated], total: 1);
+  }) async => SettlementPageResult(items: [calculated], total: 1);
 
   @override
   Future<SettlementDetailResult> settlementDetail(String id) async =>
@@ -615,8 +700,7 @@ class _RateCardFake extends ApiClient {
     String status = '',
     int limit = 20,
     int offset = 0,
-  }) async =>
-      RateCardPageResult(items: [_published], total: 1);
+  }) async => RateCardPageResult(items: [_published], total: 1);
 
   @override
   Future<RateCardDetailResult> rateCardDetail(String id) async =>
@@ -625,4 +709,57 @@ class _RateCardFake extends ApiClient {
         centerIds: const ['c1'],
         productCodes: id == 'rc-1' ? const ['RAW-COW-MILK'] : const [],
       );
+}
+
+class _NotificationFake extends ApiClient {
+  static final sent = NotificationSummary(
+    id: 'n-1',
+    templateKey: 'settlement_finalized',
+    eventName: 'settlement.finalized.v1',
+    channel: 'sms',
+    language: 'en',
+    status: 'sent',
+    attemptCount: 1,
+    createdAt: '2026-08-04T09:15:00.123456',
+    recipient: '+254700000001',
+    title: 'Settlement STL-AB12CD ready',
+    text: 'Hello Jane, settlement STL-AB12CD is finalised: 7897.50 KES.',
+  );
+
+  static final dead = NotificationSummary(
+    id: 'n-2',
+    templateKey: 'supplier_registered',
+    eventName: 'settlement.finalized.v1',
+    channel: 'sms',
+    language: 'en',
+    status: 'dead',
+    attemptCount: 5,
+    createdAt: '2026-08-04T09:20:00.000000',
+    recipient: '+254700000002',
+    title: 'Welcome to Kilima Dairy',
+    text: 'Hello Peter, you are registered as supplier SUP-002.',
+    error: 'provider rejected the number',
+  );
+
+  static final retried = NotificationSummary(
+    id: 'n-3',
+    templateKey: 'milk_rejected',
+    eventName: 'milk.transaction.rejected.v1',
+    channel: 'sms',
+    language: 'en',
+    status: 'sent',
+    attemptCount: 3,
+    createdAt: '2026-08-04T09:25:00.000000',
+    recipient: '+254700000003',
+    title: 'Delivery not accepted',
+    text: 'Hello Amina, your delivery on 2026-08-04 was not accepted.',
+  );
+
+  @override
+  Future<NotificationPageResult> listNotifications({
+    String query = '',
+    String status = '',
+    int limit = 20,
+    int offset = 0,
+  }) async => NotificationPageResult(items: [sent, dead, retried], total: 3);
 }

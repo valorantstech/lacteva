@@ -764,3 +764,102 @@ export const getMilkTransaction = (id: string) =>
 
 export const getMilkTransactionEvents = (id: string) =>
   api<TransactionEvent[]>(`/v1/milk-transactions/${id}/events`);
+
+// --- Notifications (NOT-001) ------------------------------------------------
+
+export type Notification = {
+  id: string;
+  event_id: string;
+  event_name: string;
+  template_key: string;
+  channel: string;
+  language: string;
+  recipient: string | null;
+  recipient_ref: string | null;
+  title: string | null;
+  rendered_text: string | null;
+  status: string;
+  provider: string | null;
+  provider_reference: string | null;
+  attempt_count: number;
+  next_attempt_at: string | null;
+  error: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+  sent_at: string | null;
+  failed_at: string | null;
+};
+
+export type NotificationPage = {
+  items: Notification[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type NotificationStats = {
+  total: number;
+  by_status: Record<string, number>;
+  by_channel: Record<string, number>;
+  retryable: number;
+};
+
+export type NotificationTemplate = {
+  key: string;
+  channel: string;
+  language: string;
+  title: string;
+  body: string;
+  variables: string[];
+};
+
+export type RenderedPreview = {
+  key: string;
+  channel: string;
+  language: string;
+  title: string;
+  body: string;
+  variables_used: Record<string, unknown>;
+};
+
+export function listNotifications(params: {
+  q?: string;
+  status?: string;
+  channel?: string;
+  template_key?: string;
+  limit: number;
+  offset: number;
+}): Promise<NotificationPage> {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.status) search.set("status", params.status);
+  if (params.channel) search.set("channel", params.channel);
+  if (params.template_key) search.set("template_key", params.template_key);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<NotificationPage>(`/v1/notifications?${search.toString()}`);
+}
+
+export const getNotificationStats = () => api<NotificationStats>("/v1/notifications/stats");
+
+export const getNotification = (id: string) => api<Notification>(`/v1/notifications/${id}`);
+
+export const retryNotification = (id: string) =>
+  api<Notification>(`/v1/notifications/${id}/retry`, { method: "POST" });
+
+export const retryPendingNotifications = () =>
+  api<{ retried: number; sent: number; failed: number }>("/v1/notifications/retry-pending", {
+    method: "POST",
+  });
+
+export const listNotificationTemplates = () =>
+  api<NotificationTemplate[]>("/v1/notification-templates");
+
+export const previewNotificationTemplate = (
+  key: string,
+  body: { channel: string; language?: string; variables: Record<string, string> },
+) =>
+  api<RenderedPreview>(`/v1/notification-templates/${key}/preview`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });

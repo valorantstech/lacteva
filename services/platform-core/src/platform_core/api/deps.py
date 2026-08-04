@@ -18,7 +18,6 @@ from platform_core.core.errors import ForbiddenError, UnauthorizedError
 from platform_core.core.security import decode_token
 from platform_core.core.tenancy import get_current_tenant, set_current_tenant
 from platform_core.infrastructure.events import EventBus, get_event_bus
-from platform_core.infrastructure.notifications import get_notifier
 from platform_core.infrastructure.storage import get_object_storage
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.auth.models import AuthSession
@@ -32,6 +31,7 @@ from platform_core.modules.event_relay.service import OutboxEventBus, RelayServi
 from platform_core.modules.identity.models import User
 from platform_core.modules.identity.service import IdentityService
 from platform_core.modules.milk_collection.service import MilkCollectionService
+from platform_core.modules.notification.service import NotificationService
 from platform_core.modules.operational_readiness.service import OperationalReadinessService
 from platform_core.modules.organization.service import (
     InvitationService,
@@ -99,7 +99,7 @@ def get_membership_service(session: Session) -> MembershipService:
 
 
 def get_auth_service(session: Session, identity: Identity, audit: Audit, bus: Bus) -> AuthService:
-    return AuthService(session, identity, MembershipService(session), audit, bus, get_notifier())
+    return AuthService(session, identity, MembershipService(session), audit, bus)
 
 
 def get_structure_service(session: Session, bus: Bus, audit: Audit) -> StructureService:
@@ -107,7 +107,7 @@ def get_structure_service(session: Session, bus: Bus, audit: Audit) -> Structure
 
 
 def get_invitation_service(session: Session, bus: Bus, audit: Audit) -> InvitationService:
-    return InvitationService(session, bus, audit, get_notifier())
+    return InvitationService(session, bus, audit)
 
 
 def get_organization_service(session: Session, bus: Bus, audit: Audit) -> OrganizationService:
@@ -157,6 +157,12 @@ def get_pricing_calculation_service(
     session: Session, bus: Bus, audit: Audit
 ) -> PricingCalculationService:
     return PricingCalculationService(session, bus, ConfigurationService(session, audit))
+
+
+def get_notification_service(session: Session) -> NotificationService:
+    """The dispatcher. Business modules never receive this — notifications
+    originate only from durable events (BR-0016)."""
+    return NotificationService(session)
 
 
 def get_reporting_service(session: Session) -> ReportingService:
