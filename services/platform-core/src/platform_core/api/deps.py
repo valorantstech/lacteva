@@ -39,6 +39,7 @@ from platform_core.modules.organization.service import (
     OrganizationService,
     StructureService,
 )
+from platform_core.modules.payment.service import PaymentService
 from platform_core.modules.pricing.calculator import PricingCalculationService
 from platform_core.modules.pricing.matrix import PricingMatrixService
 from platform_core.modules.pricing.resolution import PricingResolutionService
@@ -168,6 +169,10 @@ def get_notification_service(session: Session) -> NotificationService:
 def get_reporting_service(session: Session) -> ReportingService:
     # Read-only: no bus, no audit — reports mutate nothing.
     return ReportingService(session)
+
+
+def get_payment_service(session: Session, bus: Bus, audit: Audit) -> PaymentService:
+    return PaymentService(session, bus, audit)
 
 
 def get_settlement_service(session: Session, bus: Bus, audit: Audit) -> SettlementService:

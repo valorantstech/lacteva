@@ -6,6 +6,7 @@ import 'package:lacteva_mobile/src/center_summary.dart';
 import 'package:lacteva_mobile/src/centers.dart';
 import 'package:lacteva_mobile/src/collection_wizard.dart';
 import 'package:lacteva_mobile/src/notifications.dart';
+import 'package:lacteva_mobile/src/payments.dart';
 import 'package:lacteva_mobile/src/pricing_matrices.dart';
 import 'package:lacteva_mobile/src/pricing_resolution.dart';
 import 'package:lacteva_mobile/src/rate_cards.dart';
@@ -342,6 +343,38 @@ void main() {
     );
     expect(find.text('Net payable: 7897.50 KES'), findsOneWidget);
     expect(find.textContaining('cannot be undone'), findsOneWidget);
+  });
+
+  testWidgets('payment history shows amount, method and status', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: PaymentHistoryScreen(client: _PaymentFake())),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('7897.50 KES'), findsOneWidget);
+    expect(find.textContaining('PAY-AB12CD'), findsOneWidget);
+    expect(find.textContaining('bank transfer'), findsOneWidget);
+    // "completed"/"failed" also label the filter chips, so target the status
+    // chip on the row itself.
+    expect(find.widgetWithText(Chip, 'completed'), findsOneWidget);
+    expect(find.widgetWithText(Chip, 'failed'), findsOneWidget);
+  });
+
+  testWidgets('payment detail lists settlements and every attempt', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PaymentDetailScreen(client: _PaymentFake(), paymentId: 'p-2'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Settlements paid (1)'), findsOneWidget);
+    expect(find.text('STL-NOV001'), findsOneWidget);
+    expect(find.text('Attempts (2)'), findsOneWidget);
+    expect(find.text('Last failure'), findsOneWidget);
+    expect(find.text('bank rejected the account'), findsWidgets);
   });
 
   testWidgets('notification history shows delivery status and recipient', (
@@ -762,4 +795,65 @@ class _NotificationFake extends ApiClient {
     int limit = 20,
     int offset = 0,
   }) async => NotificationPageResult(items: [sent, dead, retried], total: 3);
+}
+
+class _PaymentFake extends ApiClient {
+  static final completed = PaymentSummary(
+    id: 'p-1',
+    number: 'PAY-AB12CD',
+    currency: 'KES',
+    method: 'BANK_TRANSFER',
+    amount: '7897.50',
+    status: 'completed',
+    attemptCount: 1,
+    lineCount: 1,
+    createdAt: '2026-08-05T09:00:00.000000',
+    reference: 'BNK-9911',
+    completedAt: '2026-08-05T09:05:00.000000',
+  );
+
+  static final failed = PaymentSummary(
+    id: 'p-2',
+    number: 'PAY-EF34GH',
+    currency: 'KES',
+    method: 'MOBILE_MONEY',
+    amount: '450.00',
+    status: 'failed',
+    attemptCount: 2,
+    lineCount: 1,
+    createdAt: '2026-08-05T10:00:00.000000',
+    failureReason: 'bank rejected the account',
+  );
+
+  @override
+  Future<PaymentPageResult> listPayments({
+    String query = '',
+    String status = '',
+    int limit = 20,
+    int offset = 0,
+  }) async => PaymentPageResult(items: [completed, failed], total: 2);
+
+  @override
+  Future<PaymentDetailResult> paymentDetail(String id) async =>
+      PaymentDetailResult(
+        payment: failed,
+        lines: [
+          PaymentAllocation(settlementNumber: 'STL-NOV001', amount: '450.00'),
+        ],
+        attempts: [
+          PaymentAttemptSummary(
+            attemptNumber: 1,
+            provider: 'MOBILE_MONEY',
+            status: 'failed',
+            startedAt: '2026-08-05T10:01:00.000000',
+            failureReason: 'bank rejected the account',
+          ),
+          PaymentAttemptSummary(
+            attemptNumber: 2,
+            provider: 'MOBILE_MONEY',
+            status: 'processing',
+            startedAt: '2026-08-05T10:10:00.000000',
+          ),
+        ],
+      );
 }

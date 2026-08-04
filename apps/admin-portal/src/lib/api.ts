@@ -863,3 +863,136 @@ export const previewNotificationTemplate = (
     method: "POST",
     body: JSON.stringify(body),
   });
+
+// --- Payments (PAY-001) -----------------------------------------------------
+
+export type PaymentLine = {
+  id: string;
+  settlement_id: string;
+  settlement_number: string;
+  amount: string | number;
+};
+
+export type PaymentAttempt = {
+  id: string;
+  attempt_number: number;
+  provider: string;
+  reference: string | null;
+  status: string;
+  operator_id: string | null;
+  failure_reason: string | null;
+  started_at: string;
+  completed_at: string | null;
+};
+
+export type Payment = {
+  id: string;
+  payment_number: string;
+  supplier_id: string;
+  currency: string;
+  method: string;
+  amount: string | number;
+  reference: string | null;
+  method_details: Record<string, unknown>;
+  status: string;
+  attempt_count: number;
+  failure_reason: string | null;
+  note: string | null;
+  line_count: number;
+  created_at: string;
+  completed_at: string | null;
+  failed_at: string | null;
+  cancelled_at: string | null;
+};
+
+export type PaymentDetail = {
+  payment: Payment;
+  lines: PaymentLine[];
+  attempts: PaymentAttempt[];
+  totals_match_lines: boolean;
+};
+
+export type PaymentPageResult = {
+  items: Payment[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type SettlementBalance = {
+  settlement_id: string;
+  settlement_number: string;
+  supplier_id: string;
+  currency: string;
+  payable: string | number;
+  allocated: string | number;
+  paid: string | number;
+  outstanding: string | number;
+  fully_paid: boolean;
+};
+
+export type BalancePageResult = {
+  items: SettlementBalance[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export const PAYMENT_METHODS = ["BANK_TRANSFER", "CASH", "CHEQUE", "MOBILE_MONEY"] as const;
+
+export function listPayments(params: {
+  q?: string;
+  supplier_id?: string;
+  settlement_id?: string;
+  status?: string;
+  method?: string;
+  limit: number;
+  offset: number;
+}): Promise<PaymentPageResult> {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.supplier_id) search.set("supplier_id", params.supplier_id);
+  if (params.settlement_id) search.set("settlement_id", params.settlement_id);
+  if (params.status) search.set("status", params.status);
+  if (params.method) search.set("method", params.method);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<PaymentPageResult>(`/v1/payments?${search.toString()}`);
+}
+
+export function listOutstandingBalances(params: {
+  supplier_id?: string;
+  outstanding_only?: boolean;
+  limit: number;
+  offset: number;
+}): Promise<BalancePageResult> {
+  const search = new URLSearchParams();
+  if (params.supplier_id) search.set("supplier_id", params.supplier_id);
+  if (params.outstanding_only === false) search.set("outstanding_only", "false");
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<BalancePageResult>(`/v1/payments/balances?${search.toString()}`);
+}
+
+export const getPaymentDetail = (id: string) => api<PaymentDetail>(`/v1/payments/${id}`);
+
+export const getSettlementBalance = (settlementId: string) =>
+  api<SettlementBalance>(`/v1/settlements/${settlementId}/balance`);
+
+export function createPayment(body: {
+  supplier_id: string;
+  currency: string;
+  method: string;
+  allocations: { settlement_id: string; amount?: string }[];
+  reference?: string;
+  note?: string;
+  idempotency_key?: string;
+}): Promise<Payment> {
+  return api<Payment>("/v1/payments", { method: "POST", body: JSON.stringify(body) });
+}
+
+export const paymentAction = (
+  id: string,
+  action: "submit" | "execute" | "retry" | "complete" | "fail" | "cancel",
+  body: Record<string, string> = {},
+) => api<Payment>(`/v1/payments/${id}/${action}`, { method: "POST", body: JSON.stringify(body) });

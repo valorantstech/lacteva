@@ -4,6 +4,7 @@ import 'api.dart';
 import 'center_summary.dart';
 import 'collection_wizard.dart';
 import 'notifications.dart';
+import 'payments.dart';
 import 'pricing_resolution.dart';
 import 'rate_cards.dart';
 import 'settlements.dart';
@@ -197,6 +198,15 @@ class _CentersListScreenState extends State<CentersListScreen> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => SettlementListScreen(client: widget.client),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.payments_outlined),
+            tooltip: 'Payments',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PaymentHistoryScreen(client: widget.client),
               ),
             ),
           ),

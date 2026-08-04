@@ -88,6 +88,30 @@ class Money(BaseModel):
             rounding_policy=self.rounding_policy,
         )
 
+    def minus(self, other: "Money") -> "Money":
+        """Exact subtraction of same-currency, same-precision amounts (PAY-001).
+
+        The outstanding balance of a settlement is payable minus allocated;
+        both operands are already-quantized amounts, so the difference stays
+        exact and needs no rounding policy — the same story as ``plus``.
+        The result may be negative: over-allocation is a rule violation the
+        caller must detect, not something arithmetic should silently clamp."""
+        if not isinstance(other, Money):
+            raise TypeError("monetary subtraction requires Money operands (BR-0005)")
+        if other.currency != self.currency:
+            raise ValueError(
+                f"cannot subtract {other.currency} from {self.currency} — "
+                "currency conversion is not a Money operation"
+            )
+        if other.precision != self.precision:
+            raise ValueError("cannot subtract Money values of different precision")
+        return Money(
+            amount=self.amount - other.amount,
+            currency=self.currency,
+            precision=self.precision,
+            rounding_policy=self.rounding_policy,
+        )
+
     def multiplied_by(self, factor: Decimal, *, rounding_policy: str) -> "Money":
         """amount x factor, quantized to this Money's precision under an
         explicit rounding policy (BR-0005: Decimal only, policy named)."""

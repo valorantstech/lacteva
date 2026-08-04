@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.5"
+version: "1.6"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-05
@@ -225,6 +225,30 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0018 — Payments consume finalized settlements and never exceed the payable.
+
+**Clarification.** Only a FINALIZED settlement can be paid: a draft or calculated settlement is still changing, and paying a moving number is how disputes start. A payment allocates against one or more settlements of ONE supplier in ONE currency — currency conversion is not a payment operation. The sum of LIVE allocations (draft, pending, processing, completed) against a settlement must never exceed its net payable, which is what makes the outstanding balance computable and what prevents the same money being paid twice. A draft allocation reserves: it is an intent that must stop a second payment being built for money the first already claims. Failure and cancellation release the reservation, so the settlement becomes payable again. Payments never write to settlements — the payable is read, the allocation lives on the payment side.
+
+**Enforcement.** `payment/service.py` — `_payable_settlement()` (finalized, same supplier, same currency), `_resolve_allocation()` (outstanding check, positive amount), `_allocations_for()` (LIVE_STATUSES sum); `payment/models.py` — `LIVE_STATUSES`, unique `(payment_id, settlement_id)`.
+
+**Verification.** `test_payments.py::test_only_finalized_settlements_can_be_paid`, `::test_over_allocation_is_rejected`, `::test_second_payment_for_a_fully_allocated_settlement_is_rejected`, `::test_partial_over_allocation_across_two_payments_is_rejected`, `::test_cancelled_payment_releases_the_allocation`, `::test_failed_payment_releases_the_allocation`, `::test_payment_never_modifies_the_settlement`, `::test_currency_mismatch_is_rejected`.
+
+**Status:** Active (since PAY-001).
+
+---
+
+## BR-0019 — A completed payment is immutable, and every execution attempt is recorded.
+
+**Clarification.** Money that has moved cannot be un-moved by editing a record: once a payment completes it accepts no transition — not submit, not fail, not cancel — and corrections are new payments, never edits. Before completion the lifecycle is draft → pending → processing → completed | failed, with cancellation available from every pre-processing state; cancelling a *processing* payment is deliberately impossible because the money may already be in flight, and the truthful sequence is to record the failure first. Every execution opens a NEW attempt row carrying its number, provider, reference, operator, timestamps, and failure reason — a retry never reuses an attempt, so the failure history of a payment survives its eventual success. Every transition is CAS-guarded: two callers racing the same transition, exactly one wins.
+
+**Enforcement.** `payment/service.py` — `_transition()` (immutability guards + `UPDATE … WHERE status IN (expected)` rowcount check), `_open_attempt()` / `_close_attempt()`, `retry()`; `payment/models.py` — unique `(payment_id, attempt_number)`.
+
+**Verification.** `test_payments.py::test_completed_payment_is_immutable`, `::test_cancelled_payment_is_terminal`, `::test_processing_payment_cannot_be_cancelled`, `::test_retry_opens_a_new_attempt_and_can_succeed`, `::test_repeated_failures_accumulate_attempts`, `::test_concurrent_completion_only_succeeds_once`, `::test_concurrent_submit_only_succeeds_once`.
+
+**Status:** Active (since PAY-001).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -238,6 +262,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.6 | 2026-08-05 | Architecture Board | PAY-001 rules: BR-0018 (payments consume finalized settlements, never exceeding the payable), BR-0019 (completed payments are immutable; every attempt recorded). |
 | 1.5 | 2026-08-05 | Architecture Board | NOT-001 rules: BR-0016 (business modules never send messages; notifications originate only from durable domain events), BR-0017 (every message rendered from a registered template, delivered at most once). |
 | 1.4 | 2026-08-04 | Architecture Board | PLT-001 rule: BR-0015 (every projection is fully rebuildable from the event log). |
 | 1.3 | 2026-08-04 | Architecture Board | SPRINT-008B rules: BR-0013 (consumers never affect business transactions), BR-0014 (at-most-once processing per consumer). |

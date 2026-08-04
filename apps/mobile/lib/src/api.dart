@@ -487,6 +487,32 @@ class ApiClient {
     return SettlementSummary.fromJson(result);
   }
 
+  /// Payment history (PAY-001). Read-only on mobile: the app shows what was
+  /// paid, it never executes a payment.
+  Future<PaymentPageResult> listPayments({
+    String query = '',
+    String status = '',
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final params = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      if (query.isNotEmpty) 'q': query,
+      if (status.isNotEmpty) 'status': status,
+    };
+    final qs = Uri(queryParameters: params).query;
+    final result =
+        await _send('GET', '/v1/payments?$qs') as Map<String, dynamic>;
+    return PaymentPageResult.fromJson(result);
+  }
+
+  Future<PaymentDetailResult> paymentDetail(String id) async {
+    final result =
+        await _send('GET', '/v1/payments/$id') as Map<String, dynamic>;
+    return PaymentDetailResult.fromJson(result);
+  }
+
   /// Notification delivery history (NOT-001). Read-only on mobile: the app
   /// shows what was sent, it never sends. No push notifications.
   Future<NotificationPageResult> listNotifications({
@@ -1265,4 +1291,129 @@ class NotificationPageResult {
 
   final List<NotificationSummary> items;
   final int total;
+}
+
+class PaymentSummary {
+  PaymentSummary({
+    required this.id,
+    required this.number,
+    required this.currency,
+    required this.method,
+    required this.amount,
+    required this.status,
+    required this.attemptCount,
+    required this.lineCount,
+    required this.createdAt,
+    this.reference,
+    this.failureReason,
+    this.completedAt,
+  });
+
+  factory PaymentSummary.fromJson(Map<String, dynamic> json) => PaymentSummary(
+    id: json['id'] as String,
+    number: json['payment_number'] as String,
+    currency: json['currency'] as String,
+    method: json['method'] as String,
+    amount: json['amount'].toString(),
+    status: json['status'] as String,
+    attemptCount: json['attempt_count'] as int,
+    lineCount: json['line_count'] as int,
+    createdAt: json['created_at'] as String,
+    reference: json['reference'] as String?,
+    failureReason: json['failure_reason'] as String?,
+    completedAt: json['completed_at'] as String?,
+  );
+
+  final String id;
+  final String number;
+  final String currency;
+  final String method;
+  final String amount;
+  final String status;
+  final int attemptCount;
+  final int lineCount;
+  final String createdAt;
+  final String? reference;
+  final String? failureReason;
+  final String? completedAt;
+}
+
+class PaymentPageResult {
+  PaymentPageResult({required this.items, required this.total});
+
+  factory PaymentPageResult.fromJson(Map<String, dynamic> json) =>
+      PaymentPageResult(
+        items: (json['items'] as List<dynamic>)
+            .map((e) => PaymentSummary.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        total: json['total'] as int,
+      );
+
+  final List<PaymentSummary> items;
+  final int total;
+}
+
+class PaymentAllocation {
+  PaymentAllocation({required this.settlementNumber, required this.amount});
+
+  factory PaymentAllocation.fromJson(Map<String, dynamic> json) =>
+      PaymentAllocation(
+        settlementNumber: json['settlement_number'] as String,
+        amount: json['amount'].toString(),
+      );
+
+  final String settlementNumber;
+  final String amount;
+}
+
+class PaymentAttemptSummary {
+  PaymentAttemptSummary({
+    required this.attemptNumber,
+    required this.provider,
+    required this.status,
+    required this.startedAt,
+    this.reference,
+    this.failureReason,
+  });
+
+  factory PaymentAttemptSummary.fromJson(Map<String, dynamic> json) =>
+      PaymentAttemptSummary(
+        attemptNumber: json['attempt_number'] as int,
+        provider: json['provider'] as String,
+        status: json['status'] as String,
+        startedAt: json['started_at'] as String,
+        reference: json['reference'] as String?,
+        failureReason: json['failure_reason'] as String?,
+      );
+
+  final int attemptNumber;
+  final String provider;
+  final String status;
+  final String startedAt;
+  final String? reference;
+  final String? failureReason;
+}
+
+class PaymentDetailResult {
+  PaymentDetailResult({
+    required this.payment,
+    required this.lines,
+    required this.attempts,
+  });
+
+  factory PaymentDetailResult.fromJson(
+    Map<String, dynamic> json,
+  ) => PaymentDetailResult(
+    payment: PaymentSummary.fromJson(json['payment'] as Map<String, dynamic>),
+    lines: (json['lines'] as List<dynamic>)
+        .map((e) => PaymentAllocation.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    attempts: (json['attempts'] as List<dynamic>)
+        .map((e) => PaymentAttemptSummary.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
+
+  final PaymentSummary payment;
+  final List<PaymentAllocation> lines;
+  final List<PaymentAttemptSummary> attempts;
 }

@@ -86,6 +86,19 @@ from platform_core.modules.organization.service import (
     StructureService,
     WorkspaceView,
 )
+from platform_core.modules.payment.service import (
+    BalancePage,
+    CancelPaymentCommand,
+    CompletePaymentCommand,
+    CreatePaymentCommand,
+    ExecutePaymentCommand,
+    FailPaymentCommand,
+    PaymentDetailView,
+    PaymentPage,
+    PaymentService,
+    PaymentView,
+    SettlementBalanceView,
+)
 from platform_core.modules.pricing.calculator import (
     CalculationRequest,
     CalculationResult,
@@ -1260,6 +1273,147 @@ async def cancel_settlement(
     return (await service.detail(settlement.id)).settlement
 
 
+# --- Payments (execution against finalized settlements — PAY-001) -----------
+payment_router = APIRouter(tags=["payment"])
+PaymentRead = Annotated[Principal, Depends(require_permission("payment.read"))]
+PaymentManage = Annotated[Principal, Depends(require_permission("payment.manage"))]
+PaymentRetry = Annotated[Principal, Depends(require_permission("payment.retry"))]
+PaymentCancel = Annotated[Principal, Depends(require_permission("payment.cancel"))]
+PaymentSvc = Annotated[PaymentService, Depends(deps.get_payment_service)]
+
+
+@payment_router.post("/payments", response_model=PaymentView, status_code=201)
+async def create_payment(cmd: CreatePaymentCommand, service: PaymentSvc, p: PaymentManage) -> Any:
+    """Create a payment against one or more finalized settlements of one
+    supplier. Omit an allocation amount to pay the full outstanding balance;
+    supply one for a partial payment. Re-posting the same idempotency_key
+    returns the existing payment instead of paying twice."""
+    payment = await service.create(cmd, actor_id=p.id)
+    return (await service.detail(payment.id)).payment
+
+
+@payment_router.get("/payments", response_model=PaymentPage)
+async def search_payments(
+    service: PaymentSvc,
+    _: PaymentRead,
+    q: str | None = None,
+    supplier_id: uuid.UUID | None = None,
+    settlement_id: uuid.UUID | None = None,
+    status: str | None = None,
+    method: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> PaymentPage:
+    """Payment history: search number/reference, filter by supplier, the
+    settlement paid, status, or method."""
+    return await service.search(
+        q=q,
+        supplier_id=supplier_id,
+        settlement_id=settlement_id,
+        status=status,
+        method=method,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@payment_router.get("/payments/balances", response_model=BalancePage)
+async def list_outstanding_balances(
+    service: PaymentSvc,
+    _: PaymentRead,
+    supplier_id: uuid.UUID | None = None,
+    outstanding_only: bool = True,
+    limit: int = 20,
+    offset: int = 0,
+) -> BalancePage:
+    """The settlement selector: finalized settlements with what is still owed."""
+    return await service.balances(
+        supplier_id=supplier_id, outstanding_only=outstanding_only, limit=limit, offset=offset
+    )
+
+
+@payment_router.get("/settlements/{settlement_id}/balance", response_model=SettlementBalanceView)
+async def get_settlement_balance(
+    settlement_id: uuid.UUID, service: PaymentSvc, _: PaymentRead
+) -> SettlementBalanceView:
+    """Outstanding balance of one settlement (payable - live allocations)."""
+    return await service.balance(settlement_id)
+
+
+@payment_router.get("/payments/{payment_id}", response_model=PaymentDetailView)
+async def get_payment_detail(
+    payment_id: uuid.UUID, service: PaymentSvc, _: PaymentRead
+) -> PaymentDetailView:
+    return await service.detail(payment_id)
+
+
+@payment_router.post("/payments/{payment_id}/submit", response_model=PaymentView)
+async def submit_payment(payment_id: uuid.UUID, service: PaymentSvc, p: PaymentManage) -> Any:
+    """draft -> pending: approved for execution."""
+    await service.submit(payment_id, actor_id=p.id)
+    return (await service.detail(payment_id)).payment
+
+
+@payment_router.post("/payments/{payment_id}/execute", response_model=PaymentView)
+async def execute_payment(
+    payment_id: uuid.UUID,
+    cmd: ExecutePaymentCommand,
+    service: PaymentSvc,
+    p: PaymentManage,
+) -> Any:
+    """pending -> processing, opening a new attempt."""
+    await service.execute(payment_id, cmd, actor_id=p.id)
+    return (await service.detail(payment_id)).payment
+
+
+@payment_router.post("/payments/{payment_id}/retry", response_model=PaymentView)
+async def retry_payment(
+    payment_id: uuid.UUID,
+    cmd: ExecutePaymentCommand,
+    service: PaymentSvc,
+    p: PaymentRetry,
+) -> Any:
+    """failed -> processing with a NEW attempt (attempts are never reused)."""
+    await service.retry(payment_id, cmd, actor_id=p.id)
+    return (await service.detail(payment_id)).payment
+
+
+@payment_router.post("/payments/{payment_id}/complete", response_model=PaymentView)
+async def complete_payment(
+    payment_id: uuid.UUID,
+    cmd: CompletePaymentCommand,
+    service: PaymentSvc,
+    p: PaymentManage,
+) -> Any:
+    """processing -> completed. Permanent: emits payment.completed.v1."""
+    await service.complete(payment_id, cmd, actor_id=p.id)
+    return (await service.detail(payment_id)).payment
+
+
+@payment_router.post("/payments/{payment_id}/fail", response_model=PaymentView)
+async def fail_payment(
+    payment_id: uuid.UUID,
+    cmd: FailPaymentCommand,
+    service: PaymentSvc,
+    p: PaymentManage,
+) -> Any:
+    """processing -> failed. Retryable; releases the allocation."""
+    await service.fail(payment_id, cmd, actor_id=p.id)
+    return (await service.detail(payment_id)).payment
+
+
+@payment_router.post("/payments/{payment_id}/cancel", response_model=PaymentView)
+async def cancel_payment(
+    payment_id: uuid.UUID,
+    cmd: CancelPaymentCommand,
+    service: PaymentSvc,
+    p: PaymentCancel,
+) -> Any:
+    """Terminal. Not permitted while processing — record the failure first."""
+    await service.cancel(payment_id, cmd, actor_id=p.id)
+    return (await service.detail(payment_id)).payment
+
+
 # --- Notifications (delivery history & operations — NOT-001) ----------------
 notification_router = APIRouter(tags=["notifications"])
 NotificationRead = Annotated[Principal, Depends(require_permission("notification.read"))]
@@ -1683,6 +1837,7 @@ for sub in (
     pricing_router,
     matrix_router,
     settlement_router,
+    payment_router,
     report_router,
     notification_router,
     relay_router,

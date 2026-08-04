@@ -353,6 +353,55 @@ async def test_settlement_finalized_notification(client, provider_guard):
     assert notifications[0].status == "sent"
 
 
+async def test_payment_completion_notifies_the_supplier(client, provider_guard):
+    """PAY-001 closes the loop NOT-001 left open: the payment_completed
+    template finally has a producer, and the engine consumes it unchanged."""
+    from tests.test_settlements import _create_settlement
+
+    provider_guard.register_provider("sms", _RecordingProvider())
+    headers, center, supplier, session = await _procurement_env(client)
+    tx = await _run_collection(client, headers, session["id"], supplier)
+    await _accept_complete(client, headers, tx["id"])
+    settlement = await _create_settlement(
+        client,
+        headers,
+        supplier["id"],
+        center["id"],
+        period_from="2026-08-01",
+        period_to="2026-08-31",
+    )
+    for action in ("collect", "calculate", "finalize"):
+        r = await client.post(f"/v1/settlements/{settlement['id']}/{action}", headers=headers)
+        assert r.status_code == 200, r.text
+
+    payment = (
+        await client.post(
+            "/v1/payments",
+            json={
+                "supplier_id": supplier["id"],
+                "currency": "KES",
+                "method": "MOBILE_MONEY",
+                "allocations": [{"settlement_id": settlement["id"]}],
+            },
+            headers=headers,
+        )
+    ).json()
+    for action, body in (("submit", {}), ("execute", {}), ("complete", {"reference": "MPESA-1"})):
+        r = await client.post(f"/v1/payments/{payment['id']}/{action}", json=body, headers=headers)
+        assert r.status_code == 200, r.text
+    await _runner().run_once()
+
+    notifications = await _notifications("payment_completed")
+    assert len(notifications) == 1
+    note = notifications[0]
+    assert note.status == "sent" and note.channel == "sms"
+    assert note.recipient == "+254700000001"  # resolved from the directory
+    assert "1125.00 KES" in note.rendered_text
+    assert settlement["settlement_number"] in note.rendered_text
+    assert "MPESA-1" in note.rendered_text
+    assert "Amina Njoroge" in note.rendered_text
+
+
 async def test_milk_rejection_notification(client, provider_guard):
     provider_guard.register_provider("sms", _RecordingProvider())
     headers, _center, supplier, session = await _procurement_env(client)
