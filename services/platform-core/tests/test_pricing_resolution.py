@@ -3,9 +3,9 @@ failures, boundaries, integrity, permissions, and query-count bounds."""
 
 import uuid
 
-from sqlalchemy import event, update
+from sqlalchemy import update
 
-from tests.conftest import register_and_login
+from tests.conftest import count_statements, register_and_login
 from tests.test_collection_centers import _center_fixture
 from tests.test_pricing_matrix import _create_matrix, _publish_card
 from tests.test_rate_cards import PRODUCT, _assign_scope, _create_card
@@ -584,21 +584,7 @@ MANY_BANDS = tuple((i * 0.5, (i + 1) * 0.5, 10.0 + i) for i in range(30))
 
 
 async def _count_selects(client, headers, center_id, *, value):
-    from platform_core.core import db
-
-    statements: list[str] = []
-
-    def _record(conn, cursor, statement, parameters, context, executemany):
-        if statement.lstrip().upper().startswith("SELECT"):
-            statements.append(statement)
-
-    engine = db.get_engine().sync_engine
-    event.listen(engine, "before_cursor_execute", _record)
-    try:
-        response = await _resolve(client, headers, center_id, value=value)
-    finally:
-        event.remove(engine, "before_cursor_execute", _record)
-    return response, len(statements)
+    return await count_statements(lambda: _resolve(client, headers, center_id, value=value))
 
 
 async def test_query_count_bounded_regardless_of_band_count(client):

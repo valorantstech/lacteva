@@ -30,6 +30,13 @@ from platform_core.modules.event_relay.consumers import (
     ConsumersHealth,
     ExecutionView,
 )
+from platform_core.modules.event_relay.projections import (
+    ProjectionRebuilder,
+    ProjectionStatus,
+    RebuildResult,
+    ResetResult,
+    VerificationResult,
+)
 from platform_core.modules.event_relay.service import (
     DeadLetterView,
     OutboxEventView,
@@ -1417,6 +1424,69 @@ async def replay_consumer_execution(
     return await runner.replay_execution(execution_id)
 
 
+# --- Projection lifecycle operations (PLT-001) ------------------------------
+projections_router = APIRouter(prefix="/_projections", tags=["projections"])
+Rebuilder = Annotated[ProjectionRebuilder, Depends(deps.get_projection_rebuilder)]
+
+
+@projections_router.get("", response_model=list[ProjectionStatus])
+async def list_projections(rebuilder: Rebuilder, _: RelayOps) -> Any:
+    """Registry: every discovered projection with its version, derived
+    position, processed/pending counts, row counts, rebuild story, health."""
+    return await rebuilder.status_all()
+
+
+@projections_router.post("/rebuild-all", response_model=list[RebuildResult])
+async def rebuild_all_projections(
+    rebuilder: Rebuilder,
+    _: RelayOps,
+    dry_run: bool = False,
+    batch_size: int = 500,
+) -> Any:
+    """Rebuild every projection in declared replay order."""
+    return await rebuilder.rebuild_all(dry_run=dry_run, batch_size=batch_size)
+
+
+@projections_router.get("/{name}", response_model=ProjectionStatus)
+async def get_projection_status(name: str, rebuilder: Rebuilder, _: RelayOps) -> Any:
+    return await rebuilder.status(name)
+
+
+@projections_router.post("/{name}/rebuild", response_model=RebuildResult)
+async def rebuild_projection(
+    name: str,
+    rebuilder: Rebuilder,
+    _: RelayOps,
+    dry_run: bool = False,
+    batch_size: int = 500,
+) -> Any:
+    """Replay the event log into this projection. `dry_run=true` reports the
+    work and an ETA without touching data."""
+    return await rebuilder.rebuild(name, dry_run=dry_run, batch_size=batch_size)
+
+
+@projections_router.post("/{name}/cancel", response_model=ProjectionStatus)
+async def cancel_projection_rebuild(name: str, rebuilder: Rebuilder, _: RelayOps) -> Any:
+    """Stop a running rebuild after its current batch."""
+    return await rebuilder.cancel(name)
+
+
+@projections_router.post("/{name}/verify", response_model=VerificationResult)
+async def verify_projection(
+    name: str, rebuilder: Rebuilder, _: RelayOps, deep: bool = False
+) -> Any:
+    """Integrity checks (version, corrupted replay, missing events, dead
+    letters, duplicate rows, gaps). `deep=true` adds drift detection by
+    shadow-replaying the log in a rolled-back transaction."""
+    return await rebuilder.verify(name, deep=deep)
+
+
+@projections_router.delete("/{name}/reset", response_model=ResetResult)
+async def reset_projection(name: str, rebuilder: Rebuilder, _: RelayOps) -> Any:
+    """Clear derived rows and consumer position; the runner rebuilds it."""
+    return await rebuilder.reset(name)
+
+
 # --- Authorization --------------------------------------------------------
 authz_router = APIRouter(prefix="/authz", tags=["authz"])
 
@@ -1530,6 +1600,7 @@ for sub in (
     report_router,
     relay_router,
     consumers_router,
+    projections_router,
     authz_router,
     config_router,
     audit_router,

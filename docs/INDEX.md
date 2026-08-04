@@ -3,7 +3,7 @@ id: INDEX
 title: Master Documentation Index
 type: reference
 status: Approved
-version: "1.6"
+version: "1.7"
 owner: Documentation Engineering
 created: 2026-08-02
 last-updated: 2026-08-03
@@ -24,6 +24,7 @@ Snapshot: 2026-08-02 — 87 markdown files (47 with formal document IDs, plus RE
 | [`docs/ai/CLAUDE_CONTEXT.md`](ai/CLAUDE_CONTEXT.md) | **Permanent AI-engineer onboarding guide** — read first when joining |
 | [`docs/03-architecture/01-business-layer/BUSINESS-RULES.md`](03-architecture/01-business-layer/BUSINESS-RULES.md) | **Business Rules Register** — source of truth for BR-NNNN platform invariants |
 | [`docs/product/PRODUCT_STRATEGY.md`](product/PRODUCT_STRATEGY.md) | Product strategy — segments, editions, pricing, deployment, ICPs, V1.0 definition |
+| [`docs/03-architecture/04-technology-layer/PROJECTION-LIFECYCLE.md`](03-architecture/04-technology-layer/PROJECTION-LIFECYCLE.md) | Projection lifecycle & replay — states, rebuild, versioning, verification |
 | [`REPOSITORY_AUDIT.md`](../REPOSITORY_AUDIT.md) | Baseline-migration audit (findings F-A1…F-A6, health score) |
 | [`REPOSITORY_MIGRATION_PLAN.md`](../REPOSITORY_MIGRATION_PLAN.md) | Migration steps, manual-review queue MR-1…MR-8, deprecation ledger |
 | [`DEVELOPMENT_ROADMAP.md`](../DEVELOPMENT_ROADMAP.md) | Code implementation sequence M0–M4 |
@@ -160,6 +161,7 @@ Empty pending Phase 3–4 of the roadmap. Indexes: [API](06-api/README.md) · [D
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.7 | 2026-08-04 | Engineering | Added the projection lifecycle reference (PLT-001). |
 | 1.6 | 2026-08-04 | Product | Added docs/product/PRODUCT_STRATEGY.md. |
 | 1.5 | 2026-08-03 | Architecture Board | Added the Business Rules Register (BR-REGISTER, business layer). |
 | 1.4 | 2026-08-03 | Engineering | Added docs/ai/CLAUDE_CONTEXT.md (permanent AI-engineer onboarding guide). |

@@ -3,7 +3,7 @@ id: CLAUDE-CONTEXT
 title: Lacteva AI Engineering Context — Permanent Onboarding Guide
 type: reference
 status: Approved
-version: "1.10"
+version: "1.11"
 owner: Engineering
 created: 2026-08-03
 last-updated: 2026-08-04
@@ -75,7 +75,7 @@ baseline: ARCH-BASELINE-V1
 | `operational_readiness` | Device registry (6 categories), assignment, health, operator assignment, readiness engine (READY/WARNING/NOT_READY) |
 | `supplier` | Suppliers, profiles, documents, bank accounts, m:n center placement, HMAC-signed QR identity, search, bulk import |
 | `milk_collection` | Collection sessions (readiness-gated) + the immutable milk transaction engine (state machine NEW→…→COMPLETED, snapshot, ordered event log, metrics; pricing placeholder `awaiting_pricing_engine`) |
-| `event_relay` | Transactional outbox, dispatcher, retry, DLQ, replay, `/_relay` operations API; **consumer framework** (SPRINT-008B): cursor-over-log consumers with idempotency ledger, ordering, backoff/DLQ/replay, discovery of the independent `platform_core.consumers` package, `/_consumers` ops API |
+| `event_relay` | Transactional outbox, dispatcher, retry, DLQ, replay, `/_relay` operations API; **consumer framework** (SPRINT-008B) and **projection lifecycle** (PLT-001): cursor-over-log consumers with idempotency ledger, ordering, backoff/DLQ/replay; rebuildable projections with metadata, versioning, dry-run/cancel/progress replay, and drift verification; `/_consumers` + `/_projections` ops APIs |
 | `pricing` | Rate cards (workflow draft→under_review→approved→published→archived, versioning, center+product scope, effective-date overlap rule), pricing matrices (configurable quality dimensions, half-open price bands), the read-side Resolution Engine (PRC-003: exactly-one band selection with structured no-match/integrity exceptions), and the Pricing Calculator (PRC-004: Decimal-only gross = price × quantity with configurable rounding, full trace, `pricing.calculated.v1`) |
 | `settlement` | Settlements (supplier + center + period payables): lines from server-verified calculation records, exact Decimal totals, draft→calculated→finalized (immutable) with history-preserving cancel; BR-0008…0012 (SET-001; no payment yet) |
 
@@ -136,6 +136,7 @@ The repository was built in strictly ordered phases — documentation first, pla
 14. **PRC-004 Pricing Calculator.** The first monetary calculation: pure deterministic domain service computing gross = unit price × quantity in Decimal only (float factors rejected by type guard), configurable rounding (HALF_UP default / HALF_EVEN / DOWN; request → tenant config → default), complete 4-step trace with exact raw amounts, server-side re-verification of the resolved band (clients send row ids, never prices), `pricing.calculated.v1` through the outbox; stateless — the event is the record. Rules BR-0005…0007 catalogued.
 15. **SET-001 Settlement Foundation.** The `settlement` module: supplier+center+period payables whose lines are built from the durable calculation events (via `RelayService.find_aggregate_event` — amounts never client-supplied), exact `Money.plus` totals with a finalize-time integrity gate, draft→calculated→finalized (CAS, immutable) plus history-preserving cancel that releases calculations and periods; supplier-wide period-overlap ban; Numeric money columns (first schema under the new precision policy); BR-0008…0012. No payment (SET-002).
 16. **MVP-001 End-to-End Procurement Integration.** No new modules — the seams closed: milk transactions invoke resolution (FAT) + calculator at their pricing step (never blocking collection; `pricing_unavailable` degrades gracefully) and persist verified amounts + `calculation_id`; settlements bulk-collect eligible period transactions idempotently; the `awaiting_pricing_engine` placeholder is retired. Portal global nav + procurement dashboard; wizard shows payable amounts. `test_procurement_e2e.py` proves the whole journey including the event chain and audit trail.
+18. **PLT-001 Projection Lifecycle & Replay.** Projections (a `Projection` IS a consumer) gained metadata, a derived-status registry, a log-only rebuild engine (batched, dry-run, progress/ETA, cancellable), reset, versioning, and integrity verification incl. rolled-back shadow-replay drift detection — BR-0015: every projection is fully rebuildable from the event log. See [Projection Lifecycle & Replay](../03-architecture/04-technology-layer/PROJECTION-LIFECYCLE.md).
 17. **SPRINT-008B Event Consumer Framework.** The Relay's receiving half: durable-log consumers (cursor + idempotency ledger + ordering + backoff/DLQ/replay), total producer isolation (BR-0013/0014), auto-discovered independent consumers package, `/_consumers` ops API; first consumers: notification placeholder (notifier port) and reporting projections (daily/center/supplier totals from event payloads). Engineering review: `require_current_tenant()` and `envelope_from_outbox()` dedup. *(Delivered after REP-001.)*
 18. **REP-001 Reporting Foundation.** Read-only `reporting` module: SQL aggregation over live transactional data (documented boundary exception — owns nothing, writes nothing), five `/v1/reports` endpoints (daily, by-center, by-supplier, settlements, pricing) with weighted quality averages and fixed query budgets; portal /reports section; mobile "Today" center summary.
 
@@ -204,6 +205,7 @@ Current test posture: **196 backend tests, 15 Flutter widget tests**, portal bui
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.11 | 2026-08-04 | Engineering | PLT-001 projection lifecycle recorded (BR-0015, lifecycle reference doc). |
 | 1.10 | 2026-08-04 | Engineering | SPRINT-008B consumer framework recorded (BR-0013/0014); Phase A next = Notifications. |
 | 1.9 | 2026-08-04 | Engineering | Five-phase execution plan to Lacteva Collect 1.0 recorded (MVP completion -> hardening -> commercial readiness -> pilot -> launch gates). |
 | 1.8 | 2026-08-04 | Engineering | Five-year "Dairy Operating System" architecture plan recorded (foundation grows Notifications/Documents/Search/Workflow/Rules Engine; Receipts, Quality Lab, LLM Assistant, API Gateway/SDK/Webhooks added). |

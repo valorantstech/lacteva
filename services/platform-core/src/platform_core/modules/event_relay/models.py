@@ -105,6 +105,35 @@ class ConsumerExecution(Base, IdMixin):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ProjectionState(Base, IdMixin):
+    """Lifecycle state of one projection (PLT-001).
+
+    Deliberately stores ONLY what cannot be derived: the built version, the
+    rebuild story, and the cancel flag. Position, processed counts, and lag
+    are derived from the consumer cursor and the idempotency ledger — one
+    source of truth, so projection status can never drift from reality.
+    """
+
+    __tablename__ = "projection_state"
+
+    projection_name: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)  # version actually built
+    status: Mapped[str] = mapped_column(String(16), default="live")
+    # live | rebuilding | cancelled | failed | reset
+    last_rebuild_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_rebuild_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rebuild_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rebuild_total: Mapped[int] = mapped_column(Integer, default=0)
+    rebuild_done: Mapped[int] = mapped_column(Integer, default=0)
+    cancel_requested: Mapped[bool] = mapped_column(default=False)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class DeadLetter(Base, IdMixin):
     """Events that exhausted retries. Nothing is deleted; replay resets them."""
 

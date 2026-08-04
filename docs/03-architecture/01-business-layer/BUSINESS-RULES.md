@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.3"
+version: "1.4"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-03
@@ -189,6 +189,18 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0015 — Every projection must be fully rebuildable from the event log.
+
+**Clarification.** Derived read models are never precious: the durable outbox log is the source of truth, and any projection can be reconstructed from it exactly. Projections therefore read event payloads ONLY — never transactional tables — and replay uses the projection's own handler, so a rebuilt projection cannot diverge from an incrementally-built one. A version bump marks stored data outdated until a *completed* rebuild claims the new version; cancelled and failed replays claim nothing. Verification proves the rule by shadow-replaying the log and comparing (always rolled back).
+
+**Enforcement.** `event_relay/projections.py` — `Projection` (declares owned models + version), `ProjectionRebuilder.rebuild()/reset()/verify()`; registration rejects projections that declare no models.
+
+**Verification.** `test_projections.py::test_rebuild_reconstructs_from_the_log`, `::test_rebuild_from_empty_state_is_identical`, `::test_deep_verify_detects_drift`, `::test_version_bump_marks_projection_outdated`, `::test_rebuild_repopulates_ledger_and_cursor`.
+
+**Status:** Active (since PLT-001).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -202,6 +214,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.4 | 2026-08-04 | Architecture Board | PLT-001 rule: BR-0015 (every projection is fully rebuildable from the event log). |
 | 1.3 | 2026-08-04 | Architecture Board | SPRINT-008B rules: BR-0013 (consumers never affect business transactions), BR-0014 (at-most-once processing per consumer). |
 | 1.2 | 2026-08-04 | Architecture Board | SET-001 rules: BR-0008 (one settlement per calculation), BR-0009 (no supplier-period overlap), BR-0010 (finalized immutable), BR-0011 (totals equal line sum), BR-0012 (no duplicate transaction references). |
 | 1.1 | 2026-08-03 | Architecture Board | PRC-004 rules: BR-0005 (Decimal-only money with explicit rounding policy), BR-0006 (complete calculation trace), BR-0007 (deterministic calculation). |

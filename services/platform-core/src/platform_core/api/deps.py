@@ -27,6 +27,7 @@ from platform_core.modules.authz.service import AuthzService, PermissionEngine
 from platform_core.modules.collection_center.service import CollectionCenterService
 from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.event_relay.consumers import ConsumerRunner
+from platform_core.modules.event_relay.projections import ProjectionRebuilder
 from platform_core.modules.event_relay.service import OutboxEventBus, RelayService
 from platform_core.modules.identity.models import User
 from platform_core.modules.identity.service import IdentityService
@@ -67,6 +68,13 @@ def get_consumer_runner() -> ConsumerRunner:
 
     # Own session factory: consumers run isolated per-event transactions.
     return ConsumerRunner(get_session_factory())
+
+
+def get_projection_rebuilder() -> ProjectionRebuilder:
+    from platform_core.core.db import get_session_factory
+
+    # Own session factory: replay commits per batch, independent of requests.
+    return ProjectionRebuilder(get_session_factory())
 
 
 _bearer = HTTPBearer(auto_error=False)

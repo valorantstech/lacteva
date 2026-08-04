@@ -8,7 +8,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from tests.conftest import register_and_login
+from tests.conftest import count_statements, register_and_login
 from tests.test_procurement_e2e import _accept_complete, _procurement_env, _run_collection
 
 COMPLETED = "collection.transaction-completed.v1"
@@ -602,30 +602,12 @@ async def test_batch_processing_reaches_zero_lag(client):
 
 
 async def test_per_event_query_budget(client):
-    """Processing one matching event is a fixed handful of queries."""
-    from sqlalchemy import event as sa_event
-
-    from platform_core.core import db
+    """A caught-up run stays cheap: no per-event scans of history."""
+    from platform_core.modules.event_relay.consumers import registered_consumers
 
     await _one_completed_tx(client)
     runner = _runner()
-    # Advance both production consumers past everything except the last event
-    # by processing all but leaving a fresh one:
     await runner.run_once()
-    statements: list[str] = []
-
-    def _record(conn, cursor, statement, parameters, context, executemany):
-        statements.append(statement)
-
-    engine = db.get_engine().sync_engine
-    sa_event.listen(engine, "before_cursor_execute", _record)
-    try:
-        await runner.run_once()  # fully caught-up run
-    finally:
-        sa_event.remove(engine, "before_cursor_execute", _record)
-    # Caught-up runs stay cheap: cursor read + empty fetch (+ enabled check
-    # + lag) per consumer — no per-event scans of history.
-    from platform_core.modules.event_relay.consumers import registered_consumers
-
-    per_consumer = len(statements) / max(len(registered_consumers()), 1)
-    assert per_consumer <= 6, f"caught-up run too expensive: {len(statements)} statements"
+    _, statements = await count_statements(lambda: runner.run_once(), selects_only=False)
+    per_consumer = statements / max(len(registered_consumers()), 1)
+    assert per_consumer <= 6, f"caught-up run too expensive: {statements} statements"

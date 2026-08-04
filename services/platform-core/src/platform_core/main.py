@@ -58,6 +58,14 @@ async def _relay_loop() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    # Discovery FIRST: importing consumers/projections registers their models
+    # in the metadata, so dev/test create_all cannot miss projection tables.
+    from platform_core.modules.event_relay.consumers import discover_consumers
+    from platform_core.modules.event_relay.projections import discover_projections
+
+    discovered = discover_consumers()
+    projections = discover_projections()
+    log.info("consumers_discovered", consumers=discovered, projections=projections)
     if settings.env in ("dev", "test"):
         # Convenience only — real environments run Alembic migrations
         # (see migrations/env.py and the deploy pipeline, TODO M1).
@@ -66,10 +74,6 @@ async def lifespan(app: FastAPI):
     async with get_session_factory()() as session:
         await AuthzService(session).ensure_system_roles()
         await session.commit()
-    from platform_core.modules.event_relay.consumers import discover_consumers
-
-    discovered = discover_consumers()
-    log.info("consumers_discovered", consumers=discovered)
     relay_task = None
     consumer_task = None
     if settings.outbox_mode == "background" and settings.env != "test":

@@ -42,6 +42,29 @@ def bus() -> events.InMemoryEventBus:
     return b
 
 
+async def count_statements(coro_factory, *, selects_only: bool = True) -> tuple:
+    """Run an awaitable and count the SQL statements it issues.
+
+    Shared query-budget helper (PLT-001 engineering review: this was copied
+    in three test modules). Returns (result, statement_count).
+    """
+    from sqlalchemy import event as sa_event
+
+    statements: list[str] = []
+
+    def _record(conn, cursor, statement, parameters, context, executemany):
+        if not selects_only or statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    engine = db.get_engine().sync_engine
+    sa_event.listen(engine, "before_cursor_execute", _record)
+    try:
+        result = await coro_factory()
+    finally:
+        sa_event.remove(engine, "before_cursor_execute", _record)
+    return result, len(statements)
+
+
 async def grant_platform_admin(user_id: uuid.UUID) -> None:
     """Directly assign the platform-admin system role (bootstrap stand-in)."""
     from platform_core.modules.authz.service import AuthzService

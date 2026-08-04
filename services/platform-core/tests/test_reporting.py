@@ -5,9 +5,9 @@ import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import event, update
+from sqlalchemy import update
 
-from tests.conftest import register_and_login
+from tests.conftest import count_statements, register_and_login
 from tests.test_org_structure import _tenant_admin
 from tests.test_procurement_e2e import _accept_complete, _procurement_env, _run_collection
 
@@ -416,22 +416,9 @@ async def test_tenant_isolation(client):
 
 
 async def _count_selects(client, headers, path):
-    from platform_core.core import db
-
-    statements: list[str] = []
-
-    def _record(conn, cursor, statement, parameters, context, executemany):
-        if statement.lstrip().upper().startswith("SELECT"):
-            statements.append(statement)
-
-    engine = db.get_engine().sync_engine
-    event.listen(engine, "before_cursor_execute", _record)
-    try:
-        response = await client.get(path, headers=headers)
-    finally:
-        event.remove(engine, "before_cursor_execute", _record)
+    response, statements = await count_statements(lambda: client.get(path, headers=headers))
     assert response.status_code == 200, response.text
-    return len(statements)
+    return statements
 
 
 async def test_daily_report_query_count_bounded(client):
