@@ -17,24 +17,6 @@ from alembic import context
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-import platform_core.modules.audit.models
-import platform_core.modules.auth.models
-import platform_core.modules.authz.models
-import platform_core.modules.collection_center.models
-import platform_core.modules.configuration.models
-import platform_core.modules.event_relay.models
-import platform_core.modules.identity.models
-import platform_core.modules.milk_collection.models
-import platform_core.modules.notification.models
-import platform_core.modules.operational_readiness.models
-import platform_core.modules.organization.models
-import platform_core.modules.payment.models
-import platform_core.modules.pricing.models
-import platform_core.modules.receipt.models
-import platform_core.modules.reporting.models
-import platform_core.modules.settlement.models
-import platform_core.modules.supplier.models  # noqa: F401
-
 # Import the metadata with every module's tables registered.
 from platform_core.core.db import Base
 

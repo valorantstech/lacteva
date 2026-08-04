@@ -5,8 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-import 'src/api.dart';
 import 'src/centers.dart';
+import 'src/offline/offline_client.dart';
+import 'src/offline/queue.dart';
+import 'src/offline/store.dart';
 
 /// Backend base URL. Override at run/build time:
 ///   flutter run --dart-define=LACTEVA_API_URL=http://10.0.2.2:8000
@@ -20,6 +22,19 @@ void main() {
   runApp(const LactevaApp());
 }
 
+/// The app's single offline-capable client (OFF-001).
+///
+/// A file-backed queue in the app's own directory: it survives restart,
+/// reboot, and crash. `MemoryOfflineStore` stands in when no writable
+/// directory is available — a queue that forgets still beats an app that
+/// cannot collect milk.
+OfflineApiClient buildClient({OfflineStore? store, String? deviceId}) {
+  return OfflineApiClient(
+    queue: SyncQueue(store ?? FileOfflineStore('lacteva_sync_queue.json')),
+    deviceId: deviceId ?? 'mobile-device',
+  );
+}
+
 class LactevaApp extends StatelessWidget {
   const LactevaApp({super.key});
 
@@ -31,7 +46,7 @@ class LactevaApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1B5E20)),
         useMaterial3: true,
       ),
-      home: LoginScreen(client: ApiClient()),
+      home: LoginScreen(client: buildClient()),
     );
   }
 }
@@ -71,8 +86,9 @@ class _PlatformStatusScreenState extends State<PlatformStatusScreen> {
           .get(Uri.parse('$apiUrl/health/ready'))
           .timeout(const Duration(seconds: 5));
       final body = jsonDecode(response.body) as Map<String, dynamic>;
-      final checks = (body['checks'] as Map<String, dynamic>)
-          .map((key, value) => MapEntry(key, value == true));
+      final checks = (body['checks'] as Map<String, dynamic>).map(
+        (key, value) => MapEntry(key, value == true),
+      );
       if (!mounted) return;
       setState(() {
         _checks = checks;

@@ -45,6 +45,7 @@ PERMISSIONS: dict[str, str] = {
     "receipt.read": "Read receipts and their history",
     "receipt.manage": "Mark receipts delivered and archive them",
     "receipt.download": "Render and download receipt artifacts",
+    "sync.read": "Read the offline sync monitor (queue status, conflicts, statistics)",
     "platform.relay.manage": (
         "Operate the event relay (replay, retry, dead letters) — platform staff only"
     ),
@@ -91,6 +92,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "receipt.read",
         "receipt.manage",
         "receipt.download",
+        "sync.read",
         "reporting.read",
         "notification.read",
         "notification.manage",
@@ -111,6 +113,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "payment.read",
         "receipt.read",
         "receipt.download",
+        "sync.read",
         "reporting.read",
         "notification.read",
     ],

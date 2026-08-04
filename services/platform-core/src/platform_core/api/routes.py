@@ -167,6 +167,14 @@ from platform_core.modules.supplier.service import (
     UploadDocumentCommand,
     qr_payload_for,
 )
+from platform_core.modules.sync.service import (
+    SyncBatchInput,
+    SyncBatchResult,
+    SyncOperationPage,
+    SyncOperationView,
+    SyncService,
+    SyncStatsView,
+)
 
 router = APIRouter(prefix="/v1")
 
@@ -1581,6 +1589,62 @@ async def archive_receipt(receipt_id: uuid.UUID, service: ReceiptSvc, p: Receipt
     return (await service.detail(receipt_id)).receipt
 
 
+# --- Offline sync (device replay + read-only monitor — OFF-001) --------------
+sync_router = APIRouter(prefix="/sync", tags=["sync"])
+# Replay reuses the ONLINE permission: offline never bypasses authorization.
+SyncPush = Annotated[Principal, Depends(require_permission("collection.transaction.record"))]
+SyncRead = Annotated[Principal, Depends(require_permission("sync.read"))]
+SyncSvc = Annotated[SyncService, Depends(deps.get_sync_service)]
+
+
+@sync_router.post("/collection", response_model=SyncBatchResult)
+async def push_collection_batch(
+    batch: SyncBatchInput, service: SyncSvc, p: SyncPush
+) -> SyncBatchResult:
+    """Replay a batch of operations captured offline.
+
+    Each operation carries a client-generated `operation_id` (the idempotency
+    key) so a lost acknowledgement re-sends safely, and optional
+    `client_reference`/`target_ref` local ids so work created offline can be
+    referred to before the server has ever seen it. Every operation is applied
+    through the online collection service — the batch never bypasses a rule.
+    Per-operation results carry structured conflicts; a partial batch is a
+    normal outcome, not an error."""
+    return await service.push(batch, actor_id=p.id)
+
+
+@sync_router.get("/operations", response_model=SyncOperationPage)
+async def list_sync_operations(
+    service: SyncSvc,
+    _: SyncRead,
+    status: str | None = None,
+    kind: str | None = None,
+    device_id: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> SyncOperationPage:
+    """Sync monitor: what devices have replayed, and how it went."""
+    return await service.search(
+        status=status, kind=kind, device_id=device_id, limit=limit, offset=offset
+    )
+
+
+@sync_router.get("/stats", response_model=SyncStatsView)
+async def sync_stats(service: SyncSvc, _: SyncRead) -> SyncStatsView:
+    """Totals by status and kind, per-device activity, last sync time."""
+    return await service.stats()
+
+
+@sync_router.post("/operations/{operation_id}/retry", response_model=SyncOperationView)
+async def retry_sync_operation(
+    operation_id: uuid.UUID, service: SyncSvc, p: SyncPush
+) -> SyncOperationView:
+    """Re-apply a FAILED operation from its stored payload. Conflicts are not
+    retryable — they need a human decision — and applied operations never
+    run twice."""
+    return await service.retry(operation_id, actor_id=p.id)
+
+
 # --- Reports (read-only operational summaries — REP-001) --------------------
 report_router = APIRouter(prefix="/reports", tags=["reporting"])
 ReportRead = Annotated[Principal, Depends(require_permission("reporting.read"))]
@@ -1928,6 +1992,7 @@ for sub in (
     settlement_router,
     payment_router,
     receipt_router,
+    sync_router,
     report_router,
     notification_router,
     relay_router,

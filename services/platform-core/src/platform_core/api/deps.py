@@ -48,6 +48,7 @@ from platform_core.modules.receipt.service import ReceiptService
 from platform_core.modules.reporting.service import ReportingService
 from platform_core.modules.settlement.service import SettlementService
 from platform_core.modules.supplier.service import SupplierService
+from platform_core.modules.sync.service import SyncService
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 
@@ -196,6 +197,13 @@ def get_milk_collection_service(session: Session, bus: Bus, audit: Audit) -> Mil
         PricingResolutionService(session),
         PricingCalculationService(session, bus, ConfigurationService(session, audit)),
     )
+
+
+def get_sync_service(session: Session, bus: Bus, audit: Audit) -> SyncService:
+    """OFF-001: sync replays device operations through the SAME collection
+    service the online API uses — offline is a transport, not a second
+    implementation."""
+    return SyncService(session, get_milk_collection_service(session, bus, audit))
 
 
 @dataclass(frozen=True)

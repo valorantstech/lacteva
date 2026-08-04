@@ -1109,3 +1109,71 @@ export const receiptAction = (id: string, action: "deliver" | "archive") =>
 /** Download URL for the artifact — served by the API with a filename. */
 export const receiptDownloadUrl = (id: string, format: string) =>
   `${API_URL}/v1/receipts/${id}/download?format=${format}`;
+
+// --- Offline sync monitor (OFF-001, read-only) ------------------------------
+
+export type SyncOperation = {
+  id: string;
+  operation_id: string;
+  device_id: string;
+  kind: string;
+  sequence: number;
+  client_reference: string | null;
+  target_ref: string | null;
+  status: string;
+  applied: boolean;
+  server_id: string | null;
+  conflict_reason: string | null;
+  conflict_detail: string | null;
+  error: string | null;
+  attempts: number;
+  recorded_at: string | null;
+  created_at: string;
+  applied_at: string | null;
+};
+
+export type SyncOperationPage = {
+  items: SyncOperation[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type DeviceSync = {
+  device_id: string;
+  operations: number;
+  conflicts: number;
+  failed: number;
+  last_sync_at: string | null;
+};
+
+export type SyncStats = {
+  total: number;
+  by_status: Record<string, number>;
+  by_kind: Record<string, number>;
+  conflicts: number;
+  failed: number;
+  devices: DeviceSync[];
+  last_sync_at: string | null;
+};
+
+export function listSyncOperations(params: {
+  status?: string;
+  kind?: string;
+  device_id?: string;
+  limit: number;
+  offset: number;
+}): Promise<SyncOperationPage> {
+  const search = new URLSearchParams();
+  if (params.status) search.set("status", params.status);
+  if (params.kind) search.set("kind", params.kind);
+  if (params.device_id) search.set("device_id", params.device_id);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<SyncOperationPage>(`/v1/sync/operations?${search.toString()}`);
+}
+
+export const getSyncStats = () => api<SyncStats>("/v1/sync/stats");
+
+export const retrySyncOperation = (operationId: string) =>
+  api<SyncOperation>(`/v1/sync/operations/${operationId}/retry`, { method: "POST" });

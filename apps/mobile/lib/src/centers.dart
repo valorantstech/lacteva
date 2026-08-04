@@ -4,6 +4,8 @@ import 'api.dart';
 import 'center_summary.dart';
 import 'collection_wizard.dart';
 import 'notifications.dart';
+import 'offline/offline_client.dart';
+import 'offline/sync_screen.dart';
 import 'payments.dart';
 import 'receipts.dart';
 import 'pricing_resolution.dart';
@@ -212,6 +214,19 @@ class _CentersListScreenState extends State<CentersListScreen> {
             ),
           ),
           IconButton(
+            icon: const Icon(Icons.sync),
+            tooltip: 'Sync',
+            onPressed: () {
+              final client = widget.client;
+              if (client is! OfflineApiClient) return;
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => SyncStatusScreen(client: client),
+                ),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.receipt_long_outlined),
             tooltip: 'Receipts',
             onPressed: () => Navigator.of(context).push(
@@ -237,90 +252,112 @@ class _CentersListScreenState extends State<CentersListScreen> {
         tooltip: 'New center',
         child: const Icon(Icons.add),
       ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextField(
-              controller: _search,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
-                hintText: 'Search by name or code',
-              ),
-              onSubmitted: (_) {
-                _offset = 0;
-                _load();
-              },
-            ),
-            const SizedBox(height: 12),
-            if (_error != null)
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            if (page == null && _error == null)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            if (page != null && page.items.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: Text('No centers match.')),
-              ),
-            if (page != null)
-              ...page.items.map(
-                (c) => Card(
-                  child: ListTile(
-                    title: Text(c.name),
-                    subtitle: Text(c.code),
-                    leading: StatusChip(status: c.status),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      tooltip: 'Edit',
-                      onPressed: () => _openForm(center: c),
-                    ),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => CenterDetailScreen(
-                          client: widget.client,
-                          centerId: c.id,
-                        ),
-                      ),
-                    ),
+      body: Column(
+        children: [
+          if (widget.client is OfflineApiClient)
+            OfflineBanner(
+              client: widget.client as OfflineApiClient,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => SyncStatusScreen(
+                    client: widget.client as OfflineApiClient,
                   ),
                 ),
               ),
-            if (page != null && page.total > pageSize)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+            ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
                 children: [
-                  TextButton(
-                    onPressed: _offset == 0
-                        ? null
-                        : () {
-                            _offset = (_offset - pageSize).clamp(0, 1 << 30);
-                            _load();
-                          },
-                    child: const Text('Previous'),
+                  TextField(
+                    controller: _search,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Search by name or code',
+                    ),
+                    onSubmitted: (_) {
+                      _offset = 0;
+                      _load();
+                    },
                   ),
-                  Text(
-                    '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}',
-                  ),
-                  TextButton(
-                    onPressed: _offset + pageSize >= page.total
-                        ? null
-                        : () {
-                            _offset += pageSize;
-                            _load();
-                          },
-                    child: const Text('Next'),
-                  ),
+                  const SizedBox(height: 12),
+                  if (_error != null)
+                    Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  if (page == null && _error == null)
+                    const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  if (page != null && page.items.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(child: Text('No centers match.')),
+                    ),
+                  if (page != null)
+                    ...page.items.map(
+                      (c) => Card(
+                        child: ListTile(
+                          title: Text(c.name),
+                          subtitle: Text(c.code),
+                          leading: StatusChip(status: c.status),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.edit_outlined),
+                            tooltip: 'Edit',
+                            onPressed: () => _openForm(center: c),
+                          ),
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => CenterDetailScreen(
+                                client: widget.client,
+                                centerId: c.id,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (page != null && page.total > pageSize)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        TextButton(
+                          onPressed: _offset == 0
+                              ? null
+                              : () {
+                                  _offset = (_offset - pageSize).clamp(
+                                    0,
+                                    1 << 30,
+                                  );
+                                  _load();
+                                },
+                          child: const Text('Previous'),
+                        ),
+                        Text(
+                          '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}',
+                        ),
+                        TextButton(
+                          onPressed: _offset + pageSize >= page.total
+                              ? null
+                              : () {
+                                  _offset += pageSize;
+                                  _load();
+                                },
+                          child: const Text('Next'),
+                        ),
+                      ],
+                    ),
                 ],
               ),
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }

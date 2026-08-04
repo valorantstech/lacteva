@@ -21,5 +21,6 @@ What belongs here: deployment topology views (C4 deployment diagrams per [STD-00
 | [PROJECTION-LIFECYCLE.md](PROJECTION-LIFECYCLE.md) | How derived read models are built, rebuilt, verified, and versioned from the event log ([BR-0015](../01-business-layer/BUSINESS-RULES.md)) | — (realizes the event-backbone baseline) | Approved |
 | [NOTIFICATION-ENGINE.md](NOTIFICATION-ENGINE.md) | How outbound messages are composed, delivered, retried, and audited as a consumer of the event log ([BR-0016](../01-business-layer/BUSINESS-RULES.md), BR-0017) | — (realizes the event-backbone baseline) | Approved |
 | [RECEIPT-RENDERING.md](RECEIPT-RENDERING.md) | How immutable receipts are rendered on demand into JSON/HTML/PDF artifacts through a swappable renderer registry ([BR-0020](../01-business-layer/BUSINESS-RULES.md)) | — (realizes the event-backbone baseline) | Approved |
+| [OFFLINE-SYNC.md](OFFLINE-SYNC.md) | How the operator app collects with no connectivity and replays through the online services, with durable queue, idempotent replay, and structured conflicts ([BR-0021](../01-business-layer/BUSINESS-RULES.md)) | — (realizes the mobile/offline baseline) | Approved |
 
 *Deployment topology views still follow the founding platform ADRs (roadmap Phase 1.2, [QR-0004](../../12-quality/QR-0004-documentation-roadmap.md)).*

@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.7"
+version: "1.8"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-05
@@ -261,6 +261,18 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0021 — Offline changes how work reaches the platform, never what the platform decides.
+
+**Clarification.** A device that collects milk without connectivity is a TRANSPORT problem, not a business one. Every operation captured offline is applied, on sync, by calling the same application service the online API calls, with the same authenticated principal, the same tenant context, and the same state machine — so a step the engine would refuse online is refused offline, a supplier who is archived is still archived, and a session that closed is still closed. The device therefore decides NOTHING it would not decide online: it never prices milk, never validates identity, never advances a state on its own authority; values the platform owns are reported as pending until sync resolves them. Replay is idempotent on a client-generated operation id, so a lost acknowledgement re-sends without duplicating a collection, and local identifiers are mapped to server ids across batches so an interrupted sync resumes rather than restarts. Every divergence discovered at sync time is returned as a structured conflict and surfaced to a human; nothing is ever silently overwritten. Offline never relaxes authorization: the sync endpoint requires the same permission as the online write.
+
+**Enforcement.** `sync/service.py` — `_dispatch()` routes every kind to the online `MilkCollectionService` method (no business decision lives in the sync module), `push()` idempotency check on `(tenant, operation_id)`, `_resolve_target()` local-to-server mapping, `_classify()` structured conflicts; `api/routes.py` — the sync router reuses `collection.transaction.record`; `sync/models.py` — unique `(tenant_id, operation_id)`. On the device: `offline/offline_client.dart` records and projects but never computes a payable, and rethrows business errors instead of queueing them.
+
+**Verification.** `test_offline_sync.py::test_a_whole_collection_captured_offline_lands_intact`, `::test_business_rules_are_identical_offline`, `::test_replaying_the_same_batch_creates_nothing_twice`, `::test_partial_batches_resume_across_pushes`, `::test_an_operation_whose_predecessor_never_landed_is_a_conflict`, `::test_archived_supplier_conflicts`, `::test_closed_session_conflicts`, `::test_changed_rate_card_is_flagged_but_the_collection_stands`, `::test_offline_never_bypasses_authorization`; `offline_test.dart` "a full collection can be captured with no connectivity", "the device never prices milk", "a business error from the platform is not swallowed by the queue".
+
+**Status:** Active (since OFF-001).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -274,6 +286,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.8 | 2026-08-05 | Architecture Board | OFF-001 rule: BR-0021 (offline changes transport, never business decisions). |
 | 1.7 | 2026-08-05 | Architecture Board | RCP-001 rule: BR-0020 (receipts are generated only from completed payments and never change). |
 | 1.6 | 2026-08-05 | Architecture Board | PAY-001 rules: BR-0018 (payments consume finalized settlements, never exceeding the payable), BR-0019 (completed payments are immutable; every attempt recorded). |
 | 1.5 | 2026-08-05 | Architecture Board | NOT-001 rules: BR-0016 (business modules never send messages; notifications originate only from durable domain events), BR-0017 (every message rendered from a registered template, delivered at most once). |
