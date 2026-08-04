@@ -42,6 +42,9 @@ PERMISSIONS: dict[str, str] = {
     "payment.manage": "Create, submit, execute, and complete payments",
     "payment.retry": "Retry a failed payment (opens a new attempt)",
     "payment.cancel": "Cancel a payment that has not completed",
+    "receipt.read": "Read receipts and their history",
+    "receipt.manage": "Mark receipts delivered and archive them",
+    "receipt.download": "Render and download receipt artifacts",
     "platform.relay.manage": (
         "Operate the event relay (replay, retry, dead letters) — platform staff only"
     ),
@@ -85,6 +88,9 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "payment.manage",
         "payment.retry",
         "payment.cancel",
+        "receipt.read",
+        "receipt.manage",
+        "receipt.download",
         "reporting.read",
         "notification.read",
         "notification.manage",
@@ -103,6 +109,8 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "pricing.ratecard.read",
         "settlement.read",
         "payment.read",
+        "receipt.read",
+        "receipt.download",
         "reporting.read",
         "notification.read",
     ],

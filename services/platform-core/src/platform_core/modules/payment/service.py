@@ -39,7 +39,7 @@ from platform_core.modules.payment.models import (
     PaymentLine,
 )
 from platform_core.modules.settlement.models import Settlement
-from platform_core.modules.supplier.models import Supplier
+from platform_core.modules.supplier.models import Supplier, SupplierProfile
 
 BUS_EVENTS = {
     "created": "payment.created.v1",
@@ -337,16 +337,64 @@ class PaymentService:
                 "currency": payment.currency,
                 "reference": payment.reference or "",
                 "method": payment.method,
+                "paid_at": now.isoformat(),
                 # The notification consumer names one settlement; a multi-
                 # settlement payment names itself instead (PAY-001 decision).
                 "settlement_number": (
                     lines[0].settlement_number if len(lines) == 1 else payment.payment_number
                 ),
                 "settlement_ids": [str(line.settlement_id) for line in lines],
+                # RCP-001: a receipt is built from this event alone, so it
+                # carries the payee and the settlement facts it must show.
+                # Re-reading finalized settlements here is safe by BR-0010 —
+                # they are immutable, so the values cannot have moved since
+                # allocation.
+                **await self._receipt_facts(payment, lines),
             },
             actor_id,
         )
         return payment
+
+    async def _receipt_facts(self, payment: Payment, lines: list[PaymentLine]) -> dict:
+        """Payee and per-settlement detail for downstream consumers (RCP-001).
+
+        Consumers never call business modules, so everything a receipt needs
+        must travel in the event.
+        """
+        supplier = await self._session.get(Supplier, payment.supplier_id)
+        # The payee's display name lives on the profile, not the aggregate root.
+        profile = await self._session.scalar(
+            select(SupplierProfile).where(SupplierProfile.supplier_id == payment.supplier_id)
+        )
+        settlements = {}
+        if lines:
+            rows = await self._session.scalars(
+                select(Settlement).where(Settlement.id.in_([line.settlement_id for line in lines]))
+            )
+            settlements = {s.id: s for s in rows.all()}
+        detail = []
+        for line in lines:
+            settlement = settlements.get(line.settlement_id)
+            detail.append(
+                {
+                    "settlement_id": str(line.settlement_id),
+                    "settlement_number": line.settlement_number,
+                    "center_id": str(settlement.center_id) if settlement else None,
+                    "gross_amount": str(settlement.gross_amount) if settlement else "0.00",
+                    "adjustments_amount": (
+                        str(settlement.adjustments_amount) if settlement else "0.00"
+                    ),
+                    "net_amount": str(settlement.net_amount) if settlement else "0.00",
+                    "amount_paid": str(line.amount),
+                    "period_from": settlement.period_from.isoformat() if settlement else None,
+                    "period_to": settlement.period_to.isoformat() if settlement else None,
+                }
+            )
+        return {
+            "supplier_name": getattr(profile, "full_name", None) or "",
+            "supplier_code": getattr(supplier, "code", None) or "",
+            "lines": detail,
+        }
 
     async def fail(
         self, payment_id: uuid.UUID, cmd: FailPaymentCommand, *, actor_id: uuid.UUID

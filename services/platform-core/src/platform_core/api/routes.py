@@ -4,7 +4,7 @@ import uuid
 from datetime import date
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 
 from platform_core.api import deps
@@ -129,6 +129,13 @@ from platform_core.modules.pricing.service import (
     RateCardPage,
     RateCardService,
     RateCardView,
+)
+from platform_core.modules.receipt.service import (
+    ReceiptDetailView,
+    ReceiptPage,
+    ReceiptService,
+    ReceiptView,
+    RenderedReceiptView,
 )
 from platform_core.modules.reporting.service import (
     DailyCollectionSummary,
@@ -1492,6 +1499,88 @@ async def retry_pending_notifications(service: NotificationSvc, _: NotificationM
     return await service.retry_pending()
 
 
+# --- Receipts (immutable proof of payment — RCP-001) -------------------------
+receipt_router = APIRouter(prefix="/receipts", tags=["receipt"])
+ReceiptRead = Annotated[Principal, Depends(require_permission("receipt.read"))]
+ReceiptManage = Annotated[Principal, Depends(require_permission("receipt.manage"))]
+ReceiptDownload = Annotated[Principal, Depends(require_permission("receipt.download"))]
+ReceiptSvc = Annotated[ReceiptService, Depends(deps.get_receipt_service)]
+
+
+@receipt_router.get("", response_model=ReceiptPage)
+async def search_receipts(
+    service: ReceiptSvc,
+    _: ReceiptRead,
+    q: str | None = None,
+    supplier_id: uuid.UUID | None = None,
+    payment_id: uuid.UUID | None = None,
+    status: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> ReceiptPage:
+    """Receipt history: search number/payment/supplier/reference, filter by
+    status (generated | delivered | archived). Archived receipts stay listed —
+    nothing is ever removed."""
+    return await service.search(
+        q=q,
+        supplier_id=supplier_id,
+        payment_id=payment_id,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@receipt_router.get("/{receipt_id}", response_model=ReceiptDetailView)
+async def get_receipt_detail(
+    receipt_id: uuid.UUID, service: ReceiptSvc, _: ReceiptRead
+) -> ReceiptDetailView:
+    return await service.detail(receipt_id)
+
+
+@receipt_router.get("/{receipt_id}/render", response_model=RenderedReceiptView)
+async def render_receipt(
+    receipt_id: uuid.UUID,
+    service: ReceiptSvc,
+    _: ReceiptRead,
+    format: str = "json",
+) -> RenderedReceiptView:
+    """Preview: the rendered artifact as data (body + content type), for
+    portal and mobile previews. PDF is a placeholder renderer."""
+    return await service.render(receipt_id, format)
+
+
+@receipt_router.get("/{receipt_id}/download")
+async def download_receipt(
+    receipt_id: uuid.UUID,
+    service: ReceiptSvc,
+    _: ReceiptDownload,
+    format: str = "pdf",
+) -> Response:
+    """Serve the artifact as a file. Rendering is a pure derivation of an
+    immutable record, so a download is reproducible forever."""
+    rendered = await service.render(receipt_id, format)
+    return Response(
+        content=rendered.body,
+        media_type=rendered.content_type,
+        headers={"Content-Disposition": f'attachment; filename="{rendered.filename}"'},
+    )
+
+
+@receipt_router.post("/{receipt_id}/deliver", response_model=ReceiptView)
+async def deliver_receipt(receipt_id: uuid.UUID, service: ReceiptSvc, p: ReceiptManage) -> Any:
+    """Record that the artifact reached the payee."""
+    await service.deliver(receipt_id, actor_id=p.id)
+    return (await service.detail(receipt_id)).receipt
+
+
+@receipt_router.post("/{receipt_id}/archive", response_model=ReceiptView)
+async def archive_receipt(receipt_id: uuid.UUID, service: ReceiptSvc, p: ReceiptManage) -> Any:
+    """Terminal, but still queryable — a receipt is never deleted."""
+    await service.archive(receipt_id, actor_id=p.id)
+    return (await service.detail(receipt_id)).receipt
+
+
 # --- Reports (read-only operational summaries — REP-001) --------------------
 report_router = APIRouter(prefix="/reports", tags=["reporting"])
 ReportRead = Annotated[Principal, Depends(require_permission("reporting.read"))]
@@ -1838,6 +1927,7 @@ for sub in (
     matrix_router,
     settlement_router,
     payment_router,
+    receipt_router,
     report_router,
     notification_router,
     relay_router,

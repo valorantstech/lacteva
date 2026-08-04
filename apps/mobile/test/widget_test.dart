@@ -8,6 +8,7 @@ import 'package:lacteva_mobile/src/collection_wizard.dart';
 import 'package:lacteva_mobile/src/notifications.dart';
 import 'package:lacteva_mobile/src/payments.dart';
 import 'package:lacteva_mobile/src/pricing_matrices.dart';
+import 'package:lacteva_mobile/src/receipts.dart';
 import 'package:lacteva_mobile/src/pricing_resolution.dart';
 import 'package:lacteva_mobile/src/rate_cards.dart';
 import 'package:lacteva_mobile/src/settlements.dart';
@@ -343,6 +344,36 @@ void main() {
     );
     expect(find.text('Net payable: 7897.50 KES'), findsOneWidget);
     expect(find.textContaining('cannot be undone'), findsOneWidget);
+  });
+
+  testWidgets('receipt history shows amount, number and supplier', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: ReceiptHistoryScreen(client: _ReceiptFake())),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('7897.50 KES'), findsOneWidget);
+    expect(find.textContaining('RCP-AB12CD'), findsOneWidget);
+    expect(find.textContaining('Amina Njoroge'), findsOneWidget);
+    expect(find.widgetWithText(Chip, 'generated'), findsOneWidget);
+  });
+
+  testWidgets('receipt detail previews the placeholder and offers download', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReceiptDetailScreen(client: _ReceiptFake(), receiptId: 'r-1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Settlements (1)'), findsOneWidget);
+    expect(find.text('STL-OCT001'), findsOneWidget);
+    // The placeholder must announce itself rather than look like a real PDF.
+    expect(find.text('Placeholder artifact'), findsOneWidget);
+    expect(find.textContaining('No PDF engine is integrated'), findsOneWidget);
+    expect(find.textContaining('Download RCP-AB12CD.pdf.txt'), findsOneWidget);
   });
 
   testWidgets('payment history shows amount, method and status', (
@@ -855,5 +886,56 @@ class _PaymentFake extends ApiClient {
             startedAt: '2026-08-05T10:10:00.000000',
           ),
         ],
+      );
+}
+
+class _ReceiptFake extends ApiClient {
+  static final generated = ReceiptSummary(
+    id: 'r-1',
+    number: 'RCP-AB12CD',
+    paymentNumber: 'PAY-AB12CD',
+    supplierName: 'Amina Njoroge',
+    supplierCode: 'S-000123',
+    currency: 'KES',
+    netAmount: '7897.50',
+    status: 'generated',
+    lineCount: 1,
+    generatedAt: '2026-08-05T11:00:00.000000',
+    paymentReference: 'MPESA-77',
+    paymentMethod: 'MOBILE_MONEY',
+  );
+
+  @override
+  Future<ReceiptPageResult> listReceipts({
+    String query = '',
+    String status = '',
+    int limit = 20,
+    int offset = 0,
+  }) async => ReceiptPageResult(items: [generated], total: 1);
+
+  @override
+  Future<ReceiptDetailResult> receiptDetail(String id) async =>
+      ReceiptDetailResult(
+        receipt: generated,
+        lines: [
+          ReceiptLineSummary(
+            settlementNumber: 'STL-OCT001',
+            grossAmount: '7897.50',
+            amountPaid: '7897.50',
+            periodFrom: '2026-10-01',
+            periodTo: '2026-10-31',
+          ),
+        ],
+        availableFormats: ['html', 'json', 'pdf'],
+      );
+
+  @override
+  Future<RenderedReceipt> renderReceipt(String id, String format) async =>
+      RenderedReceipt(
+        format: format,
+        contentType: 'text/plain; charset=utf-8',
+        filename: 'RCP-AB12CD.pdf.txt',
+        body: 'LACTEVA RECEIPT — PDF PLACEHOLDER\nPAID 7897.50 KES',
+        placeholder: format == 'pdf',
       );
 }

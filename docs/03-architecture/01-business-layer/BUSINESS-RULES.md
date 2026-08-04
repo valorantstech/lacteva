@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.6"
+version: "1.7"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-05
@@ -249,6 +249,18 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0020 — A receipt is generated only from a completed payment, and its content never changes.
+
+**Clarification.** A receipt is evidence, and evidence that can be authored on demand or edited afterwards is not evidence. It is therefore produced ONLY by consuming `payment.completed.v1` off the durable log — never requested by a business module, and never issued for a draft, failed, or cancelled payment, which prove nothing. One completed payment generates exactly one receipt, enforced by a unique `(tenant, payment)` constraint rather than by convention, so consumer replay and duplicate delivery re-find the existing artifact instead of handing a farmer a second one. Because the content is frozen, the receipt COPIES everything it shows — supplier name, payment reference, settlement numbers, centers, periods, amounts — at generation time: re-deriving them later could show a different world, and a receipt must show the world as it was when the money moved. Receipts never write to payments or settlements. The only permitted mutation is the lifecycle marker (generated → delivered → archived); archived receipts remain fully queryable and renderable, and no update or delete path exists anywhere in the module.
+
+**Enforcement.** `consumers/receipt_generation.py` (the sole generation path, subscribed to `payment.completed.v1`); `receipt/service.py` — `generate()` idempotency check, `_transition()` CAS with archived-is-terminal guard, no update/delete methods; `receipt/models.py` — unique `(tenant_id, payment_id)` and `(tenant_id, receipt_number)`, copied content columns.
+
+**Verification.** `test_receipts.py::test_completed_payment_generates_a_receipt`, `::test_an_incomplete_payment_generates_nothing`, `::test_cancelled_payment_generates_nothing`, `::test_one_payment_generates_exactly_one_receipt`, `::test_consumer_replay_does_not_mint_a_second_receipt`, `::test_receipt_content_is_frozen_after_generation`, `::test_receipt_never_modifies_the_payment_or_settlement`, `::test_archived_receipts_are_terminal_but_queryable`, `::test_no_delete_or_edit_endpoint_exists`.
+
+**Status:** Active (since RCP-001).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -262,6 +274,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.7 | 2026-08-05 | Architecture Board | RCP-001 rule: BR-0020 (receipts are generated only from completed payments and never change). |
 | 1.6 | 2026-08-05 | Architecture Board | PAY-001 rules: BR-0018 (payments consume finalized settlements, never exceeding the payable), BR-0019 (completed payments are immutable; every attempt recorded). |
 | 1.5 | 2026-08-05 | Architecture Board | NOT-001 rules: BR-0016 (business modules never send messages; notifications originate only from durable domain events), BR-0017 (every message rendered from a registered template, delivered at most once). |
 | 1.4 | 2026-08-04 | Architecture Board | PLT-001 rule: BR-0015 (every projection is fully rebuildable from the event log). |

@@ -28,7 +28,8 @@ from platform_core.modules.notification.service import NotificationRequest, Noti
 SUPPLIER_REGISTERED = "supplier.supplier-registered.v1"
 SUPPLIER_STATUS_CHANGED = "supplier.supplier-status-changed.v1"
 SETTLEMENT_FINALIZED = "settlement.finalized.v1"
-PAYMENT_COMPLETED = "payment.completed.v1"  # emitted by SET-002; mapping ready
+PAYMENT_COMPLETED = "payment.completed.v1"  # emitted by PAY-001
+RECEIPT_GENERATED = "receipt.generated.v1"  # emitted by RCP-001
 PASSWORD_RESET_REQUESTED = "identity.password-reset-requested.v1"  # noqa: S105
 INVITATION_ISSUED = "organization.invitation-issued.v1"
 MEMBER_ADDED = "organization.member-added.v1"
@@ -92,6 +93,18 @@ def _payment_completed(envelope: EventEnvelope) -> dict | None:
     }
 
 
+def _receipt_generated(envelope: EventEnvelope) -> dict | None:
+    data = envelope.data
+    return {
+        "recipient_ref": _uuid(data.get("supplier_id")),
+        "variables": {
+            "number": data.get("receipt_number", ""),
+            "amount": data.get("amount", ""),
+            "currency": data.get("currency", ""),
+        },
+    }
+
+
 def _password_reset(envelope: EventEnvelope) -> dict | None:
     data = envelope.data
     return {
@@ -145,6 +158,7 @@ MAPPINGS: dict[str, EventMapping] = {
     SUPPLIER_STATUS_CHANGED: EventMapping("supplier_archived", "sms", _supplier_archived),
     SETTLEMENT_FINALIZED: EventMapping("settlement_finalized", "sms", _settlement_finalized),
     PAYMENT_COMPLETED: EventMapping("payment_completed", "sms", _payment_completed),
+    RECEIPT_GENERATED: EventMapping("receipt_available", "sms", _receipt_generated),
     PASSWORD_RESET_REQUESTED: EventMapping("password_reset", "email", _password_reset),
     INVITATION_ISSUED: EventMapping("invitation", "email", _invitation_issued),
     MEMBER_ADDED: EventMapping("invitation_accepted", "email", _member_added),

@@ -996,3 +996,116 @@ export const paymentAction = (
   action: "submit" | "execute" | "retry" | "complete" | "fail" | "cancel",
   body: Record<string, string> = {},
 ) => api<Payment>(`/v1/payments/${id}/${action}`, { method: "POST", body: JSON.stringify(body) });
+
+// --- Receipts (RCP-001) -----------------------------------------------------
+
+export type ReceiptLine = {
+  id: string;
+  settlement_id: string;
+  settlement_number: string;
+  center_id: string | null;
+  period_from: string | null;
+  period_to: string | null;
+  gross_amount: string | number;
+  adjustments_amount: string | number;
+  net_amount: string | number;
+  amount_paid: string | number;
+};
+
+export type Receipt = {
+  id: string;
+  receipt_number: string;
+  payment_id: string;
+  payment_number: string;
+  payment_reference: string | null;
+  payment_method: string;
+  payment_date: string | null;
+  supplier_id: string;
+  supplier_name: string;
+  supplier_code: string;
+  currency: string;
+  gross_amount: string | number;
+  adjustments_amount: string | number;
+  net_amount: string | number;
+  status: string;
+  render_format: string;
+  version: number;
+  line_count: number;
+  generated_at: string;
+  delivered_at: string | null;
+  archived_at: string | null;
+};
+
+export type ReceiptReference = {
+  payment_id: string;
+  payment_number: string;
+  payment_reference: string | null;
+  settlement_ids: string[];
+  settlement_numbers: string[];
+  center_ids: string[];
+  source_event_id: string | null;
+  correlation_id: string | null;
+};
+
+export type ReceiptMetadata = {
+  version: number;
+  render_format: string;
+  available_formats: string[];
+  generated_at: string;
+  delivered_at: string | null;
+  archived_at: string | null;
+};
+
+export type ReceiptDetail = {
+  receipt: Receipt;
+  lines: ReceiptLine[];
+  reference: ReceiptReference;
+  metadata: ReceiptMetadata;
+};
+
+export type ReceiptPageResult = {
+  items: Receipt[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type RenderedReceipt = {
+  receipt_id: string;
+  receipt_number: string;
+  format: string;
+  content_type: string;
+  filename: string;
+  body: string;
+  placeholder: boolean;
+};
+
+export function listReceipts(params: {
+  q?: string;
+  supplier_id?: string;
+  payment_id?: string;
+  status?: string;
+  limit: number;
+  offset: number;
+}): Promise<ReceiptPageResult> {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.supplier_id) search.set("supplier_id", params.supplier_id);
+  if (params.payment_id) search.set("payment_id", params.payment_id);
+  if (params.status) search.set("status", params.status);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<ReceiptPageResult>(`/v1/receipts?${search.toString()}`);
+}
+
+export const getReceiptDetail = (id: string) => api<ReceiptDetail>(`/v1/receipts/${id}`);
+
+export const renderReceipt = (id: string, format: string) =>
+  api<RenderedReceipt>(`/v1/receipts/${id}/render?format=${format}`);
+
+export const receiptAction = (id: string, action: "deliver" | "archive") =>
+  api<Receipt>(`/v1/receipts/${id}/${action}`, { method: "POST" });
+
+/** Download URL for the artifact — served by the API with a filename. */
+export const receiptDownloadUrl = (id: string, format: string) =>
+  `${API_URL}/v1/receipts/${id}/download?format=${format}`;

@@ -44,6 +44,7 @@ from platform_core.modules.pricing.calculator import PricingCalculationService
 from platform_core.modules.pricing.matrix import PricingMatrixService
 from platform_core.modules.pricing.resolution import PricingResolutionService
 from platform_core.modules.pricing.service import RateCardService
+from platform_core.modules.receipt.service import ReceiptService
 from platform_core.modules.reporting.service import ReportingService
 from platform_core.modules.settlement.service import SettlementService
 from platform_core.modules.supplier.service import SupplierService
@@ -173,6 +174,10 @@ def get_reporting_service(session: Session) -> ReportingService:
 
 def get_payment_service(session: Session, bus: Bus, audit: Audit) -> PaymentService:
     return PaymentService(session, bus, audit)
+
+
+def get_receipt_service(session: Session, bus: Bus, audit: Audit) -> ReceiptService:
+    return ReceiptService(session, bus, audit)
 
 
 def get_settlement_service(session: Session, bus: Bus, audit: Audit) -> SettlementService:

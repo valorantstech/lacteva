@@ -58,6 +58,9 @@ export default function RootLayout({
             <a className="text-muted-foreground hover:text-foreground" href="/payments">
               Payments
             </a>
+            <a className="text-muted-foreground hover:text-foreground" href="/receipts">
+              Receipts
+            </a>
             <a className="text-muted-foreground hover:text-foreground" href="/reports">
               Reports
             </a>

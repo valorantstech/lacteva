@@ -105,6 +105,21 @@ TEMPLATES: tuple[Template, ...] = (
         "Reference {reference}.",
     ),
     _t(
+        "receipt_available",
+        "sms",
+        "en",
+        "Receipt {number}",
+        "Hello {name}, receipt {number} for {amount} {currency} is ready. "
+        "Keep this reference for your records.",
+    ),
+    _t(
+        "receipt_available",
+        "sms",
+        "sw",
+        "Risiti {number}",
+        "Habari {name}, risiti {number} ya {amount} {currency} iko tayari. Hifadhi kumbukumbu hii.",
+    ),
+    _t(
         "milk_rejected",
         "sms",
         "en",

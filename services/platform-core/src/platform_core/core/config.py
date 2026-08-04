@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # gateways implement the same provider protocol at deployment time.
     notification_sms_provider: Literal["logging", "placeholder"] = "logging"
     notification_email_provider: Literal["logging", "placeholder"] = "logging"
+    # RCP-001: no PDF engine ships with the platform; a deployment registers
+    # its own renderer for the `pdf` format.
+    receipt_pdf_renderer: Literal["placeholder"] = "placeholder"
     rabbitmq_url: str = "amqp://lacteva:lacteva@localhost:5672/"
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "lacteva"
