@@ -21,6 +21,11 @@ Operations is documented as its own layer because it answers a different questio
 | [TRACING.md](TRACING.md) | OpenTelemetry support, what is instrumented, what is not |
 | [DASHBOARDS.md](DASHBOARDS.md) | The seven Grafana dashboards and who opens each |
 | [RUNBOOK.md](RUNBOOK.md) | What to do when something is wrong |
+| [BACKUP.md](BACKUP.md) | What is protected, how, and what is deliberately not |
+| [RESTORE.md](RESTORE.md) | How to bring the platform back, and how to know you did |
+| [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) | Named disasters, RPO/RTO, and rollback |
+| [RUNBOOK_BACKUP.md](RUNBOOK_BACKUP.md) | Daily backup operations and their failures |
+| [RECOVERY_CHECKLIST.md](RECOVERY_CHECKLIST.md) | The page to open during a recovery |
 
 ## Change Log
 

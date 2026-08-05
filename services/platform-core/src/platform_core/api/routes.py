@@ -10,6 +10,11 @@ from pydantic import BaseModel, Field
 from platform_core.api import deps
 from platform_core.api.deps import CurrentPrincipal, Principal, require_permission
 from platform_core.core import alerts, health, rate_limit, security_audit
+from platform_core.core.backup.service import (
+    BackupRunView,
+    BackupStatusView,
+    ClassificationView,
+)
 from platform_core.core.errors import AppError
 from platform_core.core.http_security import client_ip
 from platform_core.core.keys import get_key_registry
@@ -1847,6 +1852,43 @@ async def alert_rules(_: OpsRead) -> list[dict]:
         }
         for rule in alerts.RULES
     ]
+
+
+@ops_observability_router.get("/backups/status", response_model=BackupStatusView)
+async def backup_status(_: OpsRead) -> BackupStatusView:
+    """Are we protected right now? Answered from the platform itself, not from
+    a cron log on a host a disaster may have taken with it."""
+    return await deps.get_backup_service().status()
+
+
+@ops_observability_router.get("/backups", response_model=list[BackupRunView])
+async def backup_history(_: OpsRead, kind: str | None = None, limit: int = 20) -> Any:
+    """Every backup, restore, and verification the platform has recorded."""
+    return await deps.get_backup_service().history(kind=kind, limit=limit)
+
+
+@ops_observability_router.get("/backups/classification", response_model=list[ClassificationView])
+async def backup_classification(_: OpsRead) -> Any:
+    """What is captured, what is rebuilt, and why — the decision behind the
+    backup, visible rather than buried in a script."""
+    return deps.get_backup_service().classification()
+
+
+@ops_observability_router.post("/backups/verify-integrity", response_model=BackupRunView)
+async def verify_integrity(_: OpsRead, deep: bool = False) -> Any:
+    """Check the LIVE database against the platform's own business rules.
+
+    Useful after a restore and useful on a schedule: silent corruption nobody
+    checks for is corruption a farmer discovers. `deep` additionally rebuilds
+    every projection from the event log and compares.
+
+    NOTE: there is deliberately no restore endpoint. Restoring over live data
+    is the most destructive operation the platform can perform, and it belongs
+    to the CLI where it cannot be reached by a misrouted request.
+    """
+    service = deps.get_backup_service()
+    run = await service.verify_integrity(deep=deep)
+    return service._view(run)
 
 
 @ops_observability_router.get("/overview", response_model=OverviewView)

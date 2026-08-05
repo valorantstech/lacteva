@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.10"
+version: "1.11"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-05
@@ -309,6 +309,18 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0025 — A backup is trusted only once a restore has been demonstrated.
+
+**Clarification.** A backup job exiting zero proves that a process ran, not that anything can be recovered. A backup is therefore trusted only when a restore of it has been executed and the result verified — and "verified" means the BUSINESS is correct, not that rows arrived. Settlements must still equal the sum of their lines (BR-0011), live payment allocations must still not exceed the payable (BR-0018), every completed payment must still have exactly one receipt (BR-0020), consumer cursors must still lie within the restored log (BR-0014), and every projection must still rebuild from the event log and match (BR-0015). A restore that loads every row and fails any of those is a FAILED restore and must report failure. Two corollaries follow. Consumer ledgers (`consumer_cursor`, `consumer_execution`, `sync_operation`) are captured with business data, because restoring without them replays the whole event log and re-sends every notification and re-mints every receipt — recovery must never produce duplicate business effects. And restore is never an HTTP endpoint: overwriting the database is the most destructive operation the platform can perform, so it belongs where a misrouted request cannot reach it.
+
+**Enforcement.** `core/backup/classification.py` — what is captured versus rebuilt, defaulting unknown tables to critical; `core/backup/engine.py` — deterministic per-table checksums, format-version gate, refusal to restore over a non-empty database; `core/backup/integrity.py` — the business-rule checks; `core/backup/cli.py` — restore is CLI-only and exits non-zero when integrity fails; `core/health_probes.py` — `backups` is a health component, so a silently stopped schedule is visible.
+
+**Verification.** `test_backup_restore.py::test_a_destroyed_platform_is_fully_recovered` (builds a dairy, deletes every row, restores, and asserts money, evidence, and invariants survived), `::test_consumers_do_not_re_fire_after_a_restore`, `::test_the_restored_platform_still_works`, `::test_corruption_is_detected_before_a_restore_depends_on_it`, `::test_restoring_over_live_data_is_refused_by_default`, `::test_restore_is_not_reachable_over_http`, `::test_integrity_verification_catches_a_broken_settlement`.
+
+**Status:** Active (since BAK-001).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -322,6 +334,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.11 | 2026-08-06 | Architecture Board | BAK-001 rule: BR-0025 (a backup is trusted only once a restore has been demonstrated and business-verified). |
 | 1.10 | 2026-08-06 | Architecture Board | OBS-001 rule: BR-0024 (one correlation id from request to consequence; observation never alters behaviour). |
 | 1.9 | 2026-08-05 | Architecture Board | SEC-001 rules: BR-0022 (database-enforced tenant isolation), BR-0023 (tokens trusted only via a named live key). |
 | 1.8 | 2026-08-05 | Architecture Board | OFF-001 rule: BR-0021 (offline changes transport, never business decisions). |

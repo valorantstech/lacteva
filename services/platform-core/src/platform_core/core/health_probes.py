@@ -13,6 +13,7 @@ the operator's terms, not the implementation's:
 | `notifications`        | Are farmers being told what they need to know?   |
 | `jwt_keys`             | Can we still sign and verify tokens tomorrow?    |
 | `background_workers`   | Are the loops that do all of this actually alive?|
+| `backups`              | Could we actually recover from this?             |
 
 **Probes must be cheap.** Each is a bounded query or an in-memory read; none
 of them scans a table. The whole endpoint budget is 50 ms, and an operator
@@ -246,6 +247,28 @@ async def jwt_keys() -> health.ComponentHealth:
     return health.healthy("jwt_keys", **data)
 
 
+async def backups() -> health.ComponentHealth:
+    """Backups that have been failing for a week are a disaster waiting for a
+    disaster. An operator should learn that here, not from a second dashboard
+    they only open after losing data."""
+    from platform_core.core.backup.service import BackupService
+
+    status = await BackupService(get_session_factory()).status()
+    # NOT `detail`: that is the positional argument these helpers take, and
+    # passing both is a TypeError the probe would report as `critical`.
+    data = {
+        "age_hours": status.age_hours,
+        "last_backup_verified": (
+            status.last_successful_backup.verified if status.last_successful_backup else False
+        ),
+    }
+    if status.last_successful_backup is None:
+        return health.degraded("backups", status.detail, **data)
+    if not status.healthy:
+        return health.warning("backups", status.detail, **data)
+    return health.healthy("backups", status.detail, **data)
+
+
 async def background_workers() -> health.ComponentHealth:
     """The relay and consumer loops do the platform's asynchronous work. If
     they are not running, everything above them looks fine while nothing
@@ -273,5 +296,6 @@ def register_all() -> None:
         ("notifications", notifications),
         ("jwt_keys", jwt_keys),
         ("background_workers", background_workers),
+        ("backups", backups),
     ):
         health.register_probe(name, probe)

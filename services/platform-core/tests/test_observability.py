@@ -273,6 +273,7 @@ async def test_component_health_names_every_component(client):
     names = {c["name"] for c in body["components"]}
     assert names == {
         "background_workers",
+        "backups",
         "consumers",
         "database",
         "jwt_keys",

@@ -13,6 +13,7 @@ from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.backup.service import BackupService
 from platform_core.core.db import get_session
 from platform_core.core.errors import ForbiddenError, UnauthorizedError
 from platform_core.core.metrics import AUTH_FAILURES, AUTHZ_DENIALS, JWT_VERIFICATION_FAILURES
@@ -72,6 +73,15 @@ def get_consumer_runner() -> ConsumerRunner:
 
     # Own session factory: consumers run isolated per-event transactions.
     return ConsumerRunner(get_session_factory())
+
+
+def get_backup_service() -> "BackupService":
+    from platform_core.core.backup.service import BackupService
+    from platform_core.core.db import get_session_factory
+
+    # Own session factory: backup and verification runs are platform
+    # operations spanning every tenant, not request-scoped work.
+    return BackupService(get_session_factory())
 
 
 def get_projection_rebuilder() -> ProjectionRebuilder:

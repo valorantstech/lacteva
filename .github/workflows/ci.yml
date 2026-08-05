@@ -81,6 +81,10 @@ jobs:
         # -p no:randomly keeps the fixture order deterministic; the assertion
         # on "no tests ran" is what turns a silent skip into a red build.
         run: uv run pytest tests/test_rls_postgres.py -v --no-header -rs
+      - name: Restore demonstration on PostgreSQL
+        # BAK-001: the logical backup/restore cycle proven against the real
+        # engine, not only SQLite. A backup nobody has restored is not evidence.
+        run: LACTEVA_DATABASE_URL=$LACTEVA_TEST_POSTGRES_URL uv run pytest tests/test_backup_restore.py -q
       - name: Fail if the RLS suite was skipped
         run: |
           uv run pytest tests/test_rls_postgres.py -q 2>&1 | tee /tmp/rls.log
