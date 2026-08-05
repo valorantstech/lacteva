@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import get_session
 from platform_core.core.errors import ForbiddenError, UnauthorizedError
+from platform_core.core.metrics import AUTH_FAILURES, AUTHZ_DENIALS, JWT_VERIFICATION_FAILURES
 from platform_core.core.security import decode_token
 from platform_core.core.tenancy import get_current_tenant, set_current_tenant
 from platform_core.infrastructure.events import EventBus, get_event_bus
@@ -228,6 +229,10 @@ async def get_current_principal(
         payload = decode_token(credentials.credentials, expected_type="access")
         session_id = uuid.UUID(payload["sid"])
     except (pyjwt.InvalidTokenError, KeyError, ValueError) as exc:
+        # `reason` is a bounded vocabulary — never the exception message,
+        # which would be unbounded label cardinality (see core/metrics.py).
+        JWT_VERIFICATION_FAILURES.labels(type(exc).__name__).inc()
+        AUTH_FAILURES.labels("invalid_token").inc()
         raise UnauthorizedError() from exc
     # Access tokens die with their session: logout/reset revokes immediately.
     # TODO(M2): cache active-session lookups in Redis (one DB hit per request now).
@@ -239,9 +244,11 @@ async def get_current_principal(
         or auth_session.revoked_at is not None
         or as_utc(auth_session.expires_at) < utcnow()
     ):
+        AUTH_FAILURES.labels("session_revoked_or_expired").inc()
         raise UnauthorizedError()
     user = await identity.get_user(uuid.UUID(payload["sub"]))
     if not user.is_active:
+        AUTH_FAILURES.labels("user_inactive").inc()
         raise UnauthorizedError()
     tenant_id = uuid.UUID(payload["tenant_id"]) if payload.get("tenant_id") else None
     if tenant_id is not None:
@@ -284,6 +291,7 @@ def require_permission(permission: str):
                 detail={"tenant_id": str(principal.tenant_id) if principal.tenant_id else None},
             )
             await session.commit()
+            AUTHZ_DENIALS.labels(permission).inc()
             raise ForbiddenError(permission)
         return principal
 

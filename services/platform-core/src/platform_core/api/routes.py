@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from platform_core.api import deps
 from platform_core.api.deps import CurrentPrincipal, Principal, require_permission
-from platform_core.core import rate_limit, security_audit
+from platform_core.core import alerts, health, rate_limit, security_audit
 from platform_core.core.errors import AppError
 from platform_core.core.http_security import client_ip
 from platform_core.core.keys import get_key_registry
@@ -33,6 +33,7 @@ from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.event_relay.consumers import (
     ConsumerRunner,
     ConsumersHealth,
+    ConsumerStatus,
     ExecutionView,
 )
 from platform_core.modules.event_relay.projections import (
@@ -1759,6 +1760,114 @@ async def retry_sync_operation(
     return await service.retry(operation_id, actor_id=p.id)
 
 
+# --- Operations: health, alerts, overview (OBS-001) --------------------------
+ops_observability_router = APIRouter(prefix="/_ops", tags=["operations"])
+OpsRead = Annotated[Principal, Depends(require_permission("platform.relay.manage"))]
+
+
+class ComponentHealthView(BaseModel):
+    name: str
+    status: str
+    detail: str
+    data: dict
+    duration_ms: float
+
+
+class PlatformHealthView(BaseModel):
+    status: str
+    ready: bool
+    checked_at: str
+    components: list[ComponentHealthView]
+
+
+class AlertView(BaseModel):
+    name: str
+    severity: str
+    summary: str
+    action: str
+    runbook: str
+    detail: str
+
+
+class OverviewView(BaseModel):
+    """One call that answers 'is the platform well, and if not, what do I do?'"""
+
+    status: str
+    ready: bool
+    checked_at: str
+    components: dict[str, str]
+    alerts: list[AlertView]
+    counts: dict[str, int]
+
+
+def _health_view(snapshot) -> PlatformHealthView:
+    return PlatformHealthView(
+        status=snapshot.status,
+        ready=snapshot.ready,
+        checked_at=snapshot.checked_at,
+        components=[
+            ComponentHealthView(
+                name=c.name,
+                status=c.status,
+                detail=c.detail,
+                data=c.data,
+                duration_ms=c.duration_ms,
+            )
+            for c in snapshot.components
+        ],
+    )
+
+
+@ops_observability_router.get("/health", response_model=PlatformHealthView)
+async def platform_health(_: OpsRead) -> PlatformHealthView:
+    """Per-component health on the four-level scale. Unlike `/health/ready`,
+    this says WHICH component is unwell and how."""
+    return _health_view(await health.evaluate())
+
+
+@ops_observability_router.get("/alerts", response_model=list[AlertView])
+async def firing_alerts(_: OpsRead) -> list[AlertView]:
+    """Alerts currently firing, worst first. Each carries the action to take —
+    an alert without one is a notification."""
+    snapshot = await health.evaluate()
+    return [AlertView(**vars(alert)) for alert in alerts.evaluate(snapshot)]
+
+
+@ops_observability_router.get("/alert-rules", response_model=list[dict])
+async def alert_rules(_: OpsRead) -> list[dict]:
+    """Every rule the platform can fire — the same definitions that drive the
+    exported Prometheus rules, so the two cannot disagree."""
+    return [
+        {
+            "name": rule.name,
+            "severity": rule.severity,
+            "summary": rule.summary,
+            "action": rule.action,
+            "runbook": rule.runbook,
+        }
+        for rule in alerts.RULES
+    ]
+
+
+@ops_observability_router.get("/overview", response_model=OverviewView)
+async def system_overview(_: OpsRead) -> OverviewView:
+    """The single screen an operator opens first."""
+    snapshot = await health.evaluate()
+    firing = alerts.evaluate(snapshot)
+    return OverviewView(
+        status=snapshot.status,
+        ready=snapshot.ready,
+        checked_at=snapshot.checked_at,
+        components={c.name: c.status for c in snapshot.components},
+        alerts=[AlertView(**vars(alert)) for alert in firing],
+        counts={
+            "critical": sum(1 for a in firing if a.severity == alerts.CRITICAL),
+            "warning": sum(1 for a in firing if a.severity == alerts.WARNING),
+            "info": sum(1 for a in firing if a.severity == alerts.INFO),
+        },
+    )
+
+
 # --- Reports (read-only operational summaries — REP-001) --------------------
 report_router = APIRouter(prefix="/reports", tags=["reporting"])
 ReportRead = Annotated[Principal, Depends(require_permission("reporting.read"))]
@@ -1922,6 +2031,19 @@ async def consumer_dead_letters(
     runner: ConsumerRun, _: RelayOps, consumer: str | None = None, limit: int = 50
 ) -> Any:
     return await runner.list_executions(consumer_name=consumer, status="dead", limit=limit)
+
+
+@consumers_router.post("/{name}/pause", response_model=ConsumerStatus)
+async def pause_consumer(name: str, runner: ConsumerRun, _: RelayOps) -> Any:
+    """Stop a consumer without losing its place. The cursor stays put, so
+    resuming continues from exactly where it stopped."""
+    return await runner.set_enabled(name, False)
+
+
+@consumers_router.post("/{name}/resume", response_model=ConsumerStatus)
+async def resume_consumer(name: str, runner: ConsumerRun, _: RelayOps) -> Any:
+    """Resume a paused consumer. It works through the backlog from its cursor."""
+    return await runner.set_enabled(name, True)
 
 
 @consumers_router.post("/executions/{execution_id}/replay", response_model=ExecutionView)
@@ -2134,6 +2256,7 @@ for sub in (
     relay_router,
     consumers_router,
     projections_router,
+    ops_observability_router,
     authz_router,
     config_router,
     audit_router,

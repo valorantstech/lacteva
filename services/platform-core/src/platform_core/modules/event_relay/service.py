@@ -11,7 +11,6 @@ import uuid
 from datetime import datetime, timedelta
 
 import structlog
-from prometheus_client import Counter, Gauge, Histogram
 from pydantic import BaseModel
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from platform_core.core.config import get_settings
 from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.metrics import (
+    RELAY_DEAD,
+    RELAY_DELIVERED,
+    RELAY_LATENCY,
+    RELAY_PENDING,
+    RELAY_RETRIES,
+)
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.event_relay.models import DeadLetter, EventDelivery, OutboxEvent
 
@@ -28,16 +34,6 @@ MAX_ATTEMPTS = 5
 BACKOFF_BASE_SECONDS = 2.0
 BACKOFF_CAP_SECONDS = 300.0
 STALE_CLAIM_SECONDS = 60.0  # crash recovery: reclaim rows stuck in 'delivering'
-
-RELAY_DELIVERED = Counter("relay_delivered_total", "Events delivered by the relay")
-RELAY_RETRIES = Counter("relay_retries_total", "Delivery attempts that failed and were retried")
-RELAY_DEAD = Counter("relay_dead_total", "Events moved to the dead letter queue")
-RELAY_PENDING = Gauge("relay_pending_events", "Outbox events awaiting delivery")
-RELAY_LATENCY = Histogram(
-    "relay_delivery_latency_seconds",
-    "Commit-to-delivery latency",
-    buckets=(0.1, 0.5, 1, 5, 30, 120, 600),
-)
 
 
 def backoff_delay(attempts: int) -> float:

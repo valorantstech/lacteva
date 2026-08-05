@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.metrics import RECEIPT_RENDER_SECONDS, RECEIPTS_GENERATED
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money
 from platform_core.infrastructure.events import EventBus, EventEnvelope
@@ -236,6 +237,7 @@ class ReceiptService:
             },
             actor_id,
         )
+        RECEIPTS_GENERATED.inc()
         return receipt
 
     # --- lifecycle --------------------------------------------------------
@@ -326,7 +328,9 @@ class ReceiptService:
         receipt = await self.get(receipt_id)
         lines = await self._lines(receipt.id)
         payload = self._render_payload(receipt, lines)
-        rendered: RenderedReceipt = get_renderer(fmt or receipt.render_format).render(payload)
+        chosen = (fmt or receipt.render_format).lower()
+        with RECEIPT_RENDER_SECONDS.labels(chosen).time():
+            rendered: RenderedReceipt = get_renderer(chosen).render(payload)
         return RenderedReceiptView(
             receipt_id=receipt.id,
             receipt_number=receipt.receipt_number,

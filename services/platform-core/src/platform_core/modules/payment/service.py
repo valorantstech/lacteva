@@ -27,6 +27,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.metrics import (
+    PAYMENTS_CANCELLED,
+    PAYMENTS_COMPLETED,
+    PAYMENTS_CREATED,
+    PAYMENTS_FAILED,
+)
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money
 from platform_core.infrastructure.events import EventBus, EventEnvelope
@@ -268,6 +274,7 @@ class PaymentService:
             {"amount": str(payment.amount), "line_count": len(resolved)},
             actor_id,
         )
+        PAYMENTS_CREATED.labels(payment.method).inc()
         return payment
 
     # --- lifecycle ---------------------------------------------------------
@@ -353,6 +360,7 @@ class PaymentService:
             },
             actor_id,
         )
+        PAYMENTS_COMPLETED.labels(payment.method).inc()
         return payment
 
     async def _receipt_facts(self, payment: Payment, lines: list[PaymentLine]) -> dict:
@@ -407,6 +415,7 @@ class PaymentService:
         payment.failure_reason = cmd.reason
         await self._close_attempt(payment, "failed", reason=cmd.reason, now=now)
         await self._record(payment, "failed", {"reason": cmd.reason}, actor_id)
+        PAYMENTS_FAILED.labels(payment.method).inc()
         return payment
 
     async def cancel(
@@ -425,6 +434,7 @@ class PaymentService:
         await self._transition(payment, expected=CANCELLABLE_STATUSES, to="cancelled")
         payment.cancelled_at = utcnow()
         await self._record(payment, "cancelled", {"reason": cmd.reason}, actor_id)
+        PAYMENTS_CANCELLED.labels(payment.method).inc()
         return payment
 
     # --- queries -----------------------------------------------------------

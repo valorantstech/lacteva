@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
 from platform_core.core.errors import AppError
+from platform_core.core.metrics import PRICING_FAILURES, PRICING_RESOLUTION_SECONDS
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money, Quantity
 from platform_core.modules.pricing.models import (
@@ -204,6 +205,10 @@ class PricingResolutionService:
         """Three fixed queries: dimension → the ONE applicable rate card →
         the ONE matrix x band candidate. Every stage enforces exactly-one:
         the engine never silently chooses between candidates."""
+        with PRICING_RESOLUTION_SECONDS.time():
+            return await self._resolve(q)
+
+    async def _resolve(self, q: ResolutionQuery) -> ResolutionResult:
         tenant_id = require_current_tenant()
         dimension = await self.repository.dimension(tenant_id, q.dimension_code)
         if dimension is None:
@@ -268,6 +273,9 @@ class PricingResolutionService:
         }
 
     def _no_match(self, stage: str, q: ResolutionQuery, reason: str) -> dict:
+        # The single funnel for "no price": counted by STAGE, which is a
+        # fixed vocabulary, never by `reason`, which is prose.
+        PRICING_FAILURES.labels(stage).inc()
         return {"stage": stage, "reason": reason, "inputs": self._inputs(q)}
 
     def _ambiguity_meta(self, stage: str, q: ResolutionQuery, candidate_ids: list[str]) -> dict:

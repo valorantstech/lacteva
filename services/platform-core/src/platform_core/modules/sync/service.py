@@ -24,6 +24,7 @@ Three problems it does solve, all of them transport problems:
    nothing is ever silently overwritten.
 """
 
+import time
 import uuid
 from datetime import datetime
 from typing import Any
@@ -34,6 +35,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.metrics import (
+    SYNC_BATCH_SECONDS,
+    SYNC_CONFLICTS,
+    SYNC_OPERATIONS,
+)
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.milk_collection.service import (
     IdentifySupplierCommand,
@@ -172,6 +178,7 @@ class SyncService:
         resolved: dict[str, uuid.UUID] = {}
         results: list[SyncOperationResult] = []
 
+        started = time.perf_counter()
         for op in sorted(batch.operations, key=lambda o: o.sequence):
             existing = await self._session.scalar(
                 select(SyncOperation).where(
@@ -199,6 +206,11 @@ class SyncService:
                 resolved[result.client_reference] = result.server_id
             results.append(result)
 
+        SYNC_BATCH_SECONDS.observe(time.perf_counter() - started)
+        for result in results:
+            SYNC_OPERATIONS.labels(result.kind, result.status).inc()
+            if result.conflict is not None:
+                SYNC_CONFLICTS.labels(result.conflict.reason).inc()
         return SyncBatchResult(
             accepted=len(results),
             applied=sum(1 for r in results if r.status == "applied"),

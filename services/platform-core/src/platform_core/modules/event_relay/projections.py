@@ -27,13 +27,17 @@ import uuid
 from datetime import datetime
 
 import structlog
-from prometheus_client import Counter, Gauge
 from pydantic import BaseModel
 from sqlalchemy import UniqueConstraint, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.metrics import (
+    PROJECTION_OUTDATED,
+    PROJECTION_REBUILDS,
+    PROJECTION_REPLAYED,
+)
 from platform_core.modules.event_relay.consumers import (
     EventConsumer,
     discover_consumers,
@@ -53,15 +57,6 @@ DEFAULT_BATCH_SIZE = 500
 STALE_REBUILD_SECONDS = 3600  # a rebuild still "running" after this is corrupted
 ASSUMED_REPLAY_RATE = 400.0  # events/second, used for the first dry-run estimate
 
-PROJECTION_REBUILDS = Counter(
-    "projection_rebuilds_total", "Projection rebuilds started", ["projection"]
-)
-PROJECTION_REPLAYED = Counter(
-    "projection_events_replayed_total", "Events replayed into projections", ["projection"]
-)
-PROJECTION_OUTDATED = Gauge(
-    "projection_outdated", "1 when the built version is behind the code version", ["projection"]
-)
 
 # Column names every projection row carries that are NOT part of its derived
 # value (regenerated on rebuild) — excluded from drift comparison.

@@ -25,13 +25,22 @@ import uuid
 from datetime import datetime, timedelta
 
 import structlog
-from prometheus_client import Counter, Gauge, Histogram
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.metrics import (
+    CONSUMER_DEAD,
+    CONSUMER_ENABLED,
+    CONSUMER_FAILED,
+    CONSUMER_LAG,
+    CONSUMER_LATENCY,
+    CONSUMER_PROCESSED,
+    CONSUMER_RETRIED,
+)
+from platform_core.core.tracing import span
 from platform_core.modules.event_relay.models import (
     ConsumerCursor,
     ConsumerExecution,
@@ -43,20 +52,6 @@ log = structlog.get_logger("consumers")
 
 MAX_CONSUMER_ATTEMPTS = 5
 CONSUMER_CONFIG_PREFIX = "platform.consumers"  # platform.consumers.<name>.enabled
-
-CONSUMER_PROCESSED = Counter(
-    "consumer_processed_total", "Events successfully processed", ["consumer"]
-)
-CONSUMER_FAILED = Counter("consumer_failed_total", "Handler failures", ["consumer"])
-CONSUMER_RETRIED = Counter("consumer_retried_total", "Retries scheduled", ["consumer"])
-CONSUMER_DEAD = Counter("consumer_dead_total", "Events dead-lettered", ["consumer"])
-CONSUMER_LAG = Gauge("consumer_lag_events", "Events behind the log head", ["consumer"])
-CONSUMER_LATENCY = Histogram(
-    "consumer_latency_seconds",
-    "Event-commit to consumer-processed latency",
-    ["consumer"],
-    buckets=(0.1, 0.5, 1, 5, 30, 120, 600),
-)
 
 
 class EventConsumer:
@@ -195,6 +190,18 @@ class ConsumerRunner:
         return {"processed": processed, "failed": failed}
 
     async def _process(self, consumer: EventConsumer, event: OutboxEvent, now: datetime) -> str:
+        # OBS-001: carry the originating request's correlation id into every
+        # log line this handler produces. Without it, a notification that
+        # failed at 05:14 cannot be tied back to the collection that caused
+        # it — which is the whole point of an event-driven platform's
+        # observability.
+        structlog.contextvars.bind_contextvars(
+            correlation_id=str(event.correlation_id) if event.correlation_id else None,
+            consumer=consumer.name,
+            event_id=str(event.id),
+            event_name=event.event_name,
+            tenant_id=str(event.tenant_id) if event.tenant_id else None,
+        )
         async with self._sf() as session:
             execution = await session.scalar(
                 select(ConsumerExecution).where(
@@ -214,7 +221,15 @@ class ConsumerRunner:
         attempts = (execution.attempts if execution else 0) + 1
         try:
             async with self._sf() as session:
-                await consumer.handle(envelope_from_outbox(event), session)
+                # `span` is a sync context manager: nesting it keeps the
+                # async-with semantics of the session intact.
+                with span(
+                    f"consumer.{consumer.name}",
+                    event_name=event.event_name,
+                    event_id=str(event.id),
+                    correlation_id=(str(event.correlation_id) if event.correlation_id else None),
+                ):
+                    await consumer.handle(envelope_from_outbox(event), session)
                 await self._record_outcome(
                     session,
                     consumer.name,
@@ -452,3 +467,40 @@ class ConsumerRunner:
         if entry is None:
             return True
         return bool(entry.value.get("value", True))
+
+    async def set_enabled(self, name: str, enabled: bool) -> ConsumerStatus:
+        """Pause or resume a consumer (OBS-001 operator action).
+
+        Pausing writes the same global config key the runner already reads,
+        so there is ONE kill switch rather than a second mechanism that could
+        disagree with it. Nothing is lost while paused: the cursor stays put
+        and the consumer resumes from exactly where it stopped.
+        """
+        from platform_core.core.errors import NotFoundError
+        from platform_core.modules.configuration.models import ConfigEntry
+
+        if name not in {c.name for c in registered_consumers()}:
+            raise NotFoundError(f"unknown consumer {name!r}")
+        key = f"{CONSUMER_CONFIG_PREFIX}.{name}.enabled"
+        async with self._sf() as session:
+            entry = await session.scalar(
+                select(ConfigEntry).where(ConfigEntry.scope == "global", ConfigEntry.key == key)
+            )
+            if entry is None:
+                entry = ConfigEntry(scope="global", key=key, value={"value": enabled})
+                session.add(entry)
+            else:
+                entry.value = {"value": enabled}
+            await session.commit()
+        CONSUMER_ENABLED.labels(name).set(1 if enabled else 0)
+        log.warning("consumer_enabled_changed", consumer=name, enabled=enabled)
+        return await self.status(name)
+
+    async def status(self, name: str) -> ConsumerStatus:
+        report = await self.health()
+        found = next((c for c in report.consumers if c.name == name), None)
+        if found is None:
+            from platform_core.core.errors import NotFoundError
+
+            raise NotFoundError(f"unknown consumer {name!r}")
+        return found

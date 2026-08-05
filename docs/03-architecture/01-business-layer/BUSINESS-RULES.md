@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.9"
+version: "1.10"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-05
@@ -297,6 +297,18 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0024 — Every business fact carries one correlation id from request to consequence.
+
+**Clarification.** This platform is event-driven, which means a single operator action becomes a chain of effects that cross process boundaries and a queue: a collection commits, an event lands in the outbox, a consumer processes it, a notification is dispatched, a receipt is generated. Each link can succeed or fail independently, minutes apart, in a different process. Without a shared identifier that chain cannot be reconstructed after the fact, and "why was this farmer never told about their payment?" becomes unanswerable. So a correlation id is established at the edge (supplied by the caller as `X-Request-ID` or generated), bound into the request's log context, persisted on every outbox event the request produces, and REBOUND by the consumer that later handles that event — so every downstream log line, in every process, carries the id of the request that started it. Observability never alters what the platform decides: metrics, logs, traces, and health checks are pure observation, and a business endpoint may not gain a query to serve them.
+
+**Enforcement.** `core/observability.py` — `RequestContextMiddleware` (establishes and returns the id); `infrastructure/events.py` — `EventEnvelope.new()` reads it from context; `event_relay/service.py` — persisted on the outbox row and restored by `envelope_from_outbox()`; `event_relay/consumers.py` — `_process()` rebinds it into the consumer's log context before the handler runs.
+
+**Verification.** `test_observability.py::test_correlation_flows_from_request_to_event_to_consumer`, `::test_the_consumer_binds_the_correlation_id_it_was_given`, `::test_a_request_id_is_returned_and_honoured`, `::test_logs_are_structured_json_with_the_required_fields`.
+
+**Status:** Active (since OBS-001).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -310,6 +322,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.10 | 2026-08-06 | Architecture Board | OBS-001 rule: BR-0024 (one correlation id from request to consequence; observation never alters behaviour). |
 | 1.9 | 2026-08-05 | Architecture Board | SEC-001 rules: BR-0022 (database-enforced tenant isolation), BR-0023 (tokens trusted only via a named live key). |
 | 1.8 | 2026-08-05 | Architecture Board | OFF-001 rule: BR-0021 (offline changes transport, never business decisions). |
 | 1.7 | 2026-08-05 | Architecture Board | RCP-001 rule: BR-0020 (receipts are generated only from completed payments and never change). |

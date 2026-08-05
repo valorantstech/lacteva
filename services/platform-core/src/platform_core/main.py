@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from platform_core import __version__
 from platform_core.api.routes import router as api_router
+from platform_core.core import health, health_probes, workers
 from platform_core.core.config import get_settings
 from platform_core.core.db import Base, get_engine, get_session_factory
 from platform_core.core.errors import register_error_handlers
@@ -14,6 +15,7 @@ from platform_core.core.http_security import SecurityHeadersMiddleware
 from platform_core.core.logging import configure_logging, get_logger
 from platform_core.core.observability import RequestContextMiddleware, setup_observability
 from platform_core.core.tenancy import TenantContextMiddleware
+from platform_core.core.tracing import setup_tracing
 from platform_core.modules.authz.service import AuthzService
 
 log = get_logger("app")
@@ -87,16 +89,29 @@ async def lifespan(app: FastAPI):
         import asyncio
 
         relay_task = asyncio.create_task(_relay_loop())
+        workers.register("relay", relay_task)
     if settings.consumers_enabled and settings.env != "test":
         import asyncio
 
         consumer_task = asyncio.create_task(_consumer_loop())
-    log.info("startup_complete", env=settings.env, version=__version__)
+        workers.register("consumers", consumer_task)
+    # OBS-001: health probes and tracing come up with the process, so the
+    # first scrape after a restart already tells the truth.
+    health_probes.register_all()
+    tracing_active = setup_tracing()
+    log.info(
+        "startup_complete",
+        env=settings.env,
+        version=__version__,
+        health_probes=list(health.registered_probes()),
+        tracing=tracing_active,
+    )
     yield
     if relay_task is not None:
         relay_task.cancel()
     if consumer_task is not None:
         consumer_task.cancel()
+    workers.clear()
     # TODO(M1): graceful shutdown — drain event-bus connection, dispose engine.
 
 

@@ -1,0 +1,111 @@
+groups:
+  - name: lacteva-platform
+    rules:
+      - alert: database_unavailable
+        expr: component_health{component="database"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The database is unreachable \u2014 the platform cannot serve requests."
+          action: "Check the database host and connection pool. Until it returns the platform is down; there is no degraded mode for this."
+          runbook: "docs/03-architecture/06-operations/RUNBOOK.md"
+      - alert: redis_unavailable
+        expr: component_health{component="redis"} <= 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis is unreachable \u2014 rate limits are failing open."
+          action: "Collection is unaffected by design. Restore Redis; until then the platform has no abuse protection, so watch auth_failures_total."
+          runbook: "docs/03-architecture/06-operations/RUNBOOK.md"
+      - alert: background_worker_stopped
+        expr: component_health{component="background_workers"} <= 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A background worker has stopped \u2014 asynchronous work is not happening."
+          action: "The API will look healthy while notifications, receipts, and projections silently stall. Check the logs for the worker's exception and restart the process; work is durable and resumes from the log."
+          runbook: "docs/03-architecture/06-operations/RUNBOOK.md"
+      - alert: consumer_stopped
+        expr: max(consumer_enabled) by (consumer) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A consumer is paused."
+          action: "If this was deliberate (an incident, a deploy), no action. If not, resume it with POST /v1/_consumers/{name}/resume \u2014 the cursor means nothing is lost."
+          runbook: "docs/03-architecture/06-operations/RUNBOOK.md"
+      - alert: consumer_lag
+        expr: max(consumer_lag_events) by (consumer) > 500
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A consumer is falling behind the event log."
+          action: "Check whether the consumer is failing (dead letters) or merely slow. During a collection peak some lag is normal; sustained growth is not."
+          runbook: "docs/03-architecture/06-operations/RUNBOOK.md"
+      - alert: dead_letter_growth
+        expr: increase(consumer_dead_total[15m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Events are being dead-lettered \u2014 some business effect is not happening."
+          action: "Inspect GET /v1/_consumers/dead-letters. Fix the handler, then replay; dead events remain replayable forever, so nothing is lost while you investigate."
+          runbook: "docs/03-architecture/06-operations/RUNBOOK.md"
+      - alert: outbox_backlog
+        expr: relay_pending_events > 1000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Business events are not leaving the outbox."
+          action: "Check the relay dispatcher and the transport. Events are durable \u2014 this is a delay, not a loss \u2014 but everything downstream is stalled behind it."
+          runbook: "docs/03-architecture/06-operations/RUNBOOK.md"
+      - alert: projection_rebuild_failed
+        expr: component_health{component="projections"} <= 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A projection rebuild failed \u2014 its read model may be incomplete."
+          action: "Reports and notification recipients read from projections; a partial rebuild gives confidently wrong answers. Re-run the rebuild, then verify with POST /v1/_projections/{name}/verify?deep=true."
+          runbook: "docs/03-architecture/06-operations/RUNBOOK.md"
+      - alert: projection_drift
+        expr: max(projection_drift_rows) by (projection) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A projection disagrees with a replay of the event log."
+          action: "The read model has diverged from the source of truth. Rebuild it; the log is authoritative and the rebuild is safe by BR-0015."
+          runbook: "docs/03-architecture/06-operations/RUNBOOK.md"
+      - alert: notification_failure_spike
+        expr: sum(rate(notifications_failed_total[10m])) / clamp_min(sum(rate(notifications_sent_total[10m])), 0.001) > 0.25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Notification deliveries are failing."
+          action: "Check the channel provider. Notifications retry on a backoff and dead-letter after five attempts; retry survivors with POST /v1/notifications/retry-pending."
+          runbook: "docs/03-architecture/06-operations/RUNBOOK.md"
+      - alert: jwt_key_expiring
+        expr: component_health{component="jwt_keys"} == 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The signing key is close to expiry."
+          action: "Rotate now \u2014 JWT-ROTATION.md \u00a72. Rotation is additive and invalidates nothing, so there is no reason to wait for a window."
+          runbook: "docs/03-architecture/06-operations/RUNBOOK.md"
+      - alert: jwt_keys_unusable
+        expr: component_health{component="jwt_keys"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No usable signing key \u2014 authentication is failing or about to."
+          action: "Every login and token refresh fails. Install a valid key immediately (JWT-ROTATION.md \u00a75) \u2014 this is an outage, not a warning."
+          runbook: "docs/03-architecture/06-operations/RUNBOOK.md"

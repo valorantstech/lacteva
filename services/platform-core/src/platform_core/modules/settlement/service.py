@@ -25,6 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.metrics import (
+    SETTLEMENTS_CANCELLED,
+    SETTLEMENTS_CREATED,
+    SETTLEMENTS_FINALIZED,
+)
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money
 from platform_core.infrastructure.events import EventBus, EventEnvelope
@@ -155,6 +160,7 @@ class SettlementService:
         self._session.add(settlement)
         await self._session.flush()
         await self._record(settlement, "created", {}, actor_id)
+        SETTLEMENTS_CREATED.inc()
         return settlement
 
     async def add_calculation(
@@ -336,6 +342,7 @@ class SettlementService:
             },
             actor_id,
         )
+        SETTLEMENTS_FINALIZED.inc()
         return settlement
 
     async def cancel(
@@ -347,6 +354,7 @@ class SettlementService:
         settlement.status = "cancelled"
         settlement.cancelled_at = utcnow()
         await self._record(settlement, "cancelled", {"reason": reason}, actor_id)
+        SETTLEMENTS_CANCELLED.inc()
         return settlement
 
     # --- queries -----------------------------------------------------------

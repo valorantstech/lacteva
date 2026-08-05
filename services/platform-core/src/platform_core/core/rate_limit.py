@@ -31,6 +31,7 @@ import structlog
 
 from platform_core.core.config import get_settings
 from platform_core.core.errors import AppError
+from platform_core.core.metrics import RATE_LIMITED, RATE_LIMITER_UNAVAILABLE
 
 log = structlog.get_logger("security.rate_limit")
 
@@ -175,6 +176,7 @@ async def enforce(rule: RateLimitRule, *, ip: str, user: str | None, endpoint: s
     try:
         verdict = await get_rate_limiter().hit(key, rule)
     except Exception as exc:  # the limiter must never turn into a 500
+        RATE_LIMITER_UNAVAILABLE.inc()
         if settings.rate_limit_fail_open:
             log.warning("rate_limiter_unavailable", rule=rule.name, error=str(exc))
             return
@@ -183,6 +185,7 @@ async def enforce(rule: RateLimitRule, *, ip: str, user: str | None, endpoint: s
             rule.name, rule.window_seconds, rule.limit, rule.window_seconds
         ) from exc
     if not verdict.allowed:
+        RATE_LIMITED.labels(rule.name).inc()
         raise RateLimitExceeded(rule.name, verdict.retry_after, rule.limit, rule.window_seconds)
 
 

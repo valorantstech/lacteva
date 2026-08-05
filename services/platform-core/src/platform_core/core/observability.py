@@ -6,17 +6,15 @@ from collections.abc import Awaitable, Callable
 
 import structlog
 from fastapi import APIRouter, FastAPI, Response
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from platform_core.core.i18n import negotiate_locale, set_locale
+from platform_core.core.metrics import LATENCY, REQUESTS
 
 log = structlog.get_logger("http")
-
-REQUESTS = Counter("http_requests_total", "HTTP requests", ["method", "route", "status"])
-LATENCY = Histogram("http_request_duration_seconds", "HTTP request latency", ["method", "route"])
 
 HealthCheck = Callable[[], Awaitable[bool]]
 _readiness_checks: dict[str, HealthCheck] = {}
@@ -37,6 +35,27 @@ async def _database_ready() -> bool:
         return False
 
 
+def _route_label(request: Request) -> str:
+    """The templated FULL path, for bounded metric cardinality.
+
+    `scope["route"].path` is relative to the router that matched, so it drops
+    the `/v1` prefix — two API versions would then share one series. Rebuilding
+    the template from the actual path and its resolved parameters gives the
+    complete template (`/v1/payments/{payment_id}`) regardless of how routers
+    are nested, and keeps ids out of labels either way.
+    """
+    path = request.url.path
+    params = request.scope.get("path_params") or {}
+    for name, value in params.items():
+        path = path.replace(str(value), "{" + name + "}")
+    if params:
+        return path
+    route = request.scope.get("route")
+    # No parameters: the literal path IS the template. Unmatched requests
+    # (404s) collapse to a single series rather than one per probed URL.
+    return path if route is not None else "<unmatched>"
+
+
 class RequestContextMiddleware(BaseHTTPMiddleware):
     """Request ID + locale + access log + metrics for every request."""
 
@@ -48,8 +67,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         start = time.perf_counter()
         response = await call_next(request)
         elapsed = time.perf_counter() - start
-        route = request.scope.get("route")
-        route_path = getattr(route, "path", request.url.path)
+        route_path = _route_label(request)
         REQUESTS.labels(request.method, route_path, response.status_code).inc()
         LATENCY.labels(request.method, route_path).observe(elapsed)
         log.info(

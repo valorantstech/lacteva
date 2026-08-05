@@ -16,13 +16,19 @@ from datetime import datetime
 from decimal import Decimal
 
 import structlog
-from prometheus_client import Counter
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.metrics import (
+    NOTIFICATION_PROVIDER_SECONDS,
+    NOTIFICATION_RETRIES,
+    NOTIFICATIONS_DEAD,
+    NOTIFICATIONS_FAILED,
+    NOTIFICATIONS_SENT,
+)
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.event_relay.consumers import MAX_CONSUMER_ATTEMPTS
 from platform_core.modules.event_relay.service import backoff_delay
@@ -41,16 +47,6 @@ from platform_core.modules.notification.templates import (
 )
 
 log = structlog.get_logger("notification")
-
-NOTIFICATIONS_SENT = Counter(
-    "notifications_sent_total", "Notifications delivered", ["channel", "template"]
-)
-NOTIFICATIONS_FAILED = Counter(
-    "notifications_failed_total", "Notification delivery failures", ["channel", "template"]
-)
-NOTIFICATIONS_DEAD = Counter(
-    "notifications_dead_total", "Notifications that exhausted retries", ["channel", "template"]
-)
 
 
 class NotificationRequest(BaseModel):
@@ -200,6 +196,8 @@ class NotificationService:
     ) -> None:
         now = now or utcnow()
         notification.attempt_count += 1
+        if notification.attempt_count > 1:
+            NOTIFICATION_RETRIES.labels(notification.channel).inc()
         try:
             recipient = notification.recipient or await self._resolve_recipient(notification)
             if not recipient:
@@ -213,17 +211,20 @@ class NotificationService:
                 variables["name"] = await self._recipient_name(notification)
             message = render(template, variables)
             provider = get_provider(notification.channel)
-            reference = await provider.send(
-                OutboundMessage(
-                    channel=notification.channel,
-                    recipient=recipient,
-                    title=message.title,
-                    body=message.body,
-                    language=message.language,
-                    template_key=notification.template_key,
-                    notification_id=notification.id,
+            # Provider latency is the number that tells an operator whether a
+            # delivery backlog is the gateway's fault or ours.
+            with NOTIFICATION_PROVIDER_SECONDS.labels(notification.channel, provider.name).time():
+                reference = await provider.send(
+                    OutboundMessage(
+                        channel=notification.channel,
+                        recipient=recipient,
+                        title=message.title,
+                        body=message.body,
+                        language=message.language,
+                        template_key=notification.template_key,
+                        notification_id=notification.id,
+                    )
                 )
-            )
         except (
             ProviderSendError,
             TemplateRenderError,
