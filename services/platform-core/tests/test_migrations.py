@@ -24,47 +24,59 @@ def _env_source() -> str:
     return (pathlib.Path(__file__).resolve().parents[1] / "migrations" / "env.py").read_text()
 
 
-def test_migration_metadata_sees_every_table():
-    """The guard. `env.py` must register every mapped table, or autogenerate
-    will propose dropping the ones it cannot see."""
-    import importlib
-
+def test_the_registry_sees_every_table():
+    """The guard. `import_all_models()` must register every mapped table, or
+    autogenerate proposes dropping the ones it cannot see and a backup
+    silently captures a fraction of the schema."""
     from platform_core.core.db import Base
+    from platform_core.core.model_registry import import_all_models
 
-    # Import env.py's model modules exactly as Alembic does.
-    for line in _env_source().splitlines():
-        if line.startswith("import platform_core"):
-            importlib.import_module(line.split()[1])
-
+    registered_count = import_all_models()
     registered = set(Base.metadata.tables)
-    # Every module that defines tables must be reachable from env.py.
+
     import platform_core.main  # noqa: F401 - imports the whole application
 
     complete = set(Base.metadata.tables)
     missing = complete - registered
     assert not missing, (
-        f"migrations/env.py does not register: {sorted(missing)} — "
-        "autogenerate would propose DROPPING these tables"
+        f"the model registry does not register: {sorted(missing)} — "
+        "autogenerate would propose DROPPING these, and a backup would skip them"
     )
+    assert registered_count == len(complete)
+    assert registered_count > 45, f"only {registered_count} tables registered"
 
 
-def test_the_linter_cannot_remove_the_model_imports():
-    """The imports look unused to every linter that will ever run over this
-    file, and a `noqa` marker is itself reported as unused. The durable guard
-    is a per-file ignore in pyproject.toml — without it, the next autofix
-    removes them again."""
-    config = (pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
-    assert '"migrations/env.py"' in config, "env.py needs a per-file lint exemption"
-    exemption = config.split('"migrations/env.py"')[1].split("\n")[0]
-    assert "F401" in exemption, "F401 must be exempt or the imports get stripped"
+def test_env_registers_models_through_a_call_no_linter_can_remove():
+    """A bare import is removable by an autofix; a function CALL is not. That
+    is the whole reason the registry exists rather than an import block."""
+    source = _env_source()
+    assert "import_all_models()" in source, "env.py must CALL the registry"
+    stray = [
+        line for line in source.splitlines() if line.startswith("import platform_core.modules")
+    ]
+    assert not stray, f"model imports belong in the registry, not env.py: {stray}"
+
+
+def test_the_backup_engine_sees_the_whole_schema():
+    """CI-001: the backup CLI once captured ONE table because its process had
+    not imported the models. Classification must register them itself."""
+    from platform_core.core.backup.classification import classify_all, tables_for_backup
+
+    assert len(classify_all()) > 45
+    assert len(tables_for_backup()) > 35
+    for critical in ("payment", "receipt", "settlement", "event_outbox"):
+        assert critical in tables_for_backup(), critical
 
 
 def test_the_hazard_is_explained_where_someone_would_break_it():
-    """A marker without a reason gets removed by someone who assumes it is
-    stale. The comment is part of the guard."""
-    source = _env_source()
-    assert "DROPS" in source or "DROP EVERY TABLE" in source.upper()
-    assert "side effect" in source
+    """A guard without a stated reason gets removed by someone who assumes it
+    is stale. The explanation is part of the guard."""
+    registry = (
+        pathlib.Path(__file__).resolve().parents[1] / "src/platform_core/core/model_registry.py"
+    ).read_text()
+    assert "DROPPING" in registry.upper()
+    assert "import-order" in registry or "import order" in registry
+    assert "one table and three rows" in registry, "record what actually happened"
 
 
 @pytest.mark.parametrize("required", ["payment", "receipt", "settlement", "event_outbox"])

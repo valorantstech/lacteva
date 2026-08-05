@@ -3,10 +3,10 @@ id: RUNNING
 title: Running the Lacteva Platform Locally
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Engineering
 created: 2026-08-02
-last-updated: 2026-08-02
+last-updated: 2026-08-06
 baseline: ARCH-BASELINE-V1
 ---
 
@@ -67,6 +67,18 @@ make migration m="describe your change"   # autogenerate a new migration
 
 In `LACTEVA_ENV=dev|test` the backend also auto-creates tables at startup for convenience; staging/prod run migrations only.
 
+## Proving It On PostgreSQL
+
+`make dev` runs the platform. It does not prove the guarantees that only a real engine can exercise — row-level security, migrations from an empty database, and a restore into a fresh one. That is a separate, throwaway run:
+
+```bash
+docker compose -f docker-compose.proof.yml run --rm proof
+```
+
+Nine steps, any failure fails the run, and it is the **identical script** CI executes. The database has no volume and no published port: every run starts empty, because "migrations apply from empty" is one of the things being proven. Nothing touches your dev database.
+
+Details, per-step meaning, and how to read a failure: [POSTGRES-PROOF](docs/03-architecture/06-operations/POSTGRES-PROOF.md).
+
 ## Everyday Commands
 
 ```bash
@@ -89,4 +101,5 @@ make stop        # stop everything          make clean  # ...and delete volumes
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-06 | Engineering | PostgreSQL proof section (CI-001). |
 | 1.0 | 2026-08-02 | Engineering | Initial version (SPRINT-001). |

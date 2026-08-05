@@ -3,10 +3,10 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.11"
+version: "1.12"
 owner: Architecture Board
 created: 2026-08-03
-last-updated: 2026-08-05
+last-updated: 2026-08-06
 related: [STD-0003, CAP-0001]
 baseline: ARCH-BASELINE-V1
 ---
@@ -275,13 +275,13 @@ baseline: ARCH-BASELINE-V1
 
 ## BR-0022 — Tenant isolation is enforced by the database, not only by the application.
 
-**Clarification.** Every tenant-owned table carries a PostgreSQL row-level security policy comparing its `tenant_id` against a transaction-scoped session setting, so a query that forgets its filter returns NOTHING rather than another tenant's data. The application's own `tenant_id` predicates remain in place and become defense-in-depth: correctness no longer depends on every future query remembering them. The policy covers reads, updates, and deletes through `USING`, and writes through `WITH CHECK` — without the latter a caller could move a row INTO another tenant, succeeding silently. `FORCE` is mandatory because the application connects as the table owner, which would otherwise bypass its own policies. An unbound session matches nothing and therefore fails CLOSED. Cross-tenant machinery (relay dispatch, consumers, projection rebuilds, platform administration) may set an explicit, transaction-scoped, logged bypass — never a superuser connection. A new tenant-owned table without a policy is a build failure, not a latent leak.
+**Clarification.** Every tenant-owned table carries a PostgreSQL row-level security policy comparing its `tenant_id` against a transaction-scoped session setting, so a query that forgets its filter returns NOTHING rather than another tenant's data. The application's own `tenant_id` predicates remain in place and become defense-in-depth: correctness no longer depends on every future query remembering them. The policy covers reads, updates, and deletes through `USING`, and writes through `WITH CHECK` — without the latter a caller could move a row INTO another tenant, succeeding silently. `FORCE` is mandatory because the application connects as the table owner, which would otherwise bypass its own policies. An unbound session matches nothing and therefore fails CLOSED. Rows that belong to no tenant (`tenant_id IS NULL` — user accounts before they join an organization, the role catalog, the outbox log) are visible to everyone by design, and the policy must say so explicitly: SQL three-valued logic makes `NULL = 'x'` neither true nor false, so a predicate that omits the NULL case hides platform-global rows from every session including the one that owns them — which silently breaks registration itself. Cross-tenant machinery (relay dispatch, consumers, projection rebuilds, platform administration) may set an explicit, transaction-scoped, logged bypass — never a superuser connection. A new tenant-owned table without a policy is a build failure, not a latent leak.
 
-**Enforcement.** `core/rls.py` — `bind_tenant()` (`SET LOCAL`, so a pooled connection cannot carry a tenant across requests), `bind_platform_context()`, `policy_statements()`; `core/db.py` — per-request binding; `api/deps.py` — re-binding once the token's tenant is proven; migration `a1c7f3b90e22` — the policy set.
+**Enforcement.** `core/rls.py` — `bind_tenant()` (`SET LOCAL`, so a pooled connection cannot carry a tenant across requests), `bind_platform_context()`, `policy_statements()`; `core/db.py` — per-request binding; `api/deps.py` — re-binding once the token's tenant is proven; migrations `a1c7f3b90e22` (the policy set) and `c94b1ea27f31` (the platform-global clause).
 
-**Verification.** `test_security.py::test_every_tenant_owned_table_is_covered_by_a_policy`, `::test_the_rls_policy_denies_by_default_and_checks_writes`, `::test_application_level_tenant_isolation_holds`; `test_rls_postgres.py::test_a_query_that_forgets_its_filter_still_cannot_leak`, `::test_cross_tenant_update_affects_nothing`, `::test_cross_tenant_delete_affects_nothing`, `::test_a_row_cannot_be_written_into_another_tenant`, `::test_no_tenant_bound_means_no_rows` (PostgreSQL job — a skip fails CI).
+**Verification.** `test_security.py::test_every_tenant_owned_table_is_covered_by_a_policy`, `::test_the_rls_policy_denies_by_default_and_checks_writes`, `::test_application_level_tenant_isolation_holds`; `test_rls_postgres.py::test_a_query_that_forgets_its_filter_still_cannot_leak`, `::test_cross_tenant_update_affects_nothing`, `::test_cross_tenant_delete_affects_nothing`, `::test_a_row_cannot_be_written_into_another_tenant`, `::test_no_tenant_bound_means_no_rows`, `::test_platform_global_rows_are_visible_to_everyone`, `::test_a_tenant_still_cannot_see_another_tenants_rows` (PostgreSQL proof job — a skip fails CI).
 
-**Status:** Active (since SEC-001).
+**Status:** Active (since SEC-001; the platform-global clause added by CI-001, which found the defect by running the policies on a real engine for the first time).
 
 ---
 
@@ -321,6 +321,18 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0026 — An operation that acts on the whole schema must first register the whole schema.
+
+**Clarification.** SQLAlchemy's `Base.metadata` knows only about tables whose module some import has already executed, which makes schema completeness a property of *import order* rather than of the code. Every whole-schema operation therefore reads a partial truth by default, and — this is what makes the rule necessary — reports success on it: migration autogenerate proposes DROPPING every table it cannot see, a backup captures only the tables it happens to know and writes a valid manifest saying so, and a restore fails to order a table that is absent from its own metadata. All three have occurred in this platform, and none of them raised. So any code path that reasons about the schema as a whole must first cause every model module to be imported, through a call rather than an import block: a bare import exists only for its side effect, is indistinguishable from dead code, and has already been removed once by an automated lint fix.
+
+**Enforcement.** `core/model_registry.py` — `import_all_models()`, an explicit list (a package walk would find one fewer table silently) that also runs consumer and projection discovery, since those models register at discovery rather than at import; called by `migrations/env.py`, `core/backup/engine.py`, and `core/backup/classification.py`.
+
+**Verification.** `test_migrations.py::test_the_registry_sees_every_table`, `::test_env_registers_models_through_a_call_no_linter_can_remove`, `::test_the_backup_engine_sees_the_whole_schema`, `::test_business_critical_tables_are_registered`, `::test_the_hazard_is_explained_where_someone_would_break_it`; `test_backup_restore.py::test_the_engine_registers_models_itself`; and step 1 of the PostgreSQL proof, which fails the build if migrating an empty database produces fewer than the full set of tables.
+
+**Status:** Active (since CI-001).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -334,6 +346,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.12 | 2026-08-06 | Architecture Board | CI-001: BR-0026 (whole-schema operations must register the whole schema); BR-0022 amended with the platform-global (`tenant_id IS NULL`) clause after the policies were executed on a real engine. |
 | 1.11 | 2026-08-06 | Architecture Board | BAK-001 rule: BR-0025 (a backup is trusted only once a restore has been demonstrated and business-verified). |
 | 1.10 | 2026-08-06 | Architecture Board | OBS-001 rule: BR-0024 (one correlation id from request to consequence; observation never alters behaviour). |
 | 1.9 | 2026-08-05 | Architecture Board | SEC-001 rules: BR-0022 (database-enforced tenant isolation), BR-0023 (tokens trusted only via a named live key). |

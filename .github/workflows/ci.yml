@@ -45,19 +45,20 @@ jobs:
   # SEC-001: row-level security cannot execute on SQLite, so the policies are
   # proven against a real PostgreSQL. A SKIP in this job is a configuration
   # failure, not an expected outcome — hence the explicit assertion below.
-  row-level-security:
-    name: platform-core (PostgreSQL RLS)
+  # CI-001: everything the platform can only prove on a real engine.
+  # One script (infra/ci/postgres-proof.sh) runs here and under
+  # docker-compose.proof.yml locally, so "works in CI" and "works on my
+  # machine" cannot drift apart.
+  postgres-proof:
+    name: platform-core (PostgreSQL proof)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: services/platform-core
     services:
       postgres:
         image: postgres:16
         env:
           POSTGRES_USER: lacteva
           POSTGRES_PASSWORD: lacteva
-          POSTGRES_DB: lacteva_test
+          POSTGRES_DB: postgres
         ports:
           - 5432:5432
         options: >-
@@ -66,32 +67,26 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      LACTEVA_TEST_POSTGRES_URL: postgresql+asyncpg://lacteva:lacteva@localhost:5432/lacteva_test
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: lacteva
+      PGPASSWORD: lacteva
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
           cache-dependency-glob: services/platform-core/pyproject.toml
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
       - name: Install dependencies
+        working-directory: services/platform-core
         run: uv sync
-      - name: Migrations apply cleanly on PostgreSQL (including RLS policies)
-        run: LACTEVA_DATABASE_URL=$LACTEVA_TEST_POSTGRES_URL uv run alembic upgrade head
-      - name: RLS policy enforcement
-        # -p no:randomly keeps the fixture order deterministic; the assertion
-        # on "no tests ran" is what turns a silent skip into a red build.
-        run: uv run pytest tests/test_rls_postgres.py -v --no-header -rs
-      - name: Restore demonstration on PostgreSQL
-        # BAK-001: the logical backup/restore cycle proven against the real
-        # engine, not only SQLite. A backup nobody has restored is not evidence.
-        run: LACTEVA_DATABASE_URL=$LACTEVA_TEST_POSTGRES_URL uv run pytest tests/test_backup_restore.py -q
-      - name: Fail if the RLS suite was skipped
-        run: |
-          uv run pytest tests/test_rls_postgres.py -q 2>&1 | tee /tmp/rls.log
-          if grep -q "skipped" /tmp/rls.log; then
-            echo "::error::RLS tests skipped — PostgreSQL was not reachable"
-            exit 1
-          fi
+      - name: PostgreSQL proof
+        # Migrations from empty, RLS enabled+forced, RLS tests (not skipped),
+        # seed, backup, verify, restore into a FRESH database, deep integrity,
+        # and a fact-by-fact comparison. Any failure fails the build.
+        run: ./infra/ci/postgres-proof.sh
 
   admin-portal:
     name: admin-portal (build + lint)

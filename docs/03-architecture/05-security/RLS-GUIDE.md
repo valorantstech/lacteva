@@ -3,10 +3,10 @@ id: RLS-GUIDE
 title: Row Level Security Guide
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Architecture Board
 created: 2026-08-05
-last-updated: 2026-08-05
+last-updated: 2026-08-06
 related: [SECURITY, SECURITY-CHECKLIST]
 baseline: ARCH-BASELINE-V1
 ---
@@ -44,8 +44,10 @@ ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
 ALTER TABLE <t> FORCE  ROW LEVEL SECURITY;
 CREATE POLICY <t>_tenant_isolation ON <t>
   USING      (current_setting('lacteva.bypass_rls', true) = 'on'
+              OR tenant_id IS NULL
               OR tenant_id::text = current_setting('lacteva.tenant_id', true))
   WITH CHECK (current_setting('lacteva.bypass_rls', true) = 'on'
+              OR tenant_id IS NULL
               OR tenant_id::text = current_setting('lacteva.tenant_id', true));
 ```
 
@@ -54,6 +56,7 @@ Three details carry the whole guarantee:
 - **FORCE.** Without it the table *owner* — which is who the application connects as — bypasses its own policies. A policy that exists but is not forced protects nothing here.
 - **WITH CHECK, not just USING.** `USING` decides what you can see and modify. `WITH CHECK` decides what you can write. Without it, a caller could **move a row into another tenant**; the insert would succeed and merely be invisible afterwards.
 - **`current_setting(..., true)`.** The `true` means "missing is NULL, not an error". An unbound session therefore matches nothing and fails **closed**.
+- **`OR tenant_id IS NULL`.** Some rows belong to no tenant by design: a user account before it joins an organization, the role catalog, the outbox log. `NULL = 'anything'` is NULL — neither true nor false — so without this clause those rows are invisible to *every* session and cannot be inserted at all. The original SEC-001 policy omitted it, and nothing caught that until the policies were executed on a real engine (CI-001): **registration itself would have failed in production**. Added by migration `c94b1ea27f31`. The clause is safe because a NULL `tenant_id` is not a wildcard — it means the row is platform-global, and no tenant-owned row is ever written with one.
 
 ## 4. The bypass
 
@@ -97,4 +100,5 @@ Both flags must be true. `relrowsecurity` alone means the owner still bypasses.
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-06 | Architecture Board | CI-001: platform-global (`tenant_id IS NULL`) clause added to the policy after first execution on a real engine. |
 | 1.0 | 2026-08-05 | Architecture Board | Established by SEC-001. |

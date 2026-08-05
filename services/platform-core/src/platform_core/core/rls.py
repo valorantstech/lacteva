@@ -99,6 +99,12 @@ def policy_statements(table: str) -> list[str]:
     restricts what may be written, so no operation can create or move a row
     into another tenant.
 
+    `tenant_id IS NULL` is explicitly allowed. Such a row belongs to no
+    tenant — a self-registered user, a seeded system role, a platform-level
+    audit entry — and `NULL = 'anything'` is NULL in SQL, which a policy
+    treats as false. Without this clause, registration itself fails
+    (CI-001 found this; SQLite could not).
+
     FORCE is essential — without it the table owner (which is who the
     application connects as) silently bypasses its own policies.
     """
@@ -109,10 +115,12 @@ def policy_statements(table: str) -> list[str]:
         CREATE POLICY {table}_tenant_isolation ON {table}
         USING (
             current_setting('{BYPASS_SETTING}', true) = 'on'
+            OR tenant_id IS NULL
             OR tenant_id::text = current_setting('{TENANT_SETTING}', true)
         )
         WITH CHECK (
             current_setting('{BYPASS_SETTING}', true) = 'on'
+            OR tenant_id IS NULL
             OR tenant_id::text = current_setting('{TENANT_SETTING}', true)
         )
         """,

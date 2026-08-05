@@ -219,6 +219,30 @@ async def test_consumers_do_not_re_fire_after_a_restore(client, backup_dir):
     )
 
 
+async def test_the_engine_registers_models_itself(client, backup_dir):
+    """CI-001: run from the CLI, the engine's process has imported nothing but
+    its own models. A backup then captured ONE table while reporting success,
+    and a restore crashed ordering a table it could not see. The engine must
+    register the schema itself rather than trusting its caller."""
+    from platform_core.core.backup.engine import BackupEngine
+    from platform_core.core.db import Base
+
+    await _full_dairy(client)
+    engine = BackupEngine(db.get_session_factory())
+    # Constructing it is enough — the whole schema must now be visible.
+    assert len(Base.metadata.tables) > 45
+
+    manifest = await engine.backup(backup_dir)
+    assert len(manifest.tables) > 35, "a partial backup reported success"
+    for critical in ("payment", "receipt", "settlement", "event_outbox", "audit_record"):
+        assert manifest.checksum_of(critical) is not None, f"{critical} was not captured"
+
+    await _destroy_everything()
+    await engine.restore(backup_dir)  # must not raise ordering the tables
+    report = await _verifier().verify()
+    assert report.healthy
+
+
 # --- classification -----------------------------------------------------------
 
 

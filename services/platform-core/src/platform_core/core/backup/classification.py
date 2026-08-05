@@ -111,9 +111,16 @@ def classify(table: str) -> TableClass:
 def classify_all() -> list[TableClass]:
     """Every mapped table, classified. Derived from the metadata so a new
     table is classified the moment it exists — as `critical` unless someone
-    deliberately says otherwise."""
-    from platform_core.core.db import Base
+    deliberately says otherwise.
 
+    Registers every model first: `Base.metadata` is only as complete as the
+    imports a process happens to have done, and a backup that silently
+    captured one table because of that is exactly the bug CI-001 found.
+    """
+    from platform_core.core.db import Base
+    from platform_core.core.model_registry import import_all_models
+
+    import_all_models()
     return sorted(
         (classify(table.name) for table in Base.metadata.sorted_tables),
         key=lambda c: (ORDER[c.classification], c.table),

@@ -17,36 +17,15 @@ from alembic import context
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-# Import the metadata with every module's tables registered.
-# EVERY model module must be imported here for its side effect: importing
-# registers the tables in `Base.metadata`, which is what autogenerate compares
-# the database against. They are deliberately "unused" — hence the noqa on
-# each — and stripping them makes autogenerate emit a migration that DROPS
-# EVERY TABLE — which happened once (OFF-001, caught and restored in BAK-001).
-# `pyproject.toml` exempts this file from F401 so no autofix can remove them,
-# and `tests/test_migrations.py` fails if any table stops being registered.
-import platform_core.core.backup.models
-import platform_core.modules.audit.models
-import platform_core.modules.auth.models
-import platform_core.modules.authz.models
-import platform_core.modules.collection_center.models
-import platform_core.modules.configuration.models
-import platform_core.modules.event_relay.models
-import platform_core.modules.identity.models
-import platform_core.modules.milk_collection.models
-import platform_core.modules.notification.models
-import platform_core.modules.operational_readiness.models
-import platform_core.modules.organization.models
-import platform_core.modules.payment.models
-import platform_core.modules.pricing.models
-import platform_core.modules.receipt.models
-import platform_core.modules.reporting.models
-import platform_core.modules.settlement.models
-import platform_core.modules.supplier.models
-import platform_core.modules.sync.models
-
-# Import the metadata with every module's tables registered.
 from platform_core.core.db import Base
+from platform_core.core.model_registry import import_all_models
+
+# `Base.metadata` is only as complete as the imports a process has done, and
+# autogenerate proposes DROPPING every table it cannot see — which happened
+# once (OFF-001, caught in BAK-001) when a linter removed the model imports
+# that used to live here. This is a CALL, so no autofix can remove it, and one
+# registry now serves migrations and backup alike (CI-001).
+import_all_models()
 
 config = context.config
 if config.config_file_name is not None:

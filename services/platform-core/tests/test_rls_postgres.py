@@ -37,6 +37,7 @@ _TABLE = "rls_probe"
 
 _PREDICATE = (
     f"current_setting('{BYPASS_SETTING}', true) = 'on' "
+    "OR tenant_id IS NULL "
     f"OR tenant_id::text = current_setting('{TENANT_SETTING}', true)"
 )
 
@@ -185,6 +186,62 @@ async def test_the_platform_binding_helpers_drive_the_policy(pg):
             assert len((await s.execute(text(f"SELECT * FROM {_TABLE}"))).all()) == 2
     finally:
         settings.database_url, settings.rls_enabled = original_url, original_rls
+
+
+async def test_platform_global_rows_are_visible_to_everyone(pg):
+    """Rows with `tenant_id IS NULL` belong to no tenant — a self-registered
+    user, a seeded system role, a platform audit entry.
+
+    `NULL = 'anything'` is NULL in SQL, and a policy predicate that is NULL is
+    not true, so the original SEC-001 policy made these rows invisible AND
+    un-insertable. With RLS on, registration itself failed. No SQLite test
+    could catch it; this is the one that does.
+    """
+    tenant = uuid.uuid4()
+    async with pg() as s:
+        await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+        await s.execute(
+            text(f"INSERT INTO {_TABLE} (id, tenant_id, label) VALUES (:i, NULL, 'global')"),
+            {"i": uuid.uuid4()},
+        )
+        await s.commit()
+
+    # A tenant-bound session can READ the platform-global row...
+    async with pg() as s:
+        await s.execute(text(f"SET LOCAL {TENANT_SETTING} = :t"), {"t": str(tenant)})
+        labels = (await s.execute(text(f"SELECT label FROM {_TABLE}"))).scalars().all()
+    assert labels == ["global"]
+
+    # ...and can INSERT one, which is what registration does.
+    async with pg() as s:
+        await s.execute(text(f"SET LOCAL {TENANT_SETTING} = :t"), {"t": str(tenant)})
+        await s.execute(
+            text(f"INSERT INTO {_TABLE} (id, tenant_id, label) VALUES (:i, NULL, 'registered')"),
+            {"i": uuid.uuid4()},
+        )
+        await s.commit()
+
+    async with pg() as s:
+        await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+        count = (await s.execute(text(f"SELECT count(*) FROM {_TABLE}"))).scalar()
+    assert count == 2
+
+
+async def test_a_tenant_still_cannot_see_another_tenants_rows(pg):
+    """The NULL allowance must not have widened anything else."""
+    a, b = uuid.uuid4(), uuid.uuid4()
+    await _seed(pg, a, b)
+    async with pg() as s:
+        await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+        await s.execute(
+            text(f"INSERT INTO {_TABLE} (id, tenant_id, label) VALUES (:i, NULL, 'global')"),
+            {"i": uuid.uuid4()},
+        )
+        await s.commit()
+    async with pg() as s:
+        await s.execute(text(f"SET LOCAL {TENANT_SETTING} = :t"), {"t": str(a)})
+        labels = sorted((await s.execute(text(f"SELECT label FROM {_TABLE}"))).scalars().all())
+    assert labels == ["alpha", "global"], "tenant B's row must remain invisible"
 
 
 async def test_the_migration_protects_every_snapshotted_table(pg):

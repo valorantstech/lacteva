@@ -153,6 +153,13 @@ class BackupEngine:
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self._sf = session_factory
+        # Every method here reads `Base.metadata`, which is only as complete
+        # as the imports this process happens to have done. Registering once,
+        # here, is what stops a CLI backup capturing a fraction of the schema
+        # or a restore failing on a table it cannot order (CI-001).
+        from platform_core.core.model_registry import import_all_models
+
+        import_all_models()
 
     # --- backup ------------------------------------------------------------
 
