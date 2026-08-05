@@ -18,4 +18,6 @@ Database designs (`DBD`) and data-governance documentation for every datastore o
 
 | ID | Datastore | Owning Service | Engine | Status |
 | --- | --- | --- | --- | --- |
-| — | *No database designs yet — DBDs accompany the first service designs.* | | | |
+| [DBD-0001](DBD-0001-platform-core-database.md) | Platform Core Database | `platform-core` | PostgreSQL 16 | Approved |
+
+DBD-0001 is also the **Database Architecture Reference**: complete table inventory, ERDs, module dependency graph, lifecycle classification, volumetrics, partitioning assessment, and the standing optimization findings (F-1 … F-13).

@@ -3,10 +3,10 @@ id: INDEX
 title: Master Documentation Index
 type: reference
 status: Approved
-version: "1.7"
+version: "1.8"
 owner: Documentation Engineering
 created: 2026-08-02
-last-updated: 2026-08-03
+last-updated: 2026-08-06
 baseline: ARCH-BASELINE-V1
 ---
 
@@ -115,7 +115,11 @@ No BRDs, PRDs, or SRSs yet — BRD-0001 is roadmap item 1.1. Sub-indexes: [Busin
 
 ## 06–10 — API, Data, AI, Events, Operations
 
-Empty pending Phase 3–4 of the roadmap. Indexes: [API](06-api/README.md) · [Data](07-data/README.md) · [AI](08-ai/README.md) · [Events](09-events/README.md) · [Operations](10-operations/README.md).
+Indexes: [API](06-api/README.md) · [Data](07-data/README.md) · [AI](08-ai/README.md) · [Events](09-events/README.md) · [Operations](10-operations/README.md). Only the data layer is populated; the rest await Phase 3–4 of the roadmap.
+
+| Document | Status | Version |
+| --- | --- | --- |
+| [DBD-0001](07-data/DBD-0001-platform-core-database.md) — Platform Core Database (the Database Architecture Reference) | Approved | 1.0 |
 
 ## 11 — Glossary ([index](11-glossary/README.md))
 
@@ -161,6 +165,7 @@ Empty pending Phase 3–4 of the roadmap. Indexes: [API](06-api/README.md) · [D
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.8 | 2026-08-06 | Architecture Board | DBR-001: DBD-0001 Platform Core Database listed under 06–10. |
 | 1.7 | 2026-08-04 | Engineering | Added the projection lifecycle reference (PLT-001). |
 | 1.6 | 2026-08-04 | Product | Added docs/product/PRODUCT_STRATEGY.md. |
 | 1.5 | 2026-08-03 | Architecture Board | Added the Business Rules Register (BR-REGISTER, business layer). |
