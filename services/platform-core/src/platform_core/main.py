@@ -1,5 +1,6 @@
 """Application factory and ASGI entrypoint."""
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -64,6 +65,24 @@ async def _relay_loop() -> None:
         await asyncio.sleep(settings.outbox_poll_seconds)
 
 
+async def _health_loop() -> None:
+    """Sample component health on a schedule (OBS-001).
+
+    The `component_health` gauge is what every Prometheus alert rule reads.
+    Populating it only when an operator opens the ops API would mean the
+    alerts never fire — the platform would look quiet precisely because
+    nobody was watching. Sampling on a timer makes the gauge true at scrape
+    time whether or not a human is present.
+    """
+    settings = get_settings()
+    while True:
+        try:
+            await health.evaluate()
+        except Exception:
+            log.exception("health_loop_error")
+        await asyncio.sleep(settings.health_sample_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -98,6 +117,12 @@ async def lifespan(app: FastAPI):
     # OBS-001: health probes and tracing come up with the process, so the
     # first scrape after a restart already tells the truth.
     health_probes.register_all()
+    health_task = None
+    if settings.env != "test":
+        import asyncio
+
+        health_task = asyncio.create_task(_health_loop())
+        workers.register("health", health_task)
     tracing_active = setup_tracing()
     log.info(
         "startup_complete",
@@ -111,6 +136,8 @@ async def lifespan(app: FastAPI):
         relay_task.cancel()
     if consumer_task is not None:
         consumer_task.cancel()
+    if health_task is not None:
+        health_task.cancel()
     workers.clear()
     # TODO(M1): graceful shutdown — drain event-bus connection, dispose engine.
 

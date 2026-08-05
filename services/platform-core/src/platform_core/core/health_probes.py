@@ -168,10 +168,12 @@ async def projections() -> health.ComponentHealth:
 
     rebuilder = ProjectionRebuilder(get_session_factory())
     statuses = await rebuilder.status_all()
-    outdated = [s.name for s in statuses if s.status == "outdated"]
-    rebuilding = [s.name for s in statuses if s.status == "rebuilding"]
-    failed = [s.name for s in statuses if s.status == "failed"]
-    behind = [s.name for s in statuses if s.pending > CONSUMER_LAG_WARNING]
+    # `health` carries the derived vocabulary (ok | outdated | rebuilding |
+    # degraded | never_built); `pending_events` is the backlog.
+    outdated = [s.name for s in statuses if s.health == "outdated"]
+    rebuilding = [s.name for s in statuses if s.health == "rebuilding"]
+    failed = [s.name for s in statuses if s.health == "degraded"]
+    behind = [s.name for s in statuses if s.pending_events > CONSUMER_LAG_WARNING]
 
     data = {
         "count": len(statuses),

@@ -48,6 +48,11 @@ class Settings(BaseSettings):
         "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
     )
 
+    # OBS-001: how often the platform samples its own component health into
+    # the `component_health` gauge. Every Prometheus alert rule reads that
+    # gauge, so a platform that never samples is a platform that never alerts.
+    health_sample_seconds: float = 30.0
+
     # Row Level Security (PostgreSQL only; SQLite has no equivalent).
     rls_enabled: bool = True
 

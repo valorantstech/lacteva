@@ -285,6 +285,16 @@ async def test_component_health_names_every_component(client):
     assert isinstance(body["ready"], bool)
 
 
+async def test_no_probe_raises_against_a_working_platform(client):
+    """A probe that raises reports `critical` with a generic reason — which
+    is indistinguishable from a real outage. On a healthy test stack every
+    probe must produce a real verdict, not an exception."""
+    headers = await _ops(client)
+    body = (await client.get("/v1/_ops/health", headers=headers)).json()
+    broken = [c for c in body["components"] if "probe failed" in (c.get("detail") or "")]
+    assert not broken, f"health probes raised: {[(c['name'], c['detail']) for c in broken]}"
+
+
 async def test_each_component_reports_actionable_data(client):
     headers = await _ops(client)
     body = (await client.get("/v1/_ops/health", headers=headers)).json()
@@ -334,6 +344,20 @@ async def test_degraded_is_still_ready(client):
         status=health.CRITICAL, components=[], checked_at="2026-08-05T00:00:00Z"
     )
     assert critical.ready is False
+
+
+def test_the_platform_samples_its_own_health_on_a_timer():
+    """Every alert rule reads `component_health`. If the gauge were only set
+    when an operator opened the ops API, the alerts would never fire — the
+    platform would look quiet precisely because nobody was watching."""
+    import inspect
+
+    from platform_core import main
+
+    assert hasattr(main, "_health_loop")
+    source = inspect.getsource(main.lifespan)
+    assert "_health_loop" in source, "the health loop must be started at startup"
+    assert 'workers.register("health"' in source, "and registered as a worker"
 
 
 async def test_health_reports_into_prometheus(client):
