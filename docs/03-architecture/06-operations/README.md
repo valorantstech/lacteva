@@ -26,7 +26,7 @@ Operations is documented as its own layer because it answers a different questio
 | [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) | Named disasters, RPO/RTO, and rollback |
 | [RUNBOOK_BACKUP.md](RUNBOOK_BACKUP.md) | Daily backup operations and their failures |
 | [RECOVERY_CHECKLIST.md](RECOVERY_CHECKLIST.md) | The page to open during a recovery |
-| [POSTGRES-PROOF.md](POSTGRES-PROOF.md) | What the platform proves on a real engine, and how to run it |
+| [POSTGRES-PROOF.md](POSTGRES-PROOF.md) | What the platform proves on a real engine, how the verification workflow runs it, and why a skip cannot happen |
 
 ## Change Log
 

@@ -1,6 +1,14 @@
-# Local PostgreSQL proof (CI-001).
+# Local PostgreSQL proof (CI-001; version matrix and teardown, OPS-001).
 #
 #   docker compose -f docker-compose.proof.yml run --rm proof
+#
+# Match a specific matrix leg from .github/workflows/postgres.yml:
+#
+#   POSTGRES_VERSION=17 docker compose -f docker-compose.proof.yml run --rm proof
+#
+# Keep the databases standing after a failure, to look at them:
+#
+#   KEEP_DATABASES=1 docker compose -f docker-compose.proof.yml run --rm proof
 #
 # Runs EXACTLY the script CI runs (infra/ci/postgres-proof.sh) against a
 # throwaway PostgreSQL. One code path means a green CI and a green laptop
@@ -12,7 +20,9 @@
 # things being proven.
 services:
   postgres:
-    image: postgres:16
+    # Same versions the workflow's matrix runs; default is the production
+    # baseline documented in DBD-0001.
+    image: postgres:${POSTGRES_VERSION:-16}
     environment:
       POSTGRES_USER: lacteva
       POSTGRES_PASSWORD: lacteva
@@ -37,6 +47,9 @@ services:
       # uv installs into the container; the repo is mounted read-write so the
       # virtualenv it creates does not fight the host's.
       UV_PROJECT_ENVIRONMENT: /tmp/proof-venv
+      # Passed through so a local run can keep the databases for inspection,
+      # exactly as the workflow_dispatch input does in CI.
+      KEEP_DATABASES: ${KEEP_DATABASES:-0}
     working_dir: /repo
     volumes:
       - .:/repo

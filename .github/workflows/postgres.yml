@@ -1,0 +1,154 @@
+name: PostgreSQL Verification
+
+# OPS-001. Everything this platform can only prove on a real engine, in one
+# workflow, from a clean checkout.
+#
+# The platform's guarantees have outgrown its test engine. Row-level security,
+# exact numeric aggregation, a scaled numeric column rounding on store,
+# migrations applied to an empty database, and a restore that is verified
+# rather than merely reported — none of these can be evaluated on SQLite, and
+# every one of them has already shipped a defect that only a real engine
+# surfaced. This workflow is where they run.
+#
+# Two rules shape it:
+#
+#   1. A SKIP IS A FAILURE. A skipped security proof is worse than an absent
+#      one, because it is green. `LACTEVA_REQUIRE_POSTGRES=1` turns a missing
+#      database into a collection error, and the proof script re-asserts it
+#      from the JUnit counts afterwards.
+#   2. ONE SCRIPT. CI and `docker compose -f docker-compose.proof.yml run
+#      --rm proof` execute the same `infra/ci/postgres-proof.sh`. Two
+#      pipelines agree until the day they matter.
+#
+# The SQLite pipeline in ci.yml is untouched and still gates every push — it
+# is fast, hermetic, and covers the other ~790 tests. This workflow is the
+# slower, realer half.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Continuous, not merely on-change: dependency and image updates can break a
+  # guarantee without anyone touching the repository.
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      keep_databases:
+        description: "Leave the proof databases in place for inspection"
+        type: boolean
+        default: false
+
+concurrency:
+  group: postgres-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    # The version is in the job name so a failure names the engine that failed.
+    name: PostgreSQL ${{ matrix.postgres }} verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      # Both versions always run. Learning that 16 passed while 17 failed is
+      # the entire point; stopping at the first failure would hide it.
+      fail-fast: false
+      matrix:
+        include:
+          # The version DBD-0001 documents for production. This one gates.
+          - postgres: "16"
+            role: production baseline
+          # The newest release this matrix covers. Adding a version here is
+          # how it becomes "supported" — the first green run is the evidence,
+          # not the intention. PostgreSQL 18 is deliberately absent for that
+          # reason: nothing has run against it, and an unproven version in a
+          # required matrix is a red build waiting for someone else's morning.
+          # Add it in its own change, so a failure is unambiguous.
+          - postgres: "17"
+            role: newest covered
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_USER: lacteva
+          POSTGRES_PASSWORD: lacteva
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        # The service must be reachable before the job's first step, not
+        # merely started. The proof script waits again on its own (it also
+        # runs under docker compose, where there is no service health gate),
+        # so startup is guarded twice and neither guard is load-bearing alone.
+        options: >-
+          --health-cmd "pg_isready -U lacteva"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 10s
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: lacteva
+      PGPASSWORD: lacteva
+      KEEP_DATABASES: ${{ inputs.keep_databases && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: services/platform-core/pyproject.toml
+
+      - name: Install PostgreSQL client
+        # `psql` and `pg_isready` are what the proof script uses to assert on
+        # the schema from outside the application — the client version must be
+        # at least the server's.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-client
+
+      - name: Install dependencies
+        working-directory: services/platform-core
+        run: uv sync
+
+      - name: Verify
+        # Nine steps, any failure fails the build: migrations from empty, RLS
+        # enabled+forced+covering, the PostgreSQL-only suites with zero skips,
+        # a real dairy seeded through the platform's own API, backup, a second
+        # fresh database, restore into it, deep business integrity, and a
+        # fact-by-fact comparison of source against restored.
+        run: ./infra/ci/postgres-proof.sh
+
+      - name: Publish failure diagnostics
+        if: failure()
+        run: |
+          echo "### PostgreSQL ${{ matrix.postgres }} verification FAILED" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The step that failed is the last \`==>\` line in the job log." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Reproduce locally with the identical script:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+          echo 'docker compose -f docker-compose.proof.yml run --rm proof' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Failure meanings are tabulated in docs/03-architecture/06-operations/POSTGRES-PROOF.md §4." >> "$GITHUB_STEP_SUMMARY"
+
+  # A single required status check, so branch protection does not have to name
+  # every matrix leg — and so adding a version later does not silently stop
+  # gating merges.
+  verified:
+    name: PostgreSQL verified
+    runs-on: ubuntu-latest
+    needs: verify
+    if: always()
+    steps:
+      - name: Assert every version passed
+        run: |
+          if [ "${{ needs.verify.result }}" != "success" ]; then
+            echo "PostgreSQL verification did not pass: ${{ needs.verify.result }}"
+            exit 1
+          fi
+          echo "All PostgreSQL versions verified."

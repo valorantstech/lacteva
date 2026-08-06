@@ -42,51 +42,11 @@ jobs:
       - name: Migrations apply cleanly
         run: LACTEVA_DATABASE_URL=sqlite+aiosqlite:///./ci-migrate.db uv run alembic upgrade head
 
-  # SEC-001: row-level security cannot execute on SQLite, so the policies are
-  # proven against a real PostgreSQL. A SKIP in this job is a configuration
-  # failure, not an expected outcome — hence the explicit assertion below.
-  # CI-001: everything the platform can only prove on a real engine.
-  # One script (infra/ci/postgres-proof.sh) runs here and under
-  # docker-compose.proof.yml locally, so "works in CI" and "works on my
-  # machine" cannot drift apart.
-  postgres-proof:
-    name: platform-core (PostgreSQL proof)
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: lacteva
-          POSTGRES_PASSWORD: lacteva
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      PGHOST: localhost
-      PGPORT: "5432"
-      PGUSER: lacteva
-      PGPASSWORD: lacteva
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-          cache-dependency-glob: services/platform-core/pyproject.toml
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
-      - name: Install dependencies
-        working-directory: services/platform-core
-        run: uv sync
-      - name: PostgreSQL proof
-        # Migrations from empty, RLS enabled+forced, RLS tests (not skipped),
-        # seed, backup, verify, restore into a FRESH database, deep integrity,
-        # and a fact-by-fact comparison. Any failure fails the build.
-        run: ./infra/ci/postgres-proof.sh
+  # PostgreSQL verification lives in its own workflow (OPS-001):
+  # .github/workflows/postgres.yml — a version matrix, a service container,
+  # the nine-step proof, and a hard failure on any skipped PostgreSQL test.
+  # It is NOT duplicated here. This workflow is the fast, hermetic half
+  # (SQLite, ~790 tests, no services); that one is the slow, real half.
 
   admin-portal:
     name: admin-portal (build + lint)

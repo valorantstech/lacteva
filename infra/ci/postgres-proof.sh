@@ -44,7 +44,28 @@ psql_do() { psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "$1" -tAc "$2";
 step() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 fail() { printf '\n\033[31mPROOF FAILED: %s\033[0m\n' "$*" >&2; exit 1; }
 
-trap 'rm -rf "${WORKDIR}"' EXIT
+# OPS-001: publish a summary where the operator will actually see it. Under
+# GitHub Actions that is the job summary page; locally it is stdout, so the
+# same lines serve both without a second code path.
+SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+summary() { printf '%s\n' "$*" >> "${SUMMARY}"; }
+
+# Teardown. The working directory always goes; the throwaway databases go too
+# unless KEEP_DATABASES=1, because a failed run is much easier to diagnose
+# with the database still standing.
+cleanup() {
+  local status=$?
+  rm -rf "${WORKDIR}"
+  if [ "${KEEP_DATABASES:-0}" != "1" ]; then
+    psql_do postgres "DROP DATABASE IF EXISTS ${SOURCE_DB}" >/dev/null 2>&1 || true
+    psql_do postgres "DROP DATABASE IF EXISTS ${RESTORE_DB}" >/dev/null 2>&1 || true
+  else
+    printf '\nKEEP_DATABASES=1 — %s and %s left in place for inspection.\n' \
+      "${SOURCE_DB}" "${RESTORE_DB}"
+  fi
+  return "${status}"
+}
+trap cleanup EXIT
 
 # The seeder and CLI must not start background loops: their sessions would
 # interleave with the work being measured. Consumers are driven explicitly.
@@ -54,6 +75,10 @@ export LACTEVA_OUTBOX_MODE=inline
 export LACTEVA_CONSUMERS_ENABLED=false
 export LACTEVA_RATE_LIMIT_BACKEND=memory
 export LACTEVA_MINIO_SECRET_KEY=proof-not-a-real-secret
+# OPS-001: a skipped PostgreSQL proof is worse than an absent one, because it
+# is green. With this set, the suites raise at collection instead of skipping,
+# so a misconfigured job cannot report success for work that never happened.
+export LACTEVA_REQUIRE_POSTGRES=1
 
 step "0/9  waiting for PostgreSQL at ${PGHOST}:${PGPORT}"
 for _ in $(seq 1 60); do
@@ -62,7 +87,8 @@ for _ in $(seq 1 60); do
 done
 pg_isready -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" >/dev/null 2>&1 \
   || fail "PostgreSQL never became ready"
-psql_do postgres "SELECT version()" | head -1
+PG_VERSION="$(psql_do postgres "SHOW server_version")"
+echo "    PostgreSQL ${PG_VERSION}"
 
 step "1/9  migrations apply to an EMPTY database (${SOURCE_DB})"
 psql_do postgres "DROP DATABASE IF EXISTS ${SOURCE_DB}" >/dev/null
@@ -103,18 +129,43 @@ ORG_POLICY="$(psql_do "${SOURCE_DB}" \
 echo "    every tenant_id table covered; organization isolated by identity"
 
 step "3/9  PostgreSQL-only test suites (RLS enforcement + exact aggregation)"
-RLS_LOG="${WORKDIR}/rls.log"
-# DB-002 lives here too: float summation being order-dependent, and a scaled
-# numeric column rounding on store, are PostgreSQL behaviours that SQLite
-# cannot exhibit — which is exactly why they went unnoticed.
+RLS_LOG="${WORKDIR}/pg-tests.log"
+JUNIT="${WORKDIR}/pg-tests.xml"
+# Every suite that can only be evaluated on a real engine, in one run:
+#   RLS            — policies, coverage, and the pre-tenant flows (SEC-001/002)
+#   aggregation    — float summation is order-dependent and a scaled numeric
+#                    column rounds on store; SQLite exhibits neither (DB-002)
+# Add new PostgreSQL-only modules HERE, not to a second job — this is the list
+# the skip assertion below protects.
 LACTEVA_TEST_POSTGRES_URL="$(url_for "${SOURCE_DB}")" \
   ${RUN} pytest tests/test_rls_postgres.py tests/test_exact_aggregation_postgres.py \
-  -v --no-header -rs 2>&1 | tee "${RLS_LOG}" \
+  -v --no-header -rs --junitxml="${JUNIT}" 2>&1 | tee "${RLS_LOG}" \
   || fail "PostgreSQL-only tests failed"
-# A skipped security proof is worse than none: it is green.
-grep -qE "[0-9]+ skipped" "${RLS_LOG}" \
-  && fail "RLS tests SKIPPED — PostgreSQL was not reachable from pytest"
-grep -qE "[0-9]+ passed" "${RLS_LOG}" || fail "no RLS tests actually ran"
+
+# The skip assertion, from structured output rather than from prose. pytest's
+# summary line has changed format before; the JUnit counts have not. This is a
+# backstop — LACTEVA_REQUIRE_POSTGRES=1 already makes a skip a collection
+# error — but a guarantee worth having twice is worth asserting twice.
+[ -s "${JUNIT}" ] || fail "pytest produced no JUnit report at ${JUNIT} — the run did not happen"
+PG_COUNTS="$(${RUN} python - "${JUNIT}" <<'PYCHECK'
+import sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+suites = root.iter("testsuite") if root.tag == "testsuites" else [root]
+tests = skipped = failures = errors = 0
+for s in suites:
+    tests += int(s.get("tests", 0)); skipped += int(s.get("skipped", 0))
+    failures += int(s.get("failures", 0)); errors += int(s.get("errors", 0))
+print(f"{tests} {skipped} {failures} {errors}")
+PYCHECK
+)"
+read -r PG_TESTS PG_SKIPPED PG_FAILURES PG_ERRORS <<<"${PG_COUNTS}"
+[ -n "${PG_TESTS}" ] || fail "could not read test counts from ${JUNIT}"
+[ "${PG_SKIPPED}" = "0" ] \
+  || fail "${PG_SKIPPED} PostgreSQL test(s) SKIPPED — a green skip is not a proof"
+[ "${PG_FAILURES}" = "0" ] && [ "${PG_ERRORS}" = "0" ] \
+  || fail "${PG_FAILURES} failure(s), ${PG_ERRORS} error(s) in the PostgreSQL suites"
+[ "${PG_TESTS}" -gt 0 ] || fail "no PostgreSQL tests were collected at all"
+echo "    ${PG_TESTS} PostgreSQL-only tests ran, 0 skipped"
 
 step "4/9  seeding a real dairy through the platform's own API"
 LACTEVA_DATABASE_URL="$(url_for "${SOURCE_DB}")" \
@@ -169,6 +220,27 @@ for check in \
   fi
 done
 [ "${mismatch}" = "0" ] || fail "the restored database differs from its source"
+
+# --- the published summary ------------------------------------------------
+# Under GitHub Actions this lands on the job summary page, so an operator sees
+# what was proven without opening the log. Locally it prints to stdout.
+summary "## PostgreSQL verification — passed"
+summary ""
+summary "**Server:** PostgreSQL \`${PG_VERSION}\`"
+summary ""
+summary "| Step | Proven | Evidence |"
+summary "| --- | --- | --- |"
+summary "| 1 | Migrations apply to an **empty** database | ${TABLES} tables created |"
+summary "| 2 | RLS enabled **and forced**, and covering | ${PROTECTED} tables forced, ${POLICIES} policies, 0 tenant_id tables uncovered |"
+summary "| 3 | PostgreSQL-only suites pass, none skipped | ${PG_TESTS} tests, ${PG_SKIPPED} skipped |"
+summary "| 4 | A real dairy seeds through the platform's own API | \`$(tr -d '\n' < "${WORKDIR}/seed.json" | cut -c1-160)\` |"
+summary "| 5 | Logical backup verifies against its own checksums | see log |"
+summary "| 6 | A **second, fresh** database migrates | \`${RESTORE_DB}\` |"
+summary "| 7 | Restore into it succeeds | see log |"
+summary "| 8 | Restored data passes deep business integrity | settlements, payments, receipts, projections |"
+summary "| 9 | Source and restored compared fact by fact | identical |"
+summary ""
+summary "_Run \`docker compose -f docker-compose.proof.yml run --rm proof\` to reproduce this locally — it is the same script._"
 
 cat <<'DONE'
 

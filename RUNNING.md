@@ -75,7 +75,7 @@ In `LACTEVA_ENV=dev|test` the backend also auto-creates tables at startup for co
 docker compose -f docker-compose.proof.yml run --rm proof
 ```
 
-Nine steps, any failure fails the run, and it is the **identical script** CI executes. The database has no volume and no published port: every run starts empty, because "migrations apply from empty" is one of the things being proven. Nothing touches your dev database.
+Nine steps, any failure fails the run, and it is the **identical script** the `PostgreSQL Verification` workflow executes. Match a specific CI matrix leg with `POSTGRES_VERSION=17`, or keep the databases after a failure with `KEEP_DATABASES=1`. The database has no volume and no published port: every run starts empty, because "migrations apply from empty" is one of the things being proven. Nothing touches your dev database.
 
 Details, per-step meaning, and how to read a failure: [POSTGRES-PROOF](docs/03-architecture/06-operations/POSTGRES-PROOF.md).
 

@@ -14,18 +14,16 @@ Skips without PostgreSQL; the CI proof job provides one, and a skip there is
 a configuration failure rather than an expected outcome.
 """
 
-import os
-
-import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-POSTGRES_URL = os.environ.get("LACTEVA_TEST_POSTGRES_URL", "")
+from tests import postgres_support
 
-pytestmark = pytest.mark.skipif(
-    not POSTGRES_URL, reason="no PostgreSQL configured (LACTEVA_TEST_POSTGRES_URL)"
-)
+# OPS-001: one guard for every PostgreSQL-only suite. A skip is allowed on a
+# laptop and impossible in the verification pipeline (see postgres_support).
+POSTGRES_URL = postgres_support.POSTGRES_URL
+pytestmark = postgres_support.requires_postgres
 
 
 @pytest_asyncio.fixture

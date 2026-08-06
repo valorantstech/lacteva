@@ -14,7 +14,6 @@ Point it at an instance with:
     LACTEVA_TEST_POSTGRES_URL=postgresql+asyncpg://user:pass@localhost:5432/db
 """
 
-import os
 import uuid
 
 import pytest
@@ -23,12 +22,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from platform_core.core.rls import BYPASS_SETTING, TENANT_SETTING
+from tests import postgres_support
 
-POSTGRES_URL = os.environ.get("LACTEVA_TEST_POSTGRES_URL", "")
-
-pytestmark = pytest.mark.skipif(
-    not POSTGRES_URL, reason="no PostgreSQL configured (LACTEVA_TEST_POSTGRES_URL)"
-)
+# OPS-001: one guard for every PostgreSQL-only suite. A skip is allowed on a
+# laptop and impossible in the verification pipeline (see postgres_support).
+POSTGRES_URL = postgres_support.POSTGRES_URL
+pytestmark = postgres_support.requires_postgres
 
 # A minimal stand-in for a tenant-owned table: the policy under test is
 # identical for every real one, and this keeps the fixture independent of any
