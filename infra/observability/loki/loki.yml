@@ -1,0 +1,49 @@
+# Loki — log aggregation for the production stack (DEP-001).
+#
+# Single-binary, filesystem-backed: correct for one host, and explicitly not a
+# scaling story. A multi-node deployment replaces this with object storage and
+# the read/write split, which is a different work order.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # The platform logs structured JSON on every request and every consumer
+  # event; the defaults are too tight for that under load.
+  ingestion_rate_mb: 16
+  ingestion_burst_size_mb: 32
+  max_query_series: 5000
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  # Matches the Prometheus retention, so a dashboard and its logs cover the
+  # same window — an alert whose logs have already expired is a dead end.
+  retention_period: 720h
+
+compactor:
+  working_directory: /loki/compactor
+  delete_request_store: filesystem
+  retention_enabled: true

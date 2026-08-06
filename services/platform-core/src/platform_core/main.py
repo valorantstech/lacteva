@@ -1,6 +1,5 @@
 """Application factory and ASGI entrypoint."""
 
-import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -26,14 +25,16 @@ async def _consumer_loop() -> None:
     """Background consumer runner (SPRINT-008B): processes the outbox log
     for every registered consumer, forever. Failures are isolated per event
     and per consumer — this loop only logs and continues."""
-    import asyncio
 
     from platform_core.modules.event_relay.consumers import ConsumerRunner
     from platform_core.modules.notification.service import NotificationService
 
     settings = get_settings()
     runner = ConsumerRunner(get_session_factory())
-    while True:
+    # DEP-001: cooperative. The loop leaves between units of work, never
+    # inside one, so a SIGTERM cannot land between a handler's write and the
+    # ledger row that records it.
+    while not workers.stopping():
         try:
             await runner.run_once()
             # Delivery retries (NOT-001) ride the same loop: a failed send is
@@ -43,18 +44,17 @@ async def _consumer_loop() -> None:
                 await session.commit()
         except Exception:
             log.exception("consumer_loop_error")
-        await asyncio.sleep(settings.consumer_poll_seconds)
+        await workers.sleep(settings.consumer_poll_seconds)
 
 
 async def _relay_loop() -> None:
     """Background dispatcher: delivers committed outbox events forever."""
-    import asyncio
 
     from platform_core.infrastructure.events import get_event_bus
     from platform_core.modules.event_relay.service import RelayService
 
     settings = get_settings()
-    while True:
+    while not workers.stopping():
         try:
             async with get_session_factory()() as session:
                 relay = RelayService(session, get_event_bus())
@@ -62,7 +62,7 @@ async def _relay_loop() -> None:
                 await session.commit()
         except Exception:
             log.exception("relay_loop_error")
-        await asyncio.sleep(settings.outbox_poll_seconds)
+        await workers.sleep(settings.outbox_poll_seconds)
 
 
 async def _health_loop() -> None:
@@ -75,12 +75,12 @@ async def _health_loop() -> None:
     time whether or not a human is present.
     """
     settings = get_settings()
-    while True:
+    while not workers.stopping():
         try:
             await health.evaluate()
         except Exception:
             log.exception("health_loop_error")
-        await asyncio.sleep(settings.health_sample_seconds)
+        await workers.sleep(settings.health_sample_seconds)
 
 
 @asynccontextmanager
@@ -132,14 +132,23 @@ async def lifespan(app: FastAPI):
         tracing=tracing_active,
     )
     yield
-    if relay_task is not None:
-        relay_task.cancel()
-    if consumer_task is not None:
-        consumer_task.cancel()
-    if health_task is not None:
-        health_task.cancel()
+
+    # --- shutdown (DEP-001) ------------------------------------------------
+    # Uvicorn has already stopped accepting connections and drained in-flight
+    # requests by the time this runs (`--timeout-graceful-shutdown`), so what
+    # is left is the work the platform started on its own: the relay
+    # dispatcher, the consumer runner, the health sampler.
+    #
+    # They are asked to finish the unit of work they are in and then stop.
+    # Cancelling them instead would be safe — a rolled-back consumer
+    # transaction is retried — but it would mean every rolling deploy left
+    # work to redo, and on a busy platform that is a lot of redoing.
+    outcome = await workers.shutdown(grace_seconds=settings.shutdown_grace_seconds)
     workers.clear()
-    # TODO(M1): graceful shutdown — drain event-bus connection, dispose engine.
+    # The engine last, and only after the loops are done: disposing it while a
+    # consumer still holds a session turns a clean shutdown into a stack trace.
+    await get_engine().dispose()
+    log.info("shutdown_complete", workers=outcome)
 
 
 def create_app() -> FastAPI:

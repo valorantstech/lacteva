@@ -108,6 +108,22 @@ def worst(statuses: list[str]) -> str:
     return min(statuses, key=lambda s: _SEVERITY.get(s, 0))
 
 
+# DEP-001: the newest full evaluation, kept so readiness can answer in O(1).
+#
+# A load balancer polls readiness every few seconds; running nine probes on
+# every poll would make the health check itself a load source, and a probe
+# that touches the database on every poll is the classic way to turn a
+# wobble into an outage. The background sampler already evaluates on a timer
+# (that is what populates the `component_health` gauge every alert reads), so
+# readiness reads its result instead of duplicating the work.
+_last: "PlatformHealth | None" = None
+
+
+def last_evaluation() -> "PlatformHealth | None":
+    """The most recent full evaluation, or None before the first sample."""
+    return _last
+
+
 async def evaluate(only: tuple[str, ...] | None = None) -> PlatformHealth:
     """Run every registered probe. Probes run sequentially and are expected
     to be cheap: a health endpoint that takes a second is one nobody polls."""
@@ -133,8 +149,12 @@ async def evaluate(only: tuple[str, ...] | None = None) -> PlatformHealth:
         )
         COMPONENT_HEALTH.labels(result.name).set(_SEVERITY.get(result.status, 0))
         results.append(result)
-    return PlatformHealth(
+    snapshot = PlatformHealth(
         status=worst([r.status for r in results]),
         components=results,
         checked_at=utcnow().isoformat(),
     )
+    if only is None:  # only a FULL evaluation may be cached as the platform's state
+        global _last
+        _last = snapshot
+    return snapshot

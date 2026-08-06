@@ -91,10 +91,47 @@ async def liveness() -> dict:
 
 @router.get("/health/ready")
 async def readiness(response: Response) -> dict:
-    results = {name: await check() for name, check in _readiness_checks.items()}
-    healthy = all(results.values())
-    response.status_code = 200 if healthy else 503
-    return {"status": "ok" if healthy else "degraded", "checks": results}
+    """Should this instance receive traffic? (DEP-001)
+
+    Readiness now answers from the SAME nine probes the ops health endpoint
+    and every Prometheus alert use — database, redis, outbox, consumers,
+    projections, notifications, jwt_keys, background_workers, backups —
+    rather than from a `SELECT 1`. A load balancer was previously told an
+    instance was ready while its consumer loop was dead and nothing
+    downstream was happening.
+
+    **Degraded is still ready.** Only CRITICAL removes an instance from the
+    pool. A platform with a lagging consumer should keep serving requests;
+    taking it out of rotation would turn a partial problem into a total one,
+    and there is nowhere better for the traffic to go.
+
+    The evaluation is the background sampler's most recent, not a fresh one:
+    a probe run per poll would make the health check a load source. Before
+    the first sample lands, this falls back to the cheap adapter checks so a
+    just-started instance is not reported unready for the sampling interval.
+    """
+    from platform_core.core import health
+
+    snapshot = health.last_evaluation()
+    if snapshot is None:
+        # Startup window: no sample yet. The adapter checks are cheap and
+        # answer the only question that matters this early — can we reach
+        # the database at all?
+        results = {name: await check() for name, check in _readiness_checks.items()}
+        ready = all(results.values())
+        response.status_code = 200 if ready else 503
+        return {"status": "ok" if ready else "degraded", "checks": results}
+
+    response.status_code = 200 if snapshot.ready else 503
+    # `status` keeps its original two-value vocabulary: this endpoint has
+    # consumers (load balancers, the container HEALTHCHECK) and DEP-001 is not
+    # allowed to move a contract. The four-level detail is added beside it.
+    return {
+        "status": "ok" if snapshot.ready else "degraded",
+        "platform_status": snapshot.status,
+        "checked_at": snapshot.checked_at,
+        "checks": {c.name: c.status for c in snapshot.components},
+    }
 
 
 @router.get("/metrics")
@@ -103,9 +140,10 @@ async def metrics() -> Response:
 
 
 def setup_observability(app: FastAPI) -> None:
+    # The startup-window fallback only (see `readiness`). Once the health
+    # sampler has run, readiness comes from the nine registered probes, which
+    # already cover redis, consumers, projections and the rest.
     register_readiness_check("database", _database_ready)
-    # TODO(M1): readiness checks for rabbitmq, redis, minio, opensearch —
-    # each adapter registers its own check on startup when enabled.
     app.include_router(router)
     # OpenTelemetry hook: instrumentation is wired only when an exporter
     # endpoint is configured, keeping dev/test lightweight.

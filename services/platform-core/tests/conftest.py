@@ -24,6 +24,19 @@ from platform_core.main import create_app
 
 
 @pytest.fixture(autouse=True)
+def _reset_health_snapshot():
+    """DEP-001: readiness answers from the last full health evaluation, which
+    is process-global state. Any test that evaluates health would otherwise
+    change what a later readiness test sees — so each test starts from the
+    same place: no sample yet."""
+    from platform_core.core import health
+
+    health._last = None
+    yield
+    health._last = None
+
+
+@pytest.fixture(autouse=True)
 def _reset_rate_limiter():
     """A fresh limiter per test: budgets must not leak between tests."""
     from platform_core.core import rate_limit

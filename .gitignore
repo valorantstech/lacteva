@@ -11,6 +11,9 @@ dist/
 .env
 .env.*
 !.env.example
+# DEP-001: the production TEMPLATE is committed (it documents every variable
+# and contains only placeholders); the filled-in file never is.
+!.env.production.example
 
 # Node / Next.js (admin portal)
 node_modules/

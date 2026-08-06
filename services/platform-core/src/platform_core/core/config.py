@@ -1,6 +1,7 @@
 """Application settings (pydantic-settings, LACTEVA_ env prefix)."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import model_validator
@@ -11,7 +12,18 @@ DEV_MINIO_SECRET = "lacteva-secret"  # noqa: S105 - sentinel, refused in prod
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="LACTEVA_", env_file=".env", extra="ignore")
+    # DEP-001: `secrets_dir` is how Docker Secrets reach the process — each
+    # secret is a file at /run/secrets/<name>, read once at startup and never
+    # present in the environment, so it cannot leak through `docker inspect`,
+    # a crash dump, or a child process's `environ`. Conditional because the
+    # directory only exists where secrets are actually mounted, and
+    # pydantic-settings warns about a path that is not there.
+    model_config = SettingsConfigDict(
+        env_prefix="LACTEVA_",
+        env_file=".env",
+        extra="ignore",
+        secrets_dir="/run/secrets" if Path("/run/secrets").is_dir() else None,
+    )
 
     env: Literal["dev", "test", "staging", "prod"] = "dev"
     debug: bool = False
@@ -52,6 +64,12 @@ class Settings(BaseSettings):
     # the `component_health` gauge. Every Prometheus alert rule reads that
     # gauge, so a platform that never samples is a platform that never alerts.
     health_sample_seconds: float = 30.0
+    # DEP-001: how long background workers get to finish the unit of work they
+    # are in when SIGTERM arrives. Must be comfortably below the orchestrator's
+    # kill timeout (compose `stop_grace_period`, Kubernetes
+    # `terminationGracePeriodSeconds`), or the container is killed mid-drain
+    # and the drain was pointless.
+    shutdown_grace_seconds: float = 20.0
 
     # Row Level Security (PostgreSQL only; SQLite has no equivalent).
     rls_enabled: bool = True

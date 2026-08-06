@@ -1,0 +1,53 @@
+# Promtail — ships this host's container logs to Loki (DEP-001).
+#
+# The platform already logs structured JSON to stdout, and compose already
+# writes that to the json-file driver. Promtail reads those files rather than
+# asking the application to ship anything: no code path, no buffering in the
+# API process, and logs survive a container that died before it could flush.
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: containers
+    docker_sd_configs:
+      # Through the restricted proxy, never the socket directly: the Docker
+        # API is root on the host, and a log shipper has no business holding it.
+      - host: tcp://dockerproxy:2375
+        refresh_interval: 15s
+    relabel_configs:
+      - source_labels: [__meta_docker_container_name]
+        regex: "/(.*)"
+        target_label: container
+      - source_labels: [__meta_docker_container_log_stream]
+        target_label: stream
+      # Only this stack's containers. Anything else on the host is somebody
+      # else's log volume and somebody else's retention decision.
+      - source_labels: [__meta_docker_container_label_com_docker_compose_project]
+        regex: lacteva-production
+        action: keep
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+    pipeline_stages:
+      # The API's own lines are JSON; lifting the fields makes
+      # `{service="api"} | json | level="error"` work, and makes the
+      # correlation id (BR-0024) queryable across services.
+      - json:
+          expressions:
+            level: level
+            event: event
+            request_id: request_id
+            tenant_id: tenant_id
+      - labels:
+          level:
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+          action_on_failure: fudge
