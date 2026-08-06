@@ -3,10 +3,10 @@ id: NOTIFICATION-ENGINE
 title: Notification Engine
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Engineering
 created: 2026-08-05
-last-updated: 2026-08-05
+last-updated: 2026-08-07
 related: [BR-REGISTER, PROJECTION-LIFECYCLE, CLAUDE-CONTEXT]
 baseline: ARCH-BASELINE-V1
 ---
@@ -106,8 +106,68 @@ The background loop calls `retry_pending()` for due notifications; `POST /v1/not
 - **No recipient preferences.** Everyone who has an address receives every notification their events produce; there is no opt-out, quiet-hours, or digest logic.
 - **Directory covers suppliers only.** Users receive messages when the event itself carries an address (password reset, invitation). A user-directory projection would generalize this.
 
+## Delivery, for real (MSG-001)
+
+NOT-001 shipped adapters only — a logging provider and a placeholder — and said so plainly. The consequence was that the platform rendered every message, dispatched it, retried it and recorded it, and then handed it to something that threw it away. **A farmer was never told they had been paid.**
+
+### The provider contract
+
+`send()` returns a `DeliveryResult` rather than a bare string, because an operator asking "did it arrive?" needs more than a reference:
+
+| Field | Why |
+| --- | --- |
+| `provider_message_id` | What a support conversation with the gateway quotes |
+| `status` | `accepted` \| `sent` \| `delivered` \| `unknown` |
+| `metadata` | Segment count, cost, the gateway's own status string — never credentials |
+
+### Retryable versus permanent — the defect this work exposed
+
+**Every failure used to be retried.** An invalid phone number consumed five gateway calls and five backoff windows to reach the answer it had on the first attempt. A missing template — a deployment fault, not a delivery fault — did the same, burying the real signal under a retry backlog.
+
+Providers now state permanence, and the retry engine honours it:
+
+| Kind | Examples | Engine |
+| --- | --- | --- |
+| **Transient** (`ProviderSendError`) | Timeout, network, 429, 5xx | Backoff and retry, to the existing budget |
+| **Permanent** (`PermanentSendError`) | Invalid number, bad credential, rejected sender, malformed request, missing template | Straight to `dead`, first attempt |
+
+The base class stays retryable, so every pre-MSG-001 raiser behaves as it did. **Permanence has to be claimed**: when a provider says something unfamiliar, the safe default is to try again, not to give up on a farmer's message.
+
+A permanent failure still goes to `dead` rather than being silently dropped — visible in the history, counted, and retryable by an operator who has fixed the underlying data.
+
+### The one double-send the platform cannot prevent alone
+
+A message the gateway accepted and whose response we lost. Only the gateway knows it already has it, so it is told: every send carries an `Idempotency-Key` of `lacteva-{notification_id}`, **stable across every retry**. The platform's own idempotency (unique on `(event_id, template_key, channel)`) stops a duplicate *dispatch*; this stops a duplicate *delivery*.
+
+### Vendor neutrality
+
+`HttpSmsProvider` speaks a small documented JSON contract and classifies outcomes by **HTTP status**, which every gateway agrees on even when their payloads do not. Dairy markets differ by country and a deployment may change provider without changing code. A gateway whose shape does not fit implements `ChannelProvider` and is installed with `register_provider` — the seam NOT-001 already built, unchanged.
+
+### Modes
+
+| `LACTEVA_NOTIFICATION_SMS_PROVIDER` | Behaviour |
+| --- | --- |
+| `logging` | Delegates to the notifier port. Dev default |
+| `placeholder` | Accepts, discards. "No gateway configured yet" |
+| `dry_run` | Renders and logs a **real** message against production-shaped config without sending. Staging |
+| `http` | The gateway |
+| `disabled` | Refuses **permanently** — for a market that is not live |
+
+`dry_run` and `placeholder` differ in intent, and the difference is operational: one means a gateway is configured and deliberately unused, the other that none exists. `disabled` raises rather than silently succeeding, because a notification marked sent that was never sent is a lie the platform would repeat to whoever asks why a supplier was not told.
+
+### What is logged
+
+Never an API key, never an Authorization header, never a full phone number. `mask_phone()` turns `+254700123456` into `+2547****3456` — enough to correlate with a support conversation, not enough to be a contact list. A log carrying every supplier's number is a copy of the directory with weaker access control than the database it came from.
+
+Gateway error bodies are truncated to 200 characters before they reach an exception, because they echo the request often enough to carry the number and occasionally the credential.
+
+### Cost visibility
+
+`_segments()` reports the SMS segment count — 160 GSM-7 characters, 70 for anything outside that alphabet. Segments are what a gateway bills, so a template that quietly crosses a boundary doubles the cost of every message it sends. It is in the delivery metadata and in the dry-run log.
+
 ## Change Log
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-07 | Architecture Board | MSG-001: real delivery. Provider contract returns a DeliveryResult; permanent failures stop being retried; gateway idempotency key; PII masking; vendor-neutral HTTP adapter. |
 | 1.0 | 2026-08-05 | Engineering | Established by NOT-001. |

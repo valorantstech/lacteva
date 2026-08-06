@@ -248,7 +248,7 @@ Before the first real tenant. Each line is a question with a yes/no answer.
 
 ### Known gaps — acknowledge rather than tick
 - [ ] **SMTP** — not wired. NOT-001 ships logging and placeholder providers; no email leaves the platform
-- [ ] **SMS** — not wired, and this is the one that matters: suppliers are reached by SMS, and today the platform generates the message and hands it to a provider that discards it
+- [ ] **SMS** — wired (MSG-001). Gateway URL, key (prefer a Docker secret) and sender id set; **proven in `dry_run` on staging before `http` in production**, because a wrong sender id is a permanent rejection and suppliers would silently stop being told they were paid
 - [ ] **PITR** — not available (§9)
 - [ ] **PII is stored in the clear**, with no erasure path (ABR-002 D-2)
 

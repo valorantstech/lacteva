@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.15"
+version: "1.16"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-06
@@ -227,6 +227,8 @@ baseline: ARCH-BASELINE-V1
 
 **Status:** Active (since NOT-001).
 
+
+**Retry only what a retry can fix (MSG-001).** The budget exists for faults that pass — a gateway restart, a throttle, a network blip. Spending it on an invalid phone number, a rejected sender id, a bad credential or a template the deployment cannot render costs money on every attempt, delays every message queued behind it, and reaches the same answer it had the first time. A provider therefore states permanence explicitly and the engine honours it, sending a permanent failure straight to `dead`. The base error stays RETRYABLE: when a provider says something unfamiliar the safe default is to try again, because giving up silently drops a message a supplier is waiting for. A permanent failure is never a silent drop — it is recorded, counted, visible in the history, and retryable by an operator who has fixed the underlying data.
 ---
 
 ## BR-0018 — Payments consume finalized settlements and never exceed the payable.
@@ -350,6 +352,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.16 | 2026-08-07 | Architecture Board | MSG-001: BR-0017 extended — retry only what a retry can fix; permanence is claimed, and unknown means retryable. |
 | 1.15 | 2026-08-06 | Architecture Board | MT-001: BR-0022 extended — the bypass must be set, is the only isolation inside itself, and tenant boundaries extend to key namespaces. |
 | 1.14 | 2026-08-06 | Architecture Board | DB-002: BR-0005 extended to SQL aggregation; BR-0015 gains flush independence. |
 | 1.13 | 2026-08-06 | Architecture Board | SEC-002: BR-0022 extended — every table declares an isolation strategy; child tables are tenant-owned; the tenant binds before the first read. |

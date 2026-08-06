@@ -302,7 +302,8 @@ Stated so it is a decision rather than a surprise:
 - **No automated failover**, no read replica, no cross-region replication (§9).
 - **No WAL archiving**, so no point-in-time recovery (§8).
 - **No horizontal scaling.** One host, one database, `API_WORKERS` processes.
-- **No email or SMS delivery.** NOT-001 ships logging and placeholder providers; the SMTP and SMS variables exist so the deployment is ready when an adapter lands, and so nobody believes messaging works because the settings look complete. **Suppliers are reached by SMS, and this is the gap that matters most in the field.**
+- **No email delivery.** NOT-001 ships logging and placeholder providers for email; the SMTP variables exist so the deployment is ready when an adapter lands, and so nobody believes email works because the settings look complete.
+- **SMS delivery IS wired (MSG-001)** and must be configured deliberately: set `LACTEVA_NOTIFICATION_SMS_PROVIDER`, and run staging in `dry_run` first — a wrong sender id is a permanent rejection, and discovering that in production means suppliers silently stop being told they were paid.
 - **No secret rotation automation.** Rotating means editing and redeploying.
 - **PII is stored in the clear**, and there is no erasure path (ABR-002 D-2).
 

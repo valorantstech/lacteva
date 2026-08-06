@@ -84,6 +84,17 @@ IDEMPOTENCY_MISMATCHES = Counter(
 )
 IDEMPOTENCY_SWEPT = Counter("idempotency_swept_total", "Expired idempotency records deleted")
 
+# --- SMS / channel delivery (MSG-001) ---------------------------------------
+# `kind` is a THREE-value vocabulary — permanent | transient | timeout — not
+# the provider's error string, which is unbounded and attacker-influenced.
+# Knowing which kind is what tells an operator whether to page the gateway or
+# fix a phone number.
+NOTIFICATION_PROVIDER_ERRORS = Counter(
+    "notification_provider_errors_total",
+    "Delivery failures, by whether a retry can help",
+    ["channel", "provider", "kind"],
+)
+
 # --- relay (outbox) ---------------------------------------------------------
 
 RELAY_DELIVERED = Counter("relay_delivered_total", "Events delivered by the relay")

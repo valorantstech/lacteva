@@ -37,7 +37,9 @@ class _RecordingProvider:
 
             raise ProviderSendError("gateway unavailable")
         self.sent.append(message)
-        return f"recording:{len(self.sent)}"
+        from platform_core.modules.notification.providers import DeliveryResult
+
+        return DeliveryResult(provider_message_id=f"recording:{len(self.sent)}")
 
 
 def _runner():
@@ -186,7 +188,8 @@ async def test_logging_provider_delegates_to_the_notifier_port(client):
     finally:
         port._notifier = original
     assert captured and captured[0].recipient == "+254700000001"
-    assert reference.startswith("logging-sms:")
+    # MSG-001: providers return a DeliveryResult, not a bare string.
+    assert reference.provider_message_id.startswith("logging-sms:")
 
 
 async def test_placeholder_provider_sends_nothing(provider_guard):
@@ -203,7 +206,7 @@ async def test_placeholder_provider_sends_nothing(provider_guard):
             notification_id=uuid.uuid4(),
         )
     )
-    assert reference.startswith("placeholder-email:")
+    assert reference.provider_message_id.startswith("placeholder-email:")
 
 
 async def test_provider_is_swappable(provider_guard):

@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
 from platform_core.core.metrics import (
+    NOTIFICATION_PROVIDER_ERRORS,
     NOTIFICATION_PROVIDER_SECONDS,
     NOTIFICATION_RETRIES,
     NOTIFICATIONS_DEAD,
@@ -35,6 +36,7 @@ from platform_core.modules.event_relay.service import backoff_delay
 from platform_core.modules.notification.models import Notification, NotificationRecipient
 from platform_core.modules.notification.providers import (
     OutboundMessage,
+    PermanentSendError,
     ProviderSendError,
     get_provider,
 )
@@ -118,6 +120,15 @@ class RenderedPreview(BaseModel):
     title: str
     body: str
     variables_used: dict
+
+
+def provider_name(channel: str) -> str:
+    """The provider's name for a metric label. Falls back rather than raising:
+    a metrics lookup must never be the thing that breaks a delivery."""
+    try:
+        return get_provider(channel).name
+    except Exception:
+        return "unknown"
 
 
 class NotificationService:
@@ -214,7 +225,7 @@ class NotificationService:
             # Provider latency is the number that tells an operator whether a
             # delivery backlog is the gateway's fault or ours.
             with NOTIFICATION_PROVIDER_SECONDS.labels(notification.channel, provider.name).time():
-                reference = await provider.send(
+                result = await provider.send(
                     OutboundMessage(
                         channel=notification.channel,
                         recipient=recipient,
@@ -225,19 +236,48 @@ class NotificationService:
                         notification_id=notification.id,
                     )
                 )
-        except (
-            ProviderSendError,
-            TemplateRenderError,
-            TemplateNotFoundError,
-            Exception,
-        ) as exc:  # a provider must never break the consumer
+        except PermanentSendError as exc:
+            # MSG-001: a retry cannot change this outcome. An invalid number,
+            # a rejected sender id, a bad credential. Before MSG-001 every
+            # failure was retried to exhaustion, so one mistyped number spent
+            # five gateway calls and five backoff windows to reach the same
+            # answer it had the first time.
+            NOTIFICATION_PROVIDER_ERRORS.labels(
+                notification.channel, provider_name(notification.channel), "permanent"
+            ).inc()
+            self._record_failure(
+                notification, str(exc)[:500], now=now, forced=forced, permanent=True
+            )
+            return
+        except (TemplateRenderError, TemplateNotFoundError) as exc:
+            # A missing template or an unrenderable one is a DEPLOYMENT fault,
+            # not a delivery fault. Retrying it five times changes nothing and
+            # buries the real signal — that the platform shipped a template
+            # key it cannot render — under a retry backlog.
+            self._record_failure(
+                notification, str(exc)[:500], now=now, forced=forced, permanent=True
+            )
+            return
+        except ProviderSendError as exc:
+            NOTIFICATION_PROVIDER_ERRORS.labels(
+                notification.channel,
+                provider_name(notification.channel),
+                "timeout" if "timeout" in str(exc).lower() else "transient",
+            ).inc()
+            self._record_failure(notification, str(exc)[:500], now=now, forced=forced)
+            return
+        except Exception as exc:  # a provider must never break the consumer
+            # Unknown means retryable. Giving up on an unfamiliar error would
+            # silently drop a farmer's message for a fault we have not
+            # diagnosed yet.
+            log.exception("notification_provider_unexpected", error=type(exc).__name__)
             self._record_failure(notification, str(exc)[:500], now=now, forced=forced)
             return
         notification.language = message.language
         notification.title = message.title
         notification.rendered_text = message.body
         notification.provider = provider.name
-        notification.provider_reference = reference
+        notification.provider_reference = result.provider_message_id
         notification.status = "sent"
         notification.sent_at = now
         notification.next_attempt_at = None
@@ -245,12 +285,31 @@ class NotificationService:
         NOTIFICATIONS_SENT.labels(notification.channel, notification.template_key).inc()
 
     def _record_failure(
-        self, notification: Notification, error: str, *, now: datetime, forced: bool
+        self,
+        notification: Notification,
+        error: str,
+        *,
+        now: datetime,
+        forced: bool,
+        permanent: bool = False,
     ) -> None:
+        """Record the failure and decide whether it is worth trying again.
+
+        MSG-001 added `permanent`. The retry budget exists for faults that
+        pass — a gateway restart, a throttle, a network blip. Spending it on
+        a number that does not exist wastes money on every attempt and puts
+        the messages behind it in the queue further back for nothing.
+
+        A permanent failure still goes to `dead`, not to a silent drop: it is
+        visible in the notification history, retryable by an operator who has
+        fixed the underlying problem, and counted.
+        """
         notification.error = error
         notification.failed_at = now
         notification.provider = notification.provider or None
-        exhausted = notification.attempt_count >= MAX_CONSUMER_ATTEMPTS and not forced
+        exhausted = permanent or (
+            notification.attempt_count >= MAX_CONSUMER_ATTEMPTS and not forced
+        )
         if exhausted:
             notification.status = "dead"
             notification.next_attempt_at = None
@@ -259,6 +318,11 @@ class NotificationService:
                 "notification_dead",
                 notification_id=str(notification.id),
                 template=notification.template_key,
+                # Why it stopped: a permanent rejection needs someone to fix
+                # the data, an exhausted budget needs someone to check the
+                # gateway. Different reactions, so different log fields.
+                reason="permanent" if permanent else "attempts_exhausted",
+                attempts=notification.attempt_count,
                 error=error,
             )
         else:

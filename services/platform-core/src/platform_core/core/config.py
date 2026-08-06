@@ -97,8 +97,32 @@ class Settings(BaseSettings):
     consumer_poll_seconds: float = 1.0
     # Notification channel adapters (NOT-001): logging | placeholder. Real
     # gateways implement the same provider protocol at deployment time.
-    notification_sms_provider: Literal["logging", "placeholder"] = "logging"
-    notification_email_provider: Literal["logging", "placeholder"] = "logging"
+    # MSG-001. `logging`/`placeholder` keep the pre-production behaviour;
+    # `http` is the real gateway; `dry_run` renders and logs a real message
+    # against production-shaped configuration WITHOUT sending it (staging);
+    # `disabled` refuses permanently, for a market that is not live yet.
+    notification_sms_provider: Literal["logging", "placeholder", "http", "dry_run", "disabled"] = (
+        "logging"
+    )
+    notification_email_provider: Literal["logging", "placeholder", "dry_run", "disabled"] = (
+        "logging"
+    )
+
+    # --- SMS gateway (MSG-001) ---------------------------------------------
+    # Vendor-neutral: the adapter speaks a small documented JSON contract and
+    # classifies outcomes by HTTP status, which every gateway agrees on.
+    # Credentials live in the environment or a Docker secret, never in code.
+    sms_api_url: str = ""
+    sms_api_key: str = ""
+    #: The alphanumeric or short-code sender a supplier sees. Registration is
+    #: per-market and per-operator; a wrong value is rejected by the gateway
+    #: as a PERMANENT failure, which is why it is worth getting right in
+    #: staging rather than discovering in the field.
+    sms_sender_id: str = "LACTEVA"
+    #: Below a farmer's patience and above a gateway's p99. Too short and
+    #: every message retries; too long and the consumer loop stalls behind
+    #: one unresponsive gateway.
+    sms_timeout_seconds: float = 10.0
     # RCP-001: no PDF engine ships with the platform; a deployment registers
     # its own renderer for the `pdf` format.
     receipt_pdf_renderer: Literal["placeholder"] = "placeholder"
