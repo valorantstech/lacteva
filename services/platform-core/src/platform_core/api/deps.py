@@ -17,6 +17,7 @@ from platform_core.core.backup.service import BackupService
 from platform_core.core.db import get_session
 from platform_core.core.errors import ForbiddenError, UnauthorizedError
 from platform_core.core.metrics import AUTH_FAILURES, AUTHZ_DENIALS, JWT_VERIFICATION_FAILURES
+from platform_core.core.rls import platform_factory
 from platform_core.core.security import decode_token
 from platform_core.core.tenancy import get_current_tenant, set_current_tenant
 from platform_core.infrastructure.events import EventBus, get_event_bus
@@ -69,26 +70,24 @@ def get_relay_service(session: Session) -> RelayService:
 
 
 def get_consumer_runner() -> ConsumerRunner:
-    from platform_core.core.db import get_session_factory
-
     # Own session factory: consumers run isolated per-event transactions.
-    return ConsumerRunner(get_session_factory())
+    # MT-001: the consumer ops API reports on every tenant's events; it is
+    # guarded by `relay.manage`, not by a tenant. Handing it a request-scoped
+    # session would show an operator an empty platform.
+    return ConsumerRunner(platform_factory("ops API: consumer administration"))
 
 
 def get_backup_service() -> "BackupService":
     from platform_core.core.backup.service import BackupService
-    from platform_core.core.db import get_session_factory
 
     # Own session factory: backup and verification runs are platform
     # operations spanning every tenant, not request-scoped work.
-    return BackupService(get_session_factory())
+    return BackupService(platform_factory("ops API: backup administration"))
 
 
 def get_projection_rebuilder() -> ProjectionRebuilder:
-    from platform_core.core.db import get_session_factory
-
     # Own session factory: replay commits per batch, independent of requests.
-    return ProjectionRebuilder(get_session_factory())
+    return ProjectionRebuilder(platform_factory("ops API: projection administration"))
 
 
 _bearer = HTTPBearer(auto_error=False)

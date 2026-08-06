@@ -3,7 +3,7 @@ id: RLS-GUIDE
 title: Row Level Security Guide
 type: reference
 status: Approved
-version: "1.2"
+version: "1.3"
 owner: Architecture Board
 created: 2026-08-05
 last-updated: 2026-08-06
@@ -148,6 +148,41 @@ variable and leaves the database binding behind, which is a defect that
 presents as "the row is invisible to the request that owns it". `rebind_tenant()`
 exists to move both together.
 
+## 3d. The bypass boundary (MT-001)
+
+RLS protects the request path. It deliberately does **not** protect the work that spans tenants — the relay dispatcher, the consumer runner, projection rebuilds, the backup engine, the health probes, and the operator APIs that report on all of them. Every one of those is *supposed* to see every tenant.
+
+**For a year that was documented and not implemented.** Those components built sessions from the ordinary factory, which binds neither a tenant nor a bypass. On PostgreSQL the policy then evaluated:
+
+| Clause | Value on an unbound session |
+| --- | --- |
+| `current_setting('lacteva.bypass_rls', true) = 'on'` | `NULL = 'on'` → not true |
+| `tenant_id IS NULL` | true only for platform-global rows |
+| `tenant_id::text = current_setting('lacteva.tenant_id', true)` | `uuid::text = NULL` → NULL → not true |
+
+So the entire asynchronous half of the platform could see only platform-global rows: **the relay would find no tenant events to dispatch, consumers would consume nothing, and every projection write would be refused by `WITH CHECK`.** No error, no exception, no alert — requests would succeed, milk would be recorded, and nothing downstream would happen. That is the failure shape this platform's own runbook calls the most dangerous it has.
+
+SQLite cannot execute a policy, so nothing caught it. It is the fourth defect of that exact shape.
+
+### How the boundary is drawn now
+
+Two session factories, and the difference is visible at the construction site:
+
+| Factory | Given to | Sees |
+| --- | --- | --- |
+| `get_session_factory()` | Everything request-scoped | One tenant (RLS) |
+| `platform_factory(reason)` | Relay, consumers, projections, backup, health probes, ops APIs | Every tenant, and says why |
+
+`PlatformSessionFactory` binds `lacteva.bypass_rls` on every session it produces and logs the reason. A component built with it **cannot forget**; a component built with the ordinary factory is visibly request-scoped. That is why it is a factory rather than a call at each of ~25 sites.
+
+### The consequence that matters
+
+**Inside a bypassed session, the application-level `tenant_id` filter is the only isolation there is.** RLS is not a second line of defence there — it is switched off, on purpose. MT-001 found one query that had relied on it: the notification dispatcher looked up a recipient by `subject_id` alone, so a match across the boundary would have addressed one dairy's payment notification with another dairy's phone number.
+
+The rule for anything running under `platform_factory`:
+
+> **Every query filters by tenant explicitly, even where a UUID makes a collision implausible.** The database is not going to catch it, and the cost of the clause is one line.
+
 ## 4. The bypass
 
 Some machinery is definitionally cross-tenant: the relay dispatcher, event consumers, projection rebuilds, and platform-admin operations. They call `bind_platform_context(session, reason=...)`, which sets `lacteva.bypass_rls` for that transaction and logs the reason.
@@ -190,6 +225,7 @@ Both flags must be true. `relrowsecurity` alone means the owner still bypasses.
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.3 | 2026-08-06 | Architecture Board | MT-001: the bypass boundary documented and implemented — background components were never actually setting the bypass, so the asynchronous half of the platform saw only platform-global rows. |
 | 1.2 | 2026-08-06 | Architecture Board | SEC-002: A/B/C isolation taxonomy; 13 child tables made tenant-owned; `organization` isolated by identity; the pre-tenant flows documented. |
 | 1.1 | 2026-08-06 | Architecture Board | CI-001: platform-global (`tenant_id IS NULL`) clause added to the policy after first execution on a real engine. |
 | 1.0 | 2026-08-05 | Architecture Board | Established by SEC-001. |

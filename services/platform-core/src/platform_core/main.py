@@ -14,6 +14,7 @@ from platform_core.core.errors import register_error_handlers
 from platform_core.core.http_security import SecurityHeadersMiddleware
 from platform_core.core.logging import configure_logging, get_logger
 from platform_core.core.observability import RequestContextMiddleware, setup_observability
+from platform_core.core.rls import platform_factory, platform_session
 from platform_core.core.tenancy import TenantContextMiddleware
 from platform_core.core.tracing import setup_tracing
 from platform_core.modules.authz.service import AuthzService
@@ -30,7 +31,10 @@ async def _consumer_loop() -> None:
     from platform_core.modules.notification.service import NotificationService
 
     settings = get_settings()
-    runner = ConsumerRunner(get_session_factory())
+    # MT-001: consumers are definitionally cross-tenant — one loop drains the
+    # log for every tenant. Without the platform binding the policy hides
+    # every tenant-owned event and the loop finds nothing to do, silently.
+    runner = ConsumerRunner(platform_factory("consumer runner: drains the log for all tenants"))
     # DEP-001: cooperative. The loop leaves between units of work, never
     # inside one, so a SIGTERM cannot land between a handler's write and the
     # ledger row that records it.
@@ -56,7 +60,9 @@ async def _relay_loop() -> None:
     settings = get_settings()
     while not workers.stopping():
         try:
-            async with get_session_factory()() as session:
+            async with platform_session(
+                "relay dispatcher: delivers events for all tenants"
+            ) as session:
                 relay = RelayService(session, get_event_bus())
                 await relay.dispatch_pending()
                 await session.commit()

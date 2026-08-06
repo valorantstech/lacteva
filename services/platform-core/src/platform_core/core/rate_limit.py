@@ -66,8 +66,24 @@ class RateLimitRule:
     window_seconds: int
     scope: str = "ip"  # ip | user | endpoint | ip+user
 
-    def key(self, *, ip: str, user: str | None, endpoint: str) -> str:
+    def key(self, *, ip: str, user: str | None, endpoint: str, tenant: str | None = None) -> str:
+        """The Redis key this request is charged against.
+
+        MT-001: `tenant` is not cosmetic. Email is unique PER TENANT
+        (`uq_user_tenant_email`), so `alice@dairy-a.example` and
+        `alice@dairy-b.example` can be the same string in two different
+        organizations. Keying a per-identifier budget on the email alone put
+        two different people in two different tenants on ONE counter, which
+        is a cross-tenant denial of service: an attacker with an account in
+        any tenant could exhaust the login budget of that address in every
+        other tenant, by failing to log in to their own.
+
+        Identifiers that are already globally unique — a user id — need no
+        tenant, and passing one changes nothing.
+        """
         parts = [f"rl:{self.name}"]
+        if tenant:
+            parts.append(f"t={tenant}")
         if "ip" in self.scope:
             parts.append(f"ip={ip}")
         if "user" in self.scope:
@@ -167,12 +183,23 @@ def set_rate_limiter(limiter) -> None:
     _limiter = limiter
 
 
-async def enforce(rule: RateLimitRule, *, ip: str, user: str | None, endpoint: str) -> None:
-    """Charge one request against `rule`, raising 429 when the budget is spent."""
+async def enforce(
+    rule: RateLimitRule,
+    *,
+    ip: str,
+    user: str | None,
+    endpoint: str,
+    tenant: str | None = None,
+) -> None:
+    """Charge one request against `rule`, raising 429 when the budget is spent.
+
+    Pass `tenant` whenever `user` is an identifier that is only unique within
+    a tenant — an email, a supplier code, a phone number. See `RateLimitRule.key`.
+    """
     settings = get_settings()
     if not settings.rate_limit_enabled:
         return
-    key = rule.key(ip=ip, user=user, endpoint=endpoint)
+    key = rule.key(ip=ip, user=user, endpoint=endpoint, tenant=tenant)
     try:
         verdict = await get_rate_limiter().hit(key, rule)
     except Exception as exc:  # the limiter must never turn into a 500

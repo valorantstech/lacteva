@@ -34,9 +34,11 @@ def _print(payload) -> None:
 async def _run(args: argparse.Namespace) -> int:
     from platform_core.core.backup.engine import BackupError
     from platform_core.core.backup.service import BackupService
-    from platform_core.core.db import get_session_factory
+    from platform_core.core.rls import platform_factory
 
-    service = BackupService(get_session_factory())
+    # A backup spans every tenant by definition; a restore writes rows back
+    # into every tenant. Neither is meaningful through a tenant-scoped session.
+    service = BackupService(platform_factory("backup CLI: whole-database operation"))
 
     if args.command == "status":
         status = await service.status()

@@ -247,7 +247,14 @@ async def login(
     ip = client_ip(request)
     await rate_limit.enforce(rate_limit.LOGIN, ip=ip, user=None, endpoint="login")
     await rate_limit.enforce(
-        rate_limit.LOGIN_PER_USER, ip=ip, user=cmd.email.lower(), endpoint="login"
+        rate_limit.LOGIN_PER_USER,
+        ip=ip,
+        user=cmd.email.lower(),
+        # MT-001: an email is unique per tenant, not globally. Without this,
+        # one tenant's failed logins spend another tenant's budget for the
+        # same address.
+        tenant=str(cmd.tenant_id) if cmd.tenant_id else None,
+        endpoint="login",
     )
     try:
         pair = await service.login(cmd)

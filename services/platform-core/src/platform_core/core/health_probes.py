@@ -34,6 +34,7 @@ from sqlalchemy import func, select, text
 from platform_core.core import health
 from platform_core.core.config import get_settings
 from platform_core.core.db import as_utc, get_session_factory, utcnow
+from platform_core.core.rls import platform_factory
 
 log = structlog.get_logger("health.probe")
 
@@ -116,7 +117,7 @@ async def consumers() -> health.ComponentHealth:
     most common way this platform silently stops doing its job."""
     from platform_core.modules.event_relay.consumers import ConsumerRunner
 
-    runner = ConsumerRunner(get_session_factory())
+    runner = ConsumerRunner(platform_factory("health probe: consumer lag across tenants"))
     report = await runner.health()
     statuses: list[str] = []
     lagging: list[str] = []
@@ -167,7 +168,7 @@ async def projections() -> health.ComponentHealth:
     than no answer."""
     from platform_core.modules.event_relay.projections import ProjectionRebuilder
 
-    rebuilder = ProjectionRebuilder(get_session_factory())
+    rebuilder = ProjectionRebuilder(platform_factory("health probe: projection status"))
     statuses = await rebuilder.status_all()
     # `health` carries the derived vocabulary (ok | outdated | rebuilding |
     # degraded | never_built); `pending_events` is the backlog.
@@ -253,7 +254,7 @@ async def backups() -> health.ComponentHealth:
     they only open after losing data."""
     from platform_core.core.backup.service import BackupService
 
-    status = await BackupService(get_session_factory()).status()
+    status = await BackupService(platform_factory("health probe: backup status")).status()
     # NOT `detail`: that is the positional argument these helpers take, and
     # passing both is a TypeError the probe would report as `critical`.
     data = {

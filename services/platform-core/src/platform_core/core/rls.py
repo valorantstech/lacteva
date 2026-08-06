@@ -26,10 +26,12 @@ Postgres-only suite plus the migration's own assertions.
 """
 
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 import structlog
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from platform_core.core.config import get_settings
 
@@ -266,3 +268,81 @@ def drop_statements(table: str) -> list[str]:
         f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY",
         f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY",
     ]
+
+
+# --- Sessions for work that is definitionally cross-tenant (MT-001) --------
+#
+# THE DEFECT THIS EXISTS TO FIX.
+#
+# SEC-001 wrote that "the relay dispatcher, consumers, and projection rebuilds
+# set `lacteva.bypass_rls`". Nothing did. Those loops build their sessions from
+# `get_session_factory()` directly, which binds neither a tenant nor a bypass —
+# so on PostgreSQL the policy evaluated:
+#
+#   bypass          -> current_setting(...) is NULL, not 'on'   -> false
+#   tenant_id IS NULL -> true only for platform-global rows
+#   tenant_id = ''    -> NULL                                    -> not true
+#
+# Meaning the entire asynchronous half of the platform could see only
+# platform-global rows. The relay would find no tenant events to dispatch,
+# consumers would find nothing to consume, and every projection write would be
+# refused by WITH CHECK.
+#
+# Nothing would have errored. Requests would succeed, milk would be recorded,
+# and no receipt would be generated, no notification sent, no projection
+# updated — the failure shape this platform's own docs call the most dangerous
+# it has, because it looks healthy.
+#
+# SQLite cannot execute a policy, so no test caught it. This is the fourth
+# defect of that exact shape.
+#
+# The fix is a factory rather than a call at each of ~25 sites: a component
+# built with a platform factory CANNOT forget, and a component built with the
+# ordinary factory is visibly request-scoped.
+
+
+@asynccontextmanager
+async def platform_session(reason: str) -> AsyncIterator[AsyncSession]:
+    """One session, bound to the platform context, for cross-tenant work."""
+    from platform_core.core.db import get_session_factory
+
+    async with get_session_factory()() as session:
+        await bind_platform_context(session, reason=reason)
+        yield session
+
+
+class PlatformSessionFactory:
+    """A session factory whose sessions are already bound to the platform.
+
+    Drop-in for `async_sessionmaker`: every `async with factory()` yields a
+    session that may cross tenants, and says in the log why it was allowed to.
+
+    Give this to the relay, the consumer runner, the projection rebuilder, the
+    backup engine and the health probes — the components whose whole job spans
+    tenants. Give the ORDINARY factory to anything request-scoped, so the
+    difference is visible at the construction site rather than buried in a
+    method.
+    """
+
+    def __init__(self, factory: async_sessionmaker[AsyncSession], reason: str) -> None:
+        self._factory = factory
+        self._reason = reason
+
+    def __call__(self) -> "AbstractAsyncContextManager[AsyncSession]":
+        return self._bound()
+
+    @asynccontextmanager
+    async def _bound(self) -> AsyncIterator[AsyncSession]:
+        async with self._factory() as session:
+            await bind_platform_context(session, reason=self._reason)
+            yield session
+
+    def __repr__(self) -> str:  # pragma: no cover - diagnostics
+        return f"PlatformSessionFactory(reason={self._reason!r})"
+
+
+def platform_factory(reason: str) -> PlatformSessionFactory:
+    """`PlatformSessionFactory` over the process's session factory."""
+    from platform_core.core.db import get_session_factory
+
+    return PlatformSessionFactory(get_session_factory(), reason)

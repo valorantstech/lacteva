@@ -277,11 +277,26 @@ class NotificationService:
     # --- recipients ----------------------------------------------------------
 
     async def _directory_entry(self, notification: Notification) -> NotificationRecipient | None:
+        """The recipient's phone/email, from the rebuildable directory.
+
+        MT-001: scoped by tenant as well as by subject, and that is not
+        redundant. This runs inside the DISPATCH CONSUMER, which holds a
+        platform-bound session — RLS is deliberately bypassed there, so the
+        predicate below is the only thing standing between a notification and
+        another tenant's directory entry.
+
+        `subject_id` is a UUID and will not collide by accident. The point is
+        that it does not have to: the consequence of a match here is sending
+        one dairy's payment details to another dairy's phone number, which is
+        the worst outcome the notification path has. A one-clause filter is
+        not worth omitting to save it.
+        """
         if notification.recipient_ref is None:
             return None
         return await self._session.scalar(
             select(NotificationRecipient).where(
-                NotificationRecipient.subject_id == notification.recipient_ref
+                NotificationRecipient.tenant_id == notification.tenant_id,
+                NotificationRecipient.subject_id == notification.recipient_ref,
             )
         )
 

@@ -650,3 +650,112 @@ async def test_a_tenant_session_cannot_insert_update_or_delete_across_the_bounda
             await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
             await s.execute(text("DELETE FROM payment_line WHERE id = :i"), {"i": theirs})
             await s.commit()
+
+
+# --------------------------------------------------------------------------
+# MT-001 — the bypass boundary, executed.
+#
+# The SQLite tests above assert that background components RECEIVE a
+# platform-bound factory. Only a real engine can show what that binding buys,
+# and what its absence costs — which is the whole defect: an unbound session
+# sees no tenant rows at all, so the asynchronous half of the platform goes
+# quiet without erroring.
+# --------------------------------------------------------------------------
+
+
+async def test_an_unbound_background_session_sees_no_tenant_events(live):
+    """The defect MT-001 fixed, demonstrated rather than argued.
+
+    The relay and the consumer runner used to build sessions this way. On
+    PostgreSQL that means the outbox looks empty of tenant events, so nothing
+    is dispatched and nothing is consumed — silently.
+    """
+    tenant = uuid.uuid4()
+    row = uuid.uuid4()
+    try:
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+            await s.execute(
+                text(
+                    "INSERT INTO event_outbox (id, tenant_id, event_name, payload, occurred_at,"
+                    " version, status, attempts, next_attempt_at, created_at) VALUES (:i, :t,"
+                    " 'mt001.probe.v1', '{}', now(), 1, 'pending', 0, now(), now())"
+                ),
+                {"i": row, "t": tenant},
+            )
+            await s.commit()
+
+        async with live() as s:  # unbound — the old background behaviour
+            found = (
+                await s.execute(
+                    text("SELECT id FROM event_outbox WHERE event_name = 'mt001.probe.v1'")
+                )
+            ).all()
+        assert found == [], (
+            "an unbound session should see no tenant-owned events — if it does, "
+            "the policy is not being enforced"
+        )
+
+        async with live() as s:  # platform-bound — the fixed behaviour
+            await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+            found = (
+                await s.execute(
+                    text("SELECT tenant_id FROM event_outbox WHERE event_name = 'mt001.probe.v1'")
+                )
+            ).scalars()
+            assert list(found) == [tenant]
+    finally:
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+            await s.execute(text("DELETE FROM event_outbox WHERE id = :i"), {"i": row})
+            await s.commit()
+
+
+async def test_a_projection_write_is_refused_without_the_platform_binding(live):
+    """The other half: even if a consumer could read, it could not write.
+    `WITH CHECK` refuses a row whose tenant does not match the binding, so a
+    projection update from an unbound session is rejected outright."""
+    from sqlalchemy.exc import DBAPIError
+
+    tenant = uuid.uuid4()
+    async with live() as s:  # unbound
+        with pytest.raises(DBAPIError):
+            await s.execute(
+                text(
+                    "INSERT INTO projection_daily_totals (id, tenant_id, day, transactions,"
+                    " accepted, rejected, total_net_weight, payable_amount, updated_at)"
+                    " VALUES (:i, :t, CURRENT_DATE, 1, 1, 0, 1.0, 1.0, now())"
+                ),
+                {"i": uuid.uuid4(), "t": tenant},
+            )
+
+
+async def test_the_platform_binding_lets_a_consumer_do_its_job(live):
+    """And with the binding, the same write succeeds — for any tenant, which
+    is exactly what a cross-tenant consumer needs."""
+    tenant = uuid.uuid4()
+    row = uuid.uuid4()
+    try:
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+            await s.execute(
+                text(
+                    "INSERT INTO projection_daily_totals (id, tenant_id, day, transactions,"
+                    " accepted, rejected, total_net_weight, payable_amount, updated_at)"
+                    " VALUES (:i, :t, CURRENT_DATE, 1, 1, 0, 1.0, 1.0, now())"
+                ),
+                {"i": row, "t": tenant},
+            )
+            await s.commit()
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {TENANT_SETTING} = :t"), {"t": str(tenant)})
+            seen = (
+                await s.execute(text("SELECT id FROM projection_daily_totals WHERE id = :i")),
+                {"i": row},
+            )[0].scalars()
+            assert list(seen) == [row], "the tenant cannot see its own projection row"
+    finally:
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+            await s.execute(text("DELETE FROM projection_daily_totals WHERE id = :i"), {"i": row})
+            await s.commit()
