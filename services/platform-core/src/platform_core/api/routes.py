@@ -4,7 +4,7 @@ import uuid
 from datetime import date
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from platform_core.api import deps
@@ -62,6 +62,7 @@ from platform_core.modules.milk_collection.service import (
     MilkInfoCommand,
     QualityCommand,
     RejectCommand,
+    SessionPage,
     SessionView,
     TransactionEventView,
     TransactionPage,
@@ -558,8 +559,8 @@ async def list_centers(
     q: str | None = None,
     status: str | None = None,
     branch_id: uuid.UUID | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> CenterPage:
     return await service.list_page(
         q=q, status=status, branch_id=branch_id, limit=limit, offset=offset
@@ -653,8 +654,8 @@ async def list_devices(
     center_id: uuid.UUID | None = None,
     category: str | None = None,
     status: str | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> DevicePage:
     return await service.list_devices(
         center_id=center_id, category=category, status=status, limit=limit, offset=offset
@@ -764,8 +765,8 @@ async def search_suppliers(
     status: str | None = None,
     center_id: uuid.UUID | None = None,
     branch_id: uuid.UUID | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> SupplierPage:
     return await service.search(
         q=q, status=status, center_id=center_id, branch_id=branch_id, limit=limit, offset=offset
@@ -936,14 +937,23 @@ async def close_collection_session(
     return await service.close_session(session_id, actor_id=p.id)
 
 
-@milk_router.get("/collection-sessions", response_model=list[SessionView])
+@milk_router.get("/collection-sessions", response_model=SessionPage)
 async def list_collection_sessions(
     service: MilkSvc,
     _: TxRead,
     center_id: uuid.UUID | None = None,
     status: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
 ) -> Any:
-    return await service.list_sessions(center_id=center_id, status=status)
+    """Collection sessions, newest first.
+
+    API-001: paginated. Sessions accumulate for the life of the tenant and
+    were previously returned in full.
+    """
+    return await service.list_sessions(
+        center_id=center_id, status=status, limit=limit, offset=offset
+    )
 
 
 class CreateTransactionRequest(BaseModel):
@@ -1021,8 +1031,8 @@ async def list_milk_transactions(
     center_id: uuid.UUID | None = None,
     supplier_id: uuid.UUID | None = None,
     state: str | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> TransactionPage:
     return await service.list_transactions(
         session_id=session_id,
@@ -1069,8 +1079,8 @@ async def search_rate_cards(
     center_id: uuid.UUID | None = None,
     product_code: str | None = None,
     active_on: date | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> RateCardPage:
     return await service.search(
         q=q,
@@ -1197,8 +1207,8 @@ async def search_pricing_matrices(
     product_code: str | None = None,
     dimension_code: str | None = None,
     status: str | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> MatrixPage:
     return await service.search(
         q=q,
@@ -1307,8 +1317,8 @@ async def search_settlements(
     center_id: uuid.UUID | None = None,
     status: str | None = None,
     overlapping_on: date | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> SettlementPage:
     return await service.search(
         q=q,
@@ -1415,11 +1425,37 @@ PaymentSvc = Annotated[PaymentService, Depends(deps.get_payment_service)]
 
 
 @payment_router.post("/payments", response_model=PaymentView, status_code=201)
-async def create_payment(cmd: CreatePaymentCommand, service: PaymentSvc, p: PaymentManage) -> Any:
+async def create_payment(
+    cmd: CreatePaymentCommand,
+    service: PaymentSvc,
+    p: PaymentManage,
+    idempotency_key: Annotated[
+        str | None,
+        Header(
+            alias="Idempotency-Key",
+            max_length=80,
+            description=(
+                "Retry-safe creation. Re-sending the same key returns the payment "
+                "the first request created instead of paying twice. Equivalent to "
+                "the `idempotency_key` body field; the header is the conventional "
+                "spelling and is preferred."
+            ),
+        ),
+    ] = None,
+) -> Any:
     """Create a payment against one or more finalized settlements of one
     supplier. Omit an allocation amount to pay the full outstanding balance;
-    supply one for a partial payment. Re-posting the same idempotency_key
-    returns the existing payment instead of paying twice."""
+    supply one for a partial payment.
+
+    **Retry safety (API-001).** Paying twice is the worst outcome this endpoint
+    has, and a mobile client on a village connection cannot tell a lost
+    response from a lost request. Send an `Idempotency-Key` header: a repeat
+    returns the original payment, unchanged, with the same status code.
+    """
+    # The header wins when both are present: it is the transport-level
+    # statement of intent, and a proxy that retries will resend it verbatim.
+    if idempotency_key:
+        cmd = cmd.model_copy(update={"idempotency_key": idempotency_key})
     payment = await service.create(cmd, actor_id=p.id)
     return (await service.detail(payment.id)).payment
 
@@ -1433,8 +1469,8 @@ async def search_payments(
     settlement_id: uuid.UUID | None = None,
     status: str | None = None,
     method: str | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> PaymentPage:
     """Payment history: search number/reference, filter by supplier, the
     settlement paid, status, or method."""
@@ -1455,8 +1491,8 @@ async def list_outstanding_balances(
     _: PaymentRead,
     supplier_id: uuid.UUID | None = None,
     outstanding_only: bool = True,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> BalancePage:
     """The settlement selector: finalized settlements with what is still owed."""
     return await service.balances(
@@ -1562,8 +1598,8 @@ async def search_notifications(
     channel: str | None = None,
     template_key: str | None = None,
     event_id: uuid.UUID | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> NotificationPage:
     """Delivery history: search by recipient/text, filter by status (sent |
     failed | dead | pending), channel, template, or originating event."""
@@ -1650,8 +1686,8 @@ async def search_receipts(
     supplier_id: uuid.UUID | None = None,
     payment_id: uuid.UUID | None = None,
     status: str | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> ReceiptPage:
     """Receipt history: search number/payment/supplier/reference, filter by
     status (generated | delivered | archived). Archived receipts stay listed —
@@ -1747,8 +1783,8 @@ async def list_sync_operations(
     status: str | None = None,
     kind: str | None = None,
     device_id: str | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> SyncOperationPage:
     """Sync monitor: what devices have replayed, and how it went."""
     return await service.search(
@@ -1869,7 +1905,9 @@ async def backup_status(_: OpsRead) -> BackupStatusView:
 
 
 @ops_observability_router.get("/backups", response_model=list[BackupRunView])
-async def backup_history(_: OpsRead, kind: str | None = None, limit: int = 20) -> Any:
+async def backup_history(
+    _: OpsRead, kind: str | None = None, limit: int = Query(20, ge=1, le=100)
+) -> Any:
     """Every backup, restore, and verification the platform has recorded."""
     return await deps.get_backup_service().history(kind=kind, limit=limit)
 
@@ -1951,8 +1989,8 @@ async def report_collection_by_center(
     date_from: date | None = None,
     date_to: date | None = None,
     branch_id: uuid.UUID | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> SummaryPage:
     """Per-center collection totals, ordered by milk collected (desc)."""
     return await service.center_summary(
@@ -1967,8 +2005,8 @@ async def report_collection_by_supplier(
     date_from: date | None = None,
     date_to: date | None = None,
     center_id: uuid.UUID | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> SummaryPage:
     """Per-supplier collection totals, ordered by milk supplied (desc)."""
     return await service.supplier_summary(
@@ -2014,13 +2052,18 @@ async def relay_status(service: RelaySvc, _: RelayOps) -> RelayStats:
 
 @relay_router.get("/events", response_model=list[OutboxEventView])
 async def relay_events(
-    service: RelaySvc, _: RelayOps, status: str | None = None, limit: int = 50
+    service: RelaySvc,
+    _: RelayOps,
+    status: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
 ) -> Any:
     return await service.list_events(status=status, limit=limit)
 
 
 @relay_router.get("/dead-letters", response_model=list[DeadLetterView])
-async def relay_dead_letters(service: RelaySvc, _: RelayOps, limit: int = 50) -> Any:
+async def relay_dead_letters(
+    service: RelaySvc, _: RelayOps, limit: int = Query(50, ge=1, le=200)
+) -> Any:
     return await service.list_dead_letters(limit=limit)
 
 
@@ -2070,14 +2113,17 @@ async def consumer_executions(
     _: RelayOps,
     consumer: str | None = None,
     status: str | None = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=200),
 ) -> Any:
     return await runner.list_executions(consumer_name=consumer, status=status, limit=limit)
 
 
 @consumers_router.get("/dead-letters", response_model=list[ExecutionView])
 async def consumer_dead_letters(
-    runner: ConsumerRun, _: RelayOps, consumer: str | None = None, limit: int = 50
+    runner: ConsumerRun,
+    _: RelayOps,
+    consumer: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
 ) -> Any:
     return await runner.list_executions(consumer_name=consumer, status="dead", limit=limit)
 
@@ -2265,7 +2311,7 @@ audit_router = APIRouter(prefix="/audit", tags=["audit"])
 async def list_audit(
     service: Annotated[deps.AuditService, Depends(deps.get_audit_service)],
     _: Annotated[Principal, Depends(require_permission("audit.read"))],
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=500),
 ) -> list[dict]:
     records = await service.list_records(limit=limit)
     return [

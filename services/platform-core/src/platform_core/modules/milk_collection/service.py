@@ -163,6 +163,16 @@ class TransactionView(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SessionPage(BaseModel):
+    """API-001: sessions grow with time, so they page like every other
+    unbounded list on the platform."""
+
+    items: list["SessionView"]
+    total: int
+    limit: int
+    offset: int
+
+
 class TransactionPage(BaseModel):
     items: list[TransactionView]
     total: int
@@ -276,16 +286,38 @@ class MilkCollectionService:
         return session
 
     async def list_sessions(
-        self, *, center_id: uuid.UUID | None, status: str | None
-    ) -> list[CollectionSession]:
+        self,
+        *,
+        center_id: uuid.UUID | None,
+        status: str | None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> "SessionPage":
+        """Sessions, newest first, PAGINATED.
+
+        API-001: this was the one list on the business surface with no bound
+        at all. A session is opened roughly twice per center per day and never
+        deleted, so a tenant with sixty centers accumulates ~44,000 of them a
+        year — and every one was serialised into a single response. The failure
+        is gradual, which is why nobody notices until the response is measured
+        in megabytes and the mobile app on a village connection times out.
+        """
         tenant_id = require_current_tenant()
         stmt = select(CollectionSession).where(CollectionSession.tenant_id == tenant_id)
         if center_id:
             stmt = stmt.where(CollectionSession.center_id == center_id)
         if status:
             stmt = stmt.where(CollectionSession.status == status)
-        rows = await self._session.scalars(stmt.order_by(CollectionSession.opened_at.desc()))
-        return list(rows.all())
+        total = await self._session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        rows = await self._session.scalars(
+            stmt.order_by(CollectionSession.opened_at.desc()).limit(limit).offset(offset)
+        )
+        return SessionPage(
+            items=[SessionView.model_validate(row) for row in rows.all()],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
     # --- transaction lifecycle --------------------------------------------
 

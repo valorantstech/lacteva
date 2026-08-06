@@ -26,6 +26,7 @@ self-references and a template's references to its own examples are ignored.
 
 | Document | Outbound (cites) | Inbound (cited by) |
 | --- | --- | --- |
+| [API-0001](06-api/API-0001-platform-core.md) | DBD-0001 | — |
 | [CAP-0001](05-capabilities/CAP-0001-business-capability-master-map.md) | CAP-0002, CAP-0003, CAP-0004, CAP-0005, CAP-0006, CAP-0007, CAP-0008, CAP-0009, CAP-0010, CAP-0011, TPL-0009 | CAP-0002, CAP-0003, CAP-0004, CAP-0005, CAP-0006, CAP-0007, CAP-0008, CAP-0009, CAP-0010, CAP-0011, PSP-0003, PSP-0007, QR-0001, QR-0002, QR-0003, QR-0004, QR-0005, QR-0006, TPL-0016 |
 | [CAP-0002](05-capabilities/CAP-0002-farm-production.md) | CAP-0001, CAP-0003, CAP-0004, CAP-0007, CAP-0010 | CAP-0001, CAP-0003, CAP-0004, CAP-0007, CAP-0008, CAP-0009, CAP-0010, QR-0003 |
 | [CAP-0003](05-capabilities/CAP-0003-milk-collection-logistics.md) | CAP-0001, CAP-0002, CAP-0004, CAP-0007 | CAP-0001, CAP-0002, CAP-0004, CAP-0005, CAP-0007, CAP-0008, CAP-0010, PDT-0001, PSP-0001, PSP-0002, PSP-0008, PSP-0010 |
@@ -37,7 +38,7 @@ self-references and a template's references to its own examples are ignored.
 | [CAP-0009](05-capabilities/CAP-0009-sustainability-welfare-compliance.md) | CAP-0001, CAP-0002, CAP-0005, CAP-0006 | CAP-0001, CAP-0004, PSP-0002 |
 | [CAP-0010](05-capabilities/CAP-0010-dairy-intelligence-advisory.md) | CAP-0001, CAP-0002, CAP-0003, CAP-0005, CAP-0007 | CAP-0001, CAP-0002, CAP-0011, PSP-0008 |
 | [CAP-0011](05-capabilities/CAP-0011-ecosystem-tenant-enablement.md) | CAP-0001, CAP-0007, CAP-0008, CAP-0010 | CAP-0001, QR-0003 |
-| [DBD-0001](07-data/DBD-0001-platform-core-database.md) | — | — |
+| [DBD-0001](07-data/DBD-0001-platform-core-database.md) | — | API-0001 |
 | [GOV-0001](01-governance/GOV-0001-review-workflow.md) | GOV-0002, STD-0002, STD-0003, STD-0004, STD-0005, STD-0006 | GOV-0003, QR-0001, QR-0003, QR-0005, STD-0004 |
 | [GOV-0002](01-governance/GOV-0002-approval-workflow.md) | — | GOV-0001, GOV-0003, QR-0001, QR-0004, QR-0005, QR-0006, TPL-0007, TPL-0008, TPL-0012, TPL-0021 |
 | [GOV-0003](01-governance/GOV-0003-architecture-review-checklists.md) | GOV-0001, GOV-0002, QR-0002, TPL-0001, TPL-0010 | QR-0006 |
@@ -105,4 +106,4 @@ self-references and a template's references to its own examples are ignored.
 
 ## Unreferenced Documents
 
-DBD-0001, TPL-0011
+TPL-0011

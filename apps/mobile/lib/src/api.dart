@@ -226,13 +226,17 @@ class ApiClient {
   }
 
   Future<List<Map<String, dynamic>>> listOpenSessions(String centerId) async {
+    // API-001: this endpoint is paginated. An operator's device only ever
+    // needs the open sessions for one center — a handful — so the first page
+    // is the whole answer, but the envelope has to be unwrapped.
     final result =
         await _send(
               'GET',
-              '/v1/collection-sessions?center_id=$centerId&status=open',
+              '/v1/collection-sessions?center_id=$centerId&status=open&limit=50',
             )
-            as List<dynamic>;
-    return result.map((e) => e as Map<String, dynamic>).toList();
+            as Map<String, dynamic>;
+    final items = (result['items'] as List<dynamic>? ?? const []);
+    return items.map((e) => e as Map<String, dynamic>).toList();
   }
 
   Future<Map<String, dynamic>> txStep(String path, {Object? body}) async {

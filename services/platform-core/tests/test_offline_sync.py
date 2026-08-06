@@ -131,7 +131,8 @@ async def test_offline_session_creation_with_a_local_id(client):
     assert session_result["client_reference"] == "local-session-1"
     assert session_result["server_id"] is not None
     sessions = (await client.get("/v1/collection-sessions", headers=headers)).json()
-    assert any(s["id"] == session_result["server_id"] for s in sessions)
+    # API-001: this list is paginated now.
+    assert any(s["id"] == session_result["server_id"] for s in sessions["items"])
 
 
 async def test_business_rules_are_identical_offline(client):

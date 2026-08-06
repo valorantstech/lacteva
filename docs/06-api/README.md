@@ -17,4 +17,6 @@ Human-readable contracts for every public, partner, and internal API on the plat
 
 | ID | API | Audience | Major Version | Status |
 | --- | --- | --- | --- | --- |
-| — | *No API specifications yet — the first specs accompany the first service SRSs.* | | | |
+| [API-0001](API-0001-platform-core.md) | Platform Core REST API | Internal, and public-ready | v1 | Approved |
+
+API-0001 records the platform-wide conventions this README anticipated — auth, tenancy propagation, pagination, the error envelope, rate limiting, retry safety — so individual future specs record only their deviations.

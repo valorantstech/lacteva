@@ -192,7 +192,68 @@ def create_app() -> FastAPI:
     register_error_handlers(app)
     setup_observability(app)
     app.include_router(api_router)
+    _publish_error_contract(app)
     return app
+
+
+def _publish_error_contract(app: FastAPI) -> None:
+    """Declare the problem-detail responses on every operation (API-001).
+
+    Done here, once, rather than as a `responses=` argument repeated on 177
+    routes — a per-route list is a list that drifts, and the drift is invisible
+    because nothing fails when a route forgets.
+
+    The rules are mechanical and therefore checkable:
+
+      * every `/v1` operation can return 401, 403, 422 and 429;
+      * an operation with a PATH PARAMETER can return 404 — it addresses a
+        specific resource, and a resource belonging to another tenant is a 404
+        rather than a 403, because the API must not reveal that it exists;
+      * an operation that MUTATES can return 409 — a duplicate unique value or
+        a transition the lifecycle refuses.
+
+    Unauthenticated endpoints keep 401 deliberately: `/v1/auth/token` returns
+    it for bad credentials, which is exactly the documented meaning.
+    """
+    from fastapi.openapi.utils import get_openapi
+
+    from platform_core.core.errors import (
+        CONFLICT_PROBLEM,
+        NOT_FOUND_PROBLEM,
+        UNIVERSAL_PROBLEMS,
+        ProblemDetail,
+    )
+
+    def openapi() -> dict:
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+        )
+        schema.setdefault("components", {}).setdefault("schemas", {})["ProblemDetail"] = (
+            ProblemDetail.model_json_schema()
+        )
+        mutating = {"post", "put", "patch", "delete"}
+        for path, operations in schema.get("paths", {}).items():
+            if not path.startswith("/v1"):
+                continue
+            for method, operation in operations.items():
+                extra = dict(UNIVERSAL_PROBLEMS)
+                if "{" in path:
+                    extra |= NOT_FOUND_PROBLEM
+                if method in mutating:
+                    extra |= CONFLICT_PROBLEM
+                for code, body in extra.items():
+                    # A route that documents a code itself wins — the central
+                    # rule is a floor, not a ceiling.
+                    operation.setdefault("responses", {}).setdefault(str(code), body)
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = openapi
 
 
 app = create_app()
