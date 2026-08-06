@@ -660,16 +660,110 @@ def test_dev_defaults_are_sentinels_not_plausible_secrets():
 
 def test_every_tenant_owned_table_is_covered_by_a_policy():
     """The drift guard: a new tenant-owned table without a policy migration
-    is a table with no database-level protection."""
+    is a table with no database-level protection.
+
+    The covered set is the UNION of the migrations that grant policies —
+    SEC-001 established the first 37, SEC-002 added the 13 child tables that
+    had been reachable only through a parent. Each migration snapshots its own
+    list on purpose: a migration is a historical record and must not change
+    meaning when the models later do.
+    """
     from migrations.versions.a1c7f3b90e22_row_level_security import TENANT_TABLES
+    from migrations.versions.f2d18ba60c47_sec002_complete_rls_coverage import NEW_TENANT_TABLES
 
     from platform_core.core.rls import tenant_tables
 
-    uncovered = set(tenant_tables()) - set(TENANT_TABLES)
+    covered = set(TENANT_TABLES) | set(NEW_TENANT_TABLES)
+    uncovered = set(tenant_tables()) - covered
     assert not uncovered, (
         f"tenant-owned tables with no RLS policy: {sorted(uncovered)} — "
         "add a migration extending the policy set"
     )
+
+
+def test_every_table_declares_an_isolation_strategy():
+    """SEC-002's premise: "every table has an explicit isolation strategy".
+
+    A table is either tenant-owned (it has a tenant_id and the standard policy
+    applies), platform-global (deliberately unprotected, with the reason on
+    record), or mixed (it holds both kinds of row, or is isolated by a column
+    other than tenant_id). "Nobody decided" is not one of the options, and
+    that is what this test enforces — a new table that fits none of the three
+    fails here rather than shipping unprotected.
+    """
+    from platform_core.core.rls import unclassified_tables
+
+    missing = unclassified_tables()
+    assert missing == (), (
+        f"tables with no declared isolation strategy: {list(missing)} — add each to "
+        "PLATFORM_GLOBAL or MIXED in core/rls.py, or give it a tenant_id"
+    )
+
+
+def test_the_isolation_taxonomy_refers_only_to_real_tables():
+    """The other direction: a renamed or dropped table leaving a stale entry
+    behind turns the register above into fiction."""
+    from platform_core.core.db import Base
+    from platform_core.core.rls import MIXED, PLATFORM_GLOBAL
+
+    known = set(Base.metadata.tables)
+    stale = sorted((set(PLATFORM_GLOBAL) | set(MIXED)) - known)
+    assert stale == [], f"isolation strategy declared for tables that do not exist: {stale}"
+
+
+def test_platform_global_tables_carry_no_tenant_column():
+    """Category B means "there is no tenant here". A tenant_id column on one
+    of these would mean the classification is simply wrong."""
+    from platform_core.core.db import Base
+    from platform_core.core.rls import PLATFORM_GLOBAL
+
+    wrong = [t for t in PLATFORM_GLOBAL if "tenant_id" in Base.metadata.tables[t].columns]
+    assert wrong == [], f"platform-global tables that actually have a tenant_id: {wrong}"
+
+
+def test_every_platform_global_table_records_why():
+    """A bare list would decay into folklore. The reason is the artifact."""
+    from platform_core.core.rls import MIXED, PLATFORM_GLOBAL
+
+    for table, reason in {**PLATFORM_GLOBAL, **MIXED}.items():
+        assert len(reason) > 40, f"{table} needs a real reason, not {reason!r}"
+
+
+def test_the_money_and_pii_child_tables_are_now_tenant_owned():
+    """The specific tables ABR-002 found unprotected. Named individually so a
+    regression says which one, not just that the count changed."""
+    from platform_core.core.rls import tenant_tables
+
+    owned = set(tenant_tables())
+    for table in (
+        "supplier_profile",
+        "supplier_bank_account",
+        "supplier_document",
+        "settlement_line",
+        "payment_line",
+        "payment_attempt",
+        "receipt_line",
+        "pricing_matrix_row",
+    ):
+        assert table in owned, f"{table} holds money or PII and must be tenant-owned"
+
+
+def test_organization_is_isolated_by_identity_not_by_tenant_id():
+    """`organization` IS the tenant, so it cannot carry a tenant_id pointing
+    at itself. Its policy compares the primary key instead — and must NOT
+    inherit the `IS NULL` escape, which would make every organization visible
+    to every unbound session."""
+    from platform_core.core.db import Base
+    from platform_core.core.rls import MIXED, identity_policy_statements
+
+    assert "tenant_id" not in Base.metadata.tables["organization"].columns
+    assert "organization" in MIXED
+    ddl = " ".join(identity_policy_statements("organization"))
+    assert "ENABLE ROW LEVEL SECURITY" in ddl
+    assert "FORCE ROW LEVEL SECURITY" in ddl
+    assert "USING" in ddl and "WITH CHECK" in ddl
+    assert "id::text = current_setting" in ddl
+    assert "IS NULL" not in ddl, "an identity policy must not have a NULL escape hatch"
 
 
 def test_the_rls_policy_denies_by_default_and_checks_writes():
@@ -707,3 +801,111 @@ async def test_application_level_tenant_isolation_holds(client):
 
     assert (await client.get("/v1/suppliers", headers=other)).json()["total"] == 0
     assert (await client.get(f"/v1/suppliers/{supplier['id']}", headers=other)).status_code == 404
+
+
+# --- SEC-002: the binding must precede the read ---------------------------
+
+
+async def test_authentication_binds_the_tenant_before_reading_any_row(client):
+    """The defect this test exists for.
+
+    `auth_session` and `user_account` are themselves tenant-owned. Principal
+    resolution read both of them and only afterwards re-bound the session to
+    the token's tenant — so under RLS the session row was invisible to the
+    request that owned it, and every authenticated call that did not happen to
+    send an X-Tenant-ID header failed as 401. SQLite cannot execute the
+    policy, so nothing caught it; what SQLite CAN prove is the ordering, and
+    the ordering is the whole defect.
+
+    Recording binds and reads on one timeline and asserting the first bind
+    precedes the first read is therefore not a proxy for the bug — it is the
+    bug, stated directly.
+    """
+    import uuid as _uuid
+
+    from platform_core.api import deps
+    from platform_core.core import rls
+
+    timeline: list[str] = []
+    real_bind = rls.bind_tenant
+
+    async def recording_bind(session, tenant_id):
+        timeline.append(f"bind:{tenant_id}")
+        return await real_bind(session, tenant_id)
+
+    class RecordingSession:
+        """Wraps the real session; notes every read that RLS would filter."""
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        async def get(self, *a, **kw):
+            timeline.append(f"read:{a[0].__name__}")
+            return await self._inner.get(*a, **kw)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    # Build the principal BEFORE recording: the helper's own requests bind
+    # tenants too, and those binds are not the ones under test.
+    _org, headers = await _tenant_admin(client)
+    token = headers["Authorization"].removeprefix("Bearer ")
+    payload = deps.decode_token(token, expected_type="access")
+    assert payload.get("tenant_id"), "helper must produce a tenant-scoped token"
+
+    rls.bind_tenant = recording_bind
+    try:
+        from platform_core.core.db import get_session_factory
+
+        async with get_session_factory()() as raw:
+            from fastapi.security import HTTPAuthorizationCredentials
+
+            from platform_core.infrastructure.events import get_event_bus
+            from platform_core.modules.audit.service import AuditService
+
+            recording = RecordingSession(raw)
+            identity = deps.IdentityService(recording, get_event_bus(), AuditService(recording))
+            await deps.get_current_principal(
+                recording,
+                identity,
+                HTTPAuthorizationCredentials(scheme="Bearer", credentials=token),
+            )
+    finally:
+        rls.bind_tenant = real_bind
+
+    binds = [i for i, e in enumerate(timeline) if e.startswith("bind:")]
+    reads = [i for i, e in enumerate(timeline) if e.startswith("read:")]
+    assert binds, f"authentication never bound a tenant: {timeline}"
+    assert reads, f"authentication read no tenant-owned row: {timeline}"
+    assert binds[0] < reads[0], (
+        "the tenant must be bound BEFORE the first tenant-owned read — otherwise "
+        f"RLS hides the session row from its own request. Timeline: {timeline}"
+    )
+    assert f"bind:{_uuid.UUID(payload['tenant_id'])}" in timeline
+
+
+async def test_rebind_moves_the_context_and_the_database_together():
+    """`set_current_tenant()` alone was the other half of the same defect: the
+    context variable moved, the database binding stayed behind, and writes
+    were refused by WITH CHECK. `rebind_tenant` is the pairing."""
+    import uuid as _uuid
+
+    from platform_core.core import rls
+    from platform_core.core.tenancy import get_current_tenant, set_current_tenant
+
+    bound: list = []
+
+    async def fake_bind(session, tenant_id):
+        bound.append(tenant_id)
+
+    real = rls.bind_tenant
+    rls.bind_tenant = fake_bind
+    try:
+        set_current_tenant(None)
+        target = _uuid.uuid4()
+        await rls.rebind_tenant(object(), target)
+        assert get_current_tenant() == target, "context variable was not updated"
+        assert bound == [target], "the database binding was not updated"
+    finally:
+        rls.bind_tenant = real
+        set_current_tenant(None)

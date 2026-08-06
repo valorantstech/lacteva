@@ -244,6 +244,21 @@ async def get_current_principal(
         JWT_VERIFICATION_FAILURES.labels(type(exc).__name__).inc()
         AUTH_FAILURES.labels("invalid_token").inc()
         raise UnauthorizedError() from exc
+    # SEC-002: bind BEFORE the first read, not after.
+    #
+    # `auth_session` and `user_account` are themselves tenant-owned. The
+    # session was bound from the X-Tenant-ID header — which a client is not
+    # obliged to send — so under RLS a tenant-scoped session row was invisible
+    # to the very request that owned it, and every authenticated call without
+    # that header failed as 401. The token is signed and self-contained, so
+    # its tenant claim is authoritative before any row is read; binding here
+    # closes the window without trusting anything the caller can forge.
+    token_tenant = uuid.UUID(payload["tenant_id"]) if payload.get("tenant_id") else None
+    if token_tenant is not None:
+        from platform_core.core.rls import rebind_tenant
+
+        await rebind_tenant(session, token_tenant)
+
     # Access tokens die with their session: logout/reset revokes immediately.
     # TODO(M2): cache active-session lookups in Redis (one DB hit per request now).
     auth_session = await session.get(AuthSession, session_id)
@@ -260,16 +275,12 @@ async def get_current_principal(
     if not user.is_active:
         AUTH_FAILURES.labels("user_inactive").inc()
         raise UnauthorizedError()
-    tenant_id = uuid.UUID(payload["tenant_id"]) if payload.get("tenant_id") else None
-    if tenant_id is not None:
+    if token_tenant is not None:
         # Tenant-scoped tokens are authoritative — the header cannot override.
-        set_current_tenant(tenant_id)
-        # SEC-001: re-bind the database session now that the tenant is proven,
-        # so RLS enforces the token's tenant rather than the caller's header.
-        from platform_core.core.rls import bind_tenant
-
-        await bind_tenant(session, tenant_id)
-        principal_tenant = tenant_id
+        # The binding already happened above, before the first read; this
+        # keeps the context variable and the binding in agreement.
+        set_current_tenant(token_tenant)
+        principal_tenant = token_tenant
     else:
         # Platform-level principals may act inside a tenant via X-Tenant-ID
         # (bootstrap/administration path, permission-guarded per route).

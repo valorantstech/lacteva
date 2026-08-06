@@ -321,8 +321,14 @@ async def test_overlapping_bands_raise_integrity(client):
     from platform_core.modules.pricing.models import PricingMatrixRow
 
     async with db.get_session_factory()() as session:
+        # SEC-002: bands are tenant-owned, so a row built outside the service
+        # still has to name its tenant — taken from the matrix it belongs to.
+        from platform_core.modules.pricing.models import PricingMatrix
+
+        parent = await session.get(PricingMatrix, uuid.UUID(matrix["id"]))
         session.add(
             PricingMatrixRow(
+                tenant_id=parent.tenant_id,
                 matrix_id=uuid.UUID(matrix["id"]),
                 sequence=99,
                 from_value=3.5,

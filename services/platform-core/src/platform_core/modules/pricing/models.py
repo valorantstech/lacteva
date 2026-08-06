@@ -158,6 +158,11 @@ class PricingMatrixRow(Base, IdMixin):
         Index("ix_matrix_row_lookup", "matrix_id", "active", "from_value"),
     )
 
+    # SEC-002: denormalised from matrix. This table is tenant-owned but had
+    # no tenant_id, so no RLS policy could apply and a query that forgot its
+    # join returned every tenant's rows. Safe to denormalise because rows are
+    # never reparented; the composite FK in DBD-0001 §7.1 makes that provable.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     matrix_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     sequence: Mapped[int] = mapped_column(Integer)
     from_value: Mapped[float] = mapped_column(Float)

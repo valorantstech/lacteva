@@ -261,6 +261,7 @@ class PaymentService:
         for settlement, amount in resolved:
             self._session.add(
                 PaymentLine(
+                    tenant_id=payment.tenant_id,
                     payment_id=payment.id,
                     settlement_id=settlement.id,
                     settlement_number=settlement.settlement_number,
@@ -692,6 +693,7 @@ class PaymentService:
         self, payment: Payment, cmd: ExecutePaymentCommand, actor_id: uuid.UUID
     ) -> PaymentAttempt:
         attempt = PaymentAttempt(
+            tenant_id=payment.tenant_id,
             payment_id=payment.id,
             attempt_number=payment.attempt_count + 1,
             # Metadata only: the "provider" defaults to the payment method,

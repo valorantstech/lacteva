@@ -73,6 +73,11 @@ class SettlementLine(Base, IdMixin):
         UniqueConstraint("settlement_id", "transaction_id", name="uq_settlement_line_tx"),
     )
 
+    # SEC-002: denormalised from settlement. This table is tenant-owned but had
+    # no tenant_id, so no RLS policy could apply and a query that forgot its
+    # join returned every tenant's rows. Safe to denormalise because rows are
+    # never reparented; the composite FK in DBD-0001 §7.1 makes that provable.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     settlement_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("settlement.id"), index=True)
     calculation_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     transaction_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)

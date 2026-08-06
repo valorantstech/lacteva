@@ -97,6 +97,11 @@ class PaymentLine(Base, IdMixin):
         UniqueConstraint("payment_id", "settlement_id", name="uq_payment_line_settlement"),
     )
 
+    # SEC-002: denormalised from payment. This table is tenant-owned but had
+    # no tenant_id, so no RLS policy could apply and a query that forgot its
+    # join returned every tenant's rows. Safe to denormalise because rows are
+    # never reparented; the composite FK in DBD-0001 §7.1 makes that provable.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     payment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("payment.id"), index=True)
     settlement_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     settlement_number: Mapped[str] = mapped_column(String(30))
@@ -113,6 +118,11 @@ class PaymentAttempt(Base, IdMixin):
         UniqueConstraint("payment_id", "attempt_number", name="uq_payment_attempt_number"),
     )
 
+    # SEC-002: denormalised from payment. This table is tenant-owned but had
+    # no tenant_id, so no RLS policy could apply and a query that forgot its
+    # join returned every tenant's rows. Safe to denormalise because rows are
+    # never reparented; the composite FK in DBD-0001 §7.1 makes that provable.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     payment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("payment.id"), index=True)
     attempt_number: Mapped[int] = mapped_column()
     provider: Mapped[str] = mapped_column(String(40))

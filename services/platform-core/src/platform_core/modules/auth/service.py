@@ -78,6 +78,16 @@ class AuthService:
         return s
 
     async def login(self, cmd: LoginCommand) -> TokenPair:
+        # SEC-002: a tenant-scoped login names its tenant in the request body,
+        # which the middleware never sees, so the session was bound to nothing
+        # and RLS hid the very account being authenticated. Bind from the
+        # request before the lookup. This grants no access on its own — the
+        # password still has to verify, and an attacker naming a tenant they
+        # do not belong to only narrows what they can see.
+        from platform_core.core.rls import rebind_tenant
+
+        if cmd.tenant_id is not None:
+            await rebind_tenant(self._session, cmd.tenant_id)
         user = await self._identity.get_by_email(cmd.email, cmd.tenant_id)
         if (
             user is None

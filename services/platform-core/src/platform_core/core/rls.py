@@ -38,6 +38,76 @@ log = structlog.get_logger("security.rls")
 TENANT_SETTING = "lacteva.tenant_id"
 BYPASS_SETTING = "lacteva.bypass_rls"
 
+# SEC-002: every table declares exactly one isolation strategy. The taxonomy
+# is deliberately closed — "we never decided" is not one of the options, and
+# `test_security.py::test_every_table_declares_an_isolation_strategy` fails
+# when a new table appears in none of these sets.
+#
+#   A  TENANT_OWNED    carries tenant_id; the standard policy applies
+#   B  PLATFORM_GLOBAL no tenant; RLS must NOT be enabled, with a reason
+#   C  MIXED           holds both tenant and platform rows, or is isolated by
+#                      a column other than tenant_id — always needs prose
+#
+# A is derived from the metadata (`tenant_tables()`), because a hand-kept
+# list is how a new module ships unprotected. B and C are declared here,
+# because "this table is deliberately not protected" is a decision and must
+# be written down where the next reviewer will look.
+
+PLATFORM_GLOBAL: dict[str, str] = {
+    "consumer_cursor": (
+        "One row per consumer, not per tenant. The consumer loop is "
+        "definitionally cross-tenant and reads this under an audited bypass."
+    ),
+    "projection_state": (
+        "One row per projection. Rebuild state belongs to the platform, not "
+        "to any tenant whose events the projection happens to contain."
+    ),
+    "backup_run": (
+        "Platform operations history. A backup spans every tenant; scoping "
+        "it to one would make the record of a whole-database backup invisible."
+    ),
+    "event_delivery": (
+        "Dispatch bookkeeping — attempt number, status, transport, latency. "
+        "Carries no business payload and is read only by platform operators. "
+        "Deliberately NOT given a tenant_id so that outbox partitions can be "
+        "detached and dropped without a dependent policy (DBD-0001 §7.3)."
+    ),
+    "password_reset_token": (
+        "Read by a flow that is definitionally unauthenticated: the caller "
+        "presents a token hash and has no tenant bound, and cannot have one, "
+        "because discovering which tenant the user belongs to is the point of "
+        "the lookup. A policy here would make password reset impossible for "
+        "every tenant-scoped user. Rows hold a hash and an expiry, never a "
+        "credential, and are unreachable without the plaintext token."
+    ),
+}
+
+MIXED: dict[str, str] = {
+    "organization": (
+        "IS the tenant — `organization.id` is what every other table's "
+        "tenant_id points at, so it cannot be isolated by a tenant_id column "
+        "it does not have. Isolated by IDENTITY instead: a bound session sees "
+        "exactly its own organization. Creation and platform-admin listing "
+        "run under an audited bypass, because an organization necessarily "
+        "exists before anyone can be bound to it."
+    ),
+    "user_account": (
+        "A user exists before joining any organization (self-registration), "
+        "so tenant_id is nullable and NULL rows are globally visible by "
+        "design — that is how login finds an account at all."
+    ),
+    "auth_session": "Platform-level sessions carry no tenant; tenant sessions carry theirs.",
+    "role": "System roles are global (tenant_id NULL); tenant roles are not.",
+    "role_permission": "Inherits its role's scope — global for system roles, tenant-owned else.",
+    "user_role": "A platform-admin grant has no tenant; a tenant grant does.",
+    "config_entry": "Platform-scope rows are global; tenant-scope rows are not.",
+    "audit_record": "Platform-level actions (registration, org creation) have no tenant.",
+    "event_outbox": "Events raised before a tenant exists carry no tenant_id.",
+    "consumer_execution": "Mirrors the tenancy of the event it records.",
+    "dead_letter_queue": "Mirrors the tenancy of the event that died.",
+    "notification": "A message about a platform-level event has no tenant.",
+}
+
 
 def tenant_tables() -> tuple[str, ...]:
     """Every tenant-owned table, DERIVED from the mapped metadata.
@@ -75,6 +145,25 @@ async def bind_tenant(session: AsyncSession, tenant_id: uuid.UUID | None) -> Non
         {"tenant": str(tenant_id) if tenant_id else ""},
     )
     await session.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'off'"))
+
+
+async def rebind_tenant(session: AsyncSession, tenant_id: uuid.UUID | None) -> None:
+    """Re-bind mid-request, once the authoritative tenant is known.
+
+    SEC-002: `bind_tenant` runs when the session is created, which is BEFORE
+    the request has proven anything. Several flows learn their tenant later —
+    a token is decoded, an invitation is looked up, a login names a tenant in
+    its body — and every one of them then reads or writes tenant-owned rows.
+    Changing `set_current_tenant()` alone is not enough and was the shape of
+    a real defect: the context variable moved, the database binding did not,
+    and the row was invisible to the very request that owned it.
+
+    Always pair a mid-request `set_current_tenant()` with this call.
+    """
+    from platform_core.core.tenancy import set_current_tenant
+
+    set_current_tenant(tenant_id)
+    await bind_tenant(session, tenant_id)
 
 
 async def bind_platform_context(session: AsyncSession, *, reason: str) -> None:
@@ -125,6 +214,49 @@ def policy_statements(table: str) -> list[str]:
         )
         """,
     ]
+
+
+def identity_policy_statements(table: str, *, column: str = "id") -> list[str]:
+    """Protection for a table that IS the tenant (SEC-002).
+
+    `organization` has no `tenant_id` because it is what every `tenant_id`
+    refers to. Isolating it therefore compares its own primary key against
+    the bound tenant: a bound session sees exactly its own organization and
+    no other, which is the same guarantee the tenant policy gives — reached
+    through a different column.
+
+    There is no `tenant_id IS NULL` escape here, and there must not be: the
+    identity column is NOT NULL, so an unbound session sees nothing at all.
+    That is correct. Creating an organization, and listing organizations as
+    a platform administrator, are cross-tenant acts and run under the audited
+    bypass rather than through a hole in the policy.
+    """
+    predicate = (
+        f"current_setting('{BYPASS_SETTING}', true) = 'on' "
+        f"OR {column}::text = current_setting('{TENANT_SETTING}', true)"
+    )
+    return [
+        f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY",
+        f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY",
+        f"""
+        CREATE POLICY {table}_tenant_isolation ON {table}
+        USING ({predicate})
+        WITH CHECK ({predicate})
+        """,
+    ]
+
+
+def unclassified_tables() -> tuple[str, ...]:
+    """Tables that declare no isolation strategy at all — always empty.
+
+    SEC-002's whole premise is that "every table has an explicit isolation
+    strategy". This is the function that makes the premise checkable rather
+    than aspirational; a test asserts it returns nothing.
+    """
+    from platform_core.core.db import Base
+
+    declared = set(tenant_tables()) | set(PLATFORM_GLOBAL) | set(MIXED)
+    return tuple(sorted(name for name in Base.metadata.tables if name not in declared))
 
 
 def drop_statements(table: str) -> list[str]:

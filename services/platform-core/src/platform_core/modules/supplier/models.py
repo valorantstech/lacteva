@@ -40,6 +40,11 @@ class Supplier(Base, IdMixin):
 class SupplierProfile(Base, IdMixin):
     __tablename__ = "supplier_profile"
 
+    # SEC-002: denormalised from supplier. This table is tenant-owned but had
+    # no tenant_id, so no RLS policy could apply and a query that forgot its
+    # join returned every tenant's rows. Safe to denormalise because rows are
+    # never reparented; the composite FK in DBD-0001 §7.1 makes that provable.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     supplier_id: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(200), index=True)
     phone: Mapped[str] = mapped_column(String(30), default="", index=True)
@@ -62,6 +67,11 @@ class SupplierCenterAssignment(Base, IdMixin):
 class SupplierBankAccount(Base, IdMixin):
     __tablename__ = "supplier_bank_account"
 
+    # SEC-002: denormalised from supplier. This table is tenant-owned but had
+    # no tenant_id, so no RLS policy could apply and a query that forgot its
+    # join returned every tenant's rows. Safe to denormalise because rows are
+    # never reparented; the composite FK in DBD-0001 §7.1 makes that provable.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     supplier_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     account_name: Mapped[str] = mapped_column(String(200))
     account_number: Mapped[str] = mapped_column(String(60))  # TODO(M3): encrypt at rest
@@ -73,6 +83,11 @@ class SupplierBankAccount(Base, IdMixin):
 class SupplierDocument(Base, IdMixin):
     __tablename__ = "supplier_document"
 
+    # SEC-002: denormalised from supplier. This table is tenant-owned but had
+    # no tenant_id, so no RLS policy could apply and a query that forgot its
+    # join returned every tenant's rows. Safe to denormalise because rows are
+    # never reparented; the composite FK in DBD-0001 §7.1 makes that provable.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     supplier_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     kind: Mapped[str] = mapped_column(String(20))
     file_name: Mapped[str] = mapped_column(String(200))

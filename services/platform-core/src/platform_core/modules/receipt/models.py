@@ -105,6 +105,11 @@ class ReceiptLine(Base, IdMixin):
         UniqueConstraint("receipt_id", "settlement_id", name="uq_receipt_line_settlement"),
     )
 
+    # SEC-002: denormalised from receipt. This table is tenant-owned but had
+    # no tenant_id, so no RLS policy could apply and a query that forgot its
+    # join returned every tenant's rows. Safe to denormalise because rows are
+    # never reparented; the composite FK in DBD-0001 §7.1 makes that provable.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     receipt_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("receipt.id"), index=True)
     settlement_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     settlement_number: Mapped[str] = mapped_column(String(30))

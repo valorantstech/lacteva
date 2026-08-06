@@ -3,7 +3,7 @@ id: DBD-0001
 title: Platform Core Database
 type: dbd
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Architecture Board
 created: 2026-08-06
 last-updated: 2026-08-06
@@ -90,14 +90,18 @@ The binding is `SET LOCAL lacteva.tenant_id` inside the request's transaction, s
 
 | | Tables |
 | --- | --- |
-| `tenant_id` column **and** an RLS policy | **37** |
-| No `tenant_id` column, therefore **no policy** | **19** |
+| `tenant_id` column **and** an RLS policy | **50** |
+| Isolated by identity (`organization`) | **1** |
+| Platform-global, deliberately unprotected, reason on record | **5** |
+| **Undeclared** | **0** |
 
-The 19 unprotected tables are not an oversight in the sense that someone forgot a column — they are child tables whose tenancy is defined by their parent. But the consequence is precise and worth stating plainly, because it qualifies BR-0022's promise:
+> **Updated by SEC-002.** When this document was first written the split was 37 / 19, and the 19 had no isolation strategy at all. Thirteen of them were tenant-owned child tables and now carry their own `tenant_id`; `organization` is isolated by its own primary key; five are platform-global by decision, each with the reason recorded in `core/rls.py`. `unclassified_tables()` returns nothing, and a test asserts it.
 
-> **A query against one of those 19 tables that forgets its join returns every tenant's rows.**
+The 19 unprotected tables were not an oversight in the sense that someone forgot a column — they were child tables whose tenancy was defined by their parent. But the consequence was precise, and it qualified BR-0022's promise:
 
-Four of the nineteen (`payment_line`, `payment_attempt`, `receipt_line`, `settlement_line`) at least have a foreign key to their parent. The other fifteen — including `supplier_profile`, which holds names, phone numbers, and national ID numbers, and `supplier_bank_account`, which holds account numbers — have neither a `tenant_id` nor a foreign key. **Nothing at the database level ties those rows to a tenant at all.** This is finding **F-1** in §10.
+> ~~**A query against one of those 19 tables that forgets its join returns every tenant's rows.**~~ **Closed by SEC-002.**
+
+Four of the nineteen (`payment_line`, `payment_attempt`, `receipt_line`, `settlement_line`) at least had a foreign key to their parent. The other fifteen — including `supplier_profile`, which holds names, phone numbers, and national ID numbers, and `supplier_bank_account`, which holds account numbers — had neither a `tenant_id` nor a foreign key, so nothing at the database level tied those rows to a tenant at all. That was finding **F-1**, and migration `f2d18ba60c47` closed it: thirteen tables gained `tenant_id` and an ordinary policy. **The foreign keys remain absent — F-2 is still open** — so the composite `(parent_id, tenant_id)` reinforcement described in §7.1 has not been applied; the denormalised tenant is currently kept correct by the services, not by the database.
 
 ### 2.2 Platform-global rows
 
@@ -2149,9 +2153,11 @@ No table is partitioned today. Nine should be, and the criterion is uniform: **t
 
 Findings are ordered by consequence, not by effort. **Nothing here has been implemented** — this work order is review only.
 
-### F-1 · Nineteen tables have no tenant isolation in the database
+### F-1 · ~~Nineteen tables have no tenant isolation in the database~~ — **CLOSED by SEC-002**
 
-**Severity: high.** `tenant_id` is absent from 19 of 56 tables, so RLS protects 37. Four have a foreign key to their parent; fifteen have nothing at all tying them to a tenant. Two of them hold the platform's most sensitive data:
+> Migration `f2d18ba60c47` gave thirteen tenant-owned child tables their own `tenant_id` and the standard policy, isolated `organization` by identity, and recorded the five genuinely platform-global tables with their reasons. Option (c) below was the one taken. The remaining exposure is that the denormalised `tenant_id` is kept correct by services rather than by a composite foreign key — see F-2, still open.
+
+**Original text, retained. Severity: high.** `tenant_id` is absent from 19 of 56 tables, so RLS protects 37. Four have a foreign key to their parent; fifteen have nothing at all tying them to a tenant. Two of them hold the platform's most sensitive data:
 
 - `supplier_profile` — full name, phone, national ID, village
 - `supplier_bank_account` — account name, account number, bank code
@@ -2172,9 +2178,11 @@ The concrete risk is orphans. `core/backup/integrity.py` already checks for them
 
 **Severity: high.** Covered in §8. The compounding consequence: at the modelled scale the database grows by roughly **8–10 TB per year** before indexes, and nothing ever leaves. Right-to-erasure cannot be executed reliably, which is a regulatory exposure in most target markets, not merely an operational one.
 
-### F-4 · `DATETIME` is `TIMESTAMP WITHOUT TIME ZONE` — 97 columns
+### F-4 · ~~`DATETIME` is `TIMESTAMP WITHOUT TIME ZONE`~~ — **WITHDRAWN**
 
-**Severity: high.** Every timestamp column in the schema maps to `timestamp without time zone` on PostgreSQL. The application writes UTC consistently and `as_utc()` normalizes on read, so behaviour is currently correct — but for a platform explicitly targeting 50+ countries, a naive timestamp is a defect waiting for its first daylight-saving boundary or its first report written by someone who did not know the convention. `TIMESTAMPTZ` costs the same 8 bytes and makes the convention unforgeable.
+> **This finding was wrong.** It was derived from `str(column.type)`, which renders through SQLAlchemy's *default* dialect rather than PostgreSQL's. All 97 columns are declared `sa.DateTime(timezone=True)` and compile to `TIMESTAMP WITH TIME ZONE`; the migration DDL confirms it. No work is required. Retained rather than deleted so the error, and its cause, stay on the record. (ABR-002 §0.)
+
+**Original text, superseded. Severity: high.** Every timestamp column in the schema maps to `timestamp without time zone` on PostgreSQL. The application writes UTC consistently and `as_utc()` normalizes on read, so behaviour is currently correct — but for a platform explicitly targeting 50+ countries, a naive timestamp is a defect waiting for its first daylight-saving boundary or its first report written by someone who did not know the convention. `TIMESTAMPTZ` costs the same 8 bytes and makes the convention unforgeable.
 
 This is a large, mechanical migration (97 columns) and should be done once, deliberately, before the tables are large enough that rewriting them requires a maintenance window.
 
@@ -2217,9 +2225,11 @@ A status column has a handful of distinct values, so an index on it alone select
 | `ix_consumer_execution_status (consumer_name, status)` | `... (consumer_name, next_attempt_at) WHERE status = 'failed'` | The retry path needs the due time, which this index does not carry |
 | `ix_milk_collection_transaction_state (state)` | `(tenant_id, center_id, state)` | Operators ask "what is open at my center", never "what is open anywhere" |
 
-### F-9 · `CHAR(32)` identifiers instead of `uuid` — 176 columns
+### F-9 · ~~`CHAR(32)` identifiers instead of `uuid`~~ — **WITHDRAWN**
 
-**Severity: medium.** Every id is a 32-character hex string. On PostgreSQL that is 33 bytes stored (with the length header) versus **16 bytes for a native `uuid`**, and comparisons are string comparisons rather than 128-bit integer comparisons.
+> **This finding was wrong**, for the same reason as F-4. Every id column is declared `sa.Uuid()` and compiles to native `uuid` (16 bytes) on PostgreSQL; `CHAR(32)` is what SQLite renders. No migration, no storage penalty. What *is* real is the generation strategy — random `uuid4()` scatters B-tree inserts on the append-heavy tables, and UUIDv7 would be a one-line change per model (ABR-002 §9). (ABR-002 §0.)
+
+**Original text, superseded. Severity: medium.** Every id is a 32-character hex string. On PostgreSQL that is 33 bytes stored (with the length header) versus **16 bytes for a native `uuid`**, and comparisons are string comparisons rather than 128-bit integer comparisons.
 
 At the modelled scale the arithmetic is not academic: `event_outbox` alone carries 6 id columns × ~12 B rows/yr, and every index entry pays the difference too. A rough estimate across the whole schema is **15–20% of total heap and index size**. The type was chosen for SQLite portability, which is a test-environment concern deciding a production storage layout — the same class of trade-off CI-001 examined for RLS. SQLAlchemy's `Uuid` type with `native_uuid=True` renders `uuid` on PostgreSQL and `CHAR(32)` on SQLite from one declaration, so the portability is preservable.
 
@@ -2324,4 +2334,5 @@ Reproducible, and it should be reproduced whenever the schema changes:
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-06 | Architecture Board | SEC-002: RLS coverage now complete (50 tenant-owned + identity-isolated `organization` + 5 declared global); F-1 closed; F-4 and F-9 struck as measurement errors (ABR-002 §0). |
 | 1.0 | 2026-08-06 | Architecture Board | Established by DBR-001. Complete inventory of 56 tables, ERDs, module dependency graph, lifecycle classification, top-20 volumetrics, partitioning assessment, and 13 optimization findings. Documentation only — no schema change. |

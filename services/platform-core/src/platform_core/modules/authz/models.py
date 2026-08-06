@@ -26,6 +26,11 @@ class RolePermission(Base, IdMixin):
     __tablename__ = "role_permission"
     __table_args__ = (UniqueConstraint("role_id", "permission_key", name="uq_role_permission"),)
 
+    # SEC-002: denormalised from role. This table is tenant-owned but had
+    # no tenant_id, so no RLS policy could apply and a query that forgot its
+    # join returned every tenant's rows. Safe to denormalise because rows are
+    # never reparented; the composite FK in DBD-0001 §7.1 makes that provable.
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
     role_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     permission_key: Mapped[str] = mapped_column(String(120))  # registry key or "*"
 

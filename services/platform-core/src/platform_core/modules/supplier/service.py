@@ -197,6 +197,7 @@ class SupplierService:
         await self._session.flush()
         self._session.add(
             SupplierProfile(
+                tenant_id=supplier.tenant_id,
                 supplier_id=supplier.id,
                 full_name=cmd.full_name,
                 phone=cmd.phone,
@@ -388,6 +389,7 @@ class SupplierService:
             for account in existing.all():
                 account.is_primary = False
         account = SupplierBankAccount(
+            tenant_id=supplier.tenant_id,
             supplier_id=supplier.id,
             account_name=cmd.account_name,
             account_number=cmd.account_number,
@@ -441,6 +443,7 @@ class SupplierService:
         )
         await self._storage.put_object(key, content, cmd.content_type)
         document = SupplierDocument(
+            tenant_id=supplier.tenant_id,
             supplier_id=supplier.id,
             kind=cmd.kind,
             file_name=cmd.file_name,

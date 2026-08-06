@@ -5,7 +5,7 @@
 # by executing it against a real engine:
 #
 #   1. migrations apply to an EMPTY database
-#   2. RLS policies exist and are FORCED on every tenant-owned table
+#   2. RLS policies exist, are FORCED, and COVER every tenant-owned table
 #   3. the PostgreSQL-only test suite passes (and did not silently skip)
 #   4. a real dairy is seeded through the platform's own API
 #   5. a logical backup is taken and verified
@@ -86,6 +86,21 @@ echo "    ${PROTECTED} tables protected and forced"
 [ "${PROTECTED}" -gt 30 ] || fail "only ${PROTECTED} protected tables — policies are missing"
 POLICIES="$(psql_do "${SOURCE_DB}" "SELECT count(*) FROM pg_policies WHERE schemaname='public'")"
 echo "    ${POLICIES} policies present"
+
+# SEC-002: coverage, not just presence. Every table that carries a tenant_id
+# must have a policy, and `organization` — which IS the tenant and therefore
+# has no tenant_id — must have one too. Counting policies would pass while the
+# money and PII tables sat unprotected, which is exactly what happened.
+UNCOVERED="$(psql_do "${SOURCE_DB}" "
+  SELECT count(*) FROM information_schema.columns c
+  WHERE c.table_schema='public' AND c.column_name='tenant_id'
+    AND NOT EXISTS (SELECT 1 FROM pg_policies p
+                    WHERE p.schemaname='public' AND p.tablename=c.table_name)")"
+[ "${UNCOVERED}" = "0" ] || fail "${UNCOVERED} table(s) carry tenant_id but have NO policy"
+ORG_POLICY="$(psql_do "${SOURCE_DB}" \
+  "SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='organization'")"
+[ "${ORG_POLICY}" = "1" ] || fail "organization has no RLS policy — a tenant can enumerate tenants"
+echo "    every tenant_id table covered; organization isolated by identity"
 
 step "3/9  PostgreSQL-only test suite (RLS enforcement)"
 RLS_LOG="${WORKDIR}/rls.log"

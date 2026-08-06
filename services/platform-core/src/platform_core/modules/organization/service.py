@@ -19,7 +19,6 @@ from platform_core.core.errors import (
 from platform_core.core.tenancy import (
     get_current_tenant,
     require_current_tenant,
-    set_current_tenant,
 )
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
@@ -65,6 +64,18 @@ class OrganizationService:
     async def create_organization(
         self, cmd: CreateOrganizationCommand, *, actor_id: uuid.UUID | None
     ) -> Organization:
+        # SEC-002: `organization` is isolated by IDENTITY — a bound session
+        # sees exactly its own row. Creating one is therefore necessarily a
+        # cross-tenant act: the organization does not exist yet, so nobody can
+        # be bound to it, and both the slug-uniqueness check (which must see
+        # every tenant's slug) and the INSERT would be refused by the policy.
+        # An audited bypass is the honest mechanism; a NULL hole in the policy
+        # would have been a permanent one.
+        from platform_core.core.rls import bind_platform_context
+
+        await bind_platform_context(
+            self._session, reason="organization creation: no tenant exists yet"
+        )
         existing = await self._session.scalar(
             select(Organization).where(Organization.slug == cmd.slug)
         )
@@ -95,6 +106,24 @@ class OrganizationService:
         return org
 
     async def get_organization(self, org_id: uuid.UUID) -> Organization:
+        # SEC-002: under the identity policy a bound tenant sees exactly its
+        # own organization, so a tenant asking for someone else's gets a 404
+        # from the database rather than a row from a forgotten filter.
+        #
+        # A platform-level principal has no tenant bound and would therefore
+        # see nothing at all. Reading another organization IS a cross-tenant
+        # act, so it takes the audited bypass — and only after the route's
+        # `organization.read` guard has already run. The test that matters
+        # here is that a TENANT-scoped caller never reaches this branch: a
+        # tenant token always binds a tenant, so `get_current_tenant()` is
+        # None only for platform principals.
+        from platform_core.core.rls import bind_platform_context
+        from platform_core.core.tenancy import get_current_tenant
+
+        if get_current_tenant() is None:
+            await bind_platform_context(
+                self._session, reason=f"platform principal reading organization {org_id}"
+            )
         org = await self._session.get(Organization, org_id)
         if org is None:
             raise NotFoundError("organization not found")
@@ -303,7 +332,18 @@ class InvitationService:
         authz: "AuthzService",
         membership: MembershipService,
     ) -> User:
+        # SEC-002: accepting an invitation is definitionally pre-tenant — the
+        # caller is anonymous and the whole point of the lookup is to discover
+        # which tenant they are joining. `invitation` is tenant-owned, so an
+        # unbound session cannot see it. This is the narrowest possible
+        # bypass: one indexed read by token hash, immediately followed by
+        # binding to the tenant that read reveals.
+        from platform_core.core.rls import bind_platform_context, rebind_tenant
+
         token_hash = hashlib.sha256(token.encode()).hexdigest()
+        await bind_platform_context(
+            self._session, reason="invitation acceptance: resolve tenant from token"
+        )
         invitation = await self._session.scalar(
             select(Invitation).where(Invitation.token_hash == token_hash)
         )
@@ -314,7 +354,12 @@ class InvitationService:
             or as_utc(invitation.expires_at) < utcnow()
         ):
             raise InvalidTokenError()
-        set_current_tenant(invitation.tenant_id)
+        # Bypass ends here. Everything below writes tenant-owned rows
+        # (user_account, membership, user_role) and must be constrained by
+        # the tenant the invitation named — `set_current_tenant` alone moved
+        # the context variable but left the database binding behind, so
+        # WITH CHECK rejected the writes.
+        await rebind_tenant(self._session, invitation.tenant_id)
         user = await identity.register_user(
             RegisterUserCommand(email=invitation.email, password=password, full_name=full_name),
             tenant_id=invitation.tenant_id,

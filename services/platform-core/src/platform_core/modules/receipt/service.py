@@ -211,6 +211,7 @@ class ReceiptService:
         for line in lines:
             self._session.add(
                 ReceiptLine(
+                    tenant_id=receipt.tenant_id,
                     receipt_id=receipt.id,
                     settlement_id=uuid.UUID(line["settlement_id"]),
                     settlement_number=line.get("settlement_number") or "",

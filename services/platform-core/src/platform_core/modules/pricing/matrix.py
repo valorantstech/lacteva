@@ -341,6 +341,7 @@ class PricingMatrixService:
             )
             sequence = (max_seq or 0) + 1
         row = PricingMatrixRow(
+            tenant_id=matrix.tenant_id,
             matrix_id=matrix.id,
             sequence=sequence,
             from_value=cmd.from_value,

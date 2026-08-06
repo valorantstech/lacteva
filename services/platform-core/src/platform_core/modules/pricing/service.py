@@ -594,6 +594,7 @@ class RateCardService:
             for row in rows.all():
                 self._session.add(
                     PricingMatrixRow(
+                        tenant_id=copy.tenant_id,
                         matrix_id=copy.id,
                         sequence=row.sequence,
                         from_value=row.from_value,

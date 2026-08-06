@@ -3,7 +3,7 @@ id: RLS-GUIDE
 title: Row Level Security Guide
 type: reference
 status: Approved
-version: "1.1"
+version: "1.2"
 owner: Architecture Board
 created: 2026-08-05
 last-updated: 2026-08-06
@@ -58,6 +58,96 @@ Three details carry the whole guarantee:
 - **`current_setting(..., true)`.** The `true` means "missing is NULL, not an error". An unbound session therefore matches nothing and fails **closed**.
 - **`OR tenant_id IS NULL`.** Some rows belong to no tenant by design: a user account before it joins an organization, the role catalog, the outbox log. `NULL = 'anything'` is NULL — neither true nor false — so without this clause those rows are invisible to *every* session and cannot be inserted at all. The original SEC-001 policy omitted it, and nothing caught that until the policies were executed on a real engine (CI-001): **registration itself would have failed in production**. Added by migration `c94b1ea27f31`. The clause is safe because a NULL `tenant_id` is not a wildcard — it means the row is platform-global, and no tenant-owned row is ever written with one.
 
+## 3b. Every table declares an isolation strategy (SEC-002)
+
+SEC-001 built the policy set from a mechanical rule — *does the table have a
+`tenant_id` column?* — which produced an incomplete answer, because the schema
+had already decided that child rows of a tenant-owned aggregate do not repeat
+`tenant_id`. Nineteen tables fell outside the boundary that way. Nobody decided
+that `supplier_profile` (names, phones, national IDs) or `settlement_line`
+(per-delivery money) should be unprotected; they inherited a rule about columns.
+
+The rule is now a declaration, and there are exactly three answers:
+
+| Class | Meaning | Where it lives |
+| --- | --- | --- |
+| **A — tenant-owned** | Carries `tenant_id`; the standard policy applies | Derived from the metadata by `tenant_tables()` |
+| **B — platform-global** | Deliberately unprotected, **with the reason on record** | `PLATFORM_GLOBAL` in `core/rls.py` |
+| **C — mixed** | Holds both tenant and platform rows, or is isolated by a column other than `tenant_id` | `MIXED` in `core/rls.py` |
+
+Category A is *derived* rather than listed, because a hand-kept list is how a
+new module ships unprotected. B and C are *declared*, because "this table is
+deliberately not protected" is a decision and belongs somewhere the next
+reviewer will look. `unclassified_tables()` returns everything in neither
+group, and a test asserts it is empty — which is what turns "every table has an
+explicit isolation strategy" from a principle into a build failure.
+
+### The five platform-global tables
+
+`consumer_cursor`, `projection_state`, `backup_run`, `event_delivery`, and
+`password_reset_token`. The first four are per-consumer, per-projection, or
+per-platform bookkeeping with no tenant to speak of. `event_delivery` is
+deliberately kept tenant-free so outbox partitions can be detached and dropped
+without a dependent policy.
+
+`password_reset_token` is the interesting one, and the reason it is category B
+rather than A: **the flow that reads it is definitionally unauthenticated.** A
+caller presents a token hash and has no tenant bound — discovering which tenant
+the user belongs to is the *point* of the lookup. A policy there would make
+password reset impossible for every tenant-scoped user. The rows hold a hash
+and an expiry, never a credential, and are unreachable without the plaintext
+token.
+
+### `organization` is isolated by identity
+
+`organization` has no `tenant_id` because it **is** the tenant —
+`organization.id` is what every other `tenant_id` points at. Before SEC-002 it
+had no policy at all, so any bound session could read every row: a tenant could
+enumerate the platform's entire customer list. Its policy compares its own
+primary key instead:
+
+```sql
+CREATE POLICY organization_tenant_isolation ON organization
+  USING      (current_setting('lacteva.bypass_rls', true) = 'on'
+              OR id::text = current_setting('lacteva.tenant_id', true))
+  WITH CHECK (... same ...);
+```
+
+Note what is **absent**: there is no `OR id IS NULL` escape, and there must not
+be. `id` is NOT NULL, so an unbound session sees no organization at all. That
+is correct — creating an organization and reading one as a platform
+administrator are genuinely cross-tenant acts, and they take the audited bypass
+rather than a permanent hole in the policy.
+
+## 3c. Flows that are pre-tenant by nature
+
+RLS assumes a bound tenant. Several legitimate flows run *before* one can
+exist, and every one of them was broken by the policy set until SEC-002 —
+silently, because SQLite cannot execute a policy.
+
+| Flow | Why it has no tenant yet | Resolution |
+| --- | --- | --- |
+| **Authenticated request** | `auth_session` and `user_account` are themselves tenant-owned, and the tenant is inside the token that has not been checked against them yet | Bind from the **token's** tenant claim before the first read. The token is signed and self-contained, so its claim is authoritative before any row is read. |
+| **Tenant-scoped login** | The tenant is named in the request *body*, which the middleware never sees | Bind from the request before the lookup. This grants nothing on its own — the password still has to verify. |
+| **Invitation acceptance** | Anonymous caller; `invitation` is tenant-owned and discovering its tenant is the point | The narrowest possible bypass — one indexed read by token hash — then bind immediately to the tenant it reveals. |
+| **Organization creation** | The organization does not exist, so nobody can be bound to it; the slug-uniqueness check must see every tenant's slug | Audited bypass. |
+| **Platform-admin reads an organization** | A platform principal has no tenant bound | Audited bypass, after the route's permission guard. A tenant token always binds a tenant, so a tenant caller never reaches that branch. |
+| **Self-registration** | The user belongs nowhere yet | `tenant_id IS NULL`, globally visible by design (the CI-001 fix). |
+| **Password reset** | Unauthenticated by definition | `password_reset_token` is category B — no policy. |
+
+**The pattern worth naming:** authentication is a chicken-and-egg problem under
+RLS. You must read a tenant-owned row to learn which tenant you are, and you
+must know which tenant you are to read it. The resolution is always the same —
+find the authoritative, *cryptographically or structurally* trustworthy source
+of the tenant (a signed token claim, a request parameter that grants nothing on
+its own, a single bypassed lookup by an unguessable token) and bind from that
+before touching anything else.
+
+**Never pair `set_current_tenant()` with nothing.** It moves the context
+variable and leaves the database binding behind, which is a defect that
+presents as "the row is invisible to the request that owns it". `rebind_tenant()`
+exists to move both together.
+
 ## 4. The bypass
 
 Some machinery is definitionally cross-tenant: the relay dispatcher, event consumers, projection rebuilds, and platform-admin operations. They call `bind_platform_context(session, reason=...)`, which sets `lacteva.bypass_rls` for that transaction and logs the reason.
@@ -100,5 +190,6 @@ Both flags must be true. `relrowsecurity` alone means the owner still bypasses.
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-08-06 | Architecture Board | SEC-002: A/B/C isolation taxonomy; 13 child tables made tenant-owned; `organization` isolated by identity; the pre-tenant flows documented. |
 | 1.1 | 2026-08-06 | Architecture Board | CI-001: platform-global (`tenant_id IS NULL`) clause added to the policy after first execution on a real engine. |
 | 1.0 | 2026-08-05 | Architecture Board | Established by SEC-001. |

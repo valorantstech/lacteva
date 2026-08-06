@@ -229,7 +229,11 @@ class OperationalReadinessService:
         if device.status == "retired":
             raise ConflictError("retired devices do not accept health reports")
         report = DeviceHealthReport(
-            device_id=device.id, state=state, note=note[:300], reported_by=actor_id
+            tenant_id=device.tenant_id,
+            device_id=device.id,
+            state=state,
+            note=note[:300],
+            reported_by=actor_id,
         )
         self._session.add(report)
         await self._session.flush()

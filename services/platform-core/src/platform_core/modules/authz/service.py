@@ -75,7 +75,11 @@ class AuthzService:
             )
             for key in perms:
                 if key not in existing:
-                    self._session.add(RolePermission(role_id=role.id, permission_key=key))
+                    self._session.add(
+                        RolePermission(
+                            tenant_id=role.tenant_id, role_id=role.id, permission_key=key
+                        )
+                    )
 
     async def assign_role(
         self, *, user_id: uuid.UUID, role_name: str, tenant_id: uuid.UUID | None
@@ -116,5 +120,7 @@ class AuthzService:
         self._session.add(role)
         await self._session.flush()
         for key in permission_keys:
-            self._session.add(RolePermission(role_id=role.id, permission_key=key))
+            self._session.add(
+                RolePermission(tenant_id=role.tenant_id, role_id=role.id, permission_key=key)
+            )
         return role

@@ -179,6 +179,7 @@ class SettlementService:
                 f"the settlement period"
             )
         line = SettlementLine(
+            tenant_id=settlement.tenant_id,
             settlement_id=settlement.id,
             calculation_id=cmd.calculation_id,
             transaction_id=cmd.transaction_id,

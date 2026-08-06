@@ -283,7 +283,9 @@ class CollectionCenterService:
             select(CollectionCenterConfig).where(CollectionCenterConfig.center_id == center.id)
         )
         if config is None:
-            config = CollectionCenterConfig(center_id=center.id, settings=settings)
+            config = CollectionCenterConfig(
+                tenant_id=center.tenant_id, center_id=center.id, settings=settings
+            )
             self._session.add(config)
         else:
             config.settings = settings
@@ -315,6 +317,7 @@ class CollectionCenterService:
         for w in windows:
             self._session.add(
                 OperatingWindow(
+                    tenant_id=center.tenant_id,
                     center_id=center.id,
                     day_of_week=w.day_of_week,
                     opens=w.opens,
@@ -346,7 +349,13 @@ class CollectionCenterService:
         )
         if existing is not None:
             raise ConflictError("calendar entry for this day already exists")
-        row = CalendarEntry(center_id=center.id, day=entry.day, kind=entry.kind, note=entry.note)
+        row = CalendarEntry(
+            tenant_id=center.tenant_id,
+            center_id=center.id,
+            day=entry.day,
+            kind=entry.kind,
+            note=entry.note,
+        )
         self._session.add(row)
         await self._session.flush()
         await self._audit.record(

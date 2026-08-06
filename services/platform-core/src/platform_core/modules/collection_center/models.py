@@ -46,6 +46,11 @@ class CollectionCenterConfig(Base, IdMixin):
 
     __tablename__ = "collection_center_config"
 
+    # SEC-002: denormalised from center. This table is tenant-owned but had
+    # no tenant_id, so no RLS policy could apply and a query that forgot its
+    # join returned every tenant's rows. Safe to denormalise because rows are
+    # never reparented; the composite FK in DBD-0001 §7.1 makes that provable.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     center_id: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True, index=True)
     settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(
@@ -66,6 +71,11 @@ class OperatingWindow(Base, IdMixin):
         UniqueConstraint("center_id", "day_of_week", "opens", name="uq_window_center_day_open"),
     )
 
+    # SEC-002: denormalised from center. This table is tenant-owned but had
+    # no tenant_id, so no RLS policy could apply and a query that forgot its
+    # join returned every tenant's rows. Safe to denormalise because rows are
+    # never reparented; the composite FK in DBD-0001 §7.1 makes that provable.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     center_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     day_of_week: Mapped[int] = mapped_column(Integer)  # 0=Monday … 6=Sunday
     opens: Mapped[time] = mapped_column(Time)
@@ -78,6 +88,11 @@ class CalendarEntry(Base, IdMixin):
     __tablename__ = "center_calendar_entry"
     __table_args__ = (UniqueConstraint("center_id", "day", name="uq_calendar_center_day"),)
 
+    # SEC-002: denormalised from center. This table is tenant-owned but had
+    # no tenant_id, so no RLS policy could apply and a query that forgot its
+    # join returned every tenant's rows. Safe to denormalise because rows are
+    # never reparented; the composite FK in DBD-0001 §7.1 makes that provable.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     center_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     day: Mapped[date] = mapped_column(Date)
     kind: Mapped[str] = mapped_column(String(20))  # holiday | closure | special
