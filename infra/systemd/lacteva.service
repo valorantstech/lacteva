@@ -1,0 +1,44 @@
+# The platform, as a systemd unit (INF-001).
+#
+# Compose already restarts individual containers (`restart: unless-stopped`).
+# This unit is about the OTHER failure: the machine reboots, and nothing
+# starts, because `docker compose up` was something a person typed once.
+#
+# It is deliberately Type=oneshot with RemainAfterExit — systemd starts and
+# stops the stack, Docker supervises the containers. Trying to make systemd
+# supervise containers as well produces two supervisors disagreeing about
+# whose job a restart is.
+
+[Unit]
+Description=Lacteva platform (Docker Compose stack)
+Documentation=file:///opt/lacteva/current/DEPLOYMENT.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+# The database lives on the data volume. Starting before it is mounted
+# creates an empty PGDATA on the root disk — silently, and only discovered
+# when someone notices the data is gone.
+RequiresMountsFor=/var/lib/lacteva
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/lacteva/current
+EnvironmentFile=/etc/lacteva/.env.production
+
+ExecStart=/usr/bin/docker compose -f docker-compose.production.yml --env-file /etc/lacteva/.env.production up -d --remove-orphans
+
+# Graceful: compose sends SIGTERM and honours each service's
+# stop_grace_period (the API's is 90s — 30s to drain requests, 20s for the
+# workers to finish the unit of work they are in, and room to spare).
+ExecStop=/usr/bin/docker compose -f docker-compose.production.yml --env-file /etc/lacteva/.env.production stop --timeout 120
+
+ExecReload=/usr/bin/docker compose -f docker-compose.production.yml --env-file /etc/lacteva/.env.production up -d --remove-orphans
+
+# Longer than the sum of every stop_grace_period, or systemd kills the drain
+# that DEP-001 exists to make possible.
+TimeoutStartSec=600
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

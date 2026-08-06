@@ -1,0 +1,266 @@
+#cloud-config
+# Lacteva production host provisioning (INF-001).
+#
+# Runs ONCE, on first boot. Everything here is about making the machine ready
+# to receive a deployment; nothing here deploys anything. That separation is
+# what makes a host replaceable: provisioning is reproducible and deployment
+# is repeatable, and neither needs the other to have just happened.
+#
+# Rendered by Terraform (templatefile), so ${...} are Terraform values.
+
+hostname: ${hostname}
+fqdn: ${hostname}
+preserve_hostname: false
+timezone: ${timezone}
+
+# --- accounts --------------------------------------------------------------
+users:
+  - name: ${admin_user}
+    groups: [sudo, docker]
+    shell: /bin/bash
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    lock_passwd: true          # no password, ever — keys only
+    ssh_authorized_keys:
+%{ for key in ssh_public_keys ~}
+      - ${key}
+%{ endfor ~}
+
+disable_root: true
+ssh_pwauth: false
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - ufw
+  - fail2ban
+  - chrony              # time sync — see below for why it is not optional
+  - unattended-upgrades
+  - postgresql-client-16 # psql/pg_isready for backup verification from the host
+  - jq
+  - rsync
+  - logrotate
+
+write_files:
+  # --- SSH hardening -------------------------------------------------------
+  - path: /etc/ssh/sshd_config.d/10-lacteva.conf
+    permissions: "0644"
+    content: |
+      # INF-001. The cloud firewall already restricts WHO can reach this port;
+      # these settings restrict what they can do once they get there.
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      ChallengeResponseAuthentication no
+      PubkeyAuthentication yes
+      X11Forwarding no
+      AllowAgentForwarding no
+      MaxAuthTries 3
+      LoginGraceTime 20
+      ClientAliveInterval 300
+      ClientAliveCountMax 2
+      AllowUsers ${admin_user}
+
+  # --- Docker daemon -------------------------------------------------------
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "50m", "max-file": "5" },
+        "live-restore": true,
+        "userland-proxy": false,
+        "no-new-privileges": true,
+        "default-ulimits": {
+          "nofile": { "Name": "nofile", "Hard": 65536, "Soft": 65536 }
+        }
+      }
+    # `live-restore` is the one worth explaining: it keeps containers running
+    # across a Docker daemon restart, so an `apt upgrade` that pulls a new
+    # docker-ce does not take the platform down.
+
+  # --- kernel tuning -------------------------------------------------------
+  - path: /etc/sysctl.d/60-lacteva.conf
+    permissions: "0644"
+    content: |
+      # PostgreSQL and a busy API on one host.
+      vm.overcommit_memory = 2
+      vm.overcommit_ratio = 90
+      # The database must never be the process the OOM killer chooses. Losing
+      # the API means 502s; losing PostgreSQL mid-write means recovery.
+      vm.swappiness = 1
+      vm.dirty_background_ratio = 5
+      vm.dirty_ratio = 10
+      net.core.somaxconn = 4096
+      net.ipv4.tcp_max_syn_backlog = 4096
+      net.ipv4.ip_local_port_range = 10240 65535
+      # Containers plus a database open a lot of files.
+      fs.file-max = 2097152
+      fs.inotify.max_user_watches = 524288
+
+  # --- log rotation --------------------------------------------------------
+  - path: /etc/logrotate.d/lacteva
+    permissions: "0644"
+    content: |
+      # Docker rotates container logs itself (daemon.json above). This covers
+      # what the HOST writes: deploy transcripts, backup output, verification
+      # reports. Left alone, a nightly backup log fills the volume the backups
+      # are written to — which is the failure that takes the backups with it.
+      /var/log/lacteva/*.log {
+        daily
+        rotate 30
+        compress
+        delaycompress
+        missingok
+        notifempty
+        create 0640 ${admin_user} ${admin_user}
+        sharedscripts
+      }
+
+  # --- time sync -----------------------------------------------------------
+  - path: /etc/chrony/conf.d/lacteva.conf
+    permissions: "0644"
+    content: |
+      # Not cosmetic. This platform signs JWTs with `exp`/`iat` and a 30s
+      # leeway (SEC-001); a clock that drifts past that rejects every valid
+      # token and looks exactly like a key problem. Settlement periods, TOTP,
+      # and the ordering of `(created_at, id)` in the outbox all assume the
+      # clock is right.
+      makestep 1.0 3
+      rtcsync
+
+  # --- filesystem standard -------------------------------------------------
+  - path: /etc/lacteva/README
+    permissions: "0644"
+    content: |
+      Lacteva production filesystem (INF-001).
+
+        /opt/lacteva/          the deployment — code, compose files, scripts
+          releases/<tag>/      one directory per deployed version
+          current -> releases/<tag>   symlink; rollback re-points it
+        /etc/lacteva/          configuration and secrets (0700, root-owned)
+          .env.production      the environment file
+          secrets/             Docker secret material
+        /var/lib/lacteva/      STATE — on the separate volume
+          postgres/            the database
+          redis/               append-only file
+          prometheus/ loki/ grafana/
+        /var/log/lacteva/      host-written logs (deploys, backups)
+        /backup/               backups, on the same volume
+          logical/  base/  wal/
+
+      Everything that must survive the machine is under /var/lib/lacteva or
+      /backup, which are on the data volume. /opt and /etc are rebuilt by
+      provisioning and deployment, so the host is disposable.
+
+runcmd:
+  # --- data volume ---------------------------------------------------------
+  # Formatted ONLY if it has no filesystem. A volume that already holds a
+  # database must never be reformatted by a re-run, and cloud-init is exactly
+  # the kind of thing that gets re-run by accident on a rebuilt image.
+  - |
+    set -euxo pipefail
+    DEVICE="${data_device}"
+    for _ in $(seq 1 30); do [ -b "$DEVICE" ] && break; sleep 2; done
+    if ! blkid "$DEVICE" >/dev/null 2>&1; then
+      echo "no filesystem on $DEVICE — creating one"
+      mkfs.ext4 -F -L lacteva-data "$DEVICE"
+    else
+      echo "$DEVICE already has a filesystem — leaving it alone"
+    fi
+    mkdir -p /var/lib/lacteva
+    grep -q "^LABEL=lacteva-data" /etc/fstab || \
+      echo 'LABEL=lacteva-data /var/lib/lacteva ext4 defaults,noatime,nofail 0 2' >> /etc/fstab
+    mount -a
+
+  # --- filesystem standard -------------------------------------------------
+  - |
+    set -euxo pipefail
+    mkdir -p /opt/lacteva/releases /etc/lacteva/secrets /var/log/lacteva
+    mkdir -p /var/lib/lacteva/{postgres,redis,prometheus,loki,grafana}
+    mkdir -p /backup/{logical,base,wal}
+    # /backup lives on the data volume; a symlink keeps the documented path
+    # while the bytes land where they survive a host replacement.
+    if [ ! -L /backup ] && [ -d /var/lib/lacteva ]; then
+      mkdir -p /var/lib/lacteva/backup/{logical,base,wal}
+      rm -rf /backup && ln -s /var/lib/lacteva/backup /backup
+    fi
+    chown -R ${admin_user}:${admin_user} /opt/lacteva /var/log/lacteva /var/lib/lacteva
+    # Secrets are root-only. The admin user gets there through sudo, which is
+    # logged; a group-readable secret directory is not.
+    chown -R root:root /etc/lacteva
+    chmod 700 /etc/lacteva /etc/lacteva/secrets
+
+  # --- Docker --------------------------------------------------------------
+  - |
+    set -euxo pipefail
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+      | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+      https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+      > /etc/apt/sources.list.d/docker.list
+    apt-get update -qq
+    apt-get install -y -qq docker-ce docker-ce-cli containerd.io \
+      docker-buildx-plugin docker-compose-plugin
+    systemctl enable --now docker
+    usermod -aG docker ${admin_user}
+
+  # --- host firewall (second layer) ----------------------------------------
+  # The cloud firewall is authoritative and sits outside the machine. This one
+  # holds if a rule there is edited by mistake, and it is what confines a
+  # process that has already got onto the host.
+  - |
+    set -euxo pipefail
+    ufw --force reset
+    ufw default deny incoming
+    ufw default allow outgoing
+    ufw allow 22/tcp comment 'ssh'
+    ufw allow 80/tcp comment 'http'
+    ufw allow 443/tcp comment 'https'
+    ufw --force enable
+
+  # --- fail2ban ------------------------------------------------------------
+  - |
+    set -euxo pipefail
+    cat > /etc/fail2ban/jail.d/lacteva.conf <<'JAIL'
+    [sshd]
+    enabled = true
+    maxretry = 4
+    findtime = 10m
+    bantime = 1h
+    JAIL
+    systemctl enable --now fail2ban
+
+  # --- unattended security updates -----------------------------------------
+  # Security patches only, and NO automatic reboot: rebooting a single-host
+  # platform without warning is an outage the operator did not schedule.
+  # `Unattended-Upgrade::Automatic-Reboot "false"` makes that explicit, and
+  # the reboot is a maintenance task (INFRASTRUCTURE.md §Maintenance).
+  - |
+    set -euxo pipefail
+    cat > /etc/apt/apt.conf.d/51-lacteva-unattended <<'AUTO'
+    Unattended-Upgrade::Allowed-Origins { "$${distro_id}:$${distro_codename}-security"; };
+    Unattended-Upgrade::Automatic-Reboot "false";
+    Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+    APT::Periodic::Update-Package-Lists "1";
+    APT::Periodic::Unattended-Upgrade "1";
+    AUTO
+    systemctl enable --now unattended-upgrades
+
+  - systemctl restart ssh
+  - sysctl --system
+  - systemctl enable --now chrony
+
+final_message: |
+  Lacteva host provisioned in $UPTIME seconds.
+
+  Provisioning is done; NOTHING IS DEPLOYED YET. Next:
+    1. Copy .env.production to /etc/lacteva/ (root, 0600)
+    2. Issue TLS certificates
+    3. /opt/lacteva/current/infra/deploy/deploy.sh <image-tag>
+  See INFRASTRUCTURE.md §Provisioning.

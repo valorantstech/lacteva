@@ -1,0 +1,14 @@
+[Unit]
+Description=Lacteva nightly logical backup
+
+[Timer]
+# 02:15 UTC. After midnight settlement activity, before the morning
+# collection round in the East African markets this platform serves.
+OnCalendar=*-*-* 02:15:00
+# A host that was off at 02:15 still backs up when it comes back. Without
+# this, an overnight reboot silently skips a night.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

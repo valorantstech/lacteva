@@ -1,0 +1,24 @@
+# Nightly LOGICAL backup (INF-001).
+#
+# The platform's own backup engine: type-tagged JSONL with per-table
+# checksums, and — the reason it is the nightly one — it VERIFIES itself and
+# exits non-zero if it cannot (BAK-001). A `pg_dump` that exits zero proves a
+# process ran; this proves the bytes are readable.
+
+[Unit]
+Description=Lacteva nightly logical backup
+Documentation=file:///opt/lacteva/current/docs/03-architecture/06-operations/BACKUP.md
+Requires=lacteva.service
+After=lacteva.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/lacteva/current
+EnvironmentFile=/etc/lacteva/.env.production
+ExecStart=/opt/lacteva/current/infra/backup/run-logical-backup.sh
+# Backups compete with the platform for I/O. Nice them: a slow backup is
+# fine, a backup that makes the morning collection round slow is not.
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=append:/var/log/lacteva/backup.log
+StandardError=append:/var/log/lacteva/backup.log

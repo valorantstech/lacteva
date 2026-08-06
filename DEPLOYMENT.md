@@ -44,6 +44,12 @@ Everything but nginx uses `expose:` rather than `ports:`. Reaching the database 
 
 ---
 
+## 1b. Where the host comes from
+
+This document assumes a provisioned host. [INFRASTRUCTURE.md](INFRASTRUCTURE.md) is how one comes to exist — Terraform for the machine, static IP, volume and firewall; cloud-init for Docker, the filesystem standard and hardening; systemd for start-on-boot and the backup timers.
+
+Provisioning installs nothing application-shaped, and deployment provisions nothing. That separation is why a host can be replaced without a deploy and redeployed without a rebuild.
+
 ## 2. Before the first deployment
 
 ```bash

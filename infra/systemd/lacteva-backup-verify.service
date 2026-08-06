@@ -1,0 +1,26 @@
+# Weekly RESTORE test (INF-001).
+#
+# BR-0025: a backup is trusted only once a restore has been demonstrated. A
+# backup that has never been restored is a hope, and the moment you discover
+# it was a hope is the moment you needed it.
+#
+# This restores the newest logical backup into a throwaway database and runs
+# the platform's own business-integrity checks against the result — settlement
+# totals, payment allocations, one-receipt-per-payment, projection rebuild.
+# It exits non-zero if the restored BUSINESS is wrong, not merely if rows
+# failed to load.
+
+[Unit]
+Description=Lacteva backup restore verification
+Requires=lacteva.service
+After=lacteva.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/lacteva/current
+EnvironmentFile=/etc/lacteva/.env.production
+ExecStart=/opt/lacteva/current/infra/backup/verify-latest-backup.sh
+Nice=15
+IOSchedulingClass=idle
+StandardOutput=append:/var/log/lacteva/backup-verify.log
+StandardError=append:/var/log/lacteva/backup-verify.log

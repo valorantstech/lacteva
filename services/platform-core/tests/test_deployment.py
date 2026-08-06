@@ -13,6 +13,7 @@ during an incident, when nobody has time to read both.
 
 import asyncio
 import pathlib
+import re
 
 import pytest
 
@@ -285,3 +286,200 @@ def test_nginx_configures_what_the_runbook_promises(directive):
     conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
     base = (REPO / "infra/nginx/nginx.conf").read_text()
     assert directive in conf + base, f"nginx is missing {directive}"
+
+
+# --- infrastructure as code (INF-001) --------------------------------------
+#
+# Terraform cannot be executed here, so these assert the properties whose
+# absence would be dangerous rather than merely wrong. They are cheap, and
+# each one encodes a decision that is easy to undo by accident.
+
+INFRA = REPO / "infra"
+
+
+def _tf(*parts) -> str:
+    return (INFRA / "terraform" / pathlib.Path(*parts)).read_text()
+
+
+def _all_tf() -> str:
+    return "\n".join(p.read_text() for p in (INFRA / "terraform").rglob("*.tf"))
+
+
+@pytest.mark.parametrize("target", ["hetzner", "aws"])
+def test_ssh_cannot_be_opened_to_the_whole_internet(target):
+    """Exposing sshd to 0.0.0.0/0 is the most common way a small deployment is
+    compromised. Key-only auth reduces that risk; it does not remove it,
+    because the daemon still parses attacker-controlled input from anywhere.
+    Both configurations refuse it at plan time."""
+    variables = _tf(target, "variables.tf")
+    assert 'contains(var.ssh_allowed_cidrs, "0.0.0.0/0")' in variables
+    assert "refusing to open SSH" in variables
+
+
+@pytest.mark.parametrize("target", ["hetzner", "aws"])
+def test_only_three_ports_are_reachable(target):
+    """80, 443, SSH. Everything else — PostgreSQL, Redis, Prometheus, Grafana,
+    Loki — is internal, and the compose network already confines it."""
+    source = _tf(target, "firewall.tf") if target == "hetzner" else _tf(target, "main.tf")
+    opened = set(re.findall(r'(?:port\s*=\s*"(\d+)"|from_port\s*=\s*(\d+))', source))
+    ports = {a or b for a, b in opened}
+    assert ports <= {"80", "443", "22", "0"}, f"unexpected inbound ports: {ports}"
+
+
+@pytest.mark.parametrize("target", ["hetzner", "aws"])
+def test_the_data_volume_and_the_static_ip_cannot_be_destroyed(target):
+    """They outlive the machine — that is the entire server-replacement story.
+    A `terraform destroy` that takes the database with it is not a rebuild."""
+    source = _tf(target, "main.tf")
+    assert source.count("prevent_destroy = true") >= 2, (
+        "the data volume and the static IP must both be protected"
+    )
+
+
+@pytest.mark.parametrize("target", ["hetzner", "aws"])
+def test_the_volume_size_is_ignored_after_creation(target):
+    """A volume can be grown online and never shrunk. Without `ignore_changes`,
+    a smaller number in tfvars plans a destroy-and-recreate of the volume
+    holding production data."""
+    assert re.search(r"ignore_changes\s*=\s*\[size\]", _tf(target, "main.tf"))
+
+
+def test_terraform_never_formats_the_data_volume():
+    """Formatting belongs to cloud-init, which checks for an existing
+    filesystem first. A `format` ATTRIBUTE in Terraform lets an apply after a
+    state mishap reformat a volume holding production data."""
+    attributes = re.findall(r"^\s*(\w+)\s*=", _tf("hetzner", "main.tf"), re.M)
+    assert "format" not in attributes, "hcloud_volume must not declare `format`"
+
+
+def test_cloud_init_refuses_to_reformat_a_volume_that_has_data():
+    init = (INFRA / "cloud-init" / "lacteva.yaml").read_text()
+    assert "if ! blkid" in init, "must check for an existing filesystem before mkfs"
+    assert "already has a filesystem — leaving it alone" in init
+
+
+def test_cloud_init_disables_password_and_root_login():
+    init = (INFRA / "cloud-init" / "lacteva.yaml").read_text()
+    for setting in ("ssh_pwauth: false", "disable_root: true", "lock_passwd: true"):
+        assert setting in init, setting
+    assert "PermitRootLogin no" in init and "PasswordAuthentication no" in init
+
+
+def test_cloud_init_does_not_reboot_by_itself():
+    """Security patches install automatically; the reboot is scheduled.
+    Rebooting a single-host platform without warning is an unplanned outage."""
+    init = (INFRA / "cloud-init" / "lacteva.yaml").read_text()
+    assert 'Unattended-Upgrade::Automatic-Reboot "false"' in init
+
+
+def test_no_secret_is_committed_in_any_terraform_file():
+    """tfvars are git-ignored and the token is exported, never written."""
+    source = _all_tf() + (INFRA / "terraform" / "hetzner" / "terraform.tfvars.example").read_text()
+    for pattern in (r"hcloud_token\s*=\s*\"[A-Za-z0-9]{20,}", r"AKIA[0-9A-Z]{16}"):
+        assert not re.search(pattern, source), f"possible committed credential: {pattern}"
+
+
+def test_aws_requires_imdsv2():
+    """IMDSv1 turns any SSRF in the application into instance credentials —
+    the single most valuable thing on the machine."""
+    source = _tf("aws", "main.tf")
+    assert (
+        'http_tokens                 = "required"' in source or 'http_tokens = "required"' in source
+    )
+    assert "http_put_response_hop_limit = 1" in source, (
+        "containers must not reach the metadata service"
+    )
+
+
+def test_aws_volumes_are_encrypted():
+    """The data volume holds names, phone numbers, national IDs and bank
+    account numbers, none of which are encrypted at the column level."""
+    source = _tf("aws", "main.tf")
+    encrypted = re.findall(r"^\s*encrypted\s*=\s*true", source, re.M)
+    assert len(encrypted) >= 2, (
+        f"both the root device and the data volume must be encrypted; found {len(encrypted)}"
+    )
+
+
+# --- systemd ---------------------------------------------------------------
+
+
+def test_systemd_starts_the_platform_on_boot():
+    unit = (INFRA / "systemd" / "lacteva.service").read_text()
+    assert "WantedBy=multi-user.target" in unit
+    assert "Requires=docker.service" in unit
+
+
+def test_systemd_waits_for_the_data_volume():
+    """Starting before the volume is mounted creates an empty PGDATA on the
+    root disk — silently, and only discovered when the data is gone."""
+    unit = (INFRA / "systemd" / "lacteva.service").read_text()
+    assert "RequiresMountsFor=/var/lib/lacteva" in unit
+
+
+def test_systemd_allows_the_full_graceful_shutdown():
+    """The API's stop_grace_period is 90s (30s draining requests, 20s for
+    workers, headroom). systemd must give at least that, or it kills the drain
+    DEP-001 exists to make possible."""
+    unit = (INFRA / "systemd" / "lacteva.service").read_text()
+    stop_timeout = int(re.search(r"TimeoutStopSec=(\d+)", unit).group(1))
+    compose_grace = int(_compose()["services"]["api"]["stop_grace_period"].rstrip("s"))
+    assert stop_timeout > compose_grace, (
+        f"systemd would kill the stack after {stop_timeout}s while the API "
+        f"expects up to {compose_grace}s to drain"
+    )
+
+
+def test_every_backup_timer_survives_a_missed_run():
+    """A host that was off at 02:15 must still back up when it returns.
+    Without Persistent, an overnight reboot silently skips a night."""
+    for timer in (INFRA / "systemd").glob("*.timer"):
+        assert "Persistent=true" in timer.read_text(), timer.name
+
+
+def test_the_backup_timers_cover_nightly_weekly_and_verification():
+    names = {p.stem for p in (INFRA / "systemd").glob("*.timer")}
+    assert {"lacteva-backup-nightly", "lacteva-backup-weekly", "lacteva-backup-verify"} <= names
+
+
+# --- backup and deploy scripts ---------------------------------------------
+
+
+def test_retention_prunes_only_after_a_verified_new_backup():
+    """Pruning first means a failing backup job deletes its way through the
+    retention window, and the day you need a restore there is nothing left."""
+    script = (INFRA / "backup" / "run-logical-backup.sh").read_text()
+    verify_at = script.index("cli verify")
+    prune_at = script.index("pruning backups older")
+    assert verify_at < prune_at, "retention must run after verification, never before"
+    assert "Nothing pruned." in script
+
+
+def test_backup_verification_actually_restores():
+    """BR-0025: a backup is trusted only once a restore has been demonstrated."""
+    script = (INFRA / "backup" / "verify-latest-backup.sh").read_text()
+    assert "cli restore" in script
+    assert "integrity --deep" in script
+    assert "DROP DATABASE" in script, "verification must use a throwaway database"
+
+
+def test_deploy_takes_a_backup_before_migrating():
+    """The last cheap moment to get a way back, and it must come before the
+    schema moves."""
+    script = (INFRA / "deploy" / "deploy.sh").read_text()
+    assert script.index("pre-deployment backup") < script.index("applying migrations")
+    assert "refusing to deploy without a way back" in script
+
+
+def test_deploy_rolls_back_on_verification_or_smoke_failure():
+    script = (INFRA / "deploy" / "deploy.sh").read_text()
+    assert "VERIFICATION FAILED" in script and "SMOKE TEST FAILED" in script
+    assert script.count("rollback_to") >= 3
+
+
+def test_deploy_never_rolls_the_schema_back_automatically():
+    """A code rollback is safe after an expand-only migration and unsafe after
+    a contract. No script can tell from the outside, so it must not try."""
+    script = (INFRA / "deploy" / "deploy.sh").read_text()
+    assert "alembic downgrade" not in script
+    assert "SCHEMA MOVED" in script, "a schema change must at least be announced"

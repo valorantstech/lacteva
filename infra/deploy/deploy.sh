@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# One-command deployment (INF-001).
+#
+#   ./infra/deploy/deploy.sh <image-tag>
+#   ./infra/deploy/deploy.sh v1.4.2 --no-rollback     # keep a broken deploy for inspection
+#   ./infra/deploy/deploy.sh --rollback               # go back to the previous release, now
+#
+# Pull → migrate → deploy → verify → smoke test → roll back if any of those
+# fail. The rollback is AUTOMATIC and on by default, because the alternative
+# is a half-deployed platform sitting broken for as long as it takes someone
+# to notice and decide.
+#
+# What it will NOT do automatically is roll back the SCHEMA. Rolling code back
+# is safe when the migration was expand-only and unsafe when it contracted,
+# and no script can tell the difference from the outside. DEPLOYMENT.md §5 has
+# the compatibility matrix; this script pins the previous release and says
+# clearly when the schema moved.
+set -euo pipefail
+
+RELEASES="${RELEASES_DIR:-/opt/lacteva/releases}"
+CURRENT="${CURRENT_LINK:-/opt/lacteva/current}"
+ENV_FILE="${ENV_FILE:-/etc/lacteva/.env.production}"
+LOG="${DEPLOY_LOG:-/var/log/lacteva/deploy.log}"
+COMPOSE_FILE="docker-compose.production.yml"
+AUTO_ROLLBACK=1
+
+log()  { printf '%s  %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "${LOG}"; }
+step() { printf '\n\033[1m==> %s\033[0m\n' "$*" | tee -a "${LOG}"; }
+die()  { printf '\n\033[31m%s\033[0m\n' "$*" | tee -a "${LOG}" >&2; exit 1; }
+
+compose() {
+  docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" "$@"
+}
+
+previous_tag() {
+  # The tag recorded when the CURRENT release was deployed — not "the second
+  # newest directory", which is wrong the moment a release is re-deployed.
+  [ -f "${CURRENT}/.deployed-tag" ] && cat "${CURRENT}/.deployed-tag" || true
+}
+
+running_tag() {
+  grep -E '^LACTEVA_IMAGE_TAG=' "${ENV_FILE}" | cut -d= -f2- || true
+}
+
+set_tag() {
+  local tag="$1"
+  # Written atomically: an interrupted sed leaves the env file half-edited,
+  # and every subsequent compose command then fails on a file nobody suspects.
+  local tmp
+  tmp="$(mktemp)"
+  sed "s|^LACTEVA_IMAGE_TAG=.*|LACTEVA_IMAGE_TAG=${tag}|" "${ENV_FILE}" > "${tmp}"
+  grep -q "^LACTEVA_IMAGE_TAG=${tag}$" "${tmp}" || { rm -f "${tmp}"; die "could not set image tag in ${ENV_FILE}"; }
+  cat "${tmp}" > "${ENV_FILE}"   # preserves ownership and mode, unlike mv
+  rm -f "${tmp}"
+}
+
+rollback_to() {
+  local tag="$1"
+  step "ROLLING BACK to ${tag}"
+  set_tag "${tag}"
+  # Only the application services. `migrate` is deliberately excluded — see
+  # the header, and DEPLOYMENT.md §5.
+  compose up -d --no-deps api nginx || die "rollback failed to start — the platform is DOWN, page someone"
+  if "${CURRENT}/infra/deploy/verify-deployment.sh"; then
+    log "rollback verified: running ${tag}"
+    return 0
+  fi
+  die "ROLLBACK ALSO FAILED VERIFICATION. The platform is not serving. This is an incident: DEPLOYMENT.md §12."
+}
+
+# --- arguments -------------------------------------------------------------
+TAG=""
+ROLLBACK_ONLY=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --rollback)    ROLLBACK_ONLY=1 ;;
+    --no-rollback) AUTO_ROLLBACK=0 ;;
+    -*)            die "unknown option: $1" ;;
+    *)             TAG="$1" ;;
+  esac
+  shift
+done
+
+mkdir -p "$(dirname "${LOG}")"
+[ -f "${ENV_FILE}" ] || die "no environment file at ${ENV_FILE} (see INFRASTRUCTURE.md §Provisioning)"
+
+if [ "${ROLLBACK_ONLY}" = "1" ]; then
+  PREV="$(previous_tag)"
+  [ -n "${PREV}" ] || die "no previous release recorded — nothing to roll back to"
+  rollback_to "${PREV}"
+  exit 0
+fi
+
+[ -n "${TAG}" ] || die "usage: deploy.sh <image-tag> [--no-rollback] | deploy.sh --rollback"
+
+PREVIOUS="$(running_tag)"
+log "deploying ${TAG} (currently running: ${PREVIOUS:-none})"
+
+# --- 1. pull ---------------------------------------------------------------
+# Before anything is changed. A tag that does not exist should fail here, with
+# the old version still serving, rather than after the schema has moved.
+step "1/6  pulling ${TAG}"
+IMAGE="$(grep -E '^LACTEVA_IMAGE=' "${ENV_FILE}" | cut -d= -f2- || echo lacteva/platform-core)"
+docker pull "${IMAGE}:${TAG}" || die "image ${IMAGE}:${TAG} could not be pulled — nothing has changed"
+
+# --- 2. pre-flight backup --------------------------------------------------
+# The last cheap moment. If the migration in step 4 turns out to be a contract
+# migration that cannot be rolled back, this is what recovery uses.
+step "2/6  pre-deployment backup"
+if compose ps --status running --services 2>/dev/null | grep -qx api; then
+  STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+  compose exec -T api python -m platform_core.core.backup.cli backup "/backup/logical/predeploy-${STAMP}" \
+    || die "pre-deployment backup failed — refusing to deploy without a way back"
+  log "backed up to /backup/logical/predeploy-${STAMP}"
+else
+  log "no running API (first deployment) — skipping pre-deployment backup"
+fi
+
+# --- 3. record the release -------------------------------------------------
+step "3/6  staging release ${TAG}"
+RELEASE="${RELEASES}/${TAG}"
+mkdir -p "${RELEASE}"
+# The repository at this tag IS the release: compose files, nginx config,
+# deploy scripts. Copying rather than symlinking the checkout means a
+# `git checkout` on the host cannot change what a deployed release contains.
+rsync -a --delete --exclude '.git' "$(cd "$(dirname "$0")/../.." && pwd)/" "${RELEASE}/"
+echo "${PREVIOUS}" > "${RELEASE}/.deployed-tag"   # what to go BACK to
+ln -sfn "${RELEASE}" "${CURRENT}"
+cd "${CURRENT}"
+
+# --- 4. migrate ------------------------------------------------------------
+# Its own step, before the API starts. Compose enforces this too
+# (service_completed_successfully), but running it explicitly means a failure
+# is attributable to the migration rather than to "the stack did not come up".
+step "4/6  applying migrations"
+set_tag "${TAG}"
+SCHEMA_BEFORE="$(compose exec -T postgres psql -U "${POSTGRES_USER:-lacteva}" -d "${POSTGRES_DB:-lacteva}" \
+  -tAc 'SELECT version_num FROM alembic_version' 2>/dev/null | tr -d '[:space:]' || echo none)"
+if ! compose run --rm --no-deps -T api alembic upgrade head; then
+  log "migration FAILED"
+  set_tag "${PREVIOUS}"
+  die "migration failed. The old version is still running and the schema is unchanged. Read the log above."
+fi
+SCHEMA_AFTER="$(compose exec -T postgres psql -U "${POSTGRES_USER:-lacteva}" -d "${POSTGRES_DB:-lacteva}" \
+  -tAc 'SELECT version_num FROM alembic_version' 2>/dev/null | tr -d '[:space:]' || echo unknown)"
+if [ "${SCHEMA_BEFORE}" != "${SCHEMA_AFTER}" ]; then
+  log "SCHEMA MOVED: ${SCHEMA_BEFORE} -> ${SCHEMA_AFTER}"
+  log "  A code rollback is safe only if that migration was expand-only."
+  log "  DEPLOYMENT.md §5 has the compatibility matrix."
+fi
+
+# --- 5. deploy and verify --------------------------------------------------
+step "5/6  starting ${TAG}"
+compose up -d --remove-orphans || {
+  log "compose up failed"
+  [ "${AUTO_ROLLBACK}" = "1" ] && [ -n "${PREVIOUS}" ] && rollback_to "${PREVIOUS}"
+  die "deployment failed to start"
+}
+
+if ! ./infra/deploy/verify-deployment.sh; then
+  log "VERIFICATION FAILED"
+  if [ "${AUTO_ROLLBACK}" = "1" ] && [ -n "${PREVIOUS}" ]; then
+    rollback_to "${PREVIOUS}"
+    die "deployment ${TAG} failed verification and was rolled back to ${PREVIOUS}."
+  fi
+  die "deployment ${TAG} failed verification. Left running for inspection (--no-rollback)."
+fi
+
+# --- 6. smoke test ---------------------------------------------------------
+# Verification says the platform is SERVING. This says it WORKS. A deployment
+# that passes the first and fails the second is the more dangerous one,
+# because every dashboard is green.
+step "6/6  smoke test"
+if ! ./infra/deploy/smoke-test.py --base-url "${SMOKE_URL:-http://localhost}"; then
+  log "SMOKE TEST FAILED"
+  if [ "${AUTO_ROLLBACK}" = "1" ] && [ -n "${PREVIOUS}" ]; then
+    rollback_to "${PREVIOUS}"
+    die "deployment ${TAG} passed verification but failed the smoke test, and was rolled back."
+  fi
+  die "deployment ${TAG} failed the smoke test. Left running for inspection (--no-rollback)."
+fi
+
+printf '\n\033[32mDEPLOYED %s\033[0m\n' "${TAG}" | tee -a "${LOG}"
+log "previous release ${PREVIOUS:-none} — roll back with: $0 --rollback"
+[ "${SCHEMA_BEFORE}" != "${SCHEMA_AFTER}" ] && \
+  log "NOTE: the schema moved this deploy. Check DEPLOYMENT.md §5 before rolling back."
+exit 0

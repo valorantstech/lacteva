@@ -1,0 +1,12 @@
+[Unit]
+Description=Lacteva backup restore verification
+
+[Timer]
+# Saturday, so a failure is found with a working day left before the weekly
+# full backup on Sunday rolls the window forward.
+OnCalendar=Sat *-*-* 05:00:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

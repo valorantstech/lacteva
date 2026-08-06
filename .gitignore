@@ -36,3 +36,12 @@ minio-data/
 
 # Claude Code local settings
 .claude/
+
+# INF-001: Terraform state holds resource ids and can hold secrets; tfvars
+# holds credentials. The .example files are committed, the real ones never.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example

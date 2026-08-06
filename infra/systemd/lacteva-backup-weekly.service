@@ -1,0 +1,26 @@
+# Weekly FULL physical backup (INF-001).
+#
+# `pg_basebackup` plus the WAL archive. This is the line of defence that
+# supports point-in-time recovery — restoring to 14:32 last Tuesday, rather
+# than to whenever the last logical backup ran.
+#
+# NOTE: WAL archiving must be configured for PITR to actually work. Until it
+# is, this produces a weekly full snapshot and nothing more. INFRASTRUCTURE.md
+# §Disaster recovery says so plainly rather than implying a capability.
+
+[Unit]
+Description=Lacteva weekly physical base backup
+Documentation=file:///opt/lacteva/current/docs/03-architecture/06-operations/BACKUP.md
+Requires=lacteva.service
+After=lacteva.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/lacteva/current
+EnvironmentFile=/etc/lacteva/.env.production
+Environment=BACKUP_ROOT=/backup
+ExecStart=/opt/lacteva/current/infra/backup/pg-backup.sh
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=append:/var/log/lacteva/backup.log
+StandardError=append:/var/log/lacteva/backup.log

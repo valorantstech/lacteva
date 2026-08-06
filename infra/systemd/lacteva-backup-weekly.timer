@@ -1,0 +1,10 @@
+[Unit]
+Description=Lacteva weekly physical base backup
+
+[Timer]
+OnCalendar=Sun *-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

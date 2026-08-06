@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+# The API token is NOT here — export HCLOUD_TOKEN instead, so it never lands
+# in a file that could be committed by accident.
+
+environment = "production"
+location    = "nbg1"
+server_type = "cpx41"
+
+# The only way onto the machine. cloud-init disables password login entirely.
+ssh_public_keys = {
+  ops = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... ops@lacteva"
+}
+
+# NOT 0.0.0.0/0 — the plan will refuse it. Office range, VPN, or bastion.
+ssh_allowed_cidrs = ["203.0.113.0/24"]
+
+data_volume_size_gb       = 200
+enable_provider_snapshots = true
+domain                    = "api.example.com"

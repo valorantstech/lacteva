@@ -31,6 +31,8 @@ Lacteva is an AI-first, cloud-native, multi-tenant **Dairy Intelligence Platform
 
 **Run the platform:** `make dev` — one command; full guide in [`RUNNING.md`](RUNNING.md); developer workflow in [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
+**Provision it:** [`INFRASTRUCTURE.md`](INFRASTRUCTURE.md) — Terraform, cloud-init, systemd, backups, server replacement.
+
 **Deploy it:** [`DEPLOYMENT.md`](DEPLOYMENT.md) — production stack, upgrade, rollback, backup, disaster recovery, troubleshooting.
 
 **Prove it on PostgreSQL:** `docker compose -f docker-compose.proof.yml run --rm proof` — migrations from empty, RLS enforcement, backup, and restore into a fresh database, exactly as CI runs them ([POSTGRES-PROOF](docs/03-architecture/06-operations/POSTGRES-PROOF.md)).
