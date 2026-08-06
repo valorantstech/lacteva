@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from platform_core.api import deps
 from platform_core.api.deps import CurrentPrincipal, Principal, require_permission
+from platform_core.api.idempotent_route import IdempotentRoute, idempotency_guard
 from platform_core.core import alerts, health, rate_limit, security_audit
 from platform_core.core.backup.service import (
     BackupRunView,
@@ -188,12 +189,19 @@ from platform_core.modules.sync.service import (
     SyncStatsView,
 )
 
-router = APIRouter(prefix="/v1")
+# IDM-001: one line covers all 177 operations, and a new endpoint is covered
+# by existing. The guard reserves the key inside the request's transaction;
+# the route class records the response into the same one.
+router = APIRouter(
+    prefix="/v1",
+    route_class=IdempotentRoute,
+    dependencies=[Depends(idempotency_guard)],
+)
 
 # --- Public key discovery (SEC-001) -----------------------------------------
 # Unauthenticated by design: the JWKS document is public key material, and a
 # resource server must be able to fetch it without already holding a token.
-wellknown = APIRouter(tags=["security"])
+wellknown = APIRouter(tags=["security"], route_class=IdempotentRoute)
 
 
 @wellknown.get("/.well-known/jwks.json")
@@ -206,7 +214,7 @@ async def jwks() -> dict:
     return get_key_registry().jwks()
 
 
-security_router = APIRouter(prefix="/_security", tags=["security"])
+security_router = APIRouter(prefix="/_security", tags=["security"], route_class=IdempotentRoute)
 SecurityAdmin = Annotated[Principal, Depends(require_permission("platform.security.manage"))]
 
 
@@ -218,7 +226,7 @@ async def list_signing_keys(_: SecurityAdmin) -> list[dict]:
 
 
 # --- Authentication -------------------------------------------------------
-auth = APIRouter(prefix="/auth", tags=["auth"])
+auth = APIRouter(prefix="/auth", tags=["auth"], route_class=IdempotentRoute)
 
 
 @auth.post("/register", response_model=UserView, status_code=201)
@@ -381,7 +389,7 @@ async def me(
 
 
 # --- Identity -------------------------------------------------------------
-identity_router = APIRouter(prefix="/identity", tags=["identity"])
+identity_router = APIRouter(prefix="/identity", tags=["identity"], route_class=IdempotentRoute)
 
 
 @identity_router.get("/users/{user_id}", response_model=UserView)
@@ -394,7 +402,7 @@ async def get_user(
 
 
 # --- Organizations --------------------------------------------------------
-org_router = APIRouter(prefix="/organizations", tags=["organizations"])
+org_router = APIRouter(prefix="/organizations", tags=["organizations"], route_class=IdempotentRoute)
 
 
 @org_router.post("", response_model=OrganizationView, status_code=201)
@@ -416,7 +424,7 @@ async def get_organization(
 
 
 # --- Organization structure (workspaces, branches) ------------------------
-structure_router = APIRouter(tags=["organization-structure"])
+structure_router = APIRouter(tags=["organization-structure"], route_class=IdempotentRoute)
 
 
 class CreateWorkspaceRequest(BaseModel):
@@ -467,7 +475,7 @@ async def list_branches(
 
 
 # --- Members & invitations -------------------------------------------------
-member_router = APIRouter(tags=["members"])
+member_router = APIRouter(tags=["members"], route_class=IdempotentRoute)
 
 
 @member_router.get("/members")
@@ -541,7 +549,9 @@ async def accept_invitation(
 
 
 # --- Collection centers (facility management only) -------------------------
-center_router = APIRouter(prefix="/collection-centers", tags=["collection-centers"])
+center_router = APIRouter(
+    prefix="/collection-centers", tags=["collection-centers"], route_class=IdempotentRoute
+)
 CenterManage = Annotated[Principal, Depends(require_permission("collection.center.manage"))]
 CenterRead = Annotated[Principal, Depends(require_permission("collection.center.read"))]
 CenterSvc = Annotated[CollectionCenterService, Depends(deps.get_collection_center_service)]
@@ -630,7 +640,7 @@ async def remove_center_calendar_entry(
 
 
 # --- Operational readiness (devices, operators, readiness engine) ----------
-ops_router = APIRouter(tags=["operational-readiness"])
+ops_router = APIRouter(tags=["operational-readiness"], route_class=IdempotentRoute)
 DeviceManage = Annotated[Principal, Depends(require_permission("operations.device.manage"))]
 DeviceRead = Annotated[Principal, Depends(require_permission("operations.device.read"))]
 ReadinessRead = Annotated[Principal, Depends(require_permission("operations.readiness.read"))]
@@ -743,7 +753,7 @@ async def evaluate_center_readiness(
 
 
 # --- Suppliers -------------------------------------------------------------
-supplier_router = APIRouter(prefix="/suppliers", tags=["suppliers"])
+supplier_router = APIRouter(prefix="/suppliers", tags=["suppliers"], route_class=IdempotentRoute)
 SupplierManage = Annotated[Principal, Depends(require_permission("supplier.manage"))]
 SupplierRead = Annotated[Principal, Depends(require_permission("supplier.read"))]
 SupplierSvc = Annotated[SupplierService, Depends(deps.get_supplier_service)]
@@ -911,7 +921,7 @@ async def import_suppliers(body: ImportRequest, service: SupplierSvc, p: Supplie
 
 
 # --- Milk collection (sessions + transaction engine) ------------------------
-milk_router = APIRouter(tags=["milk-collection"])
+milk_router = APIRouter(tags=["milk-collection"], route_class=IdempotentRoute)
 SessionManage = Annotated[Principal, Depends(require_permission("collection.session.manage"))]
 TxRecord = Annotated[Principal, Depends(require_permission("collection.transaction.record"))]
 TxRead = Annotated[Principal, Depends(require_permission("collection.transaction.read"))]
@@ -1055,7 +1065,7 @@ async def get_milk_transaction_events(tx_id: uuid.UUID, service: MilkSvc, _: TxR
 
 
 # --- Pricing (Rate Card Foundation — lifecycle only, no calculations) -------
-pricing_router = APIRouter(prefix="/rate-cards", tags=["pricing"])
+pricing_router = APIRouter(prefix="/rate-cards", tags=["pricing"], route_class=IdempotentRoute)
 RateCardManage = Annotated[Principal, Depends(require_permission("pricing.ratecard.manage"))]
 RateCardApprove = Annotated[Principal, Depends(require_permission("pricing.ratecard.approve"))]
 RateCardRead = Annotated[Principal, Depends(require_permission("pricing.ratecard.read"))]
@@ -1173,7 +1183,7 @@ async def unassign_rate_card_product(
 
 
 # --- Pricing matrices (pricing DATA only — no calculation, Increment-002) ---
-matrix_router = APIRouter(tags=["pricing"])
+matrix_router = APIRouter(tags=["pricing"], route_class=IdempotentRoute)
 MatrixSvc = Annotated[PricingMatrixService, Depends(deps.get_pricing_matrix_service)]
 
 
@@ -1293,7 +1303,9 @@ async def calculate_pricing(req: CalculationRequest, service: CalcSvc, p: RateCa
 
 
 # --- Settlements (payable amounts — lifecycle only, no payment, SET-001) ----
-settlement_router = APIRouter(prefix="/settlements", tags=["settlement"])
+settlement_router = APIRouter(
+    prefix="/settlements", tags=["settlement"], route_class=IdempotentRoute
+)
 SettlementManage = Annotated[Principal, Depends(require_permission("settlement.manage"))]
 SettlementFinalize = Annotated[Principal, Depends(require_permission("settlement.finalize"))]
 SettlementRead = Annotated[Principal, Depends(require_permission("settlement.read"))]
@@ -1416,7 +1428,7 @@ async def cancel_settlement(
 
 
 # --- Payments (execution against finalized settlements — PAY-001) -----------
-payment_router = APIRouter(tags=["payment"])
+payment_router = APIRouter(tags=["payment"], route_class=IdempotentRoute)
 PaymentRead = Annotated[Principal, Depends(require_permission("payment.read"))]
 PaymentManage = Annotated[Principal, Depends(require_permission("payment.manage"))]
 PaymentRetry = Annotated[Principal, Depends(require_permission("payment.retry"))]
@@ -1583,7 +1595,7 @@ async def cancel_payment(
 
 
 # --- Notifications (delivery history & operations — NOT-001) ----------------
-notification_router = APIRouter(tags=["notifications"])
+notification_router = APIRouter(tags=["notifications"], route_class=IdempotentRoute)
 NotificationRead = Annotated[Principal, Depends(require_permission("notification.read"))]
 NotificationManage = Annotated[Principal, Depends(require_permission("notification.manage"))]
 NotificationSvc = Annotated[NotificationService, Depends(deps.get_notification_service)]
@@ -1671,7 +1683,7 @@ async def retry_pending_notifications(service: NotificationSvc, _: NotificationM
 
 
 # --- Receipts (immutable proof of payment — RCP-001) -------------------------
-receipt_router = APIRouter(prefix="/receipts", tags=["receipt"])
+receipt_router = APIRouter(prefix="/receipts", tags=["receipt"], route_class=IdempotentRoute)
 ReceiptRead = Annotated[Principal, Depends(require_permission("receipt.read"))]
 ReceiptManage = Annotated[Principal, Depends(require_permission("receipt.manage"))]
 ReceiptDownload = Annotated[Principal, Depends(require_permission("receipt.download"))]
@@ -1753,7 +1765,7 @@ async def archive_receipt(receipt_id: uuid.UUID, service: ReceiptSvc, p: Receipt
 
 
 # --- Offline sync (device replay + read-only monitor — OFF-001) --------------
-sync_router = APIRouter(prefix="/sync", tags=["sync"])
+sync_router = APIRouter(prefix="/sync", tags=["sync"], route_class=IdempotentRoute)
 # Replay reuses the ONLINE permission: offline never bypasses authorization.
 SyncPush = Annotated[Principal, Depends(require_permission("collection.transaction.record"))]
 SyncRead = Annotated[Principal, Depends(require_permission("sync.read"))]
@@ -1809,7 +1821,9 @@ async def retry_sync_operation(
 
 
 # --- Operations: health, alerts, overview (OBS-001) --------------------------
-ops_observability_router = APIRouter(prefix="/_ops", tags=["operations"])
+ops_observability_router = APIRouter(
+    prefix="/_ops", tags=["operations"], route_class=IdempotentRoute
+)
 OpsRead = Annotated[Principal, Depends(require_permission("platform.relay.manage"))]
 
 
@@ -1956,7 +1970,7 @@ async def system_overview(_: OpsRead) -> OverviewView:
 
 
 # --- Reports (read-only operational summaries — REP-001) --------------------
-report_router = APIRouter(prefix="/reports", tags=["reporting"])
+report_router = APIRouter(prefix="/reports", tags=["reporting"], route_class=IdempotentRoute)
 ReportRead = Annotated[Principal, Depends(require_permission("reporting.read"))]
 ReportSvc = Annotated[ReportingService, Depends(deps.get_reporting_service)]
 
@@ -2040,7 +2054,7 @@ async def report_pricing(
 
 
 # --- Event relay (internal platform operations) -----------------------------
-relay_router = APIRouter(prefix="/_relay", tags=["event-relay"])
+relay_router = APIRouter(prefix="/_relay", tags=["event-relay"], route_class=IdempotentRoute)
 RelayOps = Annotated[Principal, Depends(require_permission("platform.relay.manage"))]
 RelaySvc = Annotated[RelayService, Depends(deps.get_relay_service)]
 
@@ -2091,7 +2105,9 @@ async def relay_dispatch_now(service: RelaySvc, _: RelayOps) -> dict:
 
 
 # --- Consumer framework operations (SPRINT-008B) ----------------------------
-consumers_router = APIRouter(prefix="/_consumers", tags=["event-consumers"])
+consumers_router = APIRouter(
+    prefix="/_consumers", tags=["event-consumers"], route_class=IdempotentRoute
+)
 ConsumerRun = Annotated[ConsumerRunner, Depends(deps.get_consumer_runner)]
 
 
@@ -2155,7 +2171,9 @@ async def replay_consumer_execution(
 
 
 # --- Projection lifecycle operations (PLT-001) ------------------------------
-projections_router = APIRouter(prefix="/_projections", tags=["projections"])
+projections_router = APIRouter(
+    prefix="/_projections", tags=["projections"], route_class=IdempotentRoute
+)
 Rebuilder = Annotated[ProjectionRebuilder, Depends(deps.get_projection_rebuilder)]
 
 
@@ -2232,7 +2250,7 @@ async def reset_projection(name: str, rebuilder: Rebuilder, _: RelayOps) -> Any:
 
 
 # --- Authorization --------------------------------------------------------
-authz_router = APIRouter(prefix="/authz", tags=["authz"])
+authz_router = APIRouter(prefix="/authz", tags=["authz"], route_class=IdempotentRoute)
 
 
 @authz_router.get("/permissions")
@@ -2275,7 +2293,7 @@ async def assign_role(
 
 
 # --- Configuration --------------------------------------------------------
-config_router = APIRouter(prefix="/config", tags=["configuration"])
+config_router = APIRouter(prefix="/config", tags=["configuration"], route_class=IdempotentRoute)
 
 
 @config_router.get("/{key}")
@@ -2304,7 +2322,7 @@ async def set_config(
 
 
 # --- Audit ----------------------------------------------------------------
-audit_router = APIRouter(prefix="/audit", tags=["audit"])
+audit_router = APIRouter(prefix="/audit", tags=["audit"], route_class=IdempotentRoute)
 
 
 @audit_router.get("")

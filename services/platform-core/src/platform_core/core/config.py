@@ -71,6 +71,17 @@ class Settings(BaseSettings):
     # and the drain was pointless.
     shutdown_grace_seconds: float = 20.0
 
+    # --- Idempotency (IDM-001) ---------------------------------------------
+    # How long a completed request stays replayable. Long enough to cover any
+    # realistic client retry — a mobile device that reconnects the next
+    # morning still gets the original answer rather than a duplicate — and
+    # short enough that the table stays a working set rather than a log.
+    idempotency_retention_hours: int = 24
+    # Seconds between expiry sweeps. Frequent and small beats rare and large:
+    # an unbounded DELETE takes a long lock on the table the request path
+    # depends on.
+    idempotency_sweep_seconds: float = 300.0
+
     # Row Level Security (PostgreSQL only; SQLite has no equivalent).
     rls_enabled: bool = True
 

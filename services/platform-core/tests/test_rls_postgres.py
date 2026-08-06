@@ -759,3 +759,127 @@ async def test_the_platform_binding_lets_a_consumer_do_its_job(live):
             await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
             await s.execute(text("DELETE FROM projection_daily_totals WHERE id = :i"), {"i": row})
             await s.commit()
+
+
+# --------------------------------------------------------------------------
+# IDM-001 — the concurrency guarantee, on an engine that can stage the race.
+#
+# SQLite's StaticPool gives the test process one connection, so two
+# "concurrent" requests share a transaction and the unique constraint never
+# fires. Only a real engine can show that the second insert is refused.
+# --------------------------------------------------------------------------
+
+
+async def test_two_concurrent_reservations_of_one_key_cannot_both_win(live):
+    """The check-then-act gap, closed by the database rather than by timing.
+
+    Two sessions reserve the same `(tenant, key)` at once. One commits; the
+    other must fail on the unique index — which is what makes the framework's
+    duplicate protection a guarantee instead of a race that usually works.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    tenant = uuid.uuid4()
+    key = uuid.uuid4().hex
+
+    async def reserve(session):
+        await session.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+        await session.execute(
+            text(
+                "INSERT INTO idempotency_record (id, tenant_id, idempotency_key, fingerprint,"
+                " method, path, status, created_at, expires_at) VALUES (:i, :t, :k, 'x', 'POST',"
+                " '/v1/suppliers', 'in_progress', now(), now() + interval '1 day')"
+            ),
+            {"i": uuid.uuid4(), "t": tenant, "k": key},
+        )
+
+    try:
+        async with live() as first, live() as second:
+            await reserve(first)
+            await first.commit()
+            with pytest.raises(IntegrityError):
+                await reserve(second)
+                await second.commit()
+    finally:
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+            await s.execute(
+                text("DELETE FROM idempotency_record WHERE idempotency_key = :k"), {"k": key}
+            )
+            await s.commit()
+
+
+async def test_the_same_key_in_two_tenants_is_two_reservations(live):
+    """Keys are namespaced by tenant. A client library that derives keys from
+    a request hash makes collisions across tenants certain, not unlikely."""
+    key = uuid.uuid4().hex
+    a, b = uuid.uuid4(), uuid.uuid4()
+    try:
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+            for tenant in (a, b):
+                await s.execute(
+                    text(
+                        "INSERT INTO idempotency_record (id, tenant_id, idempotency_key,"
+                        " fingerprint, method, path, status, created_at, expires_at) VALUES"
+                        " (:i, :t, :k, 'x', 'POST', '/v1/suppliers', 'in_progress', now(),"
+                        " now() + interval '1 day')"
+                    ),
+                    {"i": uuid.uuid4(), "t": tenant, "k": key},
+                )
+            await s.commit()
+            count = await s.scalar(
+                text("SELECT count(*) FROM idempotency_record WHERE idempotency_key = :k"),
+                {"k": key},
+            )
+        assert count == 2, "the same key in two tenants collided"
+    finally:
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+            await s.execute(
+                text("DELETE FROM idempotency_record WHERE idempotency_key = :k"), {"k": key}
+            )
+            await s.commit()
+
+
+async def test_idempotency_records_are_isolated_by_rls(live):
+    """The table is tenant-owned, so one tenant must not see another's keys —
+    which would leak what operations they perform and when."""
+    key_a, key_b = uuid.uuid4().hex, uuid.uuid4().hex
+    a, b = uuid.uuid4(), uuid.uuid4()
+    try:
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+            for tenant, key in ((a, key_a), (b, key_b)):
+                await s.execute(
+                    text(
+                        "INSERT INTO idempotency_record (id, tenant_id, idempotency_key,"
+                        " fingerprint, method, path, status, created_at, expires_at) VALUES"
+                        " (:i, :t, :k, 'x', 'POST', '/v1/x', 'completed', now(),"
+                        " now() + interval '1 day')"
+                    ),
+                    {"i": uuid.uuid4(), "t": tenant, "k": key},
+                )
+            await s.commit()
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {TENANT_SETTING} = :t"), {"t": str(a)})
+            visible = set(
+                (
+                    await s.execute(
+                        text(
+                            "SELECT idempotency_key FROM idempotency_record "
+                            "WHERE idempotency_key IN (:x, :y)"
+                        ),
+                        {"x": key_a, "y": key_b},
+                    )
+                ).scalars()
+            )
+        assert visible == {key_a}, f"tenant A saw {visible}"
+    finally:
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+            await s.execute(
+                text("DELETE FROM idempotency_record WHERE idempotency_key IN (:x, :y)"),
+                {"x": key_a, "y": key_b},
+            )
+            await s.commit()

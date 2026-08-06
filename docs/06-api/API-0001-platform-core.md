@@ -3,7 +3,7 @@ id: API-0001
 title: Platform Core REST API
 type: api
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Architecture Board
 created: 2026-08-07
 last-updated: 2026-08-07
@@ -120,7 +120,25 @@ Paginated responses are uniform:
 
 **Creation is the exposed case, and paying twice is the worst outcome this API has.** `POST /v1/payments` accepts an **`Idempotency-Key` header**: a repeat returns the payment the first request created, unchanged. A mobile client on a village connection cannot distinguish a lost response from a lost request, and this platform is explicitly built for that network.
 
-**Known gap:** only payment creation has it. Supplier, settlement, rate-card and collection creation have no idempotency key, so a retried create makes a duplicate. The offline sync path solves this properly with a client-generated `operation_id`, which is the model a general solution should follow — see §8.
+### The framework (IDM-001)
+
+**`Idempotency-Key` works on every POST, PUT and PATCH.** Send one and the operation becomes retry-safe; omit it and nothing changes, so the capability costs nothing until used.
+
+| Situation | Response |
+| --- | --- |
+| First request | Runs normally |
+| Retry after it completed | The **original response**, verbatim — same status, same body, plus `Idempotent-Replay: true` |
+| Retry while the first is still running | `409` — the operation is happening, and inventing an answer would be worse than asking you to wait |
+| Same key, **different body** | `400` — the key identifies a request; replaying the first response would silently discard this one |
+| Key after the retention window | Treated as new. Retention is 24 hours by default |
+
+**Keys are scoped to your tenant**, so two organizations can use the same key without colliding — which matters, because a client library that derives keys from a request hash makes collisions certain rather than unlikely.
+
+**The record shares the operation's transaction.** The reservation, the business write and the stored response commit together or not at all, so a crash cannot leave a key claiming an effect that never happened. That is the difference between a framework that helps a retrying client and one that strands it.
+
+Keys are 1–128 characters. Use something unguessable and unique per logical operation — a UUID per user action, generated once and reused across that action's retries. Do **not** derive it from the body alone: two genuinely different operations can have identical bodies.
+
+**Payment keeps its own `idempotency_key` body field**, and it means something different: the header dedups an *HTTP request*, the field dedups a *business intent* — that payment, ever, even across two genuinely different requests. Both are useful; neither replaces the other.
 
 ---
 
@@ -154,7 +172,7 @@ Each is a decision with a reason, not an omission:
 
 | # | Limitation | Why it is acceptable now | What would change it |
 | --- | --- | --- | --- |
-| 1 | **No general idempotency** — only payment creation | Duplicates elsewhere are visible and correctable; a duplicate payment is not | An idempotency-key table keyed on `(tenant, key)` storing the first response, following the `sync_operation` model |
+| 1 | ~~No general idempotency~~ — **closed by IDM-001**. Residual: the framework covers HTTP retries, not two genuinely distinct requests expressing the same intent. Only payment has intent-level dedup | Intent-level dedup needs a domain key per resource, which is a per-endpoint decision, not a platform one | A domain uniqueness rule per resource, where duplicates would actually cost something |
 | 2 | **No `ETag`/`If-Match`** | Lifecycle transitions are CAS-guarded; only free-field edits race, and today one operator edits at a time | Third-party integrations, or concurrent portal editing |
 | 3 | **No client-controlled sorting** | Every list has a sensible fixed order; an unindexed sort is a way to take the platform down from a query string | Add per-endpoint allow-lists backed by real indexes |
 | 4 | **No cursor pagination** | Offset is correct and simple at current volumes | Deep offsets on the transaction table — `OFFSET 100000` scans 100,000 rows |
@@ -168,4 +186,5 @@ Each is a decision with a reason, not an omission:
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-07 | Architecture Board | IDM-001: `Idempotency-Key` documented as a platform capability on every mutation; §8.1 closed. |
 | 1.0 | 2026-08-07 | Architecture Board | Established by API-001. Error contract published, page sizes bounded and validated, `Idempotency-Key` on payment creation, conventions recorded. |

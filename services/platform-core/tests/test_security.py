@@ -664,16 +664,20 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
 
     The covered set is the UNION of the migrations that grant policies —
     SEC-001 established the first 37, SEC-002 added the 13 child tables that
-    had been reachable only through a parent. Each migration snapshots its own
-    list on purpose: a migration is a historical record and must not change
-    meaning when the models later do.
+    had been reachable only through a parent, IDM-001 the idempotency record.
+    Each migration snapshots its own list on purpose: a migration is a
+    historical record and must not change meaning when the models later do.
+
+    This test earns its keep — it is what failed when IDM-001 introduced the
+    first new tenant-owned table since SEC-002.
     """
     from migrations.versions.a1c7f3b90e22_row_level_security import TENANT_TABLES
     from migrations.versions.f2d18ba60c47_sec002_complete_rls_coverage import NEW_TENANT_TABLES
+    from migrations.versions.f73f41473469_idempotency_records import POLICY_TABLES
 
     from platform_core.core.rls import tenant_tables
 
-    covered = set(TENANT_TABLES) | set(NEW_TENANT_TABLES)
+    covered = set(TENANT_TABLES) | set(NEW_TENANT_TABLES) | set(POLICY_TABLES)
     uncovered = set(tenant_tables()) - covered
     assert not uncovered, (
         f"tenant-owned tables with no RLS policy: {sorted(uncovered)} — "

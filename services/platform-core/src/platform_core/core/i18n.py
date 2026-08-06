@@ -21,6 +21,9 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.validation": "The request is invalid.",
         "error.invalid_token": "This link is invalid or has expired.",
         "error.rate_limited": "Too many requests. Please wait and try again.",
+        "error.idempotency_key_invalid": "The Idempotency-Key header is empty or too long.",
+        "error.idempotency_key_reused": "This Idempotency-Key was used for another request.",
+        "error.idempotency_in_progress": "An identical request is still running. Retry shortly.",
         "error.pricing_no_match": "No applicable pricing was found for this transaction.",
         "error.pricing_integrity": (
             "Pricing data is ambiguous for this transaction — contact an administrator."
@@ -35,6 +38,9 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.forbidden": "Huna ruhusa ya kufanya kitendo hiki.",
         "error.invalid_credentials": "Barua pepe au nenosiri si sahihi.",
         "error.rate_limited": "Maombi mengi mno. Tafadhali subiri kisha ujaribu tena.",
+        "error.idempotency_key_invalid": "Kichwa cha Idempotency-Key ni tupu au kirefu mno.",
+        "error.idempotency_key_reused": "Idempotency-Key hii ilitumika kwa ombi tofauti.",
+        "error.idempotency_in_progress": "Ombi linalofanana bado linaendelea. Jaribu tena baadaye.",
     },
     "hi": {  # Hindi — starter subset
         "error.not_found": "अनुरोधित संसाधन नहीं मिला।",
@@ -42,6 +48,9 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.forbidden": "आपको यह कार्य करने की अनुमति नहीं है।",
         "error.invalid_credentials": "ईमेल या पासवर्ड गलत है।",
         "error.rate_limited": "बहुत अधिक अनुरोध। कृपया प्रतीक्षा करें और पुनः प्रयास करें।",
+        "error.idempotency_key_invalid": "Idempotency-Key हेडर खाली है या बहुत लंबा है।",
+        "error.idempotency_key_reused": "यह Idempotency-Key किसी अन्य अनुरोध हेतु प्रयुक्त हुई।",
+        "error.idempotency_in_progress": "समान अनुरोध अभी चल रहा है। शीघ्र पुनः प्रयास करें।",
     },
 }
 

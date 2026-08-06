@@ -66,6 +66,24 @@ JWT_VERIFICATION_FAILURES = Counter(
 )
 RLS_DENIALS = Counter("rls_denials_total", "Statements refused by row-level security")
 
+# --- Idempotency (IDM-001) --------------------------------------------------
+# `method` is a fixed vocabulary of three values; the key itself is NEVER a
+# label — it is client-supplied and unbounded, which is the cardinality rule
+# in this module's header.
+IDEMPOTENCY_REPLAYS = Counter(
+    "idempotency_replays_total", "Requests answered from a stored response", ["method"]
+)
+IDEMPOTENCY_STORED = Counter(
+    "idempotency_stored_total", "Responses recorded against an idempotency key"
+)
+IDEMPOTENCY_CONFLICTS = Counter(
+    "idempotency_conflicts_total", "Retries that arrived while the first attempt was in flight"
+)
+IDEMPOTENCY_MISMATCHES = Counter(
+    "idempotency_mismatches_total", "Keys reused for a DIFFERENT request (a client bug)"
+)
+IDEMPOTENCY_SWEPT = Counter("idempotency_swept_total", "Expired idempotency records deleted")
+
 # --- relay (outbox) ---------------------------------------------------------
 
 RELAY_DELIVERED = Counter("relay_delivered_total", "Events delivered by the relay")

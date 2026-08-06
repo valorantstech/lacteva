@@ -71,6 +71,27 @@ async def _relay_loop() -> None:
         await workers.sleep(settings.outbox_poll_seconds)
 
 
+async def _idempotency_sweep_loop() -> None:
+    """Delete expired idempotency records (IDM-001).
+
+    Retention is the whole cleanup strategy: a record is useful for as long as
+    a client might retry, and dead weight after. Sweeping on a timer keeps the
+    table a working set rather than a log — and small, frequent deletes beat
+    one large one, which would take a long lock on a table the request path
+    reads on every keyed mutation.
+    """
+    from platform_core.core import idempotency
+
+    settings = get_settings()
+    while not workers.stopping():
+        try:
+            async with platform_session("idempotency sweep: expiry spans tenants") as session:
+                await idempotency.sweep(session)
+        except Exception as exc:  # a failed sweep must never stop the loop
+            log.warning("idempotency_sweep_failed", error=str(exc))
+        await workers.sleep(settings.idempotency_sweep_seconds)
+
+
 async def _health_loop() -> None:
     """Sample component health on a schedule (OBS-001).
 
@@ -123,6 +144,12 @@ async def lifespan(app: FastAPI):
     # OBS-001: health probes and tracing come up with the process, so the
     # first scrape after a restart already tells the truth.
     health_probes.register_all()
+    sweep_task = None
+    if settings.env != "test":
+        import asyncio
+
+        sweep_task = asyncio.create_task(_idempotency_sweep_loop())
+        workers.register("idempotency-sweep", sweep_task)
     health_task = None
     if settings.env != "test":
         import asyncio
