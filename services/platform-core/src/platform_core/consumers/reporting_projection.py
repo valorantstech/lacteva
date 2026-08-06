@@ -10,7 +10,7 @@ full replay (so a rebuild can never diverge from live behavior).
 
 import uuid
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,12 @@ from platform_core.modules.reporting.models import (
     DailyTotalsProjection,
     SupplierTotalsProjection,
 )
+
+# The scales the projection columns actually store (reporting/models.py):
+# total_net_weight NUMERIC(16,3) — grams; payable_amount NUMERIC(16,2) — minor
+# units. Named here so the handler rounds to the same place the column does.
+_WEIGHT_SCALE = Decimal("0.001")
+_MONEY_SCALE = Decimal("0.01")
 
 
 class ReportingProjection(Projection):
@@ -105,8 +111,27 @@ class ReportingProjection(Projection):
             row.rejected += 1
         else:
             row.accepted += 1
-        row.total_net_weight = Decimal(str(row.total_net_weight)) + weight
-        row.payable_amount = Decimal(str(row.payable_amount)) + gross
+        # DB-002: quantize to the COLUMN's scale at every step, not whenever a
+        # flush happens to occur.
+        #
+        # The accumulator IS the column, and the column has a scale. The
+        # incremental consumer commits once per event, so it rounded after
+        # every event; a rebuild commits once per BATCH, so the row stayed in
+        # the identity map and rounded once per batch. With weights carrying
+        # more decimals than the column stores — which `net_weight` does,
+        # being a float — the two paths reached different totals, and two
+        # rebuilds at different batch sizes reached different totals again.
+        # That is a hole in BR-0015: a rebuilt projection must be provably
+        # identical to an incrementally built one.
+        #
+        # Rounding explicitly here makes the flush boundary irrelevant, which
+        # is the only property that makes replay reproducible.
+        row.total_net_weight = (Decimal(str(row.total_net_weight)) + weight).quantize(
+            _WEIGHT_SCALE, rounding=ROUND_HALF_UP
+        )
+        row.payable_amount = (Decimal(str(row.payable_amount)) + gross).quantize(
+            _MONEY_SCALE, rounding=ROUND_HALF_UP
+        )
         if currency:
             row.currency = currency if row.currency in (None, currency) else "MIX"
 

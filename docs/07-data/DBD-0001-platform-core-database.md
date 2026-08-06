@@ -3,7 +3,7 @@ id: DBD-0001
 title: Platform Core Database
 type: dbd
 status: Approved
-version: "1.1"
+version: "1.2"
 owner: Architecture Board
 created: 2026-08-06
 last-updated: 2026-08-06
@@ -2194,6 +2194,14 @@ PostgreSQL's `json` stores the original text and **reparses it on every access**
 
 Recommendation: convert all 13. Prioritize `event_outbox`, `transaction_event`, and `transaction_snapshot`.
 
+### F-6a · ~~Float aggregation in reporting~~ — **CLOSED by DB-002**
+
+> The half of F-6 that was an active defect rather than a latent one. `SUM(net_weight)` and the weighted-quality numerators/denominators aggregated `double precision`, and floating point addition is not associative — so the total depended on the plan, and it was written into a `NUMERIC(16,3)` projection column, which made a non-reproducible number look exact. Every such aggregate now casts to `NUMERIC` first (`_exact()` in `reporting/service.py`), and a structural test fails if a future report sums a float column directly.
+>
+> DB-002 also found and closed a second, unreported divergence: the reporting **projection** rounded its running total whenever a flush happened to occur — once per event incrementally, once per batch during a rebuild — so a rebuilt projection did not reproduce the incrementally built one for weights carrying more decimals than the column stores. That was a hole in BR-0015. The handler now quantizes to the column's scale explicitly, making the flush boundary irrelevant.
+>
+> **Still open:** the column *types*. `pricing_matrix_row.unit_price`, `from_value`, `to_value` and the three weight columns remain `FLOAT` — see below.
+
 ### F-6 · The published unit price is a `FLOAT`
 
 **Severity: high — this one is a correctness finding, not a performance one.** BR-0005 requires all monetary arithmetic in `Decimal`. The calculator honours it, and `milk_collection_transaction.unit_price` is `NUMERIC(12,4)`. But the value it reads comes from **`pricing_matrix_row.unit_price`, which is `FLOAT`** — as are `from_value` and `to_value`, the band boundaries that decide which price applies.
@@ -2334,5 +2342,6 @@ Reproducible, and it should be reproduced whenever the schema changes:
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-08-06 | Architecture Board | DB-002: float aggregation in reporting closed (F-6a); projection rebuild determinism restored (BR-0015). Column types remain open. |
 | 1.1 | 2026-08-06 | Architecture Board | SEC-002: RLS coverage now complete (50 tenant-owned + identity-isolated `organization` + 5 declared global); F-1 closed; F-4 and F-9 struck as measurement errors (ABR-002 §0). |
 | 1.0 | 2026-08-06 | Architecture Board | Established by DBR-001. Complete inventory of 56 tables, ERDs, module dependency graph, lifecycle classification, top-20 volumetrics, partitioning assessment, and 13 optimization findings. Documentation only — no schema change. |

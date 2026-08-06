@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.13"
+version: "1.14"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-06
@@ -79,6 +79,8 @@ baseline: ARCH-BASELINE-V1
 
 **Status:** Active (since PRC-004).
 
+
+**Aggregation (DB-002).** The rule governs SQL as well as Python. No monetary or quantity aggregate may be computed over a `double precision` column: floating point addition is not associative, so the total depends on the order the planner produced and the same query can disagree with itself between runs. Float columns are cast to `NUMERIC` before entering an aggregate — on PostgreSQL `float8::numeric` renders the shortest decimal that round-trips, which is the same rule `Decimal(str(x))` follows, so a value aggregates as the value it displays as. Aggregation stays inside SQL; only its exactness changes.
 ---
 
 ## BR-0006 — Every calculation result carries a complete trace.
@@ -199,6 +201,8 @@ baseline: ARCH-BASELINE-V1
 
 **Status:** Active (since PLT-001).
 
+
+**Flush independence (DB-002).** A projection that accumulates into a scaled column must quantize to that scale itself, at every step. The incremental consumer commits once per event and the rebuild engine once per batch, so a handler that leaves rounding to the flush produces a different total per batch size — which made this rule false in the last digit for any value carrying more decimals than the column stores. Rounding explicitly makes the flush boundary irrelevant, which is what makes replay reproducible.
 ---
 
 ## BR-0016 — A business module never sends a message; notifications originate only from durable domain events.
@@ -346,6 +350,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.14 | 2026-08-06 | Architecture Board | DB-002: BR-0005 extended to SQL aggregation; BR-0015 gains flush independence. |
 | 1.13 | 2026-08-06 | Architecture Board | SEC-002: BR-0022 extended — every table declares an isolation strategy; child tables are tenant-owned; the tenant binds before the first read. |
 | 1.12 | 2026-08-06 | Architecture Board | CI-001: BR-0026 (whole-schema operations must register the whole schema); BR-0022 amended with the platform-global (`tenant_id IS NULL`) clause after the policies were executed on a real engine. |
 | 1.11 | 2026-08-06 | Architecture Board | BAK-001 rule: BR-0025 (a backup is trusted only once a restore has been demonstrated and business-verified). |

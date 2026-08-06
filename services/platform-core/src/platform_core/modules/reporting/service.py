@@ -18,10 +18,10 @@ No report copies transactional data; queries are fixed-count (no N+1).
 
 import uuid
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from pydantic import BaseModel
-from sqlalchemy import case, distinct, func, select
+from sqlalchemy import Numeric, case, cast, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
@@ -38,6 +38,40 @@ REJECTED = (Tx.state == "REJECTED") | (
     (Tx.state == "COMPLETED") & (Tx.rejected_reason.is_not(None))
 )
 PRICED = Tx.gross_amount.is_not(None)
+
+
+# DB-002: `net_weight`, `fat` and `snf` are `double precision`, and floating
+# point addition is NOT associative — the same rows summed in a different
+# order give a different answer. Order comes from the plan, which changes with
+# statistics and with parallel workers, so a report could disagree with itself
+# between two runs and nothing would say so. Casting each value to NUMERIC
+# before it enters the aggregate makes the sum exact and therefore
+# reproducible.
+#
+# On PostgreSQL `float8::numeric` renders the shortest decimal that round-trips
+# — the same rule `Decimal(str(x))` follows in the money path (BR-0005) — so a
+# weight aggregates as the value it displays as.
+#
+# Unconstrained `NUMERIC` on purpose: pinning a scale here would round every
+# ROW before summing, where the platform rounds the TOTAL once. The aggregate
+# stays inside SQL; only the exactness of its arithmetic changes.
+_EXACT_ZERO = Decimal(0)
+
+
+def _exact(column):
+    """A float column, promoted to exact decimal for aggregation."""
+    return cast(column, Numeric)
+
+
+def _kg(total) -> float:
+    """A weight total, rounded once, from an exact sum.
+
+    The DTO field is `float` and stays `float` — the API contract does not
+    move. What changed is that the value being rounded is now reproducible.
+    """
+    if total is None:
+        return 0.0
+    return float(Decimal(total).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
 
 
 # --- DTOs ------------------------------------------------------------------
@@ -144,12 +178,18 @@ class ReportingService:
             func.sum(case((REJECTED, 1), else_=0)),
             func.sum(case((Tx.state == "CANCELLED", 1), else_=0)),
             func.count(distinct(case((ACCEPTED, Tx.supplier_id)))),
-            func.coalesce(func.sum(case((ACCEPTED, Tx.net_weight), else_=0.0)), 0.0),
+            func.coalesce(
+                func.sum(case((ACCEPTED, _exact(Tx.net_weight)), else_=_EXACT_ZERO)), _EXACT_ZERO
+            ),
             func.sum(case((ACCEPTED & PRICED, 0), (ACCEPTED, 1), else_=0)),
-            func.sum(case((ACCEPTED & Tx.fat.is_not(None), Tx.fat * Tx.net_weight))),
-            func.sum(case((ACCEPTED & Tx.fat.is_not(None), Tx.net_weight))),
-            func.sum(case((ACCEPTED & Tx.snf.is_not(None), Tx.snf * Tx.net_weight))),
-            func.sum(case((ACCEPTED & Tx.snf.is_not(None), Tx.net_weight))),
+            func.sum(
+                case((ACCEPTED & Tx.fat.is_not(None), _exact(Tx.fat) * _exact(Tx.net_weight)))
+            ),
+            func.sum(case((ACCEPTED & Tx.fat.is_not(None), _exact(Tx.net_weight)))),
+            func.sum(
+                case((ACCEPTED & Tx.snf.is_not(None), _exact(Tx.snf) * _exact(Tx.net_weight)))
+            ),
+            func.sum(case((ACCEPTED & Tx.snf.is_not(None), _exact(Tx.net_weight)))),
         ).where(*conditions)
         if branch_id is not None:
             stmt = stmt.join(CollectionCenter, CollectionCenter.id == Tx.center_id).where(
@@ -179,7 +219,7 @@ class ReportingService:
             cancelled=cancelled or 0,
             in_progress=(transactions or 0) - (accepted or 0) - (rejected or 0) - (cancelled or 0),
             suppliers_served=suppliers or 0,
-            total_net_weight_kg=round(float(weight or 0.0), 3),
+            total_net_weight_kg=_kg(weight),
             payable_by_currency=payable,
             unpriced_accepted=unpriced or 0,
             weighted_avg_fat=self._weighted(fat_sum, fat_weight),
@@ -222,17 +262,22 @@ class ReportingService:
                 CollectionCenter.name,
                 func.count(),
                 func.sum(case((ACCEPTED, 1), else_=0)),
-                func.coalesce(func.sum(case((ACCEPTED, Tx.net_weight), else_=0.0)), 0.0),
+                func.coalesce(
+                    func.sum(case((ACCEPTED, _exact(Tx.net_weight)), else_=_EXACT_ZERO)),
+                    _EXACT_ZERO,
+                ),
                 func.coalesce(func.sum(case((ACCEPTED & PRICED, Tx.gross_amount))), 0),
                 func.min(Tx.currency),
                 func.count(distinct(Tx.currency)),
-                func.sum(case((ACCEPTED & Tx.fat.is_not(None), Tx.fat * Tx.net_weight))),
-                func.sum(case((ACCEPTED & Tx.fat.is_not(None), Tx.net_weight))),
+                func.sum(
+                    case((ACCEPTED & Tx.fat.is_not(None), _exact(Tx.fat) * _exact(Tx.net_weight)))
+                ),
+                func.sum(case((ACCEPTED & Tx.fat.is_not(None), _exact(Tx.net_weight)))),
             )
             .join(CollectionCenter, CollectionCenter.id == Tx.center_id)
             .where(*conditions)
             .group_by(Tx.center_id, CollectionCenter.code, CollectionCenter.name)
-            .order_by(func.sum(case((ACCEPTED, Tx.net_weight), else_=0.0)).desc())
+            .order_by(func.sum(case((ACCEPTED, _exact(Tx.net_weight)), else_=_EXACT_ZERO)).desc())
         )
         if branch_id is not None:
             stmt = stmt.where(CollectionCenter.branch_id == branch_id)
@@ -245,7 +290,7 @@ class ReportingService:
                 center_name=name,
                 transactions=tx_count,
                 accepted=accepted or 0,
-                total_net_weight_kg=round(float(weight or 0.0), 3),
+                total_net_weight_kg=_kg(weight),
                 payable_amount=Decimal(str(payable or 0)),
                 currency=("MIX" if (ncur or 0) > 1 else currency),
                 weighted_avg_fat=self._weighted(fat_sum, fat_weight),
@@ -289,18 +334,23 @@ class ReportingService:
                 SupplierProfile.full_name,
                 func.count(),
                 func.sum(case((ACCEPTED, 1), else_=0)),
-                func.coalesce(func.sum(case((ACCEPTED, Tx.net_weight), else_=0.0)), 0.0),
+                func.coalesce(
+                    func.sum(case((ACCEPTED, _exact(Tx.net_weight)), else_=_EXACT_ZERO)),
+                    _EXACT_ZERO,
+                ),
                 func.coalesce(func.sum(case((ACCEPTED & PRICED, Tx.gross_amount))), 0),
                 func.min(Tx.currency),
                 func.count(distinct(Tx.currency)),
-                func.sum(case((ACCEPTED & Tx.fat.is_not(None), Tx.fat * Tx.net_weight))),
-                func.sum(case((ACCEPTED & Tx.fat.is_not(None), Tx.net_weight))),
+                func.sum(
+                    case((ACCEPTED & Tx.fat.is_not(None), _exact(Tx.fat) * _exact(Tx.net_weight)))
+                ),
+                func.sum(case((ACCEPTED & Tx.fat.is_not(None), _exact(Tx.net_weight)))),
             )
             .join(Supplier, Supplier.id == Tx.supplier_id)
             .join(SupplierProfile, SupplierProfile.supplier_id == Supplier.id)
             .where(*conditions, Tx.supplier_id.is_not(None))
             .group_by(Tx.supplier_id, Supplier.code, SupplierProfile.full_name)
-            .order_by(func.sum(case((ACCEPTED, Tx.net_weight), else_=0.0)).desc())
+            .order_by(func.sum(case((ACCEPTED, _exact(Tx.net_weight)), else_=_EXACT_ZERO)).desc())
         )
         total = await self._session.scalar(select(func.count()).select_from(stmt.subquery()))
         rows = await self._session.execute(stmt.limit(limit).offset(offset))
@@ -311,7 +361,7 @@ class ReportingService:
                 supplier_name=name,
                 deliveries=deliveries,
                 accepted=accepted or 0,
-                total_net_weight_kg=round(float(weight or 0.0), 3),
+                total_net_weight_kg=_kg(weight),
                 payable_amount=Decimal(str(payable or 0)),
                 currency=("MIX" if (ncur or 0) > 1 else currency),
                 weighted_avg_fat=self._weighted(fat_sum, fat_weight),
@@ -470,6 +520,15 @@ class ReportingService:
 
     @staticmethod
     def _weighted(value_sum, weight_sum) -> float | None:
+        """Weighted average from two exact sums.
+
+        DB-002: both operands now arrive as `Decimal`, so the division happens
+        in decimal and quantizes once, explicitly. Going back through `float`
+        here would reintroduce — at the very last step — the rounding this
+        work order removed from the sums. The DTO still returns `float`, so no
+        API contract moves; only the digit it rounds from is now reproducible.
+        """
         if not value_sum or not weight_sum:
             return None
-        return round(float(value_sum) / float(weight_sum), 2)
+        ratio = Decimal(value_sum) / Decimal(weight_sum)
+        return float(ratio.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))

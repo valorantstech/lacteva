@@ -6,7 +6,7 @@
 #
 #   1. migrations apply to an EMPTY database
 #   2. RLS policies exist, are FORCED, and COVER every tenant-owned table
-#   3. the PostgreSQL-only test suite passes (and did not silently skip)
+#   3. the PostgreSQL-only suites pass (RLS + exact aggregation; no skips)
 #   4. a real dairy is seeded through the platform's own API
 #   5. a logical backup is taken and verified
 #   6. a SECOND, fresh database is migrated
@@ -102,11 +102,15 @@ ORG_POLICY="$(psql_do "${SOURCE_DB}" \
 [ "${ORG_POLICY}" = "1" ] || fail "organization has no RLS policy — a tenant can enumerate tenants"
 echo "    every tenant_id table covered; organization isolated by identity"
 
-step "3/9  PostgreSQL-only test suite (RLS enforcement)"
+step "3/9  PostgreSQL-only test suites (RLS enforcement + exact aggregation)"
 RLS_LOG="${WORKDIR}/rls.log"
+# DB-002 lives here too: float summation being order-dependent, and a scaled
+# numeric column rounding on store, are PostgreSQL behaviours that SQLite
+# cannot exhibit — which is exactly why they went unnoticed.
 LACTEVA_TEST_POSTGRES_URL="$(url_for "${SOURCE_DB}")" \
-  ${RUN} pytest tests/test_rls_postgres.py -v --no-header -rs 2>&1 | tee "${RLS_LOG}" \
-  || fail "RLS enforcement tests failed"
+  ${RUN} pytest tests/test_rls_postgres.py tests/test_exact_aggregation_postgres.py \
+  -v --no-header -rs 2>&1 | tee "${RLS_LOG}" \
+  || fail "PostgreSQL-only tests failed"
 # A skipped security proof is worse than none: it is green.
 grep -qE "[0-9]+ skipped" "${RLS_LOG}" \
   && fail "RLS tests SKIPPED — PostgreSQL was not reachable from pytest"
