@@ -3,10 +3,10 @@ id: DISASTER_RECOVERY
 title: Disaster Recovery
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Architecture Board
 created: 2026-08-06
-last-updated: 2026-08-06
+last-updated: 2026-08-08
 related: [BACKUP, RESTORE, RECOVERY_CHECKLIST, SECURITY-CHECKLIST]
 baseline: ARCH-BASELINE-V1
 ---
@@ -107,14 +107,37 @@ Only if a **migration** corrupted data: `alembic downgrade` if the migration has
 
 **Always back up before restoring.** A restore that goes wrong with no pre-restore backup leaves nothing to return to.
 
+## 3b. The recovery pipeline, executed (DR-001)
+
+```bash
+./infra/ci/dr-proof.sh
+```
+
+Ten steps against **two separate PostgreSQL instances** — not two databases on one, because recovery means the original machine is gone, and proving it in place quietly assumes the thing that failed still works:
+
+| Step | Proven |
+| --- | --- |
+| 1 | Migrations apply to an empty instance |
+| 2–3 | A realistic dairy with real business activity — collections, settlements, payments, receipts, notifications, projections — created through the platform's own API |
+| 4–5 | A logical backup, verified against its own checksums |
+| 6 | A **second, separate** instance, migrated from empty |
+| 7–8 | Restored into it, and the restored data passes every deep business-integrity check |
+| 9 | Source and restored compared **fact for fact**: 15 named entity classes, then all 52 tables by content checksum |
+| 10 | A corrupt backup is refused, a schema mismatch is refused, and the restored data is still tenant-isolated under a non-superuser role |
+
+Step 9 is stronger than a row-count comparison and stronger than a hand-written list of `SELECT`s. It re-backs-up the restored database and compares manifests: the engine already checksums each table over rows in primary-key order, so a matching checksum means every column of every row is identical — including the tables nobody would have thought to list.
+
+Three tables are excluded from that comparison, each with a printed reason — `backup_run` (it records the act of backing up, so reading it changes it) and the two consumer bookkeeping tables the post-restore rebuild legitimately touches. Their safety-relevant content is compared exactly instead: **cursor positions**, because a rewound cursor re-notifies every farmer, and the **notification consumer's idempotency ledger**, because resetting it turns a recovery into a duplicate-SMS incident.
+
 ## 4. What is *not* covered
 
 - **Cross-region automation** — documented, manual.
-- **Physical PITR execution** — scripted and CI-wired, never run (no PostgreSQL during BAK-001).
+- **Physical PITR execution** — scripted and CI-wired, **still never run.** DR-001 executed the *logical* recovery path end to end on real PostgreSQL; WAL archiving, `recovery_target_time` and replica promotion remain documented and unexercised. This is now the largest untested guarantee on the platform, and given that executing the logical path found four defects, the honest expectation is that executing this one will also find some.
 - **Automated failover** — there is none. Recovery is a human decision, deliberately: an automatic failover on a false positive is its own outage.
 
 ## Change Log
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-08 | Architecture Board | DR-001: the logical recovery pipeline executed against two separate PostgreSQL instances and compared fact for fact; four defects fixed. PITR remains unexecuted. |
 | 1.0 | 2026-08-06 | Architecture Board | Established by BAK-001. |

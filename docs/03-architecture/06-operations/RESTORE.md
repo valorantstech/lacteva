@@ -3,10 +3,10 @@ id: RESTORE
 title: Restore Procedures
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Architecture Board
 created: 2026-08-06
-last-updated: 2026-08-06
+last-updated: 2026-08-08
 related: [BACKUP, DISASTER_RECOVERY, RUNBOOK_BACKUP, RECOVERY_CHECKLIST]
 baseline: ARCH-BASELINE-V1
 ---
@@ -17,10 +17,12 @@ How to bring the platform back, and how to know you actually did. Established by
 
 ## 1. What "restored" means here
 
-A restore is complete when **five** things are true. Loading rows is only the first.
+A restore is complete when **seven** things are true. Loading rows is only the first — and two of them must hold *before* anything is written, because the worst moment to learn a backup is unusable is halfway through a recovery.
 
 | # | Gate | How it is checked |
 | --- | --- | --- |
+| 0 | The backup is intact | Checksums are verified **before** the database is touched (DR-001) |
+| 0b | The schema matches | The manifest's Alembic revision equals the target's (DR-001) |
 | 1 | The database restores | `alembic upgrade head` succeeds on it |
 | 2 | The application starts | Lifespan completes; consumers and probes register |
 | 3 | Health is green | `/health/ready` returns 200; `/v1/_ops/health` shows no `critical` |
@@ -42,7 +44,22 @@ Gate 5 is the one most recovery procedures omit, and the only one that catches a
 
 A sibling test proves the subtlest failure is avoided: after a restore, running the consumers does **not** re-mint receipts or re-send notifications.
 
-That suite is the evidence this work order asked for.
+That suite is real evidence, and it was not sufficient. It runs on SQLite.
+
+## 2b. What executing it on PostgreSQL then found (DR-001)
+
+The suite above proved the *shape* of recovery. Running the same pipeline against two real PostgreSQL instances found four defects it structurally could not see:
+
+| Defect | Why the SQLite suite missed it |
+| --- | --- |
+| **Every backup aborted on a `time` column.** `center_operating_window.opens/closes` are TIME, and the engine had no encoder for it — so any deployment with configured opening hours could not be backed up **at all** | the suite never seeded a center with operating hours, so the branch was never reached |
+| **A corrupt backup restored silently.** `verify_files` existed and nothing called it before a restore. Editing one number in `settlement.jsonl` produced a restore reporting 350 rows loaded and a settlement worth 1.00 instead of 5647.50 | the suite never corrupts a backup |
+| **A restore across a schema change succeeded and reported healthy.** Restoring into a database one migration older loaded every row and returned `integrity_healthy: true`; the recovered system silently lacked the `amount > 0` constraint | SQLite has no `alembic_version` — the schema revision did not exist to compare |
+| **`transaction_metrics` was excluded from backup as "rebuildable" while nothing rebuilt it**, so every restore lost it permanently | the row counts compared only what the backup contained, so a table absent from both sides matched |
+
+The last one is the most instructive. **"Derived" and "rebuildable" are different claims**: derived says the information exists elsewhere, rebuildable says there is *code* that reconstructs it. Only the second makes it safe to discard.
+
+All four are fixed, each has a test that fails without the fix, and `./infra/ci/dr-proof.sh` executes the whole pipeline.
 
 ## 3. Restore is CLI-only, deliberately
 
@@ -122,4 +139,5 @@ The last two are worth internalising: a large class of "we need a restore" incid
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-08 | Architecture Board | DR-001: executed against two real PostgreSQL instances. Checksums and schema revision are now verified before a restore writes anything; four defects recorded in §2b. |
 | 1.0 | 2026-08-06 | Architecture Board | Established by BAK-001. |

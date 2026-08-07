@@ -3,10 +3,10 @@ id: BACKUP
 title: Backup Strategy
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Architecture Board
 created: 2026-08-06
-last-updated: 2026-08-06
+last-updated: 2026-08-08
 related: [RESTORE, DISASTER_RECOVERY, RUNBOOK_BACKUP, RECOVERY_CHECKLIST, SECURITY]
 baseline: ARCH-BASELINE-V1
 ---
@@ -118,14 +118,22 @@ Sunday     pg-restore-test.sh              full restore into a throwaway instanc
 
 The daily integrity check matters more than it looks: **silent corruption that nobody checks for is corruption a farmer discovers.**
 
+## 7b. `rebuildable` is a claim about code (DR-001)
+
+Excluding a table from the backup is only safe if something actually reconstructs it. `transaction_metrics` was classified `rebuildable` — "derived counters over collection transactions" — and **nothing rebuilt it**: it is written once, by `MilkCollectionService.complete()`, and is not a registered projection. Every restore lost it permanently and silently.
+
+The rule is now enforced rather than intended. `rebuildable_tables_without_a_rebuilder()` returns any table excluded from backup that no registered projection owns, and a test fails the build if it is ever non-empty. A table may only be excluded if a projection declares it in `models`.
+
 ## 8. Known limits
 
 - **PITR is untested in this environment.** The scripts are written and the CI job exists, but no PostgreSQL was available during BAK-001. The *logical* restore is demonstrated end-to-end; the physical path is documented and scripted, not yet exercised. Recorded as debt.
 - **The logical backup takes a lock-free snapshot**, so it is consistent per table but not across tables at a single instant. For point-in-time consistency, use PITR.
 - **No cross-region automation.** Documented as a procedure, not implemented.
+- **`backup_run` is not comparable across a restore.** It records the act of backing up, so reading it changes it. The recovery comparison excludes it explicitly and says so; it is not silently skipped.
 
 ## Change Log
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-08 | Architecture Board | DR-001: `time` columns are serializable (their absence aborted every backup on a real schema); the manifest records the schema revision; `rebuildable` now requires an actual rebuilder. |
 | 1.0 | 2026-08-06 | Architecture Board | Established by BAK-001. |

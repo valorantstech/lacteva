@@ -43,7 +43,7 @@ import hashlib
 import json
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 
@@ -81,6 +81,16 @@ class BackupManifest:
     created_at: str
     database_url_scheme: str  # never the credentials
     platform_version: str
+    # DR-001. The Alembic revision the data was dumped from. Without it a
+    # restore cannot know whether the target's schema is the one this data
+    # came from, and an executed test showed exactly what that costs: a
+    # backup restored into a database one migration OLDER loaded all 350 rows
+    # and reported `integrity_healthy: true`. The recovered system was
+    # missing the ARCH-001 `amount > 0` constraint and nobody was told.
+    #
+    # Defaults to "" so backups written before this field still load — an
+    # unknown revision warns, a MISMATCHED one refuses.
+    schema_revision: str = ""
     tables: list[TableBackup] = field(default_factory=list)
     include_rebuildable: bool = False
 
@@ -99,6 +109,21 @@ class BackupManifest:
         data = json.loads(raw)
         tables = [TableBackup(**t) for t in data.pop("tables", [])]
         return cls(**data, tables=tables)
+
+
+async def _schema_revision(session) -> str:
+    """The Alembic revision the connected database is at.
+
+    Empty when the table is absent — a database built by `create_all` rather
+    than by migrations, which is what the SQLite test suite does.
+    """
+    from sqlalchemy import text
+
+    try:
+        value = await session.scalar(text("SELECT version_num FROM alembic_version"))
+    except Exception:
+        return ""
+    return str(value or "")
 
 
 def _encode(value):
@@ -120,6 +145,17 @@ def _encode(value):
         return {"__type__": "datetime", "value": value.isoformat()}
     if isinstance(value, date):
         return {"__type__": "date", "value": value.isoformat()}
+    # DR-001: `time` was missing, and the omission took the whole backup down
+    # rather than degrading it — `center_operating_window.opens/closes` are
+    # TIME columns, so any deployment that had configured opening hours could
+    # not be backed up at all. The test suite never seeded a center with
+    # operating hours, so nothing exercised it.
+    #
+    # `time` must be tested BEFORE `datetime`? No — the reverse trap: a
+    # `datetime` is a subclass of `date`, which is why `datetime` is checked
+    # first above. `time` is unrelated to both, so its position is free.
+    if isinstance(value, time):
+        return {"__type__": "time", "value": value.isoformat()}
     if isinstance(value, bytes):
         import base64
 
@@ -140,6 +176,8 @@ def _decode(value):
             return datetime.fromisoformat(raw)
         if kind == "date":
             return date.fromisoformat(raw)
+        if kind == "time":
+            return time.fromisoformat(raw)
         if kind == "bytes":
             import base64
 
@@ -186,6 +224,8 @@ class BackupEngine:
             platform_version=__version__,
             include_rebuildable=include_rebuildable,
         )
+        async with self._sf() as session:
+            manifest.schema_revision = await _schema_revision(session)
 
         for table in Base.metadata.sorted_tables:
             if table.name not in wanted:
@@ -233,7 +273,13 @@ class BackupEngine:
     # --- restore -----------------------------------------------------------
 
     async def restore(
-        self, source: Path, *, allow_non_empty: bool = False, batch_size: int = 500
+        self,
+        source: Path,
+        *,
+        allow_non_empty: bool = False,
+        batch_size: int = 500,
+        verify_first: bool = True,
+        allow_schema_mismatch: bool = False,
     ) -> BackupManifest:
         """Restore a backup into the configured database.
 
@@ -241,9 +287,40 @@ class BackupEngine:
         over live data is the single most destructive operation this platform
         can perform, so it must be a decision, never a default — which is also
         why restore is a CLI tool and NOT an HTTP endpoint.
+
+        DR-001: it also refuses a backup whose checksums do not match. That
+        check existed — `verify_files` — and nothing called it before a
+        restore, despite its own docstring saying that is when it matters. An
+        executed test proved the consequence: editing one number in
+        `settlement.jsonl` produced a restore that reported 350 rows loaded
+        and left a settlement worth 1.00 instead of 5647.50. The corruption
+        was only noticed by the integrity check that runs AFTERWARDS, by
+        which point the recovery target has already been overwritten and the
+        operator has to start again — during an outage.
         """
         source = Path(source)
         manifest = self.read_manifest(source)
+
+        # DR-001: the schema this data came from must be the schema it is
+        # going into. A column added since the backup silently restores as
+        # NULL for every row; a column removed since takes the data with it;
+        # a constraint added since is simply absent from the recovered system.
+        # None of that fails loudly on its own — proven by restoring a backup
+        # into a database one migration behind, which loaded every row and
+        # reported healthy.
+        await self._check_schema_revision(manifest, allow_schema_mismatch)
+
+        if verify_first:
+            problems = self.verify_files(source)
+            if problems:
+                raise BackupError(
+                    "refusing to restore a backup that does not match its own "
+                    f"checksums — {len(problems)} problem(s): "
+                    + "; ".join(problems[:5])
+                    + ". The data on disk is not what was backed up. Find an "
+                    "intact copy; pass verify_first=False only if a partial "
+                    "recovery from a damaged backup is genuinely better than none."
+                )
         if manifest.format_version != FORMAT_VERSION:
             raise BackupError(
                 f"backup format {manifest.format_version} cannot be read by this "
@@ -282,6 +359,42 @@ class BackupEngine:
             rows=manifest.total_rows,
         )
         return manifest
+
+    async def _check_schema_revision(self, manifest: BackupManifest, allow_mismatch: bool) -> None:
+        async with self._sf() as session:
+            target = await _schema_revision(session)
+
+        if not manifest.schema_revision or not target:
+            # One side predates this field, or was built by `create_all`.
+            # Warn rather than refuse: refusing would make every backup taken
+            # before DR-001 unrestorable, which is a worse failure than the
+            # one being guarded against.
+            log.warning(
+                "restore_schema_revision_unknown",
+                backup=manifest.schema_revision or "unknown",
+                target=target or "unknown",
+                detail="cannot confirm the target schema matches the backup",
+            )
+            return
+
+        if manifest.schema_revision == target:
+            log.info("restore_schema_revision_matches", revision=target)
+            return
+
+        message = (
+            f"the backup was taken at schema revision {manifest.schema_revision} "
+            f"but this database is at {target}. Restoring across a schema change "
+            "silently loses or invents data — a column added since the backup "
+            "restores as NULL for every row, and a constraint added since is "
+            "simply absent. Migrate the target to "
+            f"{manifest.schema_revision} first (`alembic upgrade`/`downgrade`), "
+            "or pass allow_schema_mismatch if you have checked the difference "
+            "by hand and accept it."
+        )
+        if allow_mismatch:
+            log.warning("restore_schema_revision_mismatch_allowed", detail=message)
+            return
+        raise BackupError(message)
 
     async def _load_table(self, table, source: Path, batch_size: int) -> None:
         path = source / "tables" / f"{table.name}.jsonl"

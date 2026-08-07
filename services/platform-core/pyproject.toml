@@ -29,6 +29,12 @@ dev = [
     "aiosqlite>=0.20",
     "ruff>=0.6",
     "pre-commit>=3.8",
+    # Real PostgreSQL binaries in a wheel — server AND client. This is what
+    # lets `infra/ci/verify-postgres.sh` and `infra/ci/dr-proof.sh` execute
+    # against a genuine engine with no Docker, no daemon and no root. Before
+    # VER-001 the PostgreSQL pipeline had never actually run, and five defects
+    # lived through six work orders because of it.
+    "pgserver>=0.1",
 ]
 
 [build-system]

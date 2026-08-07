@@ -83,7 +83,7 @@ async def seed() -> dict:
             201,
             what="invite manager",
         )
-        await _expect(
+        accepted = await _expect(
             await c.post(
                 "/v1/invitations/accept",
                 json={
@@ -95,6 +95,7 @@ async def seed() -> dict:
             201,
             what="accept invitation",
         )
+        manager_id = accepted["id"]
         pair = await _expect(
             await c.post(
                 "/v1/auth/token",
@@ -207,6 +208,204 @@ async def seed() -> dict:
                 what=f"card {step}",
             )
 
+        # --- milk collection ------------------------------------------------
+        # DR-001. The recovery proof compares source and restored fact for
+        # fact, and a table with no rows compares equal trivially — so the
+        # seed has to produce real collection activity, not just the
+        # settlement chain that sits downstream of it.
+        #
+        # Driven through the platform's own endpoints, so the transaction
+        # event log, the completion snapshot and the metrics rows are written
+        # by the code that writes them in production rather than by fixtures.
+        # A center opens only once it has operating hours and is active —
+        # both are real preconditions, so the seed satisfies them the way an
+        # operator would rather than writing the status directly.
+        await _expect(
+            await c.put(
+                f"/v1/collection-centers/{center['id']}/operating-hours",
+                json={
+                    "windows": [
+                        {"day_of_week": d, "opens": "05:00:00", "closes": "20:00:00"}
+                        for d in range(7)
+                    ]
+                },
+                headers=h,
+            ),
+            200,
+            what="operating hours",
+        )
+        await _expect(
+            await c.post(
+                f"/v1/collection-centers/{center['id']}/status",
+                json={"status": "active"},
+                headers=h,
+            ),
+            200,
+            what="activate center",
+        )
+        # A supplier delivers milk only once activated — and cannot be
+        # activated before being attached to a center that receives it, so
+        # the order here is the platform's rule, not a preference.
+        await _expect(
+            await c.post(
+                f"/v1/suppliers/{supplier['id']}/centers",
+                json={"center_id": center["id"]},
+                headers=h,
+            ),
+            201,
+            what="attach supplier to center",
+        )
+        await _expect(
+            await c.post(
+                f"/v1/suppliers/{supplier['id']}/status",
+                json={"status": "active"},
+                headers=h,
+            ),
+            200,
+            what="activate supplier",
+        )
+
+        # A center is only READY with an operator and working equipment. The
+        # readiness rules are real, so the seed satisfies them the way a
+        # depot would — which also gives the recovery proof device, health
+        # and operator-assignment rows to compare.
+        await _expect(
+            await c.post(
+                f"/v1/collection-centers/{center['id']}/operators",
+                json={"user_id": manager_id, "role_label": "operator"},
+                headers=h,
+            ),
+            201,
+            what="assign operator",
+        )
+        for category, serial in (
+            ("scale", "SCALE-0001"),
+            ("milk_analyzer", "ANALYZER-0001"),
+            ("printer", "PRINTER-0001"),
+        ):
+            device = await _expect(
+                await c.post(
+                    "/v1/devices",
+                    json={
+                        "category": category,
+                        "name": f"Kilima {category}",
+                        "serial_number": serial,
+                    },
+                    headers=h,
+                ),
+                201,
+                what=f"device {category}",
+            )
+            await _expect(
+                await c.post(
+                    f"/v1/devices/{device['id']}/assign",
+                    json={"center_id": center["id"]},
+                    headers=h,
+                ),
+                200,
+                what=f"assign {category}",
+            )
+            await _expect(
+                await c.post(
+                    f"/v1/devices/{device['id']}/status",
+                    json={"status": "active"},
+                    headers=h,
+                ),
+                200,
+                what=f"activate {category}",
+            )
+
+        session_row = await _expect(
+            await c.post(
+                "/v1/collection-sessions",
+                json={"center_id": center["id"], "label": "morning"},
+                headers=h,
+            ),
+            201,
+            what="collection session",
+        )
+        collections_made = []
+        # One accepted and one rejected: a rejection exercises a different
+        # terminal state, and a restore that loses the distinction between
+        # "accepted" and "rejected" milk is a restore that changes what a
+        # farmer is owed.
+        for index, (fat, decision) in enumerate(((4.2, "accept"), (2.1, "reject")), start=1):
+            tx = await _expect(
+                await c.post(
+                    "/v1/milk-transactions",
+                    json={"session_id": session_row["id"], "center_id": center["id"]},
+                    headers=h,
+                ),
+                201,
+                what=f"transaction {index}",
+            )
+            await _expect(
+                await c.post(
+                    f"/v1/milk-transactions/{tx['id']}/identify",
+                    json={"method": "manual", "supplier_id": supplier["id"]},
+                    headers=h,
+                ),
+                200,
+                what=f"identify {index}",
+            )
+            await _expect(
+                await c.post(
+                    f"/v1/milk-transactions/{tx['id']}/milk",
+                    json={
+                        "milk_type": "cow",
+                        "container_type": "can",
+                        "container_identifier": f"CAN-{index:03d}",
+                        "temperature_c": 4.0,
+                    },
+                    headers=h,
+                ),
+                200,
+                what=f"milk info {index}",
+            )
+            await _expect(
+                await c.post(
+                    f"/v1/milk-transactions/{tx['id']}/weight",
+                    json={"source": "manual", "unit": "kg", "gross": 45.5, "tare": 5.5},
+                    headers=h,
+                ),
+                200,
+                what=f"weight {index}",
+            )
+            await _expect(
+                await c.post(
+                    f"/v1/milk-transactions/{tx['id']}/quality",
+                    json={"source": "manual", "fat": fat, "snf": 8.5, "clr": 28.0},
+                    headers=h,
+                ),
+                200,
+                what=f"quality {index}",
+            )
+            body = {"reason": "fat below the accepted floor"} if decision == "reject" else None
+            await _expect(
+                await c.post(
+                    f"/v1/milk-transactions/{tx['id']}/{decision}",
+                    json=body,
+                    headers=h,
+                ),
+                200,
+                what=f"{decision} {index}",
+            )
+            await _expect(
+                await c.post(f"/v1/milk-transactions/{tx['id']}/complete", headers=h),
+                200,
+                what=f"complete {index}",
+            )
+            collections_made.append(tx["id"])
+
+        await _expect(
+            await c.post(
+                f"/v1/collection-sessions/{session_row['id']}/close",
+                headers=h,
+            ),
+            200,
+            what="close session",
+        )
+
         # --- settlement, payment, receipt ---------------------------------
         today = date.today()
         settlement = await _expect(
@@ -275,6 +474,8 @@ async def seed() -> dict:
 
         return {
             "organization": org["id"],
+            "collection_session": session_row["id"],
+            "collections": len(collections_made),
             "settlement": settlement["settlement_number"],
             "settlement_net": str(settlement["net_amount"]),
             "payment": payment["payment_number"],

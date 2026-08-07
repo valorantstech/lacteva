@@ -9,6 +9,8 @@
     verify PATH                re-checksum a backup on disk
     integrity [--deep]         check the LIVE database against business rules
     restore PATH [--force]     DESTRUCTIVE: load a backup into the database
+                               (checksums are verified first; --skip-verification
+                               overrides, which you should almost never do)
 
 **Restore lives here and nowhere else.** It is not an HTTP endpoint and never
 will be: overwriting the database is the most destructive operation this
@@ -81,7 +83,12 @@ async def _run(args: argparse.Namespace) -> int:
             f"         This REPLACES existing data.{' (--force given)' if args.force else ''}\n"
         )
         try:
-            manifest = await service.engine.restore(Path(args.path), allow_non_empty=args.force)
+            manifest = await service.engine.restore(
+                Path(args.path),
+                allow_non_empty=args.force,
+                verify_first=not args.skip_verification,
+                allow_schema_mismatch=args.allow_schema_mismatch,
+            )
         except BackupError as exc:
             sys.stderr.write(f"restore refused: {exc}\n")
             return 1
@@ -133,6 +140,24 @@ def main(argv: list[str] | None = None) -> int:
 
     restore = sub.add_parser("restore", help="DESTRUCTIVE: load a backup into the database")
     restore.add_argument("path")
+    restore.add_argument(
+        "--allow-schema-mismatch",
+        action="store_true",
+        help=(
+            "restore even though the target's migration revision differs from "
+            "the backup's. Data can be lost or silently nulled; migrate the "
+            "target to the backup's revision instead"
+        ),
+    )
+    restore.add_argument(
+        "--skip-verification",
+        action="store_true",
+        help=(
+            "DANGEROUS: load the backup without checking it against its own "
+            "checksums. Only for a partial recovery from a backup already known "
+            "to be damaged, where some data is better than none"
+        ),
+    )
     restore.add_argument(
         "--force", action="store_true", help="allow restoring over a non-empty database"
     )

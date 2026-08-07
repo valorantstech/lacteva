@@ -1,0 +1,92 @@
+# Disaster recovery, executed (DR-001).
+#
+# The PostgreSQL workflow proves that a backup can be taken and restored into
+# a second DATABASE. This one proves recovery: a second, separate PostgreSQL
+# INSTANCE, seeded with real business activity, restored into, and compared
+# with its source fact for fact.
+#
+# It runs on a schedule as well as on change, because a recovery guarantee
+# decays without anybody touching this repository — a dependency bump, a
+# changed column type, a new model with a type the backup engine cannot
+# serialize. DR-001 found exactly that: a `time` column that aborted every
+# backup, shipped and unnoticed.
+name: Disaster Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # The recovery surface. Deliberately broad: a new model changes what
+      # must be backed up, and that is the defect class this catches.
+      - "services/platform-core/src/platform_core/core/backup/**"
+      - "services/platform-core/src/platform_core/modules/**/models.py"
+      - "services/platform-core/tests/test_disaster_recovery_postgres.py"
+      - "services/platform-core/migrations/**"
+      - "infra/ci/**"
+      - ".github/workflows/disaster-recovery.yml"
+  pull_request:
+    paths:
+      - "services/platform-core/src/platform_core/core/backup/**"
+      - "services/platform-core/src/platform_core/modules/**/models.py"
+      - "services/platform-core/tests/test_disaster_recovery_postgres.py"
+      - "services/platform-core/migrations/**"
+      - "infra/ci/**"
+      - ".github/workflows/disaster-recovery.yml"
+  schedule:
+    # 04:23 UTC, after the PostgreSQL proof at 03:17 — a recovery failure is
+    # easier to read once the engine itself is known good.
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+    inputs:
+      keep_instances:
+        description: "Leave both PostgreSQL instances running for inspection"
+        type: boolean
+        default: false
+
+# A recovery proof is slow and there is no value in racing two of them.
+concurrency:
+  group: disaster-recovery-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recovery:
+    name: Recover into a separate instance
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      KEEP_INSTANCES: ${{ inputs.keep_instances && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install
+        working-directory: services/platform-core
+        # `pgserver` comes from the dev group: the proof starts its own
+        # PostgreSQL instances from a wheel rather than from a service
+        # container, because it needs TWO and they must be independent.
+        run: uv sync --all-groups
+
+      - name: Execute the recovery pipeline
+        run: |
+          PYTHON="$(cd services/platform-core && uv run python -c 'import sys; print(sys.executable)')"
+          PYTHON="${PYTHON}" ./infra/ci/dr-proof.sh
+
+  # One named check for branch protection, so adding a step later cannot
+  # silently stop gating merges.
+  verified:
+    name: Disaster recovery verified
+    runs-on: ubuntu-latest
+    needs: [recovery]
+    if: always()
+    steps:
+      - name: Require the recovery pipeline to have passed
+        run: |
+          if [ "${{ needs.recovery.result }}" != "success" ]; then
+            echo "The disaster recovery pipeline did not pass."
+            echo "A recovery guarantee that has not been executed is an intention."
+            exit 1
+          fi
+          echo "Recovery proven: restored into a separate instance, fact for fact."

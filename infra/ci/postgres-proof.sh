@@ -191,11 +191,15 @@ JUNIT="${WORKDIR}/pg-tests.xml"
 #   RLS            — policies, coverage, and the pre-tenant flows (SEC-001/002)
 #   aggregation    — float summation is order-dependent and a scaled numeric
 #                    column rounds on store; SQLite exhibits neither (DB-002)
+#   recovery       — backup/restore correctness: a `time` column that broke
+#                    every backup, a schema revision read from
+#                    `alembic_version`, and isolation on restored rows (DR-001)
 # Add new PostgreSQL-only modules HERE, not to a second job — this is the list
 # the skip assertion below protects.
 LACTEVA_TEST_POSTGRES_URL="$(app_url_for "${SOURCE_DB}")" \
   LACTEVA_TEST_POSTGRES_ADMIN_URL="$(url_for "${SOURCE_DB}")" \
   ${RUN} pytest tests/test_rls_postgres.py tests/test_exact_aggregation_postgres.py \
+  tests/test_disaster_recovery_postgres.py \
   -v --no-header -rs --junitxml="${JUNIT}" 2>&1 | tee "${RLS_LOG}" \
   || fail "PostgreSQL-only tests failed"
 
