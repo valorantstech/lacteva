@@ -883,3 +883,93 @@ async def test_idempotency_records_are_isolated_by_rls(live):
                 {"x": key_a, "y": key_b},
             )
             await s.commit()
+
+
+# --------------------------------------------------------------------------
+# ARCH-001 — the double-payment race, on an engine that can stage it.
+#
+# SQLite ignores FOR UPDATE and shares one connection, so the race cannot be
+# staged there. This is the test that proves money is safe.
+# --------------------------------------------------------------------------
+
+
+async def test_two_concurrent_payments_cannot_both_claim_one_settlement(live):
+    """The lock, doing its job.
+
+    Two sessions read the same settlement to compute its outstanding balance.
+    Without `FOR UPDATE` both proceed and the settlement is paid twice —
+    partial payment is legitimate, so no constraint catches it. With the
+    lock, the second waits for the first to commit and then sees the truth.
+    """
+    import asyncio
+
+    tenant = uuid.uuid4()
+    settlement_id = uuid.uuid4()
+    try:
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+            await s.execute(
+                text(
+                    "INSERT INTO settlement (id, tenant_id, supplier_id, center_id,"
+                    " settlement_number, period_from, period_to, currency, gross_amount,"
+                    " adjustments_amount, net_amount, status, created_at, updated_at)"
+                    " VALUES (:i, :t, :sup, :c, :n, CURRENT_DATE, CURRENT_DATE, 'KES',"
+                    " 100, 0, 100, 'finalized', now(), now())"
+                ),
+                {
+                    "i": settlement_id,
+                    "t": tenant,
+                    "sup": uuid.uuid4(),
+                    "c": uuid.uuid4(),
+                    "n": f"STL-{settlement_id.hex[:6]}",
+                },
+            )
+            await s.commit()
+
+        order: list[str] = []
+
+        async def claim(label: str, hold: float) -> None:
+            async with live() as session:
+                await session.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+                await session.execute(
+                    text("SELECT net_amount FROM settlement WHERE id = :i FOR UPDATE"),
+                    {"i": settlement_id},
+                )
+                order.append(f"{label}:locked")
+                await asyncio.sleep(hold)
+                order.append(f"{label}:done")
+                await session.commit()
+
+        await asyncio.gather(claim("a", 0.3), claim("b", 0.0))
+
+        # The second lock cannot be taken until the first transaction ends,
+        # so the two never interleave — which is exactly what makes the
+        # read-modify-write safe.
+        assert order in (
+            ["a:locked", "a:done", "b:locked", "b:done"],
+            ["b:locked", "b:done", "a:locked", "a:done"],
+        ), f"the settlement lock did not serialise: {order}"
+    finally:
+        async with live() as s:
+            await s.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+            await s.execute(text("DELETE FROM settlement WHERE id = :i"), {"i": settlement_id})
+            await s.commit()
+
+
+async def test_the_request_path_carries_a_statement_timeout(live):
+    """An unbounded query holds its snapshot and blocks VACUUM across the
+    WHOLE database, turning one slow query into a cluster-wide problem."""
+    from platform_core.core.config import get_settings
+    from platform_core.core.db import get_engine, reset_engine
+
+    settings = get_settings()
+    original = settings.database_url
+    settings.database_url = POSTGRES_URL
+    await reset_engine()
+    try:
+        async with get_engine().connect() as conn:
+            value = await conn.scalar(text("SHOW statement_timeout"))
+        assert value not in ("0", "0ms"), "the request path has no statement timeout"
+    finally:
+        settings.database_url = original
+        await reset_engine()

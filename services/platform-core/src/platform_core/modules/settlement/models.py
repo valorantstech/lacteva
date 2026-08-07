@@ -40,6 +40,13 @@ class Settlement(Base, IdMixin):
         UniqueConstraint("tenant_id", "settlement_number", name="uq_settlement_number"),
         # Serves the supplier+period overlap rule (BR-0009) and period search.
         Index("ix_settlement_supplier_period", "tenant_id", "supplier_id", "period_from"),
+        # ARCH-001: the payables selector — the screen an operator opens to
+        # pay people — filters (tenant_id, status). The index above starts
+        # with tenant_id but then carries supplier_id, so PostgreSQL reads
+        # every settlement the tenant has ever had to find the handful that
+        # are finalized and unpaid. Five years of history is ~50,000 rows to
+        # locate ~200.
+        Index("ix_settlement_payable", "tenant_id", "status"),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)

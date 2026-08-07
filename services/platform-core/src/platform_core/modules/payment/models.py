@@ -22,6 +22,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -50,6 +51,11 @@ ATTEMPT_STATUSES = ("processing", "completed", "failed")
 class Payment(Base, IdMixin):
     __tablename__ = "payment"
     __table_args__ = (
+        # ARCH-001: the service refuses a non-positive payment, but the
+        # database did not. A constraint costs nothing to evaluate and closes
+        # every future path — a script, a migration, a bug — that the service
+        # layer does not sit in front of.
+        CheckConstraint("amount > 0", name="ck_payment_amount_positive"),
         UniqueConstraint("tenant_id", "payment_number", name="uq_payment_number"),
         # Idempotent execution: re-posting the same key returns the first payment
         # instead of moving the money twice.

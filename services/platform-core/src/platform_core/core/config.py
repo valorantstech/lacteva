@@ -89,6 +89,27 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://lacteva:lacteva@localhost:5432/lacteva"
     redis_url: str = "redis://localhost:6379/0"
 
+    # --- Connection pool (ARCH-001) ----------------------------------------
+    # PostgreSQL only; SQLite uses StaticPool. See core/db.py for what each
+    # of these prevents — none of them are tuning, they are all a specific
+    # production failure that has a name.
+    db_pool_size: int = 10
+    db_max_overflow: int = 5
+    db_pool_timeout_seconds: float = 10.0
+    #: Recycle before anything else reaps an idle connection.
+    db_pool_recycle_seconds: int = 1800
+    db_connect_timeout_seconds: float = 10.0
+    #: Request-path ceiling. Background work that legitimately runs longer
+    #: raises it per session; nothing runs unbounded.
+    db_statement_timeout_ms: int = 30_000
+    #: A contended DDL statement fails fast instead of queueing every query
+    #: in the platform behind itself.
+    db_lock_timeout_ms: int = 5_000
+    db_idle_in_transaction_timeout_ms: int = 60_000
+    #: Cross-tenant work — projection rebuilds, backups, deep integrity —
+    #: legitimately runs longer than a request. Raised, never removed.
+    db_background_statement_timeout_ms: int = 900_000  # 15 minutes
+
     # Messaging / storage / search
     event_bus: Literal["rabbitmq", "memory", "null"] = "memory"
     outbox_mode: Literal["inline", "background"] = "background"

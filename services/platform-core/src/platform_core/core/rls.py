@@ -301,6 +301,25 @@ def drop_statements(table: str) -> list[str]:
 # ordinary factory is visibly request-scoped.
 
 
+async def _relax_statement_timeout(session: AsyncSession) -> None:
+    """Give cross-tenant work the time its job actually takes (ARCH-001).
+
+    The engine sets a 30-second `statement_timeout` for the request path,
+    which is right: no HTTP request should hold a snapshot longer than that.
+    But the same engine serves a projection rebuild replaying a million
+    events, a backup reading every row, and an integrity check rebuilding
+    every projection — all of which legitimately exceed it, and all of which
+    would start failing the moment the pool configuration landed.
+
+    Raised, never removed: "unbounded" is the condition that made a timeout
+    necessary in the first place.
+    """
+    if not is_postgres():
+        return
+    timeout_ms = get_settings().db_background_statement_timeout_ms
+    await session.execute(text(f"SET LOCAL statement_timeout = {int(timeout_ms)}"))
+
+
 @asynccontextmanager
 async def platform_session(reason: str) -> AsyncIterator[AsyncSession]:
     """One session, bound to the platform context, for cross-tenant work."""
@@ -308,6 +327,7 @@ async def platform_session(reason: str) -> AsyncIterator[AsyncSession]:
 
     async with get_session_factory()() as session:
         await bind_platform_context(session, reason=reason)
+        await _relax_statement_timeout(session)
         yield session
 
 
@@ -335,6 +355,7 @@ class PlatformSessionFactory:
     async def _bound(self) -> AsyncIterator[AsyncSession]:
         async with self._factory() as session:
             await bind_platform_context(session, reason=self._reason)
+            await _relax_statement_timeout(session)
             yield session
 
     def __repr__(self) -> str:  # pragma: no cover - diagnostics

@@ -578,8 +578,28 @@ class PaymentService:
         currency: str,
     ) -> Settlement:
         """BR-0018: only a FINALIZED settlement is payable, and it must belong
-        to this payment's payee and currency."""
-        settlement = await self._session.get(Settlement, settlement_id)
+        to this payment's payee and currency.
+
+        ARCH-001: the row is locked FOR UPDATE, and that is not incidental.
+
+        Allocating a payment is a read-modify-write — read the live
+        allocations, compute what is outstanding, refuse anything larger,
+        then insert the line. Without a lock two concurrent payments against
+        the same settlement both read the same sum, both see the full
+        balance, both pass the check, and both insert. **The settlement is
+        paid twice**, and nothing detects it: partial payment is legitimate,
+        so there is no unique constraint that could collide.
+
+        READ COMMITTED does not help here — a `SELECT sum(...)` takes no
+        locks, so the two transactions never conflict. Locking the settlement
+        serialises payments against THAT settlement only, which is the exact
+        granularity the invariant needs: two payments to different
+        settlements still run concurrently.
+
+        The lock is taken before the balance is read, so it covers the whole
+        check-then-act, and it is released by the request's commit.
+        """
+        settlement = await self._session.get(Settlement, settlement_id, with_for_update=True)
         if settlement is None or settlement.tenant_id != tenant_id:
             raise NotFoundError("settlement not found")
         if settlement.status != "finalized":
