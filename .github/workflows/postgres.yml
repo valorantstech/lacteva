@@ -72,6 +72,12 @@ jobs:
     services:
       postgres:
         image: postgres:${{ matrix.postgres }}
+        # This is the schema OWNER, and the official image makes it a
+        # superuser. That is fine for DDL, backup and restore — and is
+        # exactly why the proof script creates a separate, unprivileged
+        # `lacteva_app` role and runs every isolation test as that instead.
+        # A superuser IGNORES row-level security, so running the RLS suite as
+        # this role would pass while proving nothing (VER-001).
         env:
           POSTGRES_USER: lacteva
           POSTGRES_PASSWORD: lacteva

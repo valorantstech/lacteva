@@ -133,6 +133,65 @@ def is_postgres() -> bool:
     return get_settings().database_url.startswith("postgresql")
 
 
+class RlsNotEnforceable(RuntimeError):
+    """The connected role bypasses row-level security (VER-001)."""
+
+
+async def assert_rls_is_enforceable(session: AsyncSession) -> None:
+    """Refuse to serve if the database ignores our policies.
+
+    **The most consequential thing execution found.** A PostgreSQL SUPERUSER —
+    and any role with `BYPASSRLS` — ignores row-level security completely.
+    Not "unless FORCE": `FORCE ROW LEVEL SECURITY` closes the loophole for the
+    table OWNER, and does nothing about superusers.
+
+    The production stack connected as `${POSTGRES_USER}`, which the official
+    `postgres` image creates as a superuser. So every policy SEC-001, SEC-002
+    and MT-001 built was **inert in production**: enabled, forced, visible in
+    `pg_policies`, and enforcing nothing. The only isolation left was the
+    application-level filter — which is precisely the dependency RLS was
+    introduced to remove.
+
+    Nothing would have failed. `verify-deployment.sh` checks that policies
+    EXIST, which they did. The platform would have run for months looking
+    correct.
+
+    So this is a startup assertion rather than a documentation note: in
+    `prod` and `staging` the process refuses to start, in the same spirit as
+    refusing a development credential. A tenant boundary that is off is worse
+    than one that was never claimed.
+    """
+    if not is_postgres() or not get_settings().rls_enabled:
+        return
+    row = (
+        await session.execute(
+            text(
+                "SELECT current_user, rolsuper, rolbypassrls "
+                "FROM pg_roles WHERE rolname = current_user"
+            )
+        )
+    ).first()
+    if row is None:  # pragma: no cover - the role always exists
+        return
+    role, is_super, bypasses = row
+    if not (is_super or bypasses):
+        log.info("rls_enforceable", role=role)
+        return
+
+    reason = "SUPERUSER" if is_super else "BYPASSRLS"
+    message = (
+        f"the database role {role!r} is {reason}, so PostgreSQL ignores every "
+        "row-level security policy on this platform. Tenant isolation would be "
+        "application-level only. Connect as a role created with "
+        "NOSUPERUSER NOBYPASSRLS — see DEPLOYMENT.md §Database roles."
+    )
+    if get_settings().env in ("prod", "staging"):
+        log.error("rls_not_enforceable", role=role, reason=reason)
+        raise RlsNotEnforceable(message)
+    # Development and the verification pipeline still need to know.
+    log.warning("rls_not_enforceable", role=role, reason=reason, detail=message)
+
+
 async def bind_tenant(session: AsyncSession, tenant_id: uuid.UUID | None) -> None:
     """Bind the request's tenant to this transaction.
 
@@ -142,11 +201,28 @@ async def bind_tenant(session: AsyncSession, tenant_id: uuid.UUID | None) -> Non
     """
     if not is_postgres() or not get_settings().rls_enabled:
         return
+    # VER-001: `set_config(...)`, NOT `SET LOCAL ... = :param`.
+    #
+    # `SET` is utility syntax, not a query: PostgreSQL will not accept a bind
+    # parameter in it, and asyncpg sends everything as a prepared statement.
+    # `SET LOCAL lacteva.tenant_id = $1` is therefore a SYNTAX ERROR, raised
+    # on every single request — the binding runs in `get_session` before any
+    # handler.
+    #
+    # This code was written in SEC-001 and never executed until VER-001 stood
+    # a real PostgreSQL up: SQLite short-circuits `is_postgres()` on the line
+    # above, so the whole function was dead in the test suite. The platform
+    # was completely non-functional on its production engine.
+    #
+    # `set_config(name, value, is_local)` is an ordinary function, so it takes
+    # parameters, and `is_local = true` gives exactly `SET LOCAL` semantics —
+    # transaction-scoped, so a pooled connection cannot carry one request's
+    # tenant into the next.
     await session.execute(
-        text(f"SET LOCAL {TENANT_SETTING} = :tenant"),
-        {"tenant": str(tenant_id) if tenant_id else ""},
+        text("SELECT set_config(:name, :value, true)"),
+        {"name": TENANT_SETTING, "value": str(tenant_id) if tenant_id else ""},
     )
-    await session.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'off'"))
+    await session.execute(text("SELECT set_config(:name, 'off', true)"), {"name": BYPASS_SETTING})
 
 
 async def rebind_tenant(session: AsyncSession, tenant_id: uuid.UUID | None) -> None:
@@ -178,7 +254,7 @@ async def bind_platform_context(session: AsyncSession, *, reason: str) -> None:
     """
     if not is_postgres() or not get_settings().rls_enabled:
         return
-    await session.execute(text(f"SET LOCAL {BYPASS_SETTING} = 'on'"))
+    await session.execute(text("SELECT set_config(:name, 'on', true)"), {"name": BYPASS_SETTING})
     log.debug("rls_bypass_granted", reason=reason)
 
 
@@ -316,8 +392,13 @@ async def _relax_statement_timeout(session: AsyncSession) -> None:
     """
     if not is_postgres():
         return
-    timeout_ms = get_settings().db_background_statement_timeout_ms
-    await session.execute(text(f"SET LOCAL statement_timeout = {int(timeout_ms)}"))
+    timeout_ms = int(get_settings().db_background_statement_timeout_ms)
+    # Same rule as above: `SET` takes no parameters, so this goes through
+    # `set_config`. The value is coerced to int rather than interpolated raw.
+    await session.execute(
+        text("SELECT set_config('statement_timeout', :value, true)"),
+        {"value": str(timeout_ms)},
+    )
 
 
 @asynccontextmanager

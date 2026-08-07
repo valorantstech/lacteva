@@ -130,7 +130,12 @@ def test_the_background_timeout_is_raised_not_removed():
     from platform_core.core import rls
 
     source = inspect.getsource(rls._relax_statement_timeout)
-    assert "SET LOCAL statement_timeout" in source
+    # VER-001: `set_config(..., true)`, not `SET LOCAL`. The `true` is the
+    # is_local flag, so this keeps the transaction scope that made the raised
+    # timeout safe to grant — while being a function call, which can take a
+    # bind parameter. `SET` cannot, and that was a syntax error on every call.
+    assert "set_config('statement_timeout'" in source
+    assert "true" in source, "the raised timeout must stay transaction-local"
     assert "= 0" not in source.replace("!= 0", "")
 
 
@@ -239,3 +244,71 @@ def test_no_client_requests_a_page_larger_than_the_api_allows():
             if int(match.group(1)) > 200:
                 offenders.append(f"{source.name}: limit={match.group(1)}")
     assert offenders == [], f"clients requesting more than the API permits: {offenders}"
+
+
+# --------------------------------------------------------------------------
+# VER-001 — the startup refusal.
+#
+# Executed here rather than in the PostgreSQL suite because it must hold for
+# ANY database that answers this query, and because staging a superuser
+# connection just to assert we refuse it would be a strange thing to require
+# of the pipeline. The query itself is proven against a real server in
+# tests/test_rls_postgres.py::test_a_role_that_bypasses_rls_is_refused.
+# --------------------------------------------------------------------------
+
+
+class _RoleStub:
+    """A session that answers the role query and nothing else."""
+
+    def __init__(self, role, is_super, bypasses):
+        self._row = (role, is_super, bypasses)
+
+    async def execute(self, *_args, **_kwargs):
+        row = self._row
+
+        class _Result:
+            def first(self):
+                return row
+
+        return _Result()
+
+
+@pytest.mark.parametrize(
+    ("is_super", "bypasses", "reason"),
+    [(True, False, "SUPERUSER"), (False, True, "BYPASSRLS")],
+)
+async def test_production_refuses_a_role_that_ignores_rls(monkeypatch, is_super, bypasses, reason):
+    """The finding that justified a startup assertion rather than a note.
+
+    A superuser ignores every row-level security policy. `FORCE ROW LEVEL
+    SECURITY` does not help: it closes the loophole for the table OWNER and
+    says nothing about superusers. The production stack connected as
+    `${POSTGRES_USER}`, which the official postgres image creates as a
+    superuser — so every policy SEC-001, SEC-002 and MT-001 built was inert.
+
+    Nothing would have alerted. `verify-deployment.sh` checks that policies
+    EXIST, and they did. So the platform refuses to start instead.
+    """
+    from platform_core.core.config import get_settings
+    from platform_core.core.rls import RlsNotEnforceable, assert_rls_is_enforceable
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "database_url", "postgresql+asyncpg://x/y")
+    monkeypatch.setattr(settings, "rls_enabled", True)
+    monkeypatch.setattr(settings, "env", "prod")
+
+    with pytest.raises(RlsNotEnforceable) as caught:
+        await assert_rls_is_enforceable(_RoleStub("postgres", is_super, bypasses))
+    assert reason in str(caught.value)
+    assert "NOSUPERUSER" in str(caught.value), "the error must say how to fix it"
+
+
+async def test_a_normal_role_starts_cleanly(monkeypatch):
+    from platform_core.core.config import get_settings
+    from platform_core.core.rls import assert_rls_is_enforceable
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "database_url", "postgresql+asyncpg://x/y")
+    monkeypatch.setattr(settings, "rls_enabled", True)
+    monkeypatch.setattr(settings, "env", "prod")
+    await assert_rls_is_enforceable(_RoleStub("lacteva_app", False, False))

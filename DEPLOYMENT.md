@@ -61,7 +61,8 @@ Then fill it in. Every variable is documented in the template; the ones that wil
 - **`LACTEVA_IMAGE_TAG`** — a git SHA, never `:latest`. Compose refuses to start without it. This is also the only thing a rollback changes.
 - **`LACTEVA_ENV=prod`** — turns on the production posture *and* the refusal to start on a development credential. The platform will not boot with the sample JWT secret.
 - **`LACTEVA_JWT_KEYS`** — the RS256 key registry. Prefer a Docker Secret (§10).
-- **`POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`** — generate them: `openssl rand -base64 36`.
+- **`POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`, `LACTEVA_APP_PASSWORD`** — generate them: `openssl rand -base64 36`.
+- **`LACTEVA_APP_USER`** — the role the API connects as. It **must differ from `POSTGRES_USER`**; see §2b, which is the single most consequential setting on this page.
 - **`LACTEVA_CORS_ORIGINS`** — a JSON list of exact origins. Never a wildcard.
 
 Put `fullchain.pem` and `privkey.pem` in `TLS_CERT_DIR`. To terminate TLS at a load balancer instead, point traffic at port 80 and remove the redirect block from `infra/nginx/conf.d/lacteva.conf`.
@@ -73,6 +74,67 @@ docker compose -f docker-compose.production.yml --env-file .env.production confi
 ```
 
 That resolves every variable and fails loudly on a missing one — cheaper than discovering it half-started.
+
+---
+
+## 2b. Database roles — why the API is not the superuser
+
+Set two roles, and do not collapse them into one:
+
+| Variable | Role | Used by |
+| --- | --- | --- |
+| `POSTGRES_USER` | owns the schema, **superuser** | Alembic, `pg_dump`, `pg_restore` |
+| `LACTEVA_APP_USER` | `NOSUPERUSER NOBYPASSRLS`, no DDL | the API and the background workers |
+
+**A PostgreSQL superuser ignores row-level security completely.** This is not
+softened by `FORCE ROW LEVEL SECURITY` — `FORCE` closes the loophole for the
+table *owner* and says nothing at all about superusers.
+
+Until VER-001 the API connected as `POSTGRES_USER`, which the official
+`postgres` image creates as a superuser. Every policy built by SEC-001,
+SEC-002 and MT-001 was therefore **inert in production**: enabled, forced,
+listed in `pg_policies`, and enforcing nothing. Tenant isolation was
+application-level only — exactly the dependency row-level security exists to
+remove. Nothing would have alerted, because the deployment check verified that
+policies *existed*, and they did.
+
+Two things now make that failure loud rather than silent:
+
+- `infra/postgres/init/10-application-role.sh` creates the application role on
+  first start, with `NOSUPERUSER NOBYPASSRLS` set explicitly.
+- The platform **refuses to start** in `prod` and `staging` if it finds itself
+  connected as a role that bypasses RLS (`assert_rls_is_enforceable`), and
+  `verify-deployment.sh` asserts the same thing from outside.
+
+### An existing database
+
+The init script runs only on an **empty** data directory, so an upgrade will
+not pick it up. Apply it by hand, once, as the owner:
+
+```sql
+CREATE ROLE lacteva_app LOGIN PASSWORD '<generate one>';
+ALTER ROLE lacteva_app NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE lacteva TO lacteva_app;
+GRANT USAGE ON SCHEMA public TO lacteva_app;
+REVOKE CREATE ON SCHEMA public FROM lacteva_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO lacteva_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO lacteva_app;
+-- so a table added by a future migration needs no further grant:
+ALTER DEFAULT PRIVILEGES FOR ROLE lacteva_owner IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lacteva_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE lacteva_owner IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO lacteva_app;
+```
+
+Then set `LACTEVA_APP_USER` / `LACTEVA_APP_PASSWORD` and redeploy. Verify:
+
+```sql
+SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'lacteva_app';
+-- both flags must be false
+```
+
+If the platform starts, this held. That is the point of asserting it at
+startup rather than documenting it here.
 
 ---
 

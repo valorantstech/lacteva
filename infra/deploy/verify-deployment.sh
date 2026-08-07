@@ -94,8 +94,29 @@ UNFORCED="$(${COMPOSE} exec -T postgres psql -U "${POSTGRES_USER:-lacteva}" -d "
   "SELECT count(*) FROM pg_class WHERE relrowsecurity AND NOT relforcerowsecurity" 2>/dev/null | tr -d '[:space:]')"
 [ "${UNCOVERED}" = "0" ] && pass "every tenant-owned table has a policy" \
   || fail "${UNCOVERED} tenant-owned table(s) have NO RLS policy"
-[ "${UNFORCED}" = "0" ] && pass "policies are FORCED (the app connects as the owner)" \
+[ "${UNFORCED}" = "0" ] && pass "policies are FORCED (the owner does not bypass them)" \
   || fail "${UNFORCED} table(s) have RLS enabled but NOT forced — the owner bypasses them"
+
+# VER-001 — the check whose absence made everything above cosmetic.
+#
+# Present + forced + covering is NOT enforcement. A SUPERUSER, and any role
+# with BYPASSRLS, ignores row-level security entirely; FORCE covers the table
+# OWNER and says nothing about superusers. The API used to connect as
+# ${POSTGRES_USER}, which the official postgres image creates as a superuser,
+# so every assertion above passed while not one policy was doing anything.
+APP_ROLE="${LACTEVA_APP_USER:-lacteva_app}"
+ROLE_STATE="$(${COMPOSE} exec -T postgres psql -U "${POSTGRES_USER:-lacteva_owner}" -d "${POSTGRES_DB:-lacteva}" -tAc \
+  "SELECT coalesce((SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname='${APP_ROLE}')::text, 'missing')" \
+  2>/dev/null | tr -d '[:space:]')"
+case "${ROLE_STATE}" in
+  f) pass "the API role ${APP_ROLE} is NOSUPERUSER/NOBYPASSRLS — policies are enforced" ;;
+  t) fail "the API role ${APP_ROLE} is SUPERUSER or has BYPASSRLS — RLS is INERT and every tenant can be read by any request" ;;
+  *) fail "the API role ${APP_ROLE} does not exist — infra/postgres/init/10-application-role.sh did not run (see DEPLOYMENT.md §Database roles)" ;;
+esac
+
+[ "${LACTEVA_APP_USER:-lacteva_app}" != "${POSTGRES_USER:-lacteva_owner}" ] \
+  && pass "the API and the schema owner are different roles" \
+  || fail "LACTEVA_APP_USER equals POSTGRES_USER — the API is running as the schema owner/superuser"
 
 step "Redis"
 if ${COMPOSE} exec -T redis sh -c 'redis-cli -a "$REDIS_PASSWORD" ping' 2>/dev/null | grep -q PONG; then

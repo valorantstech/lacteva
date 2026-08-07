@@ -3,10 +3,10 @@ id: RLS-GUIDE
 title: Row Level Security Guide
 type: reference
 status: Approved
-version: "1.3"
+version: "1.4"
 owner: Architecture Board
 created: 2026-08-05
-last-updated: 2026-08-06
+last-updated: 2026-08-07
 related: [SECURITY, SECURITY-CHECKLIST]
 baseline: ARCH-BASELINE-V1
 ---
@@ -27,11 +27,15 @@ Application filters stay exactly where they are. They are still correct, still n
 
 ```
 request → tenant established (token claim, or X-Tenant-ID hint)
-        → SET LOCAL lacteva.tenant_id = '<uuid>'      ← transaction-scoped
+        → SELECT set_config('lacteva.tenant_id', '<uuid>', true)   ← transaction-scoped
         → every query is filtered by the policy, whatever the SQL says
 ```
 
-`SET LOCAL` matters more than it looks: it is scoped to the transaction, so a **pooled connection cannot carry one request's tenant into the next request's query**. A `SET` without `LOCAL` would be a cross-tenant leak with extra steps.
+The transaction scope matters more than it looks: the setting dies with the transaction, so a **pooled connection cannot carry one request's tenant into the next request's query**. A session-scoped setting would be a cross-tenant leak with extra steps.
+
+**Why `set_config(...)` and not `SET LOCAL ... = :tenant`.** `SET` is *utility syntax*, not a query: PostgreSQL will not accept a bind parameter in it, and asyncpg sends every statement as a prepared statement. `SET LOCAL lacteva.tenant_id = $1` is therefore a **syntax error** — and since the binding runs in `get_session`, before any handler, it was raised on every single request. The platform could not serve one request on its production engine.
+
+That code was written in SEC-001 and first executed in VER-001, because SQLite makes `is_postgres()` false and the function returned before reaching the statement. `set_config(name, value, is_local)` is an ordinary function, so it takes parameters, and `is_local => true` gives exactly `SET LOCAL` semantics. Interpolating the tenant into the SQL string would also have "worked", and would have put a request-controlled value into a statement — the wrong fix.
 
 Authentication re-binds after the token is verified, because the header-derived tenant is only a starting point and the token's claim is authoritative.
 
@@ -198,6 +202,22 @@ This is deliberately an **explicit, auditable, transaction-scoped** escape hatch
 
 **SQLite has no row-level security.** `bind_tenant` is a no-op there, and a test asserts that explicitly so the suite cannot quietly believe it is protected. This is a real divergence between test and production, and it is the reason the PostgreSQL job exists and why a *skip* in that job fails the build.
 
+### The two ways this suite proved nothing (VER-001)
+
+Both were found by running it, and neither was findable by reading it.
+
+**The tests re-implemented the binding they were testing.** Every case issued its own `SET LOCAL ...` rather than calling `bind_tenant`, so the production binding could raise a syntax error on every request while its own protection suite stayed green. The tests now call `bind_tenant` and `bind_platform_context` directly — a test that builds its own copy of the thing under test is testing the copy.
+
+**The suite ran as a superuser.** A PostgreSQL superuser, and any role with `BYPASSRLS`, **ignores row-level security entirely**. `FORCE ROW LEVEL SECURITY` does not help: `FORCE` closes the loophole for the table *owner*, and says nothing about superusers. The proof pipeline connected as the role the official `postgres` image creates, which is a superuser — so every isolation assertion passed while the database was enforcing nothing at all.
+
+Three things close it:
+
+- The pipeline creates an unprivileged `lacteva_app` role and runs every isolation test as it, asserting first that it holds neither `rolsuper` nor `rolbypassrls`.
+- Production connects as that role too (`DEPLOYMENT.md` §2b), and the platform **refuses to start** in `prod`/`staging` if it does not (`assert_rls_is_enforceable`).
+- A test asserts the refusal, and another asserts the pipeline's own role is unprivileged — so this cannot regress into a green run again.
+
+The general lesson is worth more than the two fixes: **a proof must establish that the guard is capable of refusing, not merely that it is present.** Checking `pg_policies` for rows was never evidence of enforcement.
+
 The coverage test is the drift guard: it compares the live metadata against the migration's snapshot, so a new tenant-owned table cannot ship without a policy. It has already earned its keep — it caught three projection tables that register at consumer discovery rather than at import.
 
 ## 6. Adding a tenant-owned table
@@ -225,6 +245,7 @@ Both flags must be true. `relrowsecurity` alone means the owner still bypasses.
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.4 | 2026-08-07 | Architecture Board | VER-001: `set_config` replaces `SET LOCAL ... = :param`, which was a syntax error on every request; the application role is now a non-superuser, without which every policy was inert; the suite calls the production binding instead of re-implementing it. |
 | 1.3 | 2026-08-06 | Architecture Board | MT-001: the bypass boundary documented and implemented — background components were never actually setting the bypass, so the asynchronous half of the platform saw only platform-global rows. |
 | 1.2 | 2026-08-06 | Architecture Board | SEC-002: A/B/C isolation taxonomy; 13 child tables made tenant-owned; `organization` isolated by identity; the pre-tenant flows documented. |
 | 1.1 | 2026-08-06 | Architecture Board | CI-001: platform-global (`tenant_id IS NULL`) clause added to the policy after first execution on a real engine. |

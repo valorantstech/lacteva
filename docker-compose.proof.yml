@@ -24,6 +24,10 @@ services:
     # baseline documented in DBD-0001.
     image: postgres:${POSTGRES_VERSION:-16}
     environment:
+      # The schema OWNER — a superuser, as the official image makes it. The
+      # proof creates an unprivileged `lacteva_app` role and runs the
+      # isolation tests as that, because a superuser ignores row-level
+      # security entirely and would make step 3 pass vacuously (VER-001).
       POSTGRES_USER: lacteva
       POSTGRES_PASSWORD: lacteva
       POSTGRES_DB: postgres

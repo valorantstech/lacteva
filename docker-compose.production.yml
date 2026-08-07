@@ -35,7 +35,12 @@ x-api-base: &api-base
   env_file: [.env.production]
   environment:
     LACTEVA_ENV: prod
-    LACTEVA_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    # VER-001: the APPLICATION role, which is deliberately not the owner and
+    # emphatically not a superuser — a superuser IGNORES every row-level
+    # security policy, so connecting as ${POSTGRES_USER} silently disabled
+    # tenant isolation at the database. The `migrate` service below overrides
+    # this back to the owner, because DDL needs it.
+    LACTEVA_DATABASE_URL: postgresql+asyncpg://${LACTEVA_APP_USER:?set LACTEVA_APP_USER — the API must not connect as the superuser}:${LACTEVA_APP_PASSWORD:?set LACTEVA_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
     LACTEVA_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
   logging: *logging
   restart: unless-stopped
@@ -48,11 +53,19 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      # Consumed by the init script below, which creates the unprivileged
+      # role the API connects as.
+      LACTEVA_APP_USER: ${LACTEVA_APP_USER:?set LACTEVA_APP_USER}
+      LACTEVA_APP_PASSWORD: ${LACTEVA_APP_PASSWORD:?set LACTEVA_APP_PASSWORD}
       # Data lives on the volume; initdb only runs on an empty one.
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infra/backup:/opt/backup:ro
+      # VER-001. Runs ONCE, on an empty data directory — an existing database
+      # needs the same statements applied by hand (DEPLOYMENT.md §Database
+      # roles). The API refuses to start if it is skipped.
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     # Deliberately NOT published. Reaching the database means being on this
     # network or opening an SSH tunnel, which is a decision someone makes
     # rather than a port someone forgets.
@@ -125,6 +138,13 @@ services:
   # --- schema -------------------------------------------------------------
   migrate:
     <<: *api-base
+    environment:
+      LACTEVA_ENV: prod
+      # The OWNER, not the application role. Alembic issues DDL, and the
+      # application role deliberately cannot — that separation is what stops
+      # a compromised request from dropping a policy.
+      LACTEVA_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      LACTEVA_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     # A one-shot job, not a service. `restart: no` is the important line: a
     # migration that fails must ABORT the deployment, and a restart policy
     # would turn a clear failure into a crash loop that looks like a slow

@@ -52,3 +52,23 @@ requires_postgres = pytest.mark.skipif(
         "configuration failure and is prevented by LACTEVA_REQUIRE_POSTGRES=1."
     ),
 )
+
+
+# --------------------------------------------------------------------------
+# VER-001 — the schema owner, kept separate from the application role.
+#
+# The application connects as an unprivileged role: it must not be a
+# superuser (a superuser IGNORES every row-level security policy), and it has
+# no DDL rights, because nothing it does at runtime creates a table.
+#
+# Some fixtures below DO need DDL — the RLS probe table is built and dropped
+# per test. Those use this URL instead. Keeping the two apart is not
+# bookkeeping: it is what makes the isolation assertions meaningful, since a
+# role that can `ALTER TABLE ... DISABLE ROW LEVEL SECURITY` is not a role
+# whose confinement proves anything.
+#
+# Falls back to the application URL, so pointing a laptop at a single
+# development database still works.
+# --------------------------------------------------------------------------
+
+ADMIN_URL = os.environ.get("LACTEVA_TEST_POSTGRES_ADMIN_URL") or POSTGRES_URL

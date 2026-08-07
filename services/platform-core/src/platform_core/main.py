@@ -127,6 +127,12 @@ async def lifespan(app: FastAPI):
         async with get_engine().begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
     async with get_session_factory()() as session:
+        # VER-001: before anything else touches data, prove the database will
+        # actually enforce the isolation the platform claims. A superuser
+        # ignores every policy, silently.
+        from platform_core.core.rls import assert_rls_is_enforceable
+
+        await assert_rls_is_enforceable(session)
         await AuthzService(session).ensure_system_roles()
         await session.commit()
     relay_task = None

@@ -3,10 +3,10 @@ id: POSTGRES-PROOF
 title: PostgreSQL Proof
 type: reference
 status: Approved
-version: "1.1"
+version: "1.2"
 owner: Architecture Board
 created: 2026-08-06
-last-updated: 2026-08-06
+last-updated: 2026-08-07
 related: [BACKUP, RESTORE, RLS-GUIDE, SECURITY, RUNBOOK_BACKUP]
 baseline: ARCH-BASELINE-V1
 ---
@@ -29,6 +29,21 @@ That gap is not academic. Running these steps against a real engine for the firs
 
 The first would have taken authentication down on the first production deploy with RLS enabled. All three are fixed, and each now has a test that fails without the fix.
 
+### VER-001 — and then the proof itself had never run
+
+CI-001 wrote the pipeline below. It was never **executed**: no PostgreSQL was reachable in the development environment, and the guidance was "install one or use Docker". So the proof was a well-written script in the same condition as the guarantees it checks — asserted, not demonstrated.
+
+Running it surfaced four more defects, every one of them invisible on SQLite:
+
+| Defect | Consequence | Why no test caught it |
+| --- | --- | --- |
+| `SET LOCAL lacteva.tenant_id = $1` | **The platform could not serve a single request on PostgreSQL.** `SET` is utility syntax and takes no bind parameter; asyncpg sends prepared statements, so this raised a syntax error in `get_session`, before any handler | `is_postgres()` is false on SQLite, so `bind_tenant` returned early and the statement never executed |
+| The application connected as a **superuser** | Every RLS policy on the platform was **inert** — enabled, forced, and enforcing nothing | Nothing asserted anything about the connected role |
+| The RLS suite **re-implemented** the binding it was testing | A syntax error in the production binding could not fail the tests that exist to protect it | The tests issued their own SQL and never called `bind_tenant` |
+| The proof's seeder used a plain session factory for consumers | Consumers saw zero events, produced no receipt, and reported success | Consumers only need `platform_factory` once RLS is actually enforced |
+
+The pattern is one thing, not four: **a guarantee that only executes on PostgreSQL, in a suite that only runs on SQLite, is not tested.** The fix is not more review — it is this pipeline, actually running. `./infra/ci/verify-postgres.sh` now stands a real PostgreSQL up from a PyPI wheel, so there is no environment in which it cannot be run.
+
 ## 2. What is proven
 
 One script, nine steps, any failure fails the build:
@@ -37,6 +52,7 @@ One script, nine steps, any failure fails the build:
 | --- | --- | --- |
 | 1 | `alembic upgrade head` on an **empty** database | Migrations work from nothing, not just incrementally |
 | 2 | Every tenant table has RLS **enabled AND forced** | `relrowsecurity` alone lets the owner bypass its own policy |
+| 2b | The application role is **`NOSUPERUSER NOBYPASSRLS`** | A superuser ignores every policy; without this, step 3 passes vacuously |
 | 3 | `test_rls_postgres.py` passes **and did not skip** | Isolation is enforced by the database |
 | 4 | A real dairy is seeded through the platform's own API | The rest is measured against real business data |
 | 5 | Logical backup + checksum verification | The backup is internally consistent |
@@ -46,6 +62,8 @@ One script, nine steps, any failure fails the build:
 | 9 | Source vs restored compared fact by fact | Nothing silently changed |
 
 Step 3's skip-check matters more than it looks: **a silently skipped security proof is worse than none, because it is green.**
+
+Step 2b matters for the same reason, one level deeper. Steps 2 and 3 were both passing while the role running them was a superuser — so the policies were verified to exist, and verified to be forced, and were being ignored. A proof needs to establish not only that the guard is present but that it is *capable of refusing*. The proof now creates an unprivileged `lacteva_app` role, asserts it holds neither `rolsuper` nor `rolbypassrls`, and runs every isolation test as it. The schema owner is used only for DDL, backup and restore.
 
 ## 3. Running it
 
@@ -90,6 +108,22 @@ KEEP_DATABASES=1 docker compose -f docker-compose.proof.yml run --rm proof
 This runs **the identical script** CI runs. There is deliberately one code path: two pipelines agree right up until the day it matters.
 
 The database is ephemeral — no volume, no published port. Every run starts empty, because "migrations apply from empty" is one of the things being proven.
+
+### Locally, with one command and no Docker
+
+```bash
+./infra/ci/verify-postgres.sh
+```
+
+The whole pipeline, all nine steps, against a real engine. It finds one in this order:
+
+1. **`PGHOST`**, if you have set it — your own server.
+2. **Docker**, via `docker-compose.proof.yml` — pins the server version, so a local run is a CI matrix leg.
+3. **The `pgserver` wheel** — genuine PostgreSQL binaries from PyPI, initialised into a temporary directory and listening on a unix socket. No daemon, no port, no root.
+
+Option 3 is why VER-001 exists. A verification pipeline that cannot be executed in the environment where the code is written is documentation, and four defects lived through four work orders because of it.
+
+All three paths run `infra/ci/postgres-proof.sh`. There is one proof.
 
 ### Locally, against your own PostgreSQL
 

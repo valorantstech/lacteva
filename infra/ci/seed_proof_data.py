@@ -18,6 +18,7 @@ of the things being proven.
 import asyncio
 import json
 import os
+import pathlib
 import sys
 from datetime import date, timedelta
 
@@ -268,9 +269,7 @@ async def seed() -> dict:
         # Drive the consumers so the receipt and notifications exist.
         await _run_consumers(times=3)
 
-        receipts = await _expect(
-            await c.get("/v1/receipts", headers=h), 200, what="receipts"
-        )
+        receipts = await _expect(await c.get("/v1/receipts", headers=h), 200, what="receipts")
         if receipts["total"] != 1:
             raise SystemExit(f"expected exactly one receipt, got {receipts['total']}")
 
@@ -287,14 +286,14 @@ async def seed() -> dict:
 async def _bootstrap() -> None:
     """What the app lifespan would do, minus the background loops: register
     the consumer/projection models and seed the system roles."""
-    from platform_core.core.db import get_session_factory
+    from platform_core.core.rls import platform_factory
     from platform_core.modules.authz.service import AuthzService
     from platform_core.modules.event_relay.consumers import discover_consumers
     from platform_core.modules.event_relay.projections import discover_projections
 
     discover_consumers()
     discover_projections()
-    async with get_session_factory()() as session:
+    async with platform_factory("proof seed: system-role catalog")() as session:
         await AuthzService(session).ensure_system_roles()
         await session.commit()
 
@@ -332,10 +331,18 @@ async def _price_one(c, headers, center_id: str) -> str:
 
 
 async def _run_consumers(times: int) -> None:
-    from platform_core.core.db import get_session_factory
+    from platform_core.core.rls import platform_factory
     from platform_core.modules.event_relay.consumers import ConsumerRunner
 
-    runner = ConsumerRunner(get_session_factory())
+    # VER-001: `platform_factory`, not the plain session factory. A consumer
+    # drains the log for EVERY tenant, so its session has no tenant to bind
+    # and row-level security makes an unbound session see nothing at all. With
+    # a plain factory the runner found zero events, produced no receipt, and
+    # reported success — which is how this ran green until a real PostgreSQL
+    # enforced the policies.
+    #
+    # `main.py` already builds it this way; only the seeder did not.
+    runner = ConsumerRunner(platform_factory("proof seed: drive consumers to completion"))
     for _ in range(times):
         await runner.run_once()
 
@@ -344,11 +351,13 @@ async def _grant_platform_admin(email: str) -> None:
     """Registration cannot grant platform-admin to itself, by design."""
     from sqlalchemy import select
 
-    from platform_core.core.db import get_session_factory
+    from platform_core.core.rls import platform_factory
     from platform_core.modules.authz.models import Role, UserRole
     from platform_core.modules.identity.models import User
 
-    async with get_session_factory()() as session:
+    # Cross-tenant by definition: it grants a PLATFORM role, and the lookup
+    # spans tenants. Under RLS an unbound session would find neither row.
+    async with platform_factory("proof seed: grant platform-admin")() as session:
         user = await session.scalar(select(User).where(User.email == email))
         role = await session.scalar(select(Role).where(Role.name == "platform-admin"))
         if user is None or role is None:
@@ -361,4 +370,12 @@ if __name__ == "__main__":
     if not os.environ.get("LACTEVA_DATABASE_URL"):
         raise SystemExit("LACTEVA_DATABASE_URL must point at the database to seed")
     summary = asyncio.run(seed())
-    sys.stdout.write(json.dumps(summary, indent=2) + "\n")
+    payload = json.dumps(summary, indent=2)
+    # VER-001: the application's structured logs also go to stdout, so
+    # redirecting stdout to a file produced a "summary" that was one truncated
+    # log line — which is what the proof's report then quoted as evidence.
+    # An explicit path keeps the machine-readable result separate from the
+    # human-readable log.
+    if len(sys.argv) > 1:
+        pathlib.Path(sys.argv[1]).write_text(payload + "\n")
+    sys.stdout.write(payload + "\n")

@@ -28,6 +28,19 @@ PGUSER="${PGUSER:-lacteva}"
 PGPASSWORD="${PGPASSWORD:-lacteva}"
 export PGPASSWORD
 
+# VER-001. The role the APPLICATION connects as, which is not the role that
+# owns the schema and is emphatically not a superuser.
+#
+# PostgreSQL exempts a SUPERUSER from row-level security entirely. `FORCE ROW
+# LEVEL SECURITY` does not close this: FORCE covers the table OWNER, and says
+# nothing about superusers. Until VER-001 this script ran every isolation test
+# as `lacteva`, which the official postgres image creates as a superuser — so
+# steps 2 and 3 were checking that policies EXIST while proving nothing about
+# whether they are ENFORCED. The suite would have been green with every policy
+# silently inert.
+APP_USER="${APP_USER:-lacteva_app}"
+APP_PASSWORD="${APP_PASSWORD:-lacteva_app_proof}"
+
 SOURCE_DB="${SOURCE_DB:-lacteva_proof}"
 RESTORE_DB="${RESTORE_DB:-lacteva_restore}"
 WORKDIR="$(mktemp -d)"
@@ -36,9 +49,29 @@ BACKUP_DIR="${WORKDIR}/backup"
 # Run from the service root regardless of where the script was invoked.
 cd "$(dirname "${BASH_SOURCE[0]}")/../../services/platform-core"
 
-RUN="${RUN:-uv run}"
+# `${RUN-...}` without the colon, so an explicitly EMPTY RUN is honoured:
+# `verify-postgres.sh` sets it that way when uv is absent and the virtualenv
+# on PATH already has the dependencies. With `:-` an empty value would fall
+# back to uv and the run would fail with "uv: command not found".
+RUN="${RUN-uv run}"
 
-url_for() { echo "postgresql+asyncpg://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/$1"; }
+# A leading '/' in PGHOST is a unix SOCKET directory, not a hostname. libpq
+# understands that directly; a SQLAlchemy URL has to carry it as a query
+# parameter, since the authority section cannot hold a path. This is the shape
+# `verify-postgres.sh` produces when it starts a local cluster, and the shape
+# most system PostgreSQL installations offer by default.
+dsn_for() {
+  local user="$1" password="$2" database="$3"
+  if [ "${PGHOST#/}" != "${PGHOST}" ]; then
+    echo "postgresql+asyncpg://${user}@/${database}?host=${PGHOST}"
+  else
+    echo "postgresql+asyncpg://${user}:${password}@${PGHOST}:${PGPORT}/${database}"
+  fi
+}
+# The OWNER url — migrations, backup and restore, which need DDL.
+url_for() { dsn_for "${PGUSER}" "${PGPASSWORD}" "$1"; }
+# The APPLICATION url — everything whose result depends on RLS being enforced.
+app_url_for() { dsn_for "${APP_USER}" "${APP_PASSWORD}" "$1"; }
 psql_do() { psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "$1" -tAc "$2"; }
 
 step() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
@@ -100,6 +133,29 @@ TABLES="$(psql_do "${SOURCE_DB}" \
 echo "    ${TABLES} tables created"
 [ "${TABLES}" -gt 40 ] || fail "only ${TABLES} tables after migration — expected the full schema"
 
+# VER-001: create the unprivileged role the isolation proof runs as, and
+# prove it is unprivileged. Everything after this point that reads or writes
+# tenant data connects as ${APP_USER}.
+psql_do postgres "DO \$\$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${APP_USER}') THEN
+    CREATE ROLE ${APP_USER} LOGIN PASSWORD '${APP_PASSWORD}';
+  END IF;
+END \$\$" >/dev/null
+psql_do postgres "ALTER ROLE ${APP_USER} NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE" >/dev/null
+psql_do "${SOURCE_DB}" "
+  GRANT CONNECT ON DATABASE ${SOURCE_DB} TO ${APP_USER};
+  GRANT USAGE ON SCHEMA public TO ${APP_USER};
+  GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${APP_USER};
+  GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${APP_USER};
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${APP_USER};
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${APP_USER};" >/dev/null
+
+BYPASSES="$(psql_do "${SOURCE_DB}" \
+  "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = '${APP_USER}'")"
+[ "${BYPASSES}" = "f" ] \
+  || fail "${APP_USER} is SUPERUSER or has BYPASSRLS — every isolation test below would pass vacuously"
+echo "    application role ${APP_USER}: NOSUPERUSER, NOBYPASSRLS"
+
 step "2/9  row-level security is enabled AND forced on every tenant-owned table"
 # `relrowsecurity` alone is not enough: without FORCE the table owner — which
 # is who the application connects as — bypasses its own policies.
@@ -137,7 +193,8 @@ JUNIT="${WORKDIR}/pg-tests.xml"
 #                    column rounds on store; SQLite exhibits neither (DB-002)
 # Add new PostgreSQL-only modules HERE, not to a second job — this is the list
 # the skip assertion below protects.
-LACTEVA_TEST_POSTGRES_URL="$(url_for "${SOURCE_DB}")" \
+LACTEVA_TEST_POSTGRES_URL="$(app_url_for "${SOURCE_DB}")" \
+  LACTEVA_TEST_POSTGRES_ADMIN_URL="$(url_for "${SOURCE_DB}")" \
   ${RUN} pytest tests/test_rls_postgres.py tests/test_exact_aggregation_postgres.py \
   -v --no-header -rs --junitxml="${JUNIT}" 2>&1 | tee "${RLS_LOG}" \
   || fail "PostgreSQL-only tests failed"
@@ -168,9 +225,10 @@ read -r PG_TESTS PG_SKIPPED PG_FAILURES PG_ERRORS <<<"${PG_COUNTS}"
 echo "    ${PG_TESTS} PostgreSQL-only tests ran, 0 skipped"
 
 step "4/9  seeding a real dairy through the platform's own API"
-LACTEVA_DATABASE_URL="$(url_for "${SOURCE_DB}")" \
-  ${RUN} python ../../infra/ci/seed_proof_data.py > "${WORKDIR}/seed.json" \
+LACTEVA_DATABASE_URL="$(app_url_for "${SOURCE_DB}")" \
+  ${RUN} python ../../infra/ci/seed_proof_data.py "${WORKDIR}/seed.json" \
   || fail "seeding failed"
+[ -s "${WORKDIR}/seed.json" ] || fail "the seeder wrote no summary"
 cat "${WORKDIR}/seed.json"
 
 step "5/9  logical backup + checksum verification"
@@ -233,7 +291,12 @@ summary "| --- | --- | --- |"
 summary "| 1 | Migrations apply to an **empty** database | ${TABLES} tables created |"
 summary "| 2 | RLS enabled **and forced**, and covering | ${PROTECTED} tables forced, ${POLICIES} policies, 0 tenant_id tables uncovered |"
 summary "| 3 | PostgreSQL-only suites pass, none skipped | ${PG_TESTS} tests, ${PG_SKIPPED} skipped |"
-summary "| 4 | A real dairy seeds through the platform's own API | \`$(tr -d '\n' < "${WORKDIR}/seed.json" | cut -c1-160)\` |"
+SEED_FACTS="$(${RUN} python -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+print(', '.join(f'{k} {v}' for k, v in d.items() if k != 'organization'))
+" "${WORKDIR}/seed.json")"
+summary "| 4 | A real dairy seeds through the platform's own API | ${SEED_FACTS} |"
 summary "| 5 | Logical backup verifies against its own checksums | see log |"
 summary "| 6 | A **second, fresh** database migrates | \`${RESTORE_DB}\` |"
 summary "| 7 | Restore into it succeeds | see log |"
