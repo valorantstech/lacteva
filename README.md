@@ -1,6 +1,10 @@
 # Lacteva Engineering Repository
 
-Lacteva is an AI-first, cloud-native, multi-tenant **Dairy Intelligence Platform** with a long-term vision of serving 1M+ dairy businesses across 50+ countries. This repository is the **single source of truth** for Lacteva's engineering organization: documentation, architecture decisions, requirements, and (over time) the platform's code.
+**Lacteva is the flagship product of Phoenix Software** — an AI-first, cloud-native, multi-tenant **enterprise dairy platform**, with a long-term vision of serving 1M+ dairy businesses across 50+ countries. This repository is the **single source of truth** for Lacteva's engineering organization: documentation, architecture decisions, requirements, and the platform's code.
+
+Lacteva must serve six operating scales in one architecture — individual farmers, collection centers, dairy cooperatives, private dairies, milk unions, and multi-country deployments. These are not segments to choose between; a design that serves one by making another impossible has failed, even if it ships.
+
+**Every contributor, human or AI, is bound by [STD-0007 — Phoenix Software Engineering Standard](docs/00-standards/STD-0007-phoenix-software-engineering-standard.md):** fifteen engineering principles, the rule that *every production guarantee must be executable*, and a six-dimension Definition of Done. Read it before your first change.
 
 ## Repository Map
 
@@ -44,6 +48,7 @@ Lacteva is an AI-first, cloud-native, multi-tenant **Dairy Intelligence Platform
 
 ## Ground Rules
 
+- **A production guarantee is not proven until it has been executed** against the technology it is claimed for ([STD-0007 §4](docs/00-standards/STD-0007-phoenix-software-engineering-standard.md)). Documentation alone is insufficient — that rule was written after executing two already-reviewed, already-CI-wired pipelines surfaced nine defects, four of them fatal.
 - **Nothing is official unless it is in this repository and has status `Approved`.** Slide decks, chat messages, and wikis are not sources of truth.
 - **Every document starts from a template** and carries YAML front matter (ID, version, status, owner).
 - **Every change goes through a pull request.** Direct pushes to the default branch are prohibited.

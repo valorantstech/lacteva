@@ -3,11 +3,11 @@ id: CLAUDE-CONTEXT
 title: Lacteva AI Engineering Context — Permanent Onboarding Guide
 type: reference
 status: Approved
-version: "1.30"
+version: "1.31"
 owner: Engineering
 created: 2026-08-03
-last-updated: 2026-08-06
-related: [CAP-0001, PDT-0001, QR-0006]
+last-updated: 2026-08-08
+related: [STD-0007, CAP-0001, PDT-0001, QR-0006]
 baseline: ARCH-BASELINE-V1
 ---
 
@@ -15,7 +15,27 @@ baseline: ARCH-BASELINE-V1
 
 **Read this document first.** It is the permanent onboarding guide for every engineer — human or AI — who joins Lacteva. It explains what the platform is, what exists, what is locked, and how work is done here. It consolidates; it does not override: on any conflict, [ARCHITECTURE_BASELINE_V1](../../ARCHITECTURE_BASELINE_V1.md) and the documents it locks win.
 
-**Reading order after this file:** [ARCHITECTURE_BASELINE_V1](../../ARCHITECTURE_BASELINE_V1.md) → [CHANGELOG](../../CHANGELOG.md) (the platform's evolution, newest first) → [DEVELOPMENT_ROADMAP](../../DEVELOPMENT_ROADMAP.md) → the module you are about to touch, *tests first*.
+**Reading order after this file:** [STD-0007](../00-standards/STD-0007-phoenix-software-engineering-standard.md) (the binding engineering directive) → [ARCHITECTURE_BASELINE_V1](../../ARCHITECTURE_BASELINE_V1.md) → [CHANGELOG](../../CHANGELOG.md) (the platform's evolution, newest first) → [DEVELOPMENT_ROADMAP](../../DEVELOPMENT_ROADMAP.md) → the module you are about to touch, *tests first*.
+
+---
+
+## 0. Identity and the binding directive
+
+**Lacteva is the flagship product of Phoenix Software.** This repository is not a standalone application, and the difference is load-bearing: a standalone application may serve the customer in front of it, while a flagship product must serve customers who have not arrived yet, on deployments nobody has provisioned, in countries nobody has sold into.
+
+Lacteva must serve **six operating scales in one architecture** — individual farmers, collection centers, dairy cooperatives, private dairies, milk unions, and multi-country deployments. Not segments to choose between: a design that serves one by making another impossible has failed, even if it ships. The architecture must support **years of evolution** — today's module boundaries are tomorrow's service seams, and today's schema is restored from a backup taken by a version nobody runs any more.
+
+[**STD-0007 — Phoenix Software Engineering Standard**](../00-standards/STD-0007-phoenix-software-engineering-standard.md) is a permanent directive, not a work order. It has no scope and no completion, and it outlives whatever work order is in flight. Its fifteen principles, in short:
+
+1. Architecture before implementation · 2. Business rules before code · 3. Security by default · 4. Multi-tenancy by default · 5. Offline-first where applicable · 6. **Every production guarantee must be executable** · 7. No feature without automated tests · 8. No feature without observability · 9. No duplicated concepts · 10. Reusable platform capabilities over feature-specific implementations · 11. Maintainability over cleverness · 12. Every architectural shortcut documented · 13. Protect backwards compatibility whenever practical · 14. Minimize technical debt · 15. Understandable by a new senior engineer six months from now.
+
+**Principle 6 is the one with evidence behind it in this repository.** VER-001 and DR-001 did nothing but execute guarantees that were already written, already reviewed and already CI-wired, and found **nine defects** — four of them fatal. The platform could not serve a single request on PostgreSQL; every RLS policy was inert because the application connected as a superuser; every backup aborted on a `time` column; and a corrupt backup restored silently, turning a settlement worth 5647.50 into one worth 1.00. None was findable by reading. So: **a PostgreSQL guarantee tested only on SQLite is untested**, a skipped proof is worse than an absent one because it is green, and a proof must show the guard is *capable of refusing* rather than merely present.
+
+**Principle 10** means preferring the Notification Engine to an SMS implementation, the Payment Framework to a Razorpay implementation, the Authentication Platform to a login endpoint, the Reporting Engine to one report. The test before implementing: what does the *second* instance look like — and if allowing for it means touching the first, the seam is wrong. The counterweight is principle 11: a capability with one implementation and no second in sight is speculative generality.
+
+**Review policy.** Future work orders should keep challenging previous assumptions, including this file's. When an earlier decision is *objectively* incorrect — factually wrong, in violation of a stated principle, or contradicted by executing it — document it, correct it, update the documentation, and **never preserve a mistake merely because it already exists.** The bar is deliberately above "I would have done it differently"; DBR-001 raised two findings that ABR-002 correctly withdrew, and recording that mattered as much as the findings that stood.
+
+**Definition of Done** — no work order is complete until all six are *considered*, with the conclusion stated: implementation, tests, documentation, architecture consistency, operational impact, production readiness. "Considered and not applicable, because …" is a complete answer; silence is not.
 
 ---
 
@@ -175,13 +195,14 @@ Current test posture: **845 backend tests — 792 on SQLite (fast, hermetic, eve
 
 ## 10. AI Instructions (how to work here)
 
+- **Bound by STD-0007.** Everything below operates inside the directive in §0. Where a work order and STD-0007 disagree about *how* work is done, the standard wins and the conflict is recorded.
 - **Work-order driven.** The user issues explicit work orders (sprints/increments) with scope walls ("NO calculation", "NO hardware") and minimum test counts. Honor the walls literally — building ahead of the order is a defect, not initiative. One standing instruction: **every file-changing turn ends with a Conventional Commit pushed to `origin main`** (`Co-Authored-By: Claude <model> <noreply@anthropic.com>`).
 - **Read before writing.** For any task: this file → CHANGELOG (what already exists) → the target module's `models.py`, `service.py`, and *tests* → an adjacent module doing something similar (the codebase is deliberately pattern-consistent; imitate the nearest neighbor).
 - **Reason before coding.** Resolve work-order ambiguities *against existing invariants* (e.g. "immutable once published" + "versioned" ⟹ new-version-copies pattern), pick the interpretation that preserves prior increments' rules, and state the decision in the closing summary. If a requirement conflicts with the baseline, say so and record it rather than silently complying or refusing.
 - **Verification gates, every time (in order):** backend `ruff check` + `ruff format` + full `pytest`; portal `npm run build` + `npm run lint`; mobile `flutter analyze` + `flutter test`; docs `tools/validate/validate_docs.py` + `tools/xref/generate_xref.py`; migration `upgrade → downgrade → upgrade` round-trip on a scratch DB. Update `CHANGELOG.md` for every increment. All green before commit — no exceptions, no "CI will catch it".
 - **Propose changes** to locked material as documents (future ADRs per TPL-0001, baseline V2 via GOV-0002), not as code diffs. Divergences ordered by the user are executed *and recorded* (see REVIEW-NOTES / audit precedent).
 - **Maintain consistency** mechanically: same DTO/view naming, same page/screen skeletons per platform, same test fixture chains, same event/audit/permission trio on every mutation. When you find drift, fix it or log it in `docs/12-quality/` — never add a third style.
-- **Write engineering summaries** at the end of every increment, exactly as the work order enumerates (architecture, rules, DB, API, screens, events, tests, decisions, remaining work). Lead with what happened; report failures and skipped items plainly; keep honest records of what is pending (the health reports and REVIEW-NOTES set the tone — provenance and assumptions are always disclosed).
+- **Write engineering summaries** at the end of every increment, exactly as the work order enumerates (architecture, rules, DB, API, screens, events, tests, decisions, remaining work) — and covering the six Definition-of-Done dimensions, including what is proven by execution versus what remains asserted. Lead with what happened; report failures and skipped items plainly; keep honest records of what is pending (the health reports and REVIEW-NOTES set the tone — provenance and assumptions are always disclosed).
 
 ## 11. Future Vision
 
@@ -247,6 +268,7 @@ Current test posture: **845 backend tests — 792 on SQLite (fast, hermetic, eve
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.31 | 2026-08-08 | Engineering | Phoenix Software Engineering Standard adopted: §0 records the project identity (Phoenix Software / Lacteva), the fifteen binding principles, the executable-guarantee doctrine, the review policy, and the Definition of Done; STD-0007 added to the reading order. |
 | 1.30 | 2026-08-07 | Engineering | ARCH-001 recorded (item 38); divergence 36 closed. |
 | 1.29 | 2026-08-07 | Engineering | MSG-001 recorded (item 37); SMS divergence closed, email restated. |
 | 1.28 | 2026-08-07 | Engineering | IDM-001 recorded (item 36); divergence 44 closed. |

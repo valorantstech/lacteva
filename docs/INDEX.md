@@ -43,6 +43,7 @@ Snapshot: 2026-08-02 — 87 markdown files (47 with formal document IDs, plus RE
 | [STD-0004](00-standards/STD-0004-versioning-strategy.md) | Versioning Strategy | Approved | 1.0 |
 | [STD-0005](00-standards/STD-0005-mermaid-standards.md) | Mermaid Standards | Approved | 1.0 |
 | [STD-0006](00-standards/STD-0006-plantuml-standards.md) | PlantUML Standards | Approved | 1.0 |
+| [STD-0007](00-standards/STD-0007-phoenix-software-engineering-standard.md) | Phoenix Software Engineering Standard | Approved | 1.0 |
 
 ## 01 — Governance ([index](01-governance/README.md))
 

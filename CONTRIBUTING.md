@@ -4,9 +4,10 @@ This guide applies to **all** contributions — documentation and code. It is de
 
 ## Before You Contribute
 
-1. Read the standards in [`docs/00-standards/`](docs/00-standards/README.md). They cover Markdown style, naming, numbering, versioning, and diagrams.
-2. Find the correct template in [`docs/02-templates/`](docs/02-templates/README.md). Documents that do not start from a template will be rejected in review.
-3. Check the relevant index (each `docs/` domain has a `README.md` with a document index) to avoid duplicating an existing document.
+1. Read [**STD-0007 — Phoenix Software Engineering Standard**](docs/00-standards/STD-0007-phoenix-software-engineering-standard.md) first. It is a permanent directive binding on every contributor, human or AI: the project identity, fifteen engineering principles, and the Definition of Done. It governs code, tests, and operations — not only documents.
+2. Read the other standards in [`docs/00-standards/`](docs/00-standards/README.md). They cover Markdown style, naming, numbering, versioning, and diagrams.
+3. Find the correct template in [`docs/02-templates/`](docs/02-templates/README.md). Documents that do not start from a template will be rejected in review.
+4. Check the relevant index (each `docs/` domain has a `README.md` with a document index) to avoid duplicating an existing document.
 
 ## Contribution Workflow
 
@@ -37,6 +38,8 @@ This guide applies to **all** contributions — documentation and code. It is de
 - Update the document's own change log section and, when applicable, the repository [`CHANGELOG.md`](CHANGELOG.md).
 - New or changed diagrams must follow [STD-0005 Mermaid](docs/00-standards/STD-0005-mermaid-standards.md) or [STD-0006 PlantUML](docs/00-standards/STD-0006-plantuml-standards.md) standards.
 - CODEOWNERS-designated reviewers are mandatory and may not be bypassed.
+- The PR description must address the six [Definition of Done](docs/00-standards/STD-0007-phoenix-software-engineering-standard.md) dimensions — implementation, tests, documentation, architecture consistency, operational impact, production readiness. "Considered and not applicable, because …" is a complete answer for any of them; silence is not.
+- Claims about production behaviour must say what was **executed** and what remains asserted. A guarantee tested only on SQLite is not a PostgreSQL guarantee (STD-0007 §4).
 
 ## What Gets a Contribution Rejected
 
@@ -46,6 +49,9 @@ This guide applies to **all** contributions — documentation and code. It is de
 - Terms used that contradict the [glossary](docs/11-glossary/GLOSSARY.md) without proposing a glossary update.
 - Diagrams that do not follow the diagram standards.
 - PRs that bundle unrelated changes.
+- A production guarantee claimed but never executed against the technology it is claimed for.
+- A test weakened, skipped, or narrowed to make a build pass.
+- A concept duplicated rather than reused, or a market-specific rule hardcoded anywhere.
 
 ## Questions and Proposals
 
