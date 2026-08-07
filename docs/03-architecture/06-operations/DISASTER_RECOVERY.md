@@ -3,7 +3,7 @@ id: DISASTER_RECOVERY
 title: Disaster Recovery
 type: reference
 status: Approved
-version: "1.1"
+version: "1.2"
 owner: Architecture Board
 created: 2026-08-06
 last-updated: 2026-08-08
@@ -132,12 +132,15 @@ Three tables are excluded from that comparison, each with a printed reason — `
 ## 4. What is *not* covered
 
 - **Cross-region automation** — documented, manual.
-- **Physical PITR execution** — scripted and CI-wired, **still never run.** DR-001 executed the *logical* recovery path end to end on real PostgreSQL; WAL archiving, `recovery_target_time` and replica promotion remain documented and unexercised. This is now the largest untested guarantee on the platform, and given that executing the logical path found four defects, the honest expectation is that executing this one will also find some.
+- **Streaming replication and replica promotion** — the remaining unexecuted piece of the physical path. Same WAL, different mechanism.
+
+**Physical PITR is no longer on this list.** PITR-001 executed it: WAL archiving on, a base backup, transactions after it, the primary destroyed, and recovery to a timestamp, a transaction boundary, a named restore point, and latest — each asserting that work committed *after* the target is absent. See [PITR](PITR.md). The expectation stated here was right: executing it found five defects, including that production had no WAL archiving at all.
 - **Automated failover** — there is none. Recovery is a human decision, deliberately: an automatic failover on a false positive is its own outage.
 
 ## Change Log
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-08-08 | Architecture Board | PITR-001: physical point-in-time recovery executed and proven; WAL archiving enabled in production. Only replica promotion remains unexecuted. |
 | 1.1 | 2026-08-08 | Architecture Board | DR-001: the logical recovery pipeline executed against two separate PostgreSQL instances and compared fact for fact; four defects fixed. PITR remains unexecuted. |
 | 1.0 | 2026-08-06 | Architecture Board | Established by BAK-001. |

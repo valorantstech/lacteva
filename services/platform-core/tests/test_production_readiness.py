@@ -312,3 +312,139 @@ async def test_a_normal_role_starts_cleanly(monkeypatch):
     monkeypatch.setattr(settings, "rls_enabled", True)
     monkeypatch.setattr(settings, "env", "prod")
     await assert_rls_is_enforceable(_RoleStub("lacteva_app", False, False))
+
+
+# --------------------------------------------------------------------------
+# PITR-001 — the production configuration that makes point-in-time recovery
+# possible at all.
+#
+# These read docker-compose.production.yml rather than the database, because
+# the defect they guard was a MISSING SETTING: `wal_level=replica` was present
+# and `archive_mode` was not, so no WAL ever left the server and the
+# documented 5-minute RPO was fiction. Nothing failed; there was simply no
+# recovery path, and the only signal was a line in INFRASTRUCTURE.md admitting
+# it.
+#
+# The recovery itself is proven by execution in ./infra/ci/pitr-proof.sh
+# against a real cluster — four recovery targets, with the assertion that
+# matters: work committed after the target is ABSENT.
+# --------------------------------------------------------------------------
+
+
+def _production_postgres_command() -> list[str]:
+    import pathlib
+
+    import yaml
+
+    root = pathlib.Path(__file__).resolve().parents[3]
+    compose = yaml.safe_load((root / "docker-compose.production.yml").read_text())
+    return [str(part) for part in compose["services"]["postgres"]["command"]]
+
+
+def test_production_postgres_archives_wal():
+    """Without archiving there is no point-in-time recovery, only snapshots."""
+    command = _production_postgres_command()
+    assert "archive_mode=on" in command, (
+        "archive_mode is not on in production. `wal_level=replica` alone is "
+        "necessary and NOT sufficient: no WAL leaves the server, so the only "
+        "recovery point is the last base backup and the documented RPO is "
+        "unachievable."
+    )
+    archive_command = [c for c in command if c.startswith("archive_command=")]
+    assert archive_command, "archive_mode is on but no archive_command is set"
+
+
+def test_the_archive_command_refuses_to_overwrite():
+    """An archive that overwrites is worse than one that fails.
+
+    Replacing an already-archived segment destroys the recovery window from
+    that segment forward, and the failure is silent — the archive keeps
+    looking healthy, and the gap is discovered during a recovery.
+    """
+    command = _production_postgres_command()
+    archive_command = next(c for c in command if c.startswith("archive_command="))
+    assert "test ! -f" in archive_command, (
+        f"archive_command does not refuse to overwrite an existing segment: {archive_command}"
+    )
+
+
+def test_the_archive_timeout_bounds_the_rpo():
+    """A segment is archived when it FILLS, not when it is written.
+
+    On a quiet night the last transactions sit unarchived until the segment
+    fills — which on a low-traffic dairy could be hours. `archive_timeout` is
+    what actually bounds the recovery point objective.
+    """
+    command = _production_postgres_command()
+    assert any(c.startswith("archive_timeout=") for c in command), (
+        "no archive_timeout: the RPO is unbounded during quiet periods, "
+        "however good the archive_command is"
+    )
+
+
+def test_the_wal_archive_is_not_on_the_data_volume():
+    """An archive that dies with the data directory recovers nothing."""
+    import pathlib
+
+    import yaml
+
+    root = pathlib.Path(__file__).resolve().parents[3]
+    compose = yaml.safe_load((root / "docker-compose.production.yml").read_text())
+    volumes = compose["services"]["postgres"]["volumes"]
+    mounts = {v.split(":")[0] for v in volumes if isinstance(v, str)}
+    assert "wal_archive" in mounts, "the WAL archive volume is not mounted"
+    assert "pgdata" in mounts
+    assert "wal_archive" != "pgdata"
+    assert "wal_archive" in compose["volumes"], (
+        "wal_archive is mounted but not declared as its own volume — it must "
+        "be separable from pgdata, or a disk failure takes both"
+    )
+
+
+def test_the_restore_test_does_not_migrate_the_recovered_database():
+    """A recovery is restored, not upgraded.
+
+    `pg-restore-test.sh` used to run `alembic upgrade head` immediately after
+    starting the recovered instance. A physical restore is byte-identical to
+    the source at the recovery target; migrating it MUTATES the recovered
+    data by applying a migration that point in time never had — during an
+    incident, which is the worst possible moment.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[3]
+    script = (root / "infra" / "backup" / "pg-restore-test.sh").read_text()
+    # Comments explaining why it must NOT migrate obviously mention the
+    # command, so only executable lines count. (The first version of this
+    # test failed on its own explanation.)
+    executable = [
+        line for line in script.splitlines() if line.strip() and not line.strip().startswith("#")
+    ]
+    assert not any("alembic upgrade head" in line for line in executable), (
+        "the restore test migrates the recovered database — that changes the "
+        "very data being recovered"
+    )
+    assert "pg_is_in_recovery" in script, (
+        "the restore test does not wait for promotion; `pg_ctl -w start` "
+        "returns while the server is still read-only and replaying"
+    )
+
+
+def test_the_backup_pruner_cannot_delete_every_backup():
+    """`find DIR -maxdepth 1 -type d` matches DIR itself.
+
+    With `-exec rm -rf`, that deletes the whole base/ directory — every backup,
+    including the newest. It fires once base/ is itself older than the
+    retention window, which happens exactly when backups have stopped: the
+    moment the old ones matter most.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[3]
+    script = (root / "infra" / "backup" / "pg-backup.sh").read_text()
+    prune = [line for line in script.splitlines() if "-maxdepth 1" in line and "find" in line]
+    assert prune, "the retention prune disappeared — check pg-backup.sh"
+    for line in prune:
+        assert "-mindepth 1" in line, (
+            f"prune expression can match its own parent directory: {line.strip()}"
+        )

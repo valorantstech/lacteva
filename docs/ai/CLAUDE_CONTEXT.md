@@ -3,7 +3,7 @@ id: CLAUDE-CONTEXT
 title: Lacteva AI Engineering Context — Permanent Onboarding Guide
 type: reference
 status: Approved
-version: "1.31"
+version: "1.32"
 owner: Engineering
 created: 2026-08-03
 last-updated: 2026-08-08
@@ -242,7 +242,7 @@ Current test posture: **845 backend tests — 792 on SQLite (fast, hermetic, eve
 | 23 | **Disk and memory alerting is left to the orchestrator**, which has better signals (cgroup limits, OOM kills, node conditions) than an application can synthesise. Wire kube-state-metrics or the node exporter. | Accepted; recorded here. |
 | 24 | **Tracing spans exist only at the HTTP and consumer seams.** Repository, outbox, notification, payment, receipt, and projection spans are one-liners against an existing seam but were not added speculatively — a trace full of uninformative spans is harder to read than a sparse one. | Open — OBS-001 debt. |
 | 25 | **Health probes are uncached**, so an aggressive poller creates load; and `sync_pending_operations`/`projection_drift_rows` are set only when something computes them, not continuously sampled. | Open — OBS-001 debt. |
-| 26 | **Physical PostgreSQL PITR is scripted but never executed** — no PostgreSQL was available during BAK-001. The logical backup/restore cycle IS demonstrated end to end; the `pg_basebackup`/WAL path is documented, scripted, and CI-wired but unproven. | Open — BAK-001 debt. |
+| 26 | **Physical PostgreSQL PITR is scripted but never executed.** | **Closed by PITR-001 (2026-08-08).** Executed against a real cluster: recovery to a timestamp, a transaction boundary, a named restore point, and latest, each asserting that work committed after the target is ABSENT. It found that production had `wal_level=replica` and **no `archive_mode`** — no WAL left the server, so the documented RPO was fiction. Now `./infra/ci/pitr-proof.sh`. Replica promotion remains unexecuted. |
 | 27 | **Cross-region replication is documented, not automated**, and there is no automated failover — recovery is a deliberate human decision. | Accepted; recorded here. |
 | 28 | **The PostgreSQL proof has never run in this development environment** — no Docker, PostgreSQL, or `psql` is available here. OPS-001 dry-ran the script against stubbed `psql`/`pg_isready`/`uv run` to verify its control flow, assertions and summary, but the SQL and the policies themselves execute for the first time in CI. | Open until the first green run of `postgres.yml`. |
 | 29 | **The proof's dataset is one small dairy.** It proves correctness of migrate/backup/restore, not behaviour at scale — no volume, index-bloat, or long-running-transaction effects are exercised. | Accepted; recorded here. |
@@ -268,6 +268,7 @@ Current test posture: **845 backend tests — 792 on SQLite (fast, hermetic, eve
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.32 | 2026-08-08 | Engineering | PITR-001 recorded: physical point-in-time recovery executed and proven; divergence 26 closed after four work orders open; WAL archiving enabled in production. |
 | 1.31 | 2026-08-08 | Engineering | Phoenix Software Engineering Standard adopted: §0 records the project identity (Phoenix Software / Lacteva), the fifteen binding principles, the executable-guarantee doctrine, the review policy, and the Definition of Done; STD-0007 added to the reading order. |
 | 1.30 | 2026-08-07 | Engineering | ARCH-001 recorded (item 38); divergence 36 closed. |
 | 1.29 | 2026-08-07 | Engineering | MSG-001 recorded (item 37); SMS divergence closed, email restated. |

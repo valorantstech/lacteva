@@ -23,6 +23,8 @@ on:
       - "services/platform-core/tests/test_disaster_recovery_postgres.py"
       - "services/platform-core/migrations/**"
       - "infra/ci/**"
+      - "infra/backup/**"
+      - "docker-compose.production.yml"
       - ".github/workflows/disaster-recovery.yml"
   pull_request:
     paths:
@@ -31,6 +33,8 @@ on:
       - "services/platform-core/tests/test_disaster_recovery_postgres.py"
       - "services/platform-core/migrations/**"
       - "infra/ci/**"
+      - "infra/backup/**"
+      - "docker-compose.production.yml"
       - ".github/workflows/disaster-recovery.yml"
   schedule:
     # 04:23 UTC, after the PostgreSQL proof at 03:17 — a recovery failure is
@@ -74,19 +78,58 @@ jobs:
           PYTHON="$(cd services/platform-core && uv run python -c 'import sys; print(sys.executable)')"
           PYTHON="${PYTHON}" ./infra/ci/dr-proof.sh
 
+  # PITR-001. The PHYSICAL recovery path, which is the one an operator reaches
+  # for first in a real incident — "restore to 14:32, just before the bad
+  # deploy". The logical path above is explicitly the second line.
+  #
+  # A separate job from `recovery` because they fail for different reasons and
+  # a combined red tells you nothing: this one breaks on archiving, timelines
+  # and recovery targets; that one on backup content and restore correctness.
+  pitr:
+    name: Point-in-time recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KEEP_CLUSTERS: ${{ inputs.keep_instances && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install
+        working-directory: services/platform-core
+        run: uv sync --all-groups
+
+      - name: Execute the point-in-time recovery pipeline
+        run: |
+          PYTHON="$(cd services/platform-core && uv run python -c 'import sys; print(sys.executable)')"
+          PYTHON="${PYTHON}" ./infra/ci/pitr-proof.sh
+
   # One named check for branch protection, so adding a step later cannot
   # silently stop gating merges.
   verified:
     name: Disaster recovery verified
     runs-on: ubuntu-latest
-    needs: [recovery]
+    needs: [recovery, pitr]
     if: always()
     steps:
       - name: Require the recovery pipeline to have passed
         run: |
+          failed=0
           if [ "${{ needs.recovery.result }}" != "success" ]; then
-            echo "The disaster recovery pipeline did not pass."
+            echo "The LOGICAL recovery pipeline did not pass."
+            failed=1
+          fi
+          if [ "${{ needs.pitr.result }}" != "success" ]; then
+            echo "The POINT-IN-TIME recovery pipeline did not pass."
+            failed=1
+          fi
+          if [ "${failed}" != "0" ]; then
             echo "A recovery guarantee that has not been executed is an intention."
             exit 1
           fi
-          echo "Recovery proven: restored into a separate instance, fact for fact."
+          echo "Recovery proven: logical restore into a separate instance, and"
+          echo "point-in-time recovery to a timestamp, a transaction, a named"
+          echo "point, and latest — with work after the target excluded."

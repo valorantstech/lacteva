@@ -283,7 +283,9 @@ docker compose ... exec api python -m platform_core.core.backup.cli status
 
 A restore that loads every row but leaves the business wrong is a **failed** restore, and the command exits non-zero to say so (BR-0025).
 
-**Scale limit, stated plainly:** the logical backup reads every row into JSONL. At the volumes DBD-0001 models, this is a portability and verification mechanism, not a four-hour recovery mechanism. Physical `pg_basebackup` + WAL is scripted in `infra/backup/` and **has never been executed** — that is the largest gap between documented and actual capability in this platform.
+**Scale limit, stated plainly:** the logical backup reads every row into JSONL. At the volumes DBD-0001 models, this is a portability and verification mechanism, not a four-hour recovery mechanism.
+
+Physical `pg_basebackup` + WAL **is now executed and proven** (PITR-001) — recovery to a timestamp, a transaction boundary, a named restore point, and latest, each asserting that work after the target is absent. See [PITR](docs/03-architecture/06-operations/PITR.md) and run `./infra/ci/pitr-proof.sh`.
 
 ---
 
@@ -292,7 +294,7 @@ A restore that loads every row but leaves the business wrong is a **failed** res
 [DISASTER_RECOVERY](docs/03-architecture/06-operations/DISASTER_RECOVERY.md) names the disasters and their RPO/RTO. Two things a deployer must know:
 
 - **There is no automated failover.** Recovery is a deliberate human decision, by design at this stage. At scale it is a multi-hour outage and should be replaced with managed failover (RDS Multi-AZ / Aurora) rather than something built here.
-- **The documented 5-minute RPO is not currently achievable.** It assumes WAL archiving, which is scripted but not running. Until `archive_command` is configured and a point-in-time restore has actually been performed, the real RPO is *the age of the last logical backup*.
+- **The 5-minute RPO is now achievable.** `archive_mode=on`, an `archive_command` that refuses to overwrite, and `archive_timeout=60` are configured in `docker-compose.production.yml`, and a point-in-time restore has been performed against a real cluster. The bound is `archive_timeout`, not the age of a backup.
 
 Do not let the second one sit in a document. It is the difference between losing five minutes and losing a day.
 
@@ -362,7 +364,7 @@ Stated so it is a decision rather than a surprise:
 
 - **No zero-downtime deploy** out of the box (§3).
 - **No automated failover**, no read replica, no cross-region replication (§9).
-- **No WAL archiving**, so no point-in-time recovery (§8).
+- **The WAL archive is a local Docker volume.** PITR works; surviving total host loss needs the archive replicated off-host (§8).
 - **No horizontal scaling.** One host, one database, `API_WORKERS` processes.
 - **No email delivery.** NOT-001 ships logging and placeholder providers for email; the SMTP variables exist so the deployment is ready when an adapter lands, and so nobody believes email works because the settings look complete.
 - **SMS delivery IS wired (MSG-001)** and must be configured deliberately: set `LACTEVA_NOTIFICATION_SMS_PROVIDER`, and run staging in `dry_run` first — a wrong sender id is a permanent rejection, and discovering that in production means suppliers silently stop being told they were paid.
@@ -375,7 +377,7 @@ Stated so it is a decision rather than a surprise:
 
 In the order that closes the largest gap first:
 
-1. **WAL archiving and one executed PITR drill.** The documented RPO is currently fiction.
+1. **Replicate the WAL archive off-host** and monitor `pg_stat_archiver.failed_count`. PITR itself is proven; a local archive is not a disaster-recovery archive.
 2. **An SMS adapter.** The platform generates the messages and dispatches them to a provider that discards them.
 3. **Zero-downtime deploys**, which in practice means moving off single-host compose.
 4. **Managed PostgreSQL** (RDS/Aurora on the `ibs` account), which delivers failover, PITR, and replicas together and removes most of §9 and §11.

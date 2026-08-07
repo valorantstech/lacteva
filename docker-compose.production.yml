@@ -61,6 +61,11 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # The WAL archive. On a SEPARATE volume from pgdata on purpose: an
+      # archive that dies with the data directory recovers nothing, which is
+      # the failure mode PITR exists to survive. Mount this on different
+      # storage, and replicate it off-host.
+      - wal_archive:/wal-archive
       - ./infra/backup:/opt/backup:ro
       # VER-001. Runs ONCE, on an empty data directory — an existing database
       # needs the same statements applied by hand (DEPLOYMENT.md §Database
@@ -91,6 +96,25 @@ services:
       - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-1GB}
       - -c
       - wal_level=replica
+      - -c
+      # PITR-001. `wal_level=replica` alone was here, and it is necessary and
+      # NOT sufficient: without archiving, no WAL ever leaves this container
+      # and point-in-time recovery is impossible. The documented 5-minute RPO
+      # was therefore fiction — the real RPO was the age of the last logical
+      # backup. Proven end to end by `./infra/ci/pitr-proof.sh`.
+      - archive_mode=on
+      - -c
+      # `test ! -f` FIRST: the archive is append-only and must refuse to
+      # overwrite. Silently replacing an archived segment destroys the
+      # recovery window from that segment forward, and nothing reports it.
+      # The `cp` is deliberately boring; a real deployment points this at
+      # object storage (see DEPLOYMENT.md §Point-in-time recovery).
+      - archive_command=test ! -f /wal-archive/%f && cp %p /wal-archive/%f
+      - -c
+      # A segment is archived when it FILLS, not when it is written. On a
+      # quiet night the last transactions would otherwise sit unarchived for
+      # hours — this is what actually bounds the RPO.
+      - archive_timeout=${POSTGRES_ARCHIVE_TIMEOUT:-60}
       - -c
       - max_wal_size=4GB
       - -c
@@ -336,6 +360,10 @@ services:
 
 volumes:
   pgdata:
+  # PITR-001. Keep this on different storage from `pgdata` — an archive that
+  # fails with the data directory is not a recovery path. Size it for the
+  # retention window: WAL volume x the days between base backups.
+  wal_archive:
   redisdata:
   prometheus-data:
   loki-data:

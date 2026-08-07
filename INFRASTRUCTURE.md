@@ -210,7 +210,8 @@ The routine operation this topology is built for. Roughly 20 minutes, no DNS cha
 Three things must be said plainly rather than implied:
 
 - **Backups live on the same volume as the database.** Losing the volume loses both. Provider snapshots (Hetzner server backups / AWS Backup) are the independent copy, and they are the *only* thing standing between the platform and total loss. **Shipping logical backups off-host is the single highest-value gap in this infrastructure.**
-- **There is no WAL archiving**, so there is no point-in-time recovery. The weekly `pg_basebackup` produces a snapshot, not a PITR capability. The documented 5-minute RPO is not achievable; the real RPO is *the age of the last verified logical backup* — up to 24 hours.
+- **WAL archiving is on** (PITR-001), so point-in-time recovery is available and proven — see [PITR](docs/03-architecture/06-operations/PITR.md). It was previously absent: `wal_level=replica` was set and `archive_mode` was not, which meant no WAL left the server and the documented 5-minute RPO was unachievable. The RPO is now bounded by `archive_timeout` (60s by default) rather than by the age of the last logical backup.
+- **The WAL archive is a local volume.** Archiving to object storage, and replicating the archive off-host, is not yet done — so a total host loss still falls back to the logical backup.
 - **There is no failover.** Recovery is a deliberate human decision, and on a single host it is a multi-hour outage.
 
 ---
@@ -249,7 +250,7 @@ Before the first real tenant. Each line is a question with a yes/no answer.
 ### Known gaps — acknowledge rather than tick
 - [ ] **SMTP** — not wired. NOT-001 ships logging and placeholder providers; no email leaves the platform
 - [ ] **SMS** — wired (MSG-001). Gateway URL, key (prefer a Docker secret) and sender id set; **proven in `dry_run` on staging before `http` in production**, because a wrong sender id is a permanent rejection and suppliers would silently stop being told they were paid
-- [ ] **PITR** — not available (§9)
+- [x] **PITR** — available and proven (§9, [PITR](docs/03-architecture/06-operations/PITR.md))
 - [ ] **PII is stored in the clear**, with no erasure path (ABR-002 D-2)
 
 ---
@@ -258,7 +259,7 @@ Before the first real tenant. Each line is a question with a yes/no answer.
 
 - No high availability, no failover, no read replica
 - No off-site backup replication (§9)
-- No PITR
+- No off-host WAL archive (PITR itself works; the archive is local)
 - No horizontal scaling (§5)
 - No secret manager — secrets are files on the host
 - No CDN, no WAF beyond nginx's rate limiting

@@ -3,7 +3,7 @@ id: BACKUP
 title: Backup Strategy
 type: reference
 status: Approved
-version: "1.1"
+version: "1.2"
 owner: Architecture Board
 created: 2026-08-06
 last-updated: 2026-08-08
@@ -126,7 +126,7 @@ The rule is now enforced rather than intended. `rebuildable_tables_without_a_reb
 
 ## 8. Known limits
 
-- **PITR is untested in this environment.** The scripts are written and the CI job exists, but no PostgreSQL was available during BAK-001. The *logical* restore is demonstrated end-to-end; the physical path is documented and scripted, not yet exercised. Recorded as debt.
+- **PITR is proven** (PITR-001) — see [PITR](PITR.md). Executing it found that production had `wal_level=replica` and **no `archive_mode`**, so no WAL ever left the server and the documented RPO was unachievable. Both lines of defence now execute: the logical path in `dr-proof.sh`, the physical path in `pitr-proof.sh`.
 - **The logical backup takes a lock-free snapshot**, so it is consistent per table but not across tables at a single instant. For point-in-time consistency, use PITR.
 - **No cross-region automation.** Documented as a procedure, not implemented.
 - **`backup_run` is not comparable across a restore.** It records the act of backing up, so reading it changes it. The recovery comparison excludes it explicitly and says so; it is not silently skipped.
@@ -135,5 +135,6 @@ The rule is now enforced rather than intended. `rebuildable_tables_without_a_reb
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-08-08 | Architecture Board | PITR-001: physical point-in-time recovery proven; WAL archiving enabled and its retention tied to base-backup retention. |
 | 1.1 | 2026-08-08 | Architecture Board | DR-001: `time` columns are serializable (their absence aborted every backup on a real schema); the manifest records the schema revision; `rebuildable` now requires an actual rebuilder. |
 | 1.0 | 2026-08-06 | Architecture Board | Established by BAK-001. |

@@ -35,6 +35,11 @@ dev = [
     # VER-001 the PostgreSQL pipeline had never actually run, and five defects
     # lived through six work orders because of it.
     "pgserver>=0.1",
+    # PITR-001: the production-readiness tests parse
+    # docker-compose.production.yml to assert WAL archiving is configured.
+    # It was already present transitively; declared here because a test that
+    # depends on somebody else's dependency breaks for reasons nobody can see.
+    "pyyaml>=6.0",
 ]
 
 [build-system]

@@ -3,7 +3,7 @@ id: RECOVERY_CHECKLIST
 title: Recovery Checklist
 type: reference
 status: Approved
-version: "1.1"
+version: "1.2"
 owner: Architecture Board
 created: 2026-08-06
 last-updated: 2026-08-08
@@ -28,7 +28,9 @@ The page to open during a recovery. Written to be followed under pressure by som
 - [ ] `cli verify /path/to/backup` — exit 0.
 - [ ] The backup's timestamp is **before** the incident.
 - [ ] The manifest's `schema_revision` matches the revision you will migrate the target to.
-- [ ] For PITR: the WAL archive covers the window between base backup and target time.
+- [ ] For PITR: the WAL archive covers the window between base backup and target time — check for gaps, not just presence.
+- [ ] For PITR: **at most one** recovery target is set (`TARGET_TIME` *or* `TARGET_NAME` *or* `TARGET_XID`). Several is a silent coin flip; the script refuses.
+- [ ] For PITR: recovering into a **separate instance**, never over the live one.
 
 The worst moment to discover a corrupt backup is halfway through a recovery. DR-001 made that structural rather than procedural: `cli restore` now verifies every checksum and compares the schema revision **before it writes anything**, and refuses on either. You should still run `verify` first — knowing early is better than knowing at the start of the restore — but forgetting no longer costs you the target.
 
@@ -79,5 +81,6 @@ The worst moment to discover a corrupt backup is halfway through a recovery. DR-
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-08-08 | Architecture Board | PITR-001: point-in-time recovery steps added; a recovered database is asserted, not migrated. |
 | 1.1 | 2026-08-08 | Architecture Board | DR-001: the restore verifies checksums and the schema revision before writing anything, so two checklist steps are now enforced by the tool rather than by the operator remembering. |
 | 1.0 | 2026-08-06 | Architecture Board | Established by BAK-001. |
