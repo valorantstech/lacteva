@@ -24,6 +24,13 @@ def test_allocating_a_payment_locks_the_settlement():
 
     READ COMMITTED does not save it: `SELECT sum(...)` takes no locks, so the
     two transactions never conflict.
+
+    ARCH-FINAL-001: this is a fast structural canary, NOT the proof. A source
+    grep cannot tell a working lock from one that is silently a no-op — and
+    `FOR UPDATE` *is* a no-op on SQLite, so nothing in this suite could. The
+    race is executed against real PostgreSQL in
+    `test_payment_concurrency_postgres.py`, together with a control that
+    removes the lock and asserts the double payment does occur.
     """
     from platform_core.modules.payment.service import PaymentService
 

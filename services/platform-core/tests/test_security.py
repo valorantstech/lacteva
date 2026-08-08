@@ -619,6 +619,58 @@ def test_production_refuses_development_credentials():
         )
 
 
+def test_production_refuses_a_channel_that_reports_success_and_sends_nothing():
+    """ARCH-FINAL-001: `logging` and `placeholder` both return ACCEPTED.
+
+    The message renders, the delivery row says accepted, every dashboard is
+    green — and the supplier is told nothing. Both are the DEFAULT, so a
+    production deployment that sets no provider silently discards every SMS
+    and every email. `dry_run` and `disabled` stay legal because both are
+    deliberate: one rehearses, the other fails visibly.
+    """
+    from platform_core.core.config import Settings
+
+    base = dict(
+        env="prod",
+        jwt_algorithm="HS256",
+        jwt_secret="a-real-secret",
+        minio_secret_key="a-real-minio-secret",
+    )
+    for provider in ("logging", "placeholder"):
+        with pytest.raises(ValueError, match="NOTIFICATION_SMS_PROVIDER"):
+            Settings(
+                **base, notification_sms_provider=provider, notification_email_provider="disabled"
+            )
+        with pytest.raises(ValueError, match="NOTIFICATION_EMAIL_PROVIDER"):
+            Settings(**base, notification_sms_provider="http", notification_email_provider=provider)
+
+    # Email has no transport at all yet, so a production deployment must say
+    # so explicitly rather than pretend.
+    Settings(**base, notification_sms_provider="http", notification_email_provider="disabled")
+    Settings(**base, notification_sms_provider="dry_run", notification_email_provider="dry_run")
+
+
+def test_production_refuses_row_level_security_being_switched_off():
+    """ARCH-FINAL-001: `rls_enabled=False` is the tenant boundary, not a knob.
+
+    It short-circuits `bind_tenant`, `bind_platform_context` and
+    `assert_rls_is_enforceable` alike — so the single environment variable
+    that removes database-enforced isolation also disables the startup check
+    that detects a SUPERUSER connection silently ignoring every policy. That
+    is the exact failure shape VER-001 found, reachable by configuration.
+    """
+    from platform_core.core.config import Settings
+
+    with pytest.raises(ValueError, match="RLS_ENABLED"):
+        Settings(
+            env="prod",
+            jwt_algorithm="HS256",
+            jwt_secret="a-real-secret",
+            minio_secret_key="a-real-minio-secret",
+            rls_enabled=False,
+        )
+
+
 def test_production_refuses_debug_and_wildcard_cors():
     from platform_core.core.config import Settings
 

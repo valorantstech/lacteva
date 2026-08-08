@@ -26,8 +26,8 @@ self-references and a template's references to its own examples are ignored.
 
 | Document | Outbound (cites) | Inbound (cited by) |
 | --- | --- | --- |
-| [API-0001](06-api/API-0001-platform-core.md) | DBD-0001 | — |
-| [CAP-0001](05-capabilities/CAP-0001-business-capability-master-map.md) | CAP-0002, CAP-0003, CAP-0004, CAP-0005, CAP-0006, CAP-0007, CAP-0008, CAP-0009, CAP-0010, CAP-0011, TPL-0009 | CAP-0002, CAP-0003, CAP-0004, CAP-0005, CAP-0006, CAP-0007, CAP-0008, CAP-0009, CAP-0010, CAP-0011, PSP-0003, PSP-0007, QR-0001, QR-0002, QR-0003, QR-0004, QR-0005, QR-0006, TPL-0016 |
+| [API-0001](06-api/API-0001-platform-core.md) | DBD-0001 | QR-0007 |
+| [CAP-0001](05-capabilities/CAP-0001-business-capability-master-map.md) | CAP-0002, CAP-0003, CAP-0004, CAP-0005, CAP-0006, CAP-0007, CAP-0008, CAP-0009, CAP-0010, CAP-0011, TPL-0009 | CAP-0002, CAP-0003, CAP-0004, CAP-0005, CAP-0006, CAP-0007, CAP-0008, CAP-0009, CAP-0010, CAP-0011, PSP-0003, PSP-0007, QR-0001, QR-0002, QR-0003, QR-0004, QR-0005, QR-0006, QR-0007, TPL-0016 |
 | [CAP-0002](05-capabilities/CAP-0002-farm-production.md) | CAP-0001, CAP-0003, CAP-0004, CAP-0007, CAP-0010 | CAP-0001, CAP-0003, CAP-0004, CAP-0007, CAP-0008, CAP-0009, CAP-0010, QR-0003 |
 | [CAP-0003](05-capabilities/CAP-0003-milk-collection-logistics.md) | CAP-0001, CAP-0002, CAP-0004, CAP-0007 | CAP-0001, CAP-0002, CAP-0004, CAP-0005, CAP-0007, CAP-0008, CAP-0010, PDT-0001, PSP-0001, PSP-0002, PSP-0008, PSP-0010 |
 | [CAP-0004](05-capabilities/CAP-0004-quality-food-safety.md) | CAP-0001, CAP-0002, CAP-0003, CAP-0005, CAP-0007, CAP-0009 | CAP-0001, CAP-0002, CAP-0003, CAP-0005, CAP-0006, CAP-0007, PDT-0001 |
@@ -38,7 +38,7 @@ self-references and a template's references to its own examples are ignored.
 | [CAP-0009](05-capabilities/CAP-0009-sustainability-welfare-compliance.md) | CAP-0001, CAP-0002, CAP-0005, CAP-0006 | CAP-0001, CAP-0004, PSP-0002 |
 | [CAP-0010](05-capabilities/CAP-0010-dairy-intelligence-advisory.md) | CAP-0001, CAP-0002, CAP-0003, CAP-0005, CAP-0007 | CAP-0001, CAP-0002, CAP-0011, PSP-0008 |
 | [CAP-0011](05-capabilities/CAP-0011-ecosystem-tenant-enablement.md) | CAP-0001, CAP-0007, CAP-0008, CAP-0010 | CAP-0001, QR-0003 |
-| [DBD-0001](07-data/DBD-0001-platform-core-database.md) | — | API-0001 |
+| [DBD-0001](07-data/DBD-0001-platform-core-database.md) | — | API-0001, QR-0007 |
 | [GOV-0001](01-governance/GOV-0001-review-workflow.md) | GOV-0002, STD-0002, STD-0003, STD-0004, STD-0005, STD-0006 | GOV-0003, QR-0001, QR-0003, QR-0005, STD-0004, STD-0007 |
 | [GOV-0002](01-governance/GOV-0002-approval-workflow.md) | — | GOV-0001, GOV-0003, QR-0001, QR-0004, QR-0005, QR-0006, STD-0007, TPL-0007, TPL-0008, TPL-0012, TPL-0021 |
 | [GOV-0003](01-governance/GOV-0003-architecture-review-checklists.md) | GOV-0001, GOV-0002, QR-0002, TPL-0001, TPL-0010 | QR-0006, STD-0007 |
@@ -58,14 +58,15 @@ self-references and a template's references to its own examples are ignored.
 | [QR-0003](12-quality/QR-0003-traceability-matrix.md) | CAP-0001, CAP-0002, CAP-0011, GOV-0001, QR-0001, QR-0004, TPL-0004 | PSP-0010, QR-0001, QR-0002, QR-0004, QR-0005, QR-0006 |
 | [QR-0004](12-quality/QR-0004-documentation-roadmap.md) | CAP-0001, GOV-0002, QR-0001, QR-0002, QR-0003, TPL-0004, TPL-0013 | QR-0001, QR-0002, QR-0003, QR-0005, QR-0006 |
 | [QR-0005](12-quality/QR-0005-documentation-coverage-report.md) | CAP-0001, GOV-0001, GOV-0002, QR-0001, QR-0002, QR-0003, QR-0004, QR-0006, STD-0001, TPL-0001 | QR-0006 |
-| [QR-0006](12-quality/QR-0006-next-work-queue.md) | CAP-0001, GOV-0002, GOV-0003, PDT-0001, PSP-0001, QR-0001, QR-0002, QR-0003, QR-0004, QR-0005, TPL-0001, TPL-0002, TPL-0003, TPL-0004, TPL-0010, TPL-0014, TPL-0015, TPL-0016, TPL-0017, TPL-0023 | QR-0005 |
+| [QR-0006](12-quality/QR-0006-next-work-queue.md) | CAP-0001, GOV-0002, GOV-0003, PDT-0001, PSP-0001, QR-0001, QR-0002, QR-0003, QR-0004, QR-0005, TPL-0001, TPL-0002, TPL-0003, TPL-0004, TPL-0010, TPL-0014, TPL-0015, TPL-0016, TPL-0017, TPL-0023 | QR-0005, QR-0007 |
+| [QR-0007](12-quality/QR-0007-final-architecture-review.md) | API-0001, CAP-0001, DBD-0001, QR-0006, STD-0007 | — |
 | [STD-0001](00-standards/STD-0001-markdown-writing-standards.md) | QR-0001, STD-0005, STD-0006 | QR-0001, QR-0005, STD-0007, TPL-0004 |
 | [STD-0002](00-standards/STD-0002-naming-conventions.md) | STD-0003 | GOV-0001, STD-0005, STD-0006, TPL-0004, TPL-0006, TPL-0008 |
 | [STD-0003](00-standards/STD-0003-document-numbering.md) | QR-0001, TPL-0001, TPL-0002, TPL-0003, TPL-0004, TPL-0005, TPL-0006, TPL-0007, TPL-0008, TPL-0009, TPL-0010, TPL-0013, TPL-0014, TPL-0015, TPL-0016, TPL-0017, TPL-0018, TPL-0019, TPL-0020, TPL-0021, TPL-0022, TPL-0023 | GOV-0001, QR-0001, STD-0002, TPL-0002 |
 | [STD-0004](00-standards/STD-0004-versioning-strategy.md) | GOV-0001 | GOV-0001, STD-0007, TPL-0005, TPL-0006, TPL-0007, TPL-0008, TPL-0012 |
 | [STD-0005](00-standards/STD-0005-mermaid-standards.md) | STD-0002, STD-0006 | GOV-0001, STD-0001, STD-0006, TPL-0003, TPL-0004, TPL-0006, TPL-0010, TPL-0014, TPL-0018 |
 | [STD-0006](00-standards/STD-0006-plantuml-standards.md) | STD-0002, STD-0005 | GOV-0001, QR-0001, STD-0001, STD-0005, STD-0007, TPL-0010 |
-| [STD-0007](00-standards/STD-0007-phoenix-software-engineering-standard.md) | GOV-0001, GOV-0002, GOV-0003, STD-0001, STD-0004, STD-0006 | — |
+| [STD-0007](00-standards/STD-0007-phoenix-software-engineering-standard.md) | GOV-0001, GOV-0002, GOV-0003, STD-0001, STD-0004, STD-0006 | QR-0007 |
 | [TPL-0001](02-templates/TPL-0001-adr-template.md) | — | GOV-0003, QR-0005, QR-0006, STD-0003 |
 | [TPL-0002](02-templates/TPL-0002-business-requirements-template.md) | STD-0003 | QR-0006, STD-0003 |
 | [TPL-0003](02-templates/TPL-0003-product-requirements-template.md) | STD-0005 | QR-0002, QR-0006, STD-0003 |
@@ -94,7 +95,7 @@ self-references and a template's references to its own examples are ignored.
 
 | Document | Inbound Count |
 | --- | --- |
-| CAP-0001 — Business Capability Master Map — Dairy Ecosystem | 19 |
+| CAP-0001 — Business Capability Master Map — Dairy Ecosystem | 20 |
 | CAP-0003 — Milk Collection & Logistics Domain | 12 |
 | GOV-0002 — Approval Workflow | 11 |
 | STD-0005 — Mermaid Standards | 9 |

@@ -184,6 +184,47 @@ class Settings(BaseSettings):
             problems.append("LACTEVA_JWT_KEYS must be configured (RS256 signing keys)")
         if self.minio_secret_key == DEV_MINIO_SECRET:
             problems.append("LACTEVA_MINIO_SECRET_KEY must be set in prod")
+        # ARCH-FINAL-001: `rls_enabled=False` is not a tuning knob in
+        # production — it is the tenant boundary.
+        #
+        # It short-circuits `bind_tenant`, `bind_platform_context` AND
+        # `assert_rls_is_enforceable`, so the one startup check that catches a
+        # SUPERUSER connection (the defect VER-001 found, where every policy
+        # was inert while looking correct) stops running too. One environment
+        # variable therefore both removes the guarantee and silences the alarm
+        # that would report its absence. Refused in prod for the same reason a
+        # development JWT secret is.
+        if not self.rls_enabled:
+            problems.append(
+                "LACTEVA_RLS_ENABLED must be true in prod — it is the tenant "
+                "boundary, and disabling it also disables the check that "
+                "detects a database role which bypasses row-level security"
+            )
+        # ARCH-FINAL-001: the default channel providers report success and
+        # send nothing.
+        #
+        # `logging` and `placeholder` both return ACCEPTED, so the notification
+        # is rendered, the delivery row says it was accepted, the metrics are
+        # green and the supplier is never told anything. Both are the DEFAULT,
+        # which means a production deployment that changes nothing gets a
+        # messaging platform that silently discards every message — the exact
+        # "looks healthy while doing nothing" failure this platform's own
+        # observability doctrine calls its most dangerous.
+        #
+        # Refused in prod so the choice has to be made out loud. `disabled`
+        # (raises, so the delivery visibly fails) and `dry_run` (a real
+        # message against real config, deliberately not sent) both remain
+        # available — email has no transport yet and must say so.
+        for channel, configured in (
+            ("SMS", self.notification_sms_provider),
+            ("EMAIL", self.notification_email_provider),
+        ):
+            if configured in ("logging", "placeholder"):
+                problems.append(
+                    f"LACTEVA_NOTIFICATION_{channel}_PROVIDER is {configured!r}, which marks "
+                    "every message delivered and sends nothing — use a real provider, "
+                    "'dry_run' to rehearse, or 'disabled' to fail visibly"
+                )
         if self.debug:
             problems.append("LACTEVA_DEBUG must be false in prod")
         if any(origin in ("*", "") for origin in self.cors_origins):

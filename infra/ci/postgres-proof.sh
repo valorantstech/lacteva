@@ -194,12 +194,16 @@ JUNIT="${WORKDIR}/pg-tests.xml"
 #   recovery       — backup/restore correctness: a `time` column that broke
 #                    every backup, a schema revision read from
 #                    `alembic_version`, and isolation on restored rows (DR-001)
+#   concurrency    — the money path under real contention: the settlement lock
+#                    that stops a double payment, and the lock ORDER that stops
+#                    it deadlocking. `FOR UPDATE` is a no-op on SQLite, so the
+#                    main suite could only ever grep for it (ARCH-FINAL-001)
 # Add new PostgreSQL-only modules HERE, not to a second job — this is the list
 # the skip assertion below protects.
 LACTEVA_TEST_POSTGRES_URL="$(app_url_for "${SOURCE_DB}")" \
   LACTEVA_TEST_POSTGRES_ADMIN_URL="$(url_for "${SOURCE_DB}")" \
   ${RUN} pytest tests/test_rls_postgres.py tests/test_exact_aggregation_postgres.py \
-  tests/test_disaster_recovery_postgres.py \
+  tests/test_disaster_recovery_postgres.py tests/test_payment_concurrency_postgres.py \
   -v --no-header -rs --junitxml="${JUNIT}" 2>&1 | tee "${RLS_LOG}" \
   || fail "PostgreSQL-only tests failed"
 

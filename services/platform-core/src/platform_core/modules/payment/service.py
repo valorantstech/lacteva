@@ -230,7 +230,22 @@ class PaymentService:
         seen: set[uuid.UUID] = set()
         resolved: list[tuple[Settlement, Decimal]] = []
         total = Money(amount=Decimal("0.00"), currency=cmd.currency)
-        for allocation in cmd.allocations:
+        # ARCH-FINAL-001: take the row locks in a deterministic GLOBAL order,
+        # never the client's.
+        #
+        # `_payable_settlement` locks each settlement FOR UPDATE. Iterating in
+        # request order means two payments that allocate the same settlements
+        # in opposite order take the same two locks in opposite order — the
+        # textbook deadlock, and one a supplier with two unpaid settlements
+        # produces without anyone doing anything unusual. Reproduced against
+        # real PostgreSQL: one transaction aborts with SQLSTATE 40P01, which
+        # reaches the operator as a 500 on the money path.
+        #
+        # Sorting by settlement id makes the cycle impossible, because every
+        # transaction in the platform now acquires these locks in the same
+        # sequence. It changes nothing else: the lines written are a set, and
+        # duplicates are still adjacent for the check below.
+        for allocation in sorted(cmd.allocations, key=lambda a: a.settlement_id):
             if allocation.settlement_id in seen:
                 raise ConflictError("the same settlement appears twice in one payment")
             seen.add(allocation.settlement_id)
