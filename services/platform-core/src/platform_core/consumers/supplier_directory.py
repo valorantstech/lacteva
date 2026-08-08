@@ -9,6 +9,7 @@ verifiable for drift like any other read model.
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.infrastructure.events import EventEnvelope
@@ -41,11 +42,34 @@ class SupplierDirectoryProjection(Projection):
             )
         )
         if entry is None:
+            # DEPLOY-001: get-or-create, not check-then-act.
+            #
+            # `SELECT` then `INSERT` has a gap, and `uq_notification_recipient`
+            # turns that gap into a failed consumer execution: two writers for
+            # one supplier both see nothing and both insert. It needs no exotic
+            # concurrency — a projection REBUILD running alongside the live
+            # consumer is two writers, and BR-0015 makes rebuilds routine.
+            #
+            # The insert goes in a SAVEPOINT so the loser's constraint
+            # violation rolls back only this nested block. A bare failure would
+            # poison the whole consumer transaction, taking the ledger row with
+            # it and turning a benign duplicate into a retry.
             entry = NotificationRecipient(
                 tenant_id=envelope.tenant_id, subject_id=subject_id, subject_type="supplier"
             )
-            session.add(entry)
-            await session.flush()
+            try:
+                async with session.begin_nested():
+                    session.add(entry)
+                    await session.flush()
+            except IntegrityError:
+                entry = await session.scalar(
+                    select(NotificationRecipient).where(
+                        NotificationRecipient.tenant_id == envelope.tenant_id,
+                        NotificationRecipient.subject_id == subject_id,
+                    )
+                )
+                if entry is None:  # pragma: no cover - the row must exist by now
+                    raise
         if envelope.type == SUPPLIER_REGISTERED:
             entry.display_name = data.get("full_name") or entry.display_name
             entry.code = data.get("code") or entry.code

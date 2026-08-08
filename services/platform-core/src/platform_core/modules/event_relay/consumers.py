@@ -19,6 +19,7 @@ Business modules never know consumers exist: consumers live in the separate
 `platform_core.consumers` package and are discovered by import at startup.
 """
 
+import hashlib
 import importlib
 import pkgutil
 import uuid
@@ -49,6 +50,17 @@ from platform_core.modules.event_relay.models import (
 from platform_core.modules.event_relay.service import backoff_delay, envelope_from_outbox
 
 log = structlog.get_logger("consumers")
+
+
+def _lock_key(name: str) -> int:
+    """A stable advisory-lock key for a consumer name.
+
+    `hash()` is salted per interpreter, so two processes would derive different
+    keys for the same consumer and neither would ever see the other's lock —
+    which is the exact failure this is meant to prevent.
+    """
+    return int.from_bytes(hashlib.sha256(name.encode()).digest()[:8], "big", signed=True)
+
 
 MAX_CONSUMER_ATTEMPTS = 5
 CONSUMER_CONFIG_PREFIX = "platform.consumers"  # platform.consumers.<name>.enabled
@@ -170,23 +182,51 @@ class ConsumerRunner:
         self, consumer: EventConsumer, *, limit: int, now: datetime
     ) -> dict[str, int]:
         processed = failed = 0
-        async with self._sf() as session:
-            cursor = await self._cursor(session, consumer.name)
-            events = await self._next_events(session, cursor, limit)
-        for event in events:
-            if event.event_name not in consumer.event_types:
-                await self._advance(consumer.name, event)  # skip without a ledger entry
-                continue
-            outcome = await self._process(consumer, event, now)
-            if outcome == "processed":
-                processed += 1
-            elif outcome == "failed":
-                failed += 1
-                break  # ordering: never run ahead of a retrying event
-            elif outcome == "waiting":
-                break  # backoff not elapsed — try again next run
-            # "skipped" (already succeeded/dead): cursor advanced, keep going
-        await self._update_lag(consumer.name)
+        async with self._sf() as claim:
+            # DEPLOY-001: only ONE runner may work a given consumer at a time.
+            #
+            # Divergence #42 recorded per-process worker loops as "safe (CAS
+            # dispatch + idempotency ledger) but untested" when more than one
+            # API host runs. The staging rehearsal tested it and `safe` was too
+            # strong: two runners racing the same events produced unique
+            # violations on `consumer_execution`, `receipt` and the projection
+            # tables. Business data stayed correct — the constraints held and
+            # nothing dead-lettered — but each collision marks an execution
+            # FAILED, spends one of the event's five retries, and logs an error
+            # an operator would page on.
+            #
+            # Per consumer NAME, so different consumers still run in parallel;
+            # `try`, so a second runner moves on instead of blocking behind the
+            # first; released in `finally` because the lock belongs to the
+            # CONNECTION and a pooled session would otherwise carry it away.
+            if not await self._claim(claim, consumer.name):
+                return {"processed": 0, "failed": 0}
+            # This session now does NOTHING but hold the lock. Committing here
+            # drops the transaction it opened, so it holds no row locks for the
+            # duration of the batch — the first version kept the cursor INSERT
+            # open inside it and deadlocked against `_advance_in`, which waits
+            # on that same row from a different session. A single runner hung.
+            await claim.commit()
+            try:
+                async with self._sf() as session:
+                    cursor = await self._cursor(session, consumer.name)
+                    events = await self._next_events(session, cursor, limit)
+                for event in events:
+                    if event.event_name not in consumer.event_types:
+                        await self._advance(consumer.name, event)  # skip, no ledger entry
+                        continue
+                    outcome = await self._process(consumer, event, now)
+                    if outcome == "processed":
+                        processed += 1
+                    elif outcome == "failed":
+                        failed += 1
+                        break  # ordering: never run ahead of a retrying event
+                    elif outcome == "waiting":
+                        break  # backoff not elapsed — try again next run
+                    # "skipped" (already succeeded/dead): cursor advanced, continue
+                await self._update_lag(consumer.name)
+            finally:
+                await self._release(claim, consumer.name)
         return {"processed": processed, "failed": failed}
 
     async def _process(self, consumer: EventConsumer, event: OutboxEvent, now: datetime) -> str:
@@ -358,6 +398,34 @@ class ConsumerRunner:
             return list((await session.scalars(stmt)).all())
 
     # --- helpers ------------------------------------------------------------
+
+    async def _claim(self, session: AsyncSession, name: str) -> bool:
+        """Try to become the only runner for this consumer.
+
+        PostgreSQL advisory locks are keyed by a bigint, so the consumer name
+        is hashed. `pg_try_advisory_lock` never waits: a second runner is told
+        no and gets on with something else, which is what keeps a slow
+        consumer on one host from stalling every other host's loop.
+
+        SQLite has no advisory locks and no concurrent writers to protect
+        against — it serialises writes itself — so this is a no-op there, and
+        the test stack behaves exactly as before.
+        """
+        from platform_core.core.rls import is_postgres
+
+        if not is_postgres():
+            return True
+        # Stable across processes and restarts, unlike hash(), which is salted
+        # per interpreter. Truncated to fit a signed 64-bit key.
+        return bool(await session.scalar(select(func.pg_try_advisory_lock(_lock_key(name)))))
+
+    async def _release(self, session: AsyncSession, name: str) -> None:
+        """Give the claim back on the SAME connection that took it."""
+        from platform_core.core.rls import is_postgres
+
+        if not is_postgres():
+            return
+        await session.scalar(select(func.pg_advisory_unlock(_lock_key(name))))
 
     async def _cursor(self, session: AsyncSession, name: str) -> ConsumerCursor:
         cursor = await session.scalar(

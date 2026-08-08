@@ -18,6 +18,7 @@ from decimal import Decimal
 import structlog
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import as_utc, utcnow
@@ -163,8 +164,22 @@ class NotificationService:
             recipient=request.recipient,
             payload=_jsonable(request.variables),
         )
+        # DEPLOY-001: the uniqueness must decide the race, not the SELECT
+        # above. `(event, template, channel)` is BR-0017's idempotency key, and
+        # a check-then-act leaves a gap between the check and the insert — two
+        # writers both see nothing, both insert, and one dies on
+        # `uq_notification_event`, failing a consumer execution and spending a
+        # retry for a message that was correctly NOT sent twice.
+        #
+        # The savepoint keeps the loser's violation from poisoning the whole
+        # consumer transaction; losing the race means the notification already
+        # exists, which is exactly the `None` this method returns for a replay.
         self._session.add(notification)
-        await self._session.flush()
+        try:
+            async with self._session.begin_nested():
+                await self._session.flush()
+        except IntegrityError:
+            return None
         await self._attempt(notification)
         return notification
 

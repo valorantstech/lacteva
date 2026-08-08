@@ -3,7 +3,7 @@ id: CLAUDE-CONTEXT
 title: Lacteva AI Engineering Context — Permanent Onboarding Guide
 type: reference
 status: Approved
-version: "1.34"
+version: "1.35"
 owner: Engineering
 created: 2026-08-03
 last-updated: 2026-08-08
@@ -275,12 +275,17 @@ Current test posture: **845 backend tests — 792 on SQLite (fast, hermetic, eve
 | 56 | ~~A tenant could be onboarded but not offboarded~~ — **closed by PROD-001**: `/v1/tenant-data/{export,offboarding-plan,offboard}`, with a three-way PURGE / ANONYMIZE / RETAIN classification so erasure and tax retention can both be satisfied. PURGE is the default for an unclassified table. Residual: no time-based retention and no partitioning (deliberate — see #34 and DBD-0002 §2). | Closed 2026-08-08. |
 | 57 | **Receipt PDFs are Latin-only.** The built-in writer uses the base-14 fonts, which are single-byte WinAnsi; a Devanagari or Swahili-with-diacritics supplier name is substituted with `?` rather than corrupting the file. A market needing non-Latin receipts needs an embedded TrueType font. | Open — PROD-001 §4. |
 | 58 | **Seven intra-module foreign keys are classified "must enforce" and are NOT yet enforced** ([DBD-0002 §1.2](../07-data/DBD-0002-integrity-lifecycle-and-numbering.md)). Deferred deliberately: adding an FK to a populated table takes an ACCESS EXCLUSIVE lock unless added `NOT VALID` then validated, and the deployment path has never been rehearsed. First migration after the rehearsal. | Open — PROD-001 §8. |
+| 59 | ~~Two consumer runners on one database were "safe but untested"~~ (#42) — **tested by DEPLOY-001 and `safe` was too strong**. A live API loop plus a second runner produced unique violations on `consumer_execution`, `receipt`, `notification_recipient` and `notification`. Business data stayed correct (constraints held, nothing dead-lettered) but each collision failed an execution, spent a retry and logged an error. Closed by a per-consumer `pg_try_advisory_lock` claim plus savepoint get-or-create in the two projections/consumers that used check-then-act. | Closed 2026-08-08. |
+| 60 | **The container deployment path is STILL unexecuted.** DEPLOY-001 rehearsed the application layer against real PostgreSQL 16.2, real Redis 6.2 and real MinIO from a clean clone and a fresh virtualenv — but Docker, RabbitMQ, nginx, TLS and Terraform are not installable in this environment. `docker-compose.production.yml`, the nginx config, systemd units and `deploy.sh` remain structurally reviewed only. | Open — QR-0007 C-1, narrowed not closed. |
+| 61 | **`pricing_matrix_row.unit_price` is still `double precision`** on the live schema, with `from_value`/`to_value` and six `milk_collection_transaction` weight/quality columns. Arithmetic is exact (BR-0005 converts via `Decimal(str(x))`) but the stored PRICE is inexact before any arithmetic happens. Confirmed against a real database, not inferred. Needs a data-verified migration of its own. | Open — the top data-integrity item before production. |
+| 62 | **The mobile app still presents receipts as a placeholder** (`receipt detail previews the placeholder and offers download`). The backend now returns a real `application/pdf`; the client copy and preview were not updated. | Open — frontend follow-up. |
 | 36 | ~~No connection-pool configuration~~ — **closed by ARCH-001**: pool size, overflow, timeout, pre-ping, recycle, and statement/lock/idle-in-transaction timeouts all set, with background sessions raised rather than exempted. **Still true and still load-bearing:** RLS's `SET LOCAL` requires PgBouncer **transaction** mode — statement mode would bind the wrong tenant. | Closed 2026-08-07; the pooler constraint remains a deployment rule. |
 
 ## Change Log
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.35 | 2026-08-08 | Engineering | DEPLOY-001 recorded: staging rehearsal executed from a clean clone against real PostgreSQL/Redis/MinIO; divergence #42 tested and closed (advisory-lock claim + savepoint upserts); divergences 59–62 added. The container deployment path remains unexecuted. |
 | 1.34 | 2026-08-08 | Engineering | PROD-001 recorded ([DBD-0002](../07-data/DBD-0002-integrity-lifecycle-and-numbering.md)): payment concurrency proven on PostgreSQL 16.2 across scenarios A–D; cross-tenant allocation leak, PDF-download encoding bug and document numbering all fixed; SMTP email transport and a dependency-free PDF writer shipped; tenant export/offboarding implemented. Divergences 52–58 added, 52–56 closed in the same pass. |
 | 1.33 | 2026-08-08 | Engineering | ARCH-FINAL-001 recorded ([QR-0007](../12-quality/QR-0007-final-architecture-review.md)): final pre-pilot architecture review. Divergences 46–51 added, 48–50 closed in the same pass. Backend judged NOT feature complete; two Critical operational items (deployment never executed, backups on the database volume) block an unattended pilot. |
 | 1.32 | 2026-08-08 | Engineering | PITR-001 recorded: physical point-in-time recovery executed and proven; divergence 26 closed after four work orders open; WAL archiving enabled in production. |
