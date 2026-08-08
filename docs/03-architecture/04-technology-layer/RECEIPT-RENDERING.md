@@ -90,3 +90,46 @@ Note for clients: the download endpoint is bearer-authenticated, so a plain `<a 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-05 | Engineering | Established by RCP-001. |
+
+## PDF rendering (PROD-001)
+
+RCP-001's `pdf` renderer was a placeholder that emitted a text file named
+`.pdf.txt` and flagged itself `placeholder=True`. It is replaced by
+`BuiltinPdfRenderer`, backed by `modules/receipt/pdf.py` — a real PDF 1.4
+writer with **no new dependency and no browser**.
+
+**Why write the format rather than take a library.** ReportLab is a large
+dependency for one page of text; WeasyPrint pulls Cairo and Pango; a headless
+browser puts a browser in the payment path of a single-host village
+deployment. A receipt is one page of black text on white, and PDF 1.4 with the
+base-14 fonts is a header, six objects, a cross-reference table and a trailer.
+
+**Properties that matter**
+
+* **Deterministic.** No creation timestamp, fixed object order — the same
+  immutable receipt renders byte-identically, so the artifact can be
+  checksummed for an audit without being stored (the RCP-001 rule holds).
+* **Escaped.** Backslash and both parentheses are structural inside a PDF
+  literal string, and supplier names are user input. `_escape` is the
+  injection boundary and has its own test.
+* **Single page.** A receipt covering many settlement periods truncates the
+  table with a visible note rather than running off the page.
+
+**Binary bodies.** `RenderedReceipt.body` is `str | bytes`. `/download` serves
+the bytes directly; `/render` is a JSON view, so it base64-encodes and sets
+`encoding: "base64"`. These are different methods (`render_artifact` vs
+`render`) because the download route previously called the JSON one and served
+**base64 text under `application/pdf`** — a file no reader could open.
+
+**Scope: what a payment receipt does NOT show.** Per-collection FAT, SNF and
+collection timestamps are deliberately absent. A settlement period covers many
+collections at different quality-based prices, so a single "the FAT" would be a
+fiction. The receipt shows **quantity and the weighted average rate** per
+settlement, named as an average. Per-collection quality belongs on a
+*collection* receipt — a different artifact against a different aggregate — if
+a market requires one.
+
+**Limitation.** The base-14 fonts are WinAnsi (single-byte). Text outside that
+range — a Devanagari supplier name — is substituted with `?` rather than
+producing a corrupt file. A market needing non-Latin receipts needs an embedded
+TrueType font; recorded in the divergence register.

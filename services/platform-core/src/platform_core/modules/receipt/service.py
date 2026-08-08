@@ -16,16 +16,18 @@ Rendering is a pure derivation of the frozen record (see `rendering.py`), so
 no artifact is stored and any format can be re-derived identically forever.
 """
 
-import secrets
+import base64
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
+from platform_core.core.document_numbers import next_document_number
 from platform_core.core.errors import ConflictError, NotFoundError
 from platform_core.core.metrics import RECEIPT_RENDER_SECONDS, RECEIPTS_GENERATED
 from platform_core.core.tenancy import require_current_tenant
@@ -138,7 +140,11 @@ class RenderedReceiptView(BaseModel):
     format: str
     content_type: str
     filename: str
+    #: PROD-001: text formats carry their body verbatim; a binary artifact
+    #: (the PDF) is base64 here, because this view is JSON. `encoding` says
+    #: which, so a client never has to guess from the content type.
     body: str
+    encoding: Literal["text", "base64"] = "text"
     placeholder: bool
 
 
@@ -191,6 +197,7 @@ class ReceiptService:
             tenant_id=tenant_id,
             receipt_number=await self._generate_number(tenant_id),
             payment_id=payment_id,
+            organization_name=data.get("organization_name") or "",
             supplier_id=uuid.UUID(data["supplier_id"]),
             supplier_name=data.get("supplier_name") or "",
             supplier_code=data.get("supplier_code") or "",
@@ -216,6 +223,10 @@ class ReceiptService:
                     settlement_id=uuid.UUID(line["settlement_id"]),
                     settlement_number=line.get("settlement_number") or "",
                     center_id=_parse_uuid(line.get("center_id")),
+                    center_name=line.get("center_name") or "",
+                    quantity=_parse_decimal(line.get("quantity")),
+                    quantity_unit=line.get("quantity_unit") or "",
+                    average_rate=_parse_decimal(line.get("average_rate")),
                     period_from=_parse_date(line.get("period_from")),
                     period_to=_parse_date(line.get("period_to")),
                     gross_amount=Decimal(str(line.get("gross_amount", "0"))),
@@ -323,22 +334,42 @@ class ReceiptService:
             offset=offset,
         )
 
-    async def render(self, receipt_id: uuid.UUID, fmt: str | None = None) -> RenderedReceiptView:
-        """Render through the format's registered renderer. Pure derivation of
-        an immutable record, so the same receipt always renders identically."""
+    async def render_artifact(
+        self, receipt_id: uuid.UUID, fmt: str | None = None
+    ) -> tuple[Receipt, RenderedReceipt]:
+        """The artifact with its body UNENCODED.
+
+        PROD-001: a download must serve the renderer's own bytes. `render()`
+        base64-encodes a binary body because its return type is a JSON view —
+        and the download route used to call it, so `GET .../download?format=pdf`
+        served base64 TEXT under `application/pdf`. Every PDF reader rejected
+        it. The two callers want genuinely different things, so they now have
+        genuinely different methods.
+        """
         receipt = await self.get(receipt_id)
         lines = await self._lines(receipt.id)
         payload = self._render_payload(receipt, lines)
         chosen = (fmt or receipt.render_format).lower()
         with RECEIPT_RENDER_SECONDS.labels(chosen).time():
             rendered: RenderedReceipt = get_renderer(chosen).render(payload)
+        return receipt, rendered
+
+    async def render(self, receipt_id: uuid.UUID, fmt: str | None = None) -> RenderedReceiptView:
+        """Render through the format's registered renderer. Pure derivation of
+        an immutable record, so the same receipt always renders identically."""
+        receipt, rendered = await self.render_artifact(receipt_id, fmt)
         return RenderedReceiptView(
             receipt_id=receipt.id,
             receipt_number=receipt.receipt_number,
             format=rendered.format,
             content_type=rendered.content_type,
             filename=rendered.filename,
-            body=rendered.body,
+            body=(
+                base64.b64encode(rendered.body).decode("ascii")
+                if rendered.is_binary
+                else rendered.body
+            ),
+            encoding="base64" if rendered.is_binary else "text",
             placeholder=rendered.placeholder,
         )
 
@@ -351,6 +382,7 @@ class ReceiptService:
             "receipt_number": receipt.receipt_number,
             "status": receipt.status,
             "version": receipt.version,
+            "organization_name": receipt.organization_name,
             "supplier_name": receipt.supplier_name,
             "supplier_code": receipt.supplier_code,
             "payment_id": str(receipt.payment_id),
@@ -368,6 +400,12 @@ class ReceiptService:
                     "settlement_number": line.settlement_number,
                     "settlement_id": str(line.settlement_id),
                     "center_id": str(line.center_id) if line.center_id else None,
+                    "center_name": line.center_name,
+                    "quantity": str(line.quantity) if line.quantity is not None else None,
+                    "quantity_unit": line.quantity_unit,
+                    "average_rate": (
+                        str(line.average_rate) if line.average_rate is not None else None
+                    ),
                     "period_from": line.period_from,
                     "period_to": line.period_to,
                     "gross_amount": str(line.gross_amount),
@@ -488,16 +526,19 @@ class ReceiptService:
         )
 
     async def _generate_number(self, tenant_id: uuid.UUID) -> str:
-        for _ in range(5):
-            candidate = "RCP-" + secrets.token_hex(3).upper()
-            exists = await self._session.scalar(
-                select(Receipt).where(
-                    Receipt.tenant_id == tenant_id, Receipt.receipt_number == candidate
-                )
-            )
-            if exists is None:
-                return candidate
-        raise ConflictError("could not generate a unique receipt number")
+        """PROD-001: a sequential series, not 24 bits of randomness.
+
+        See core/document_numbers.py for why — in short, this is a financial
+        document and several target jurisdictions require a sequential number
+        on one. The previous check-then-act loop also raced.
+        """
+        return await next_document_number(
+            self._session, tenant_id=tenant_id, doc_type="receipt", prefix="RCP"
+        )
+
+
+def _parse_decimal(value) -> Decimal | None:
+    return Decimal(str(value)) if value not in (None, "") else None
 
 
 def _parse_uuid(value) -> uuid.UUID | None:

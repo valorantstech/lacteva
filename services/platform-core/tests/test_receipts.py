@@ -355,16 +355,24 @@ async def test_html_rendering_is_self_contained(client):
         assert external not in html
 
 
-async def test_pdf_is_an_honest_placeholder(client):
+async def test_pdf_is_a_real_document(client):
+    """PROD-001 replaced RCP-001's placeholder with a real PDF writer.
+
+    This test previously asserted the OPPOSITE — that the artifact announced
+    itself as a stand-in — which was correct while the scope wall forbade a PDF
+    engine and is exactly the assertion that must now invert. Structural depth
+    lives in `test_receipt_pdf.py`; this is the end-to-end shape.
+    """
+    import base64
+
     headers, _center, _supplier, _settlement, _payment, receipt = await _receipted(client)
     body = (
         await client.get(f"/v1/receipts/{receipt['id']}/render?format=pdf", headers=headers)
     ).json()
-    assert body["format"] == "pdf" and body["placeholder"] is True
-    # It must never pretend to be a real PDF.
-    assert "PLACEHOLDER" in body["body"]
-    assert "no PDF engine is integrated" in body["body"]
-    assert receipt["receipt_number"] in body["body"]
+    assert body["format"] == "pdf" and body["placeholder"] is False
+    assert body["encoding"] == "base64"
+    assert base64.b64decode(body["body"]).startswith(b"%PDF-1.4")
+    assert receipt["receipt_number"].encode() in base64.b64decode(body["body"])
 
 
 async def test_rendering_is_deterministic(client):
@@ -421,10 +429,20 @@ async def test_download_serves_a_file(client):
     assert receipt["receipt_number"] in r.text
 
 
-async def test_download_defaults_to_the_pdf_placeholder(client):
+async def test_download_defaults_to_a_real_pdf(client):
+    """A download serves the renderer's own bytes.
+
+    PROD-001: this route used to call `render()`, whose body is base64 because
+    its return type is a JSON view — so `?format=pdf` served base64 TEXT under
+    `application/pdf` and no reader could open it. `render_artifact()` exists
+    to keep the two callers apart.
+    """
     headers, _center, _supplier, _settlement, _payment, receipt = await _receipted(client)
     r = await client.get(f"/v1/receipts/{receipt['id']}/download", headers=headers)
-    assert r.status_code == 200 and "PLACEHOLDER" in r.text
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content.startswith(b"%PDF-1.4")
+    assert r.headers["content-disposition"].endswith(f'"{receipt["receipt_number"]}.pdf"')
 
 
 async def test_metadata_reports_the_available_formats(client):

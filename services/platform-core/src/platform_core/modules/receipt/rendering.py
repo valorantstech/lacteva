@@ -48,8 +48,15 @@ class RenderedReceipt:
     format: str
     content_type: str
     filename: str
-    body: str
+    #: `str` for text formats, `bytes` for binary ones (PROD-001). Starlette's
+    #: Response accepts either, so a download needs no special case; the JSON
+    #: render endpoint base64-encodes bytes and says so.
+    body: str | bytes
     placeholder: bool = False  # True when no real engine produced this
+
+    @property
+    def is_binary(self) -> bool:
+        return isinstance(self.body, bytes)
 
 
 class ReceiptRenderer(Protocol):
@@ -153,6 +160,34 @@ class HtmlReceiptRenderer:
         )
 
 
+class BuiltinPdfRenderer:
+    """A real, printable PDF (PROD-001).
+
+    Replaces the RCP-001 placeholder. No PDF engine, no browser and no new
+    dependency: `receipt/pdf.py` writes PDF 1.4 directly, which is a
+    proportionate answer for one page of black text on white — see that
+    module's header for why each of the alternatives was rejected.
+
+    Output is deterministic (no embedded timestamp), so re-rendering an
+    immutable receipt is byte-identical and the artifact can be checksummed
+    for an audit without storing it.
+    """
+
+    name = "builtin-pdf"
+    format = "pdf"
+    content_type = "application/pdf"
+
+    def render(self, receipt: dict) -> RenderedReceipt:
+        from platform_core.modules.receipt.pdf import render_receipt_pdf
+
+        return RenderedReceipt(
+            format=self.format,
+            content_type=self.content_type,
+            filename=_filename(receipt, "pdf"),
+            body=render_receipt_pdf(receipt),
+        )
+
+
 class PlaceholderPdfRenderer:
     """PDF placeholder — NO PDF engine and NO external service (scope wall).
 
@@ -212,9 +247,11 @@ def reset_renderers() -> None:
 
 def _defaults() -> dict[str, ReceiptRenderer]:
     settings = get_settings()
-    pdf: ReceiptRenderer = PlaceholderPdfRenderer()
-    if settings.receipt_pdf_renderer != "placeholder":  # pragma: no cover - deployment seam
-        log.warning("receipt_pdf_renderer_unknown", configured=settings.receipt_pdf_renderer)
+    pdf: ReceiptRenderer = (
+        PlaceholderPdfRenderer()
+        if settings.receipt_pdf_renderer == "placeholder"
+        else BuiltinPdfRenderer()
+    )
     return {"json": JsonReceiptRenderer(), "html": HtmlReceiptRenderer(), "pdf": pdf}
 
 

@@ -61,6 +61,12 @@ class Receipt(Base, IdMixin):
     receipt_number: Mapped[str] = mapped_column(String(30))
     payment_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
 
+    # --- copied issuer identity (PROD-001) ---
+    # The dairy's own name, copied like everything else: a printable receipt
+    # has to say who issued it, and an organization that renames itself must
+    # not retroactively rewrite receipts it already gave farmers (BR-0020).
+    organization_name: Mapped[str] = mapped_column(String(200), default="")
+
     # --- copied payee identity (frozen at generation) ---
     supplier_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     supplier_name: Mapped[str] = mapped_column(String(200), default="")
@@ -114,8 +120,24 @@ class ReceiptLine(Base, IdMixin):
     settlement_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     settlement_number: Mapped[str] = mapped_column(String(30))
     center_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # PROD-001: copied so the printed receipt names the collection center a
+    # farmer recognises rather than a UUID.
+    center_name: Mapped[str] = mapped_column(String(200), default="")
     period_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     period_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # PROD-001: what the money was FOR. A receipt showing only an amount is not
+    # checkable by the person receiving it; quantity and the average rate over
+    # the period are what a farmer verifies against their own record.
+    #
+    # `average_rate` is deliberately an average and named as one: a settlement
+    # period covers many collections at different quality-based prices, so a
+    # single "the rate" would be a fiction. Per-collection FAT/SNF and their
+    # individual rates belong on a COLLECTION receipt — a different artifact
+    # against a different aggregate — not on a proof of payment (see
+    # RECEIPT-RENDERING.md §Scope).
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
+    quantity_unit: Mapped[str] = mapped_column(String(20), default="")
+    average_rate: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     gross_amount: Mapped[Decimal] = mapped_column(Numeric(16, 2), default=0)
     adjustments_amount: Mapped[Decimal] = mapped_column(Numeric(16, 2), default=0)
     net_amount: Mapped[Decimal] = mapped_column(Numeric(16, 2), default=0)

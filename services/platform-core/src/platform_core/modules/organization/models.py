@@ -21,9 +21,16 @@ class Organization(Base, IdMixin):
     slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     country_code: Mapped[str] = mapped_column(String(2))  # ISO 3166-1 alpha-2
     org_type: Mapped[str] = mapped_column(String(40))  # cooperative|processor|collector|farm|other
-    status: Mapped[str] = mapped_column(String(20), default="active")  # active|suspended|closed
+    # active|suspended|closed|offboarded. `offboarded` is terminal: the tenant's
+    # operational data is gone and only anonymized financial records remain
+    # (PROD-001, core/tenant_lifecycle.py).
+    status: Mapped[str] = mapped_column(String(20), default="active")
     default_locale: Mapped[str] = mapped_column(String(8), default="en")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    #: When the tenant was offboarded. The tombstone's timestamp — retained
+    #: financial records point at a tenant_id that must still resolve to
+    #: something, and "when did this dairy leave" is an audit question.
+    offboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # TODO(M1): verification workflow fields (status pending_verification,
     # verification evidence refs) realizing ETE.ONB.01 proportionate checks.

@@ -20,6 +20,8 @@ from platform_core.core.errors import AppError
 from platform_core.core.http_security import client_ip
 from platform_core.core.keys import get_key_registry
 from platform_core.core.security_audit import record_security_event
+from platform_core.core.tenancy import require_current_tenant
+from platform_core.core.tenant_lifecycle import TenantLifecycleService
 from platform_core.modules.auth.service import AuthService, LoginCommand, TokenPair
 from platform_core.modules.authz.permissions import PERMISSIONS
 from platform_core.modules.authz.service import AuthzService, PermissionEngine
@@ -1742,7 +1744,7 @@ async def download_receipt(
 ) -> Response:
     """Serve the artifact as a file. Rendering is a pure derivation of an
     immutable record, so a download is reproducible forever."""
-    rendered = await service.render(receipt_id, format)
+    _receipt, rendered = await service.render_artifact(receipt_id, format)
     return Response(
         content=rendered.body,
         media_type=rendered.content_type,
@@ -2346,6 +2348,103 @@ async def list_audit(
     ]
 
 
+# --- tenant lifecycle (PROD-001) --------------------------------------------
+
+
+class OffboardTenantRequest(BaseModel):
+    """The confirmation gate. A boolean is too easy to send by accident from a
+    script; typing the organization's name is the smallest gesture that cannot
+    be made without meaning it."""
+
+    confirmation: str = Field(min_length=1, max_length=200)
+
+
+tenant_data_router = APIRouter(
+    prefix="/tenant-data", tags=["tenant-lifecycle"], route_class=IdempotentRoute
+)
+TenantExport = Annotated[Principal, Depends(require_permission("organization.data.export"))]
+TenantDelete = Annotated[Principal, Depends(require_permission("organization.data.delete"))]
+
+
+def _lifecycle(session: deps.Session) -> TenantLifecycleService:
+    return TenantLifecycleService(session)
+
+
+Lifecycle = Annotated[TenantLifecycleService, Depends(_lifecycle)]
+
+
+@tenant_data_router.get("/export")
+async def export_tenant_data(service: Lifecycle, p: TenantExport, session: deps.Session) -> Any:
+    """Everything the platform holds for the caller's tenant, as portable JSON.
+
+    The tenant is taken from the authenticated principal and never from a
+    parameter — there is no request shape that can ask for another tenant's
+    data, which is a stronger guarantee than checking that it matches.
+    """
+    tenant_id = require_current_tenant()
+    payload = await service.export(tenant_id)
+    await record_security_event(
+        session,
+        action="tenant.data.exported",
+        subject=str(tenant_id),
+        actor_id=p.id,
+        detail={"rows": payload["row_count"], "tables": payload["table_count"]},
+    )
+    return payload
+
+
+@tenant_data_router.get("/offboarding-plan")
+async def tenant_offboarding_plan(service: Lifecycle, _: TenantDelete) -> Any:
+    """What offboarding WOULD do. Non-destructive, always available."""
+    plan = await service.plan(require_current_tenant())
+    return {
+        "tenant_id": str(plan.tenant_id),
+        "organization_name": plan.organization_name,
+        "total_rows": plan.total_rows,
+        "row_counts": plan.row_counts,
+        "purge": [{"table": t.table, "reason": t.reason} for t in plan.purge],
+        "anonymize": [
+            {"table": t.table, "columns": list(t.columns), "reason": t.reason}
+            for t in plan.anonymize
+        ],
+        "retain": [{"table": t.table, "reason": t.reason} for t in plan.retain],
+        "confirmation_required": plan.organization_name,
+    }
+
+
+@tenant_data_router.post("/offboard", status_code=200)
+async def offboard_tenant(
+    body: OffboardTenantRequest,
+    service: Lifecycle,
+    p: TenantDelete,
+    session: deps.Session,
+) -> Any:
+    """Irreversibly offboard the caller's tenant.
+
+    Requires the organization's exact name as confirmation. Operational data is
+    purged, financial and audit records are anonymized and kept, and the
+    organization becomes a tombstone — see core/tenant_lifecycle.py for why
+    those three treatments exist rather than one DELETE.
+    """
+    tenant_id = require_current_tenant()
+    plan = await service.execute(tenant_id, confirmation=body.confirmation, actor_id=p.id)
+    await record_security_event(
+        session,
+        action="tenant.data.offboarded",
+        subject=str(tenant_id),
+        actor_id=p.id,
+        detail={"rows": plan.total_rows, "purged_tables": len(plan.purge)},
+    )
+    return {
+        "tenant_id": str(tenant_id),
+        "status": "offboarded",
+        "rows_affected": plan.total_rows,
+        "purged_tables": [t.table for t in plan.purge],
+        "anonymized_tables": [t.table for t in plan.anonymize],
+        "retained_tables": [t.table for t in plan.retain],
+    }
+
+
 for sub in (
     wellknown,
     security_router,
@@ -2373,5 +2472,6 @@ for sub in (
     authz_router,
     config_router,
     audit_router,
+    tenant_data_router,
 ):
     router.include_router(sub)

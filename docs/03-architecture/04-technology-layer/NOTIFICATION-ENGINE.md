@@ -171,3 +171,54 @@ Gateway error bodies are truncated to 200 characters before they reach an except
 | --- | --- | --- | --- |
 | 1.1 | 2026-08-07 | Architecture Board | MSG-001: real delivery. Provider contract returns a DeliveryResult; permanent failures stop being retried; gateway idempotency key; PII masking; vendor-neutral HTTP adapter. |
 | 1.0 | 2026-08-05 | Engineering | Established by NOT-001. |
+
+## Email transport (PROD-001)
+
+Email had no transport at all: `notification_email_provider` accepted only
+`logging` and `placeholder`, both of which return `ACCEPTED`. A production
+deployment rendered every message, recorded every delivery as accepted, kept
+every dashboard green, and told no supplier anything.
+
+`SmtpEmailProvider` is the production adapter.
+
+**Why SMTP rather than a vendor SDK.** Every transactional email service —
+SES, SendGrid, Postmark, Mailgun, and a cooperative's own relay — speaks SMTP.
+One adapter reaches all of them with no vendor dependency, and a market whose
+regulator requires mail to stay on national infrastructure uses the same code
+path. A vendor API adapter implements the same `ChannelProvider` protocol.
+
+**Why a worker thread.** `smtplib` is stdlib and blocking. `asyncio.to_thread`
+keeps the consumer loop unblocked without adding a dependency to the delivery
+path for a protocol that has not changed in twenty years.
+
+**Failure classification is the load-bearing part.** MSG-001's finding was that
+retrying an unretryable failure costs a real connection and a backoff window
+each time and cannot succeed. SMTP states this exactly:
+
+| Outcome | Classification |
+| --- | --- |
+| `SMTPRecipientsRefused`, `SMTPSenderRefused` | **Permanent** — the address is wrong |
+| `SMTPAuthenticationError`, `SMTPNotSupportedError` | **Permanent** — credential/capability; every message fails identically |
+| 5xx `SMTPResponseException` | **Permanent** |
+| 4xx `SMTPResponseException` | Transient |
+| Connect/disconnect/timeout/`OSError` | Transient |
+| Anything unfamiliar | Transient — a supplier's message must not be dropped on an unknown failure |
+
+**Idempotency.** SMTP has no idempotency key. The `Message-ID` is derived from
+the notification id and is **stable across retries**, so a receiving MTA that
+deduplicates on it recognises a resend of a message the gateway already
+accepted but whose response was lost. (Built by hand: `email.utils.make_msgid`
+mixes in a timestamp and random bytes, which produced a new id per attempt and
+defeated the purpose — caught by a test.)
+
+**PII.** `mask_phone()` handles addresses as well as numbers
+(`grace@example.com` → `g****@example.com`) and is applied at every log site.
+Provider error detail is truncated to 200 characters, because gateways echo the
+request often enough that a raw copy can carry the credential just rejected.
+
+**Configuration.** `LACTEVA_SMTP_HOST`, `_PORT`, `_USERNAME`, `_PASSWORD`,
+`_SECURITY` (`starttls` | `ssl` | `none`), `_TIMEOUT_SECONDS`,
+`_FROM_ADDRESS`, `_FROM_NAME`. Credentials reach the process through Docker
+Secrets (`secrets_dir`) or the environment; none is in source. Production
+refuses `smtp` with no host, and refuses `logging`/`placeholder` on either
+channel outright.

@@ -16,7 +16,6 @@ Scope wall (PAY-001): payment methods are metadata. No gateway, no bank
 integration, no provider SDK, no credentials.
 """
 
-import secrets
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -26,6 +25,7 @@ from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
+from platform_core.core.document_numbers import next_document_number
 from platform_core.core.errors import ConflictError, NotFoundError
 from platform_core.core.metrics import (
     PAYMENTS_CANCELLED,
@@ -37,6 +37,8 @@ from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
+from platform_core.modules.collection_center.models import CollectionCenter
+from platform_core.modules.organization.models import Organization
 from platform_core.modules.payment.models import (
     LIVE_STATUSES,
     PAYMENT_METHODS,
@@ -44,7 +46,7 @@ from platform_core.modules.payment.models import (
     PaymentAttempt,
     PaymentLine,
 )
-from platform_core.modules.settlement.models import Settlement
+from platform_core.modules.settlement.models import Settlement, SettlementLine
 from platform_core.modules.supplier.models import Supplier, SupplierProfile
 
 BUS_EVENTS = {
@@ -391,19 +393,68 @@ class PaymentService:
             select(SupplierProfile).where(SupplierProfile.supplier_id == payment.supplier_id)
         )
         settlements = {}
+        volumes: dict[uuid.UUID, tuple[Decimal, Decimal, str]] = {}
+        centers: dict[uuid.UUID, str] = {}
         if lines:
+            settlement_ids = [line.settlement_id for line in lines]
             rows = await self._session.scalars(
-                select(Settlement).where(Settlement.id.in_([line.settlement_id for line in lines]))
+                select(Settlement).where(Settlement.id.in_(settlement_ids))
             )
             settlements = {s.id: s for s in rows.all()}
+            # PROD-001: quantity and the average rate travel with the event so
+            # the receipt can say what the money was FOR. Aggregated in SQL
+            # over the settlement's own lines — the same cross-module read this
+            # method already performs for `Settlement`, and the reason this
+            # method exists at all (a consumer must never call back).
+            volume_rows = await self._session.execute(
+                select(
+                    SettlementLine.settlement_id,
+                    func.sum(SettlementLine.quantity),
+                    func.sum(SettlementLine.gross_amount),
+                    func.min(SettlementLine.quantity_unit),
+                )
+                .where(
+                    SettlementLine.tenant_id == payment.tenant_id,
+                    SettlementLine.settlement_id.in_(settlement_ids),
+                )
+                .group_by(SettlementLine.settlement_id)
+            )
+            for settlement_id, quantity, gross, unit in volume_rows.all():
+                volumes[settlement_id] = (
+                    Decimal(quantity or 0),
+                    Decimal(gross or 0),
+                    unit or "kg",
+                )
+            center_ids = {s.center_id for s in settlements.values() if s.center_id}
+            if center_ids:
+                center_rows = await self._session.scalars(
+                    select(CollectionCenter).where(CollectionCenter.id.in_(center_ids))
+                )
+                centers = {c.id: c.name for c in center_rows.all()}
+        organization = await self._session.get(Organization, payment.tenant_id)
         detail = []
         for line in lines:
             settlement = settlements.get(line.settlement_id)
+            quantity, gross_for_rate, unit = volumes.get(
+                line.settlement_id, (Decimal(0), Decimal(0), "")
+            )
+            # Weighted average price actually achieved over the period. Guarded
+            # because a settlement with no lines is possible (an adjustment-only
+            # period), and dividing by it would take the whole event down.
+            average_rate = (
+                (gross_for_rate / quantity).quantize(Decimal("0.0001"))
+                if quantity and quantity > 0
+                else None
+            )
             detail.append(
                 {
                     "settlement_id": str(line.settlement_id),
                     "settlement_number": line.settlement_number,
                     "center_id": str(settlement.center_id) if settlement else None,
+                    "center_name": (centers.get(settlement.center_id, "") if settlement else ""),
+                    "quantity": str(quantity) if quantity else None,
+                    "quantity_unit": unit,
+                    "average_rate": str(average_rate) if average_rate is not None else None,
                     "gross_amount": str(settlement.gross_amount) if settlement else "0.00",
                     "adjustments_amount": (
                         str(settlement.adjustments_amount) if settlement else "0.00"
@@ -415,6 +466,7 @@ class PaymentService:
                 }
             )
         return {
+            "organization_name": getattr(organization, "name", None) or "",
             "supplier_name": getattr(profile, "full_name", None) or "",
             "supplier_code": getattr(supplier, "code", None) or "",
             "lines": detail,
@@ -559,7 +611,16 @@ class PaymentService:
                 paid_col.label("paid"),
             )
             .join(Payment, Payment.id == PaymentLine.payment_id)
-            .where(Payment.status.in_(LIVE_STATUSES))
+            # PROD-001: the subquery carries its own tenant filter. The outer
+            # SELECT filters `Settlement.tenant_id`, which bounds the ROWS but
+            # not the SUMS joined onto them — so without this the allocated
+            # column was computed cross-tenant and only RLS stood between a
+            # supplier and a balance reduced by another dairy's payments.
+            .where(
+                PaymentLine.tenant_id == tenant_id,
+                Payment.tenant_id == tenant_id,
+                Payment.status.in_(LIVE_STATUSES),
+            )
             .group_by(PaymentLine.settlement_id)
             .subquery()
         )
@@ -665,12 +726,31 @@ class PaymentService:
     async def _allocations_for(
         self, settlement_ids: list[uuid.UUID]
     ) -> dict[uuid.UUID, tuple[Decimal, Decimal]]:
+        """How much of each settlement is already claimed.
+
+        PROD-001: the tenant filter here is NOT redundant with RLS.
+
+        This is the single most financially consequential query in the
+        platform — its result is what `_resolve_allocation` subtracts to decide
+        what a farmer is still owed. It previously carried no tenant predicate
+        at all and depended entirely on row-level security, which violates
+        BR-0022's rule that application filters are defense-in-depth rather
+        than decoration. Two consequences followed: on SQLite, where RLS cannot
+        execute, the whole test suite exercised this query with no isolation
+        whatsoever; and had this service ever been constructed on a
+        platform-bound session, another tenant's allocations would have been
+        summed into this tenant's outstanding balance — quietly reducing what a
+        supplier is paid, with no error anywhere.
+        """
         if not settlement_ids:
             return {}
+        tenant_id = require_current_tenant()
         rows = await self._session.execute(
             select(PaymentLine.settlement_id, Payment.status, func.sum(PaymentLine.amount))
             .join(Payment, Payment.id == PaymentLine.payment_id)
             .where(
+                PaymentLine.tenant_id == tenant_id,
+                Payment.tenant_id == tenant_id,
                 PaymentLine.settlement_id.in_(settlement_ids),
                 Payment.status.in_(LIVE_STATUSES),
             )
@@ -843,13 +923,12 @@ class PaymentService:
         )
 
     async def _generate_number(self, tenant_id: uuid.UUID) -> str:
-        for _ in range(5):
-            candidate = "PAY-" + secrets.token_hex(3).upper()
-            exists = await self._session.scalar(
-                select(Payment).where(
-                    Payment.tenant_id == tenant_id, Payment.payment_number == candidate
-                )
-            )
-            if exists is None:
-                return candidate
-        raise ConflictError("could not generate a unique payment number")
+        """PROD-001: a sequential series, not 24 bits of randomness.
+
+        See core/document_numbers.py for why — in short, this is a financial
+        document and several target jurisdictions require a sequential number
+        on one. The previous check-then-act loop also raced.
+        """
+        return await next_document_number(
+            self._session, tenant_id=tenant_id, doc_type="payment", prefix="PAY"
+        )

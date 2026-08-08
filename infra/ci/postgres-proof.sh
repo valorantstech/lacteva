@@ -195,9 +195,11 @@ JUNIT="${WORKDIR}/pg-tests.xml"
 #                    every backup, a schema revision read from
 #                    `alembic_version`, and isolation on restored rows (DR-001)
 #   concurrency    — the money path under real contention: the settlement lock
-#                    that stops a double payment, and the lock ORDER that stops
-#                    it deadlocking. `FOR UPDATE` is a no-op on SQLite, so the
-#                    main suite could only ever grep for it (ARCH-FINAL-001)
+#                    that stops a double payment, the lock ORDER that stops it
+#                    deadlocking, the tenant filter on the allocation sum, and
+#                    document-number allocation. `FOR UPDATE` is a no-op on
+#                    SQLite, so the main suite could only ever grep for it
+#                    (ARCH-FINAL-001, extended by PROD-001)
 # Add new PostgreSQL-only modules HERE, not to a second job — this is the list
 # the skip assertion below protects.
 LACTEVA_TEST_POSTGRES_URL="$(app_url_for "${SOURCE_DB}")" \

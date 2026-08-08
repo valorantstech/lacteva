@@ -389,3 +389,59 @@ In the order that closes the largest gap first:
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-06 | Architecture Board | Established by DEP-001. |
+
+
+## Production configuration that now FAILS CLOSED (PROD-001)
+
+The process refuses to start in `prod` on any of these. Each was a way for a
+deployment to look healthy while doing nothing, or to run on a credential that
+was never meant to leave a laptop.
+
+| Setting | Refused value | Why |
+| --- | --- | --- |
+| `LACTEVA_DATABASE_URL` | non-PostgreSQL, or `lacteva:lacteva@` / `postgres:postgres@` | RLS, exact aggregation and the backup format all require PostgreSQL; the dev credential is in this repo's own compose files |
+| `LACTEVA_RLS_ENABLED` | `false` | It is the tenant boundary — and disabling it also disables the check that detects a role which bypasses RLS |
+| `LACTEVA_NOTIFICATION_SMS_PROVIDER` | `logging`, `placeholder` | Both return ACCEPTED and send nothing |
+| `LACTEVA_NOTIFICATION_EMAIL_PROVIDER` | `logging`, `placeholder` | As above. Use `smtp`, or `disabled` to fail visibly |
+| `LACTEVA_EVENT_BUS` | `memory`, `null` | Accept every publish and deliver nothing |
+| `LACTEVA_OUTBOX_MODE` | `inline` | Dispatches inside the request transaction; bypasses retry and the DLQ |
+| `LACTEVA_RATE_LIMIT_BACKEND` | `memory` | Per-process, so each replica grants the full budget again |
+| `LACTEVA_RECEIPT_PDF_RENDERER` | `placeholder` | Cannot produce a printable receipt |
+| `LACTEVA_NOTIFICATION_SMS_PROVIDER=http` | with no `SMS_API_URL`/`SMS_API_KEY` | Fails per message instead of failing the deploy once |
+| `LACTEVA_NOTIFICATION_EMAIL_PROVIDER=smtp` | with no `SMTP_HOST` | As above |
+
+`dry_run` and `disabled` remain legal on both channels: both are deliberate.
+Email has no transport beyond SMTP, so a deployment without a mail relay must
+say `disabled` rather than pretend.
+
+### Database roles
+
+Full rationale in [DBD-0002 §4](docs/07-data/DBD-0002-integrity-lifecycle-and-numbering.md).
+
+```sql
+-- Migrations run as the owner; the application never performs DDL.
+CREATE ROLE lacteva_app LOGIN PASSWORD '<from a secret>';
+ALTER ROLE lacteva_app NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+GRANT CONNECT ON DATABASE lacteva TO lacteva_app;
+GRANT USAGE ON SCHEMA public TO lacteva_app;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO lacteva_app;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO lacteva_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO lacteva_app;
+```
+
+**A superuser ignores every RLS policy, including `FORCE`.** The application
+refuses to start in `prod`/`staging` when its role is `SUPERUSER` or has
+`BYPASSRLS` — this is the defect VER-001 found, where every policy was visible
+in `pg_policies` and enforcing nothing.
+
+**PgBouncer must run in `transaction` mode.** RLS binds the tenant with
+`SET LOCAL`, which is transaction-scoped; in `statement` mode a pooled
+connection can serve a query under another request's tenant.
+
+### Tenant offboarding
+
+`GET /v1/tenant-data/export` → `GET /v1/tenant-data/offboarding-plan` →
+`POST /v1/tenant-data/offboard` (confirmation = the organization's exact name).
+Operational data is purged, financial and audit records are anonymized and
+retained, the organization becomes a tombstone. Irreversible — take the export
+first.

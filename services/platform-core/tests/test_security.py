@@ -630,24 +630,94 @@ def test_production_refuses_a_channel_that_reports_success_and_sends_nothing():
     """
     from platform_core.core.config import Settings
 
+    for provider in ("logging", "placeholder"):
+        with pytest.raises(ValueError, match="NOTIFICATION_SMS_PROVIDER"):
+            Settings(**_safe_prod(notification_sms_provider=provider))
+        with pytest.raises(ValueError, match="NOTIFICATION_EMAIL_PROVIDER"):
+            Settings(**_safe_prod(notification_email_provider=provider))
+
+    # `dry_run` and `disabled` are deliberate choices and stay legal.
+    Settings(
+        **_safe_prod(notification_sms_provider="dry_run", notification_email_provider="dry_run")
+    )
+
+
+def _safe_prod(**overrides):
+    """A production configuration that passes every check, so a test can flip
+    exactly one thing and know that is what failed."""
     base = dict(
         env="prod",
         jwt_algorithm="HS256",
         jwt_secret="a-real-secret",
         minio_secret_key="a-real-minio-secret",
+        database_url="postgresql+asyncpg://app_user:strong@db.internal:5432/lacteva",
+        event_bus="rabbitmq",
+        outbox_mode="background",
+        rate_limit_backend="redis",
+        notification_sms_provider="disabled",
+        notification_email_provider="disabled",
+        receipt_pdf_renderer="builtin",
     )
-    for provider in ("logging", "placeholder"):
-        with pytest.raises(ValueError, match="NOTIFICATION_SMS_PROVIDER"):
-            Settings(
-                **base, notification_sms_provider=provider, notification_email_provider="disabled"
-            )
-        with pytest.raises(ValueError, match="NOTIFICATION_EMAIL_PROVIDER"):
-            Settings(**base, notification_sms_provider="http", notification_email_provider=provider)
+    base.update(overrides)
+    return base
 
-    # Email has no transport at all yet, so a production deployment must say
-    # so explicitly rather than pretend.
-    Settings(**base, notification_sms_provider="http", notification_email_provider="disabled")
-    Settings(**base, notification_sms_provider="dry_run", notification_email_provider="dry_run")
+
+def test_the_reference_production_configuration_is_accepted():
+    """The control. Without it, every test below could be passing because the
+    baseline is broken rather than because the flipped value is refused."""
+    from platform_core.core.config import Settings
+
+    Settings(**_safe_prod())
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        # PROD-001: each of these lets production look healthy while doing
+        # nothing, or run on a credential that was never meant to leave a
+        # laptop. Every one is now a startup failure.
+        ({"database_url": "postgresql+asyncpg://lacteva:lacteva@db:5432/lacteva"}, "DATABASE_URL"),
+        ({"database_url": "sqlite+aiosqlite:///./dev.db"}, "DATABASE_URL"),
+        ({"event_bus": "memory"}, "EVENT_BUS"),
+        ({"event_bus": "null"}, "EVENT_BUS"),
+        ({"outbox_mode": "inline"}, "OUTBOX_MODE"),
+        ({"rate_limit_backend": "memory"}, "RATE_LIMIT_BACKEND"),
+        ({"receipt_pdf_renderer": "placeholder"}, "RECEIPT_PDF_RENDERER"),
+        ({"notification_sms_provider": "http", "sms_api_url": "", "sms_api_key": ""}, "SMS_API"),
+        ({"notification_email_provider": "smtp", "smtp_host": ""}, "SMTP_HOST"),
+    ],
+)
+def test_production_refuses_every_configuration_that_pretends_to_work(overrides, expected):
+    from platform_core.core.config import Settings
+
+    with pytest.raises(ValueError, match=expected):
+        Settings(**_safe_prod(**overrides))
+
+
+def test_a_fully_configured_gateway_is_accepted():
+    """The refusals must not block a real deployment — `http` with credentials
+    and `smtp` with a host are exactly what production is supposed to look
+    like."""
+    from platform_core.core.config import Settings
+
+    Settings(
+        **_safe_prod(
+            notification_sms_provider="http",
+            sms_api_url="https://sms.example/v1/send",
+            sms_api_key="a-real-key",
+            notification_email_provider="smtp",
+            smtp_host="smtp.example",
+        )
+    )
+
+
+def test_none_of_these_checks_apply_outside_production():
+    """Development must stay convenient — every default that prod refuses is
+    the right choice on a laptop."""
+    from platform_core.core.config import Settings
+
+    for env in ("dev", "test", "staging"):
+        Settings(env=env)
 
 
 def test_production_refuses_row_level_security_being_switched_off():
@@ -721,15 +791,19 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
     historical record and must not change meaning when the models later do.
 
     This test earns its keep — it is what failed when IDM-001 introduced the
-    first new tenant-owned table since SEC-002.
+    first new tenant-owned table since SEC-002, and again when PROD-001 added
+    `document_sequence`.
     """
     from migrations.versions.a1c7f3b90e22_row_level_security import TENANT_TABLES
+    from migrations.versions.e62a7e569a6a_prod_001_document_number_sequences import (
+        POLICY_TABLES as PROD001_TABLES,
+    )
     from migrations.versions.f2d18ba60c47_sec002_complete_rls_coverage import NEW_TENANT_TABLES
     from migrations.versions.f73f41473469_idempotency_records import POLICY_TABLES
 
     from platform_core.core.rls import tenant_tables
 
-    covered = set(TENANT_TABLES) | set(NEW_TENANT_TABLES) | set(POLICY_TABLES)
+    covered = set(TENANT_TABLES) | set(NEW_TENANT_TABLES) | set(POLICY_TABLES) | set(PROD001_TABLES)
     uncovered = set(tenant_tables()) - covered
     assert not uncovered, (
         f"tenant-owned tables with no RLS policy: {sorted(uncovered)} — "

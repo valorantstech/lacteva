@@ -14,7 +14,6 @@ transaction references.
 NO payment concepts (SET-002+).
 """
 
-import secrets
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -24,6 +23,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
+from platform_core.core.document_numbers import next_document_number
 from platform_core.core.errors import ConflictError, NotFoundError
 from platform_core.core.metrics import (
     SETTLEMENTS_CANCELLED,
@@ -585,14 +585,12 @@ class SettlementService:
         )
 
     async def _generate_number(self, tenant_id: uuid.UUID) -> str:
-        for _ in range(5):
-            candidate = "STL-" + secrets.token_hex(3).upper()
-            exists = await self._session.scalar(
-                select(Settlement).where(
-                    Settlement.tenant_id == tenant_id,
-                    Settlement.settlement_number == candidate,
-                )
-            )
-            if exists is None:
-                return candidate
-        raise ConflictError("could not generate a unique settlement number")
+        """PROD-001: a sequential series, not 24 bits of randomness.
+
+        See core/document_numbers.py for why — in short, this is a financial
+        document and several target jurisdictions require a sequential number
+        on one. The previous check-then-act loop also raced.
+        """
+        return await next_document_number(
+            self._session, tenant_id=tenant_id, doc_type="settlement", prefix="STL"
+        )

@@ -188,3 +188,32 @@ Each is a decision with a reason, not an omission:
 | --- | --- | --- | --- |
 | 1.1 | 2026-08-07 | Architecture Board | IDM-001: `Idempotency-Key` documented as a platform capability on every mutation; §8.1 closed. |
 | 1.0 | 2026-08-07 | Architecture Board | Established by API-001. Error contract published, page sizes bounded and validated, `Idempotency-Key` on payment creation, conventions recorded. |
+
+## Tenant lifecycle endpoints (PROD-001)
+
+| Method | Path | Permission | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/v1/tenant-data/export` | `organization.data.export` | Every row the platform holds for the caller's tenant, as portable JSON. Audited. |
+| `GET` | `/v1/tenant-data/offboarding-plan` | `organization.data.delete` | Non-destructive. Returns per-table treatment, row counts, and the exact confirmation string required. |
+| `POST` | `/v1/tenant-data/offboard` | `organization.data.delete` | Irreversible. Body `{"confirmation": "<organization name>"}`. |
+
+**The tenant is never a parameter.** It comes from the authenticated
+principal, so there is no request shape that can name another tenant — a
+stronger guarantee than validating that a supplied id matches.
+
+`organization.data.export` and `organization.data.delete` are deliberately
+separate from `organization.manage`: exporting every record, and irreversibly
+offboarding, are not the same authority as renaming a branch.
+
+## Receipt rendering (PROD-001)
+
+`GET /v1/receipts/{id}/download?format=pdf` now returns **`application/pdf`**
+with real PDF bytes. `GET /v1/receipts/{id}/render?format=pdf` returns JSON
+with `body` base64-encoded and a new `encoding` field (`"text" | "base64"`), so
+a client never infers the encoding from the content type.
+
+`placeholder` is `false` for PDF from this release. Receipts generated before
+PROD-001 render without the organization name, center name, quantity and rate
+columns — those fields are copied at generation and are not backfilled,
+because re-deriving a frozen artifact from a world that has since changed is
+what BR-0020 forbids.

@@ -12,8 +12,12 @@ Selection is configuration (`LACTEVA_NOTIFICATION_SMS_PROVIDER`,
 runtime through `register_provider` — the seam deployments and tests use.
 """
 
+import asyncio
+import smtplib
 import uuid
 from dataclasses import dataclass, field
+from email.message import EmailMessage
+from email.utils import formataddr
 from typing import Any, Protocol
 
 import structlog
@@ -354,6 +358,126 @@ class HttpSmsProvider:
         )
 
 
+class SmtpEmailProvider:
+    """The production email transport (PROD-001).
+
+    **Why SMTP rather than a vendor SDK.** Every transactional email service —
+    SES, SendGrid, Postmark, Mailgun, and a cooperative's own relay — speaks
+    SMTP, so one adapter reaches all of them with no vendor dependency and no
+    lock-in, and a market whose regulator requires mail to stay on national
+    infrastructure is served by the same code path. A vendor API adapter, if
+    one is ever wanted for the analytics, implements this same protocol and
+    changes nothing else.
+
+    **Why a thread rather than an async SMTP library.** `smtplib` is stdlib and
+    blocking; the alternative is another dependency in the delivery path. The
+    send runs in `asyncio.to_thread`, so the consumer loop is never blocked and
+    the platform gains no new supply-chain surface for a protocol that has not
+    changed in twenty years.
+
+    **Failure classification is the part that matters.** MSG-001's finding was
+    that retrying an unretryable failure costs a real gateway call and a
+    backoff window each time, and never succeeds. SMTP states this precisely:
+    5xx is permanent, 4xx is transient, and the exception hierarchy separates a
+    refused recipient from a refused connection.
+    """
+
+    name = "smtp-email"
+
+    def __init__(self, channel: str = "email"):
+        self._channel = channel
+
+    def _settings(self):
+        return get_settings()
+
+    async def send(self, message: OutboundMessage) -> DeliveryResult:
+        settings = self._settings()
+        if not settings.smtp_host:
+            # A misconfiguration, not a bad address: this fails identically for
+            # every message until someone changes the configuration.
+            raise PermanentSendError("LACTEVA_SMTP_HOST is not configured")
+
+        sender = settings.smtp_from_address or settings.smtp_username
+        if not sender:
+            raise PermanentSendError("no envelope sender (LACTEVA_SMTP_FROM_ADDRESS)")
+
+        mail = EmailMessage()
+        mail["Subject"] = message.title
+        mail["From"] = formataddr((settings.smtp_from_name, sender))
+        mail["To"] = message.recipient
+        # Stable across every retry of this notification, so a receiving MTA
+        # that deduplicates on Message-ID recognises a resend of a message the
+        # gateway already accepted but whose response we lost. The platform
+        # cannot make SMTP idempotent by itself; this is the part it can do.
+        #
+        # Built by hand rather than with `email.utils.make_msgid`, which mixes
+        # in a timestamp and random bytes — that produced a NEW id on every
+        # attempt and defeated the entire purpose. Caught by a test asserting
+        # two sends of one message share an id.
+        _local, _, domain = sender.partition("@")
+        mail["Message-ID"] = f"<{message.idempotency_key}@{domain or 'lacteva.local'}>"
+        mail["Auto-Submitted"] = "auto-generated"  # RFC 3834: never auto-reply
+        mail["Content-Language"] = message.language
+        mail.set_content(message.body)
+
+        try:
+            await asyncio.to_thread(self._deliver, mail, sender, message.recipient, settings)
+        except (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused) as exc:
+            raise PermanentSendError(f"address refused: {_safe_detail(str(exc))}") from exc
+        except (smtplib.SMTPAuthenticationError, smtplib.SMTPNotSupportedError) as exc:
+            # A credential or capability problem. Every subsequent message
+            # fails the same way; retrying is pure cost.
+            raise PermanentSendError(
+                f"smtp rejected the session: {_safe_detail(str(exc))}"
+            ) from exc
+        except smtplib.SMTPResponseException as exc:
+            detail = _safe_detail(str(exc))
+            if 500 <= int(exc.smtp_code or 0) < 600:
+                raise PermanentSendError(f"smtp {exc.smtp_code}: {detail}") from exc
+            raise ProviderSendError(f"smtp {exc.smtp_code}: {detail}") from exc
+        except (OSError, smtplib.SMTPException) as exc:
+            # Connection refused, DNS failure, TLS failure, timeout, server
+            # disconnect. All genuinely transient — the base class retries.
+            raise ProviderSendError(f"smtp transport failure: {_safe_detail(str(exc))}") from exc
+
+        log.info(
+            "email_sent",
+            provider=self.name,
+            template=message.template_key,
+            recipient=mask_phone(message.recipient),
+            language=message.language,
+            host=settings.smtp_host,
+        )
+        return DeliveryResult(
+            provider_message_id=mail["Message-ID"],
+            status=ACCEPTED,
+            metadata={"host": settings.smtp_host, "security": settings.smtp_security},
+        )
+
+    def _deliver(self, mail: EmailMessage, sender: str, recipient: str, settings) -> None:
+        """The blocking half, run in a worker thread."""
+        timeout = settings.smtp_timeout_seconds
+        if settings.smtp_security == "ssl":
+            client: smtplib.SMTP = smtplib.SMTP_SSL(
+                settings.smtp_host, settings.smtp_port, timeout=timeout
+            )
+        else:
+            client = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=timeout)
+        try:
+            client.ehlo()
+            if settings.smtp_security == "starttls":
+                client.starttls()
+                client.ehlo()
+            if settings.smtp_username:
+                client.login(settings.smtp_username, settings.smtp_password)
+            client.send_message(mail, from_addr=sender, to_addrs=[recipient])
+        finally:
+            try:
+                client.quit()
+            except smtplib.SMTPException:  # pragma: no cover - the send already happened
+                client.close()
+
+
 def _safe_detail(text: str) -> str:
     """A gateway error, trimmed and free of anything worth stealing.
 
@@ -396,6 +520,7 @@ def _build(channel: str, configured: str) -> ChannelProvider:
         "dry_run": DryRunProvider,
         "disabled": DisabledProvider,
         "http": HttpSmsProvider,
+        "smtp": SmtpEmailProvider,
     }
     builder = builders.get(configured)
     if builder is None:

@@ -125,9 +125,29 @@ class Settings(BaseSettings):
     notification_sms_provider: Literal["logging", "placeholder", "http", "dry_run", "disabled"] = (
         "logging"
     )
-    notification_email_provider: Literal["logging", "placeholder", "dry_run", "disabled"] = (
-        "logging"
-    )
+    notification_email_provider: Literal[
+        "logging", "placeholder", "smtp", "dry_run", "disabled"
+    ] = "logging"
+
+    # --- Email gateway (PROD-001) ------------------------------------------
+    # SMTP is the provider-neutral choice deliberately: every transactional
+    # email service (SES, SendGrid, Postmark, Mailgun, a co-op's own relay)
+    # speaks it, so one adapter reaches all of them without a vendor SDK, and a
+    # market that must keep mail on its own infrastructure is served by the
+    # same code path. A vendor API adapter implements the same protocol.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    #: STARTTLS on the submission port (587) is the default; `ssl` is implicit
+    #: TLS (465); `none` exists only for a relay on localhost and is refused
+    #: over a network host in prod.
+    smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
+    smtp_timeout_seconds: float = 15.0
+    #: Envelope sender. A wrong or unverified value is a PERMANENT failure at
+    #: every gateway, which is why it is worth setting in staging.
+    smtp_from_address: str = ""
+    smtp_from_name: str = "Lacteva"
 
     # --- SMS gateway (MSG-001) ---------------------------------------------
     # Vendor-neutral: the adapter speaks a small documented JSON contract and
@@ -144,9 +164,10 @@ class Settings(BaseSettings):
     #: every message retries; too long and the consumer loop stalls behind
     #: one unresponsive gateway.
     sms_timeout_seconds: float = 10.0
-    # RCP-001: no PDF engine ships with the platform; a deployment registers
-    # its own renderer for the `pdf` format.
-    receipt_pdf_renderer: Literal["placeholder"] = "placeholder"
+    # PROD-001: `builtin` is a real, dependency-free PDF writer (see
+    # receipt/pdf.py). `placeholder` is kept only so the pre-PROD-001
+    # behaviour remains reachable in dev; prod refuses it.
+    receipt_pdf_renderer: Literal["builtin", "placeholder"] = "builtin"
     rabbitmq_url: str = "amqp://lacteva:lacteva@localhost:5672/"
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "lacteva"
@@ -229,6 +250,78 @@ class Settings(BaseSettings):
             problems.append("LACTEVA_DEBUG must be false in prod")
         if any(origin in ("*", "") for origin in self.cors_origins):
             problems.append("LACTEVA_CORS_ORIGINS must name explicit origins in prod")
+
+        # --- PROD-001: every remaining way to look healthy while doing nothing.
+        #
+        # The audit behind this block asked one question of each setting: if a
+        # deployment left it at its default, would the platform REPORT success
+        # for work it never did? Everything below answered yes.
+
+        # The database. A default credential is the oldest production incident
+        # there is, and `lacteva:lacteva@localhost` is in this repository's own
+        # compose files, so it is what a copied .env contains.
+        url = self.database_url
+        if not url.startswith("postgresql"):
+            problems.append(
+                f"LACTEVA_DATABASE_URL must be PostgreSQL in prod (got {url.split(':')[0]!r}) — "
+                "RLS, exact aggregation and the backup format all depend on it"
+            )
+        if "lacteva:lacteva@" in url or "postgres:postgres@" in url:
+            problems.append(
+                "LACTEVA_DATABASE_URL still carries development credentials — production "
+                "connects as an unprivileged, NOSUPERUSER NOBYPASSRLS role (DEPLOYMENT.md)"
+            )
+
+        # The event transport. `memory` and `null` both ACCEPT a publish and
+        # drop it: the outbox row is written and marked delivered, so the relay
+        # drains, the metrics are green, and no consumer on any other process
+        # ever sees the event.
+        if self.event_bus in ("memory", "null"):
+            problems.append(
+                f"LACTEVA_EVENT_BUS is {self.event_bus!r}, which accepts every publish and "
+                "delivers nothing — production needs 'rabbitmq'"
+            )
+
+        # Inline dispatch runs delivery inside the request transaction, so a
+        # slow broker becomes slow milk collection and the retry/DLQ machinery
+        # never runs. It is a development convenience.
+        if self.outbox_mode == "inline":
+            problems.append(
+                "LACTEVA_OUTBOX_MODE must be 'background' in prod — 'inline' dispatches "
+                "inside the request transaction and bypasses retry and the dead-letter queue"
+            )
+
+        # A per-process limiter gives every replica its own full budget and
+        # cannot see the others, so the configured limit is silently multiplied
+        # by the replica count.
+        if self.rate_limit_backend == "memory":
+            problems.append(
+                "LACTEVA_RATE_LIMIT_BACKEND must be 'redis' in prod — the memory backend is "
+                "per-process, so each replica grants the full budget again"
+            )
+
+        # A gateway selected but not configured fails every send at runtime,
+        # one message at a time, instead of failing the deployment once.
+        if self.notification_sms_provider == "http" and not (self.sms_api_url and self.sms_api_key):
+            problems.append(
+                "LACTEVA_NOTIFICATION_SMS_PROVIDER is 'http' but LACTEVA_SMS_API_URL / "
+                "LACTEVA_SMS_API_KEY are not both set"
+            )
+        if self.notification_email_provider == "smtp" and not self.smtp_host:
+            problems.append(
+                "LACTEVA_NOTIFICATION_EMAIL_PROVIDER is 'smtp' but LACTEVA_SMTP_HOST is not set"
+            )
+
+        # PROD-001 §4: the placeholder renderer emits a text file named .pdf.txt
+        # and marks itself `placeholder=True`. A dairy handing a farmer proof of
+        # payment cannot use it, and a deployment should not discover that from
+        # a supplier.
+        if self.receipt_pdf_renderer == "placeholder":
+            problems.append(
+                "LACTEVA_RECEIPT_PDF_RENDERER is 'placeholder', which cannot produce a "
+                "printable receipt — use 'builtin'"
+            )
+
         if problems:
             raise ValueError("insecure production configuration: " + "; ".join(problems))
         return self

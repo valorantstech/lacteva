@@ -14,6 +14,12 @@ PERMISSIONS: dict[str, str] = {
     "organization.structure.manage": "Create and administer workspaces and branches",
     "organization.member.read": "Read members and invitations",
     "organization.member.manage": "Invite and administer members",
+    # PROD-001 tenant lifecycle. Deliberately SEPARATE from organization.manage:
+    # exporting every record the platform holds, and irreversibly offboarding a
+    # tenant, are not the same authority as renaming a branch. A deployment can
+    # grant day-to-day administration without granting either.
+    "organization.data.export": "Export all of this tenant's data",
+    "organization.data.delete": "Irreversibly offboard this tenant",
     "authz.role.read": "Read roles and assignments",
     "authz.role.manage": "Define roles and assign them to users",
     "configuration.read": "Read configuration entries",
@@ -60,6 +66,11 @@ WILDCARD = "*"
 SYSTEM_ROLES: dict[str, list[str]] = {
     "platform-admin": [WILDCARD],
     "tenant-admin": [
+        # The tenant's own administrator owns their data — that is the whole
+        # premise of an export/erasure right. Offboarding still requires the
+        # organization's exact name as confirmation (core/tenant_lifecycle.py).
+        "organization.data.export",
+        "organization.data.delete",
         "identity.user.read",
         "identity.user.manage",
         "organization.read",

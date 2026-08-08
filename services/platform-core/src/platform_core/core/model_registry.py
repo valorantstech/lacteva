@@ -42,6 +42,7 @@ def import_all_models() -> int:
     # by walking the package: an explicit list fails loudly when a module is
     # renamed, whereas a silent walk would just find one fewer table.
     import platform_core.core.backup.models
+    import platform_core.core.document_numbers
     import platform_core.core.idempotency
     import platform_core.modules.audit.models
     import platform_core.modules.auth.models
