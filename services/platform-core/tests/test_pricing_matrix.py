@@ -1,6 +1,7 @@
 """Pricing Matrix Foundation: dimensions, matrix lifecycle, search, authz."""
 
 import uuid
+from decimal import Decimal
 
 from tests.test_collection_centers import _center_fixture
 from tests.test_org_structure import _tenant_admin
@@ -331,7 +332,7 @@ async def test_new_card_version_copies_matrices(client):
     # The copy is editable; the original is untouched and still active.
     detail = (await client.get(f"/v1/pricing-matrices/{copy['id']}", headers=headers)).json()
     assert detail["editable"] is True
-    assert [r["unit_price"] for r in detail["rows"]] == [40.0, 45.0]
+    assert [Decimal(r["unit_price"]) for r in detail["rows"]] == [Decimal("40"), Decimal("45")]
     original = (await client.get(f"/v1/pricing-matrices/{matrix['id']}", headers=headers)).json()
     assert original["matrix"]["status"] == "active" and original["matrix"]["row_count"] == 2
 

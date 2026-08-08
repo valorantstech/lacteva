@@ -12,6 +12,7 @@ the reviewed pricing data is exactly what publishes.
 import itertools
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, or_, select
@@ -128,7 +129,11 @@ class UpdateMatrixCommand(BaseModel):
 class RowInput(BaseModel):
     from_value: float
     to_value: float
-    unit_price: float = Field(gt=0)
+    #: Decimal from the edge inward. Pydantic parses a JSON number into Decimal
+    #: via its string form, so `44.7291` arrives as Decimal("44.7291") rather
+    #: than as the float that is really 44.729100000000002 — the price is exact
+    #: before it is ever stored, not merely exact once arithmetic starts.
+    unit_price: Decimal = Field(gt=0)
     sequence: int | None = Field(default=None, ge=1)
     active: bool = True
 
@@ -159,7 +164,7 @@ class RowView(BaseModel):
     sequence: int
     from_value: float
     to_value: float
-    unit_price: float
+    unit_price: Decimal
     active: bool
 
     model_config = {"from_attributes": True}

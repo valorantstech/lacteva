@@ -203,13 +203,16 @@ JUNIT="${WORKDIR}/pg-tests.xml"
 #   worker races   — two consumer runners on one database, which is what a
 #                    second API replica IS. Advisory locks and savepoint
 #                    upserts are PostgreSQL behaviour (DEPLOY-001)
+#   price storage  — `unit_price` is NUMERIC(12,4), not float. SQLite has no
+#                    numeric type with a declared scale, so it would accept
+#                    every assertion while storing a float (DEPLOY-001)
 # Add new PostgreSQL-only modules HERE, not to a second job — this is the list
 # the skip assertion below protects.
 LACTEVA_TEST_POSTGRES_URL="$(app_url_for "${SOURCE_DB}")" \
   LACTEVA_TEST_POSTGRES_ADMIN_URL="$(url_for "${SOURCE_DB}")" \
   ${RUN} pytest tests/test_rls_postgres.py tests/test_exact_aggregation_postgres.py \
   tests/test_disaster_recovery_postgres.py tests/test_payment_concurrency_postgres.py \
-  tests/test_consumer_concurrency_postgres.py \
+  tests/test_consumer_concurrency_postgres.py tests/test_pricing_precision_postgres.py \
   -v --no-header -rs --junitxml="${JUNIT}" 2>&1 | tee "${RLS_LOG}" \
   || fail "PostgreSQL-only tests failed"
 

@@ -3,7 +3,7 @@ id: DBD-0002
 title: Referential Integrity, Data Lifecycle, Document Numbering and Database Roles
 type: dbd
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Engineering
 created: 2026-08-08
 last-updated: 2026-08-08
@@ -215,6 +215,46 @@ a discontinuity in the series. The series simply starts at 1 for each tenant.
 
 ---
 
+## 3b. Money Storage — `unit_price` (DEPLOY-001)
+
+`pricing_matrix_row.unit_price` was `double precision`. BR-0005 made all
+*arithmetic* exact via `Decimal(str(x))`, but exact arithmetic on an inexact
+input is still inexact: the price was already approximate before the first
+multiplication, and it is the number every calculation, settlement, payment and
+receipt descends from.
+
+Now `NUMERIC(12, 4)`, matching `milk_collection_transaction.unit_price` — the
+house standard since PRC-004, and the column this value is copied into.
+
+**Why the cast is safe, established by executing it first.** PostgreSQL casts
+`float8` to `numeric` through the float's SHORTEST round-trip text
+representation, not its binary expansion, so `44.7291` converts to exactly
+`44.7291` and not `44.729100000000002`. That property is what makes this a
+storage fix rather than a data-correction exercise.
+
+**Why the migration still refuses to run blind.** The same experiment showed
+what the cast does not preserve: `44.72915 → 44.7292`, `0.00005 → 0.0001`,
+`0.00001 → 0.0000` (which also violates `ck_matrix_row_price`). A price with
+more than four decimals would be silently changed, so the migration **counts
+those rows first and aborts naming them**.
+
+**Verified before and after against a real database**, not inferred: nine
+representative prices written as `float8`, migrated, and compared row by row —
+all identical; the `up → down → up` round trip preserves every value; and a
+deliberately-planted five-decimal price aborts the migration and leaves the
+column untouched.
+
+**Contract change.** `unit_price` now serialises as a **string** in API
+responses, like every other money field (`payment.amount`,
+`settlement.net_amount`). Requests may still send a JSON number — Pydantic
+parses it into `Decimal` via its string form. The admin portal and the Flutter
+client were updated; a client that read it as a number needs the same change.
+
+`from_value`/`to_value` remain `FLOAT` deliberately: they are band BOUNDARIES
+compared against a quality reading, not money, and converting them changes
+which band a boundary-valued reading selects — a behavioural change to BR-0004
+that needs its own analysis.
+
 ## 4. Database Roles
 
 ### 4.1 The rule
@@ -266,4 +306,5 @@ not a preference.
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-08 | Engineering | DEPLOY-001: `pricing_matrix_row.unit_price` migrated FLOAT → NUMERIC(12,4) with a pre-flight guard that refuses to round any price, verified before/after against PostgreSQL 16.2 including the rollback round trip. §3b added. |
 | 1.0 | 2026-08-08 | Engineering | PROD-001: referential integrity classified (7 A / 31 B / 22 C / 6 D, enforcement deferred behind the deployment rehearsal with a stated reason); v1 data lifecycle strategy with tenant offboarding implemented and partitioning deliberately deferred; financial document numbering moved from random 24-bit hex to per-tenant sequential series; application database role model documented and enforced at three levels. |

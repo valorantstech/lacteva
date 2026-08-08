@@ -2,6 +2,7 @@
 configuration, verification of the resolved band, events, permissions."""
 
 import uuid
+from decimal import Decimal
 
 from tests.conftest import register_and_login
 from tests.test_pricing_resolution import _resolution_env, _resolve
@@ -40,7 +41,7 @@ async def test_resolve_then_calculate_flow(client):
     assert r.status_code == 200, r.text
     body = r.json()
     assert _amount(body) == "5647.50"  # 45.00 x 125.5
-    assert _amount(body, "unit_price") in ("45", "45.0")
+    assert Decimal(_amount(body, "unit_price")) == Decimal("45")
     assert body["currency"] == "KES"
     assert body["rounding_policy"] == "HALF_UP"
     assert body["calculator_version"] == "1.0.0"
@@ -148,8 +149,14 @@ async def test_trace_via_api(client):
     body = (await _calculate(client, headers, row_id, quantity=125.75)).json()
     trace = body["trace"]
     assert [s["operation"] for s in trace] == ["inputs", "normalize", "multiply", "round"]
-    assert trace[2]["values"]["expression"] == "45.0 x 125.75"
-    assert trace[2]["values"]["raw_amount"] == "5658.750"
+    # The price now carries its stored scale (NUMERIC(12,4)), so the trace
+    # shows the exact value used rather than a shortened float rendering.
+    assert trace[2]["values"]["expression"] == "45.0000 x 125.75"
+    # The RAW amount is the exact product, shown before rounding by design
+    # (PRC-004). Decimal multiplication adds the scales, so a price stored at
+    # NUMERIC(12,4) times a 2dp quantity gives 6 decimals — more precision on
+    # the intermediate, and the rounded result below is unchanged.
+    assert trace[2]["values"]["raw_amount"] == "5658.750000"
     assert trace[3]["values"]["rounded_amount"] == "5658.75"
     assert trace[3]["values"]["policy"] == "HALF_UP"
 
@@ -297,7 +304,7 @@ async def test_calculated_event_emitted(client, bus):
     assert e.aggregate_type == "pricing_calculation"
     assert str(e.aggregate_id) == body["calculation_id"]
     assert e.data["gross_amount"] == "5647.50"
-    assert e.data["unit_price"] == "45.0"
+    assert Decimal(e.data["unit_price"]) == Decimal("45")
     assert e.data["quantity"] == "125.5"
     assert e.data["currency"] == "KES"
     assert e.data["rounding_policy"] == "HALF_UP"

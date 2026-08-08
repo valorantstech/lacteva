@@ -1,6 +1,7 @@
 """Pricing Matrix rows: range validation, overlap rule, continuity, events."""
 
 import uuid
+from decimal import Decimal
 
 from tests.test_pricing_matrix import _card_env, _create_matrix, _publish_card
 
@@ -117,7 +118,12 @@ async def test_update_row(client, bus):
         headers=headers,
     )
     assert r.status_code == 200, r.text
-    assert r.json()["to_value"] == 4.5 and r.json()["unit_price"] == 41.5
+    # PROD/DEPLOY-001: `unit_price` is Decimal now, so it serialises as a
+    # STRING like every other money field on this API (payment.amount,
+    # settlement.net_amount). `to_value` is a band boundary, not money, and
+    # stays a number.
+    assert r.json()["to_value"] == 4.5
+    assert Decimal(r.json()["unit_price"]) == Decimal("41.5")
     assert "pricing.pricing-matrix-row-updated.v1" in [e.type for e in bus.published]
 
 

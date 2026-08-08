@@ -959,6 +959,10 @@ class MatrixPageResult {
   final int total;
 }
 
+double _toDouble(Object? value) =>
+    value is num ? value.toDouble() : double.parse(value.toString());
+
+
 class MatrixRowView {
   MatrixRowView({
     required this.id,
@@ -972,7 +976,10 @@ class MatrixRowView {
     id: json['id'] as String,
     fromValue: (json['from_value'] as num).toDouble(),
     toValue: (json['to_value'] as num).toDouble(),
-    unitPrice: (json['unit_price'] as num).toDouble(),
+    // DEPLOY-001: the API now sends `unit_price` as a STRING (it is NUMERIC
+    // money, like every other amount). `as num` threw on that; parse both so
+    // an older backend keeps working during a rolling deploy.
+    unitPrice: _toDouble(json['unit_price']),
     active: json['active'] as bool,
   );
 

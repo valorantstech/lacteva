@@ -343,7 +343,11 @@ export type MatrixRow = {
   sequence: number;
   from_value: number;
   to_value: number;
-  unit_price: number;
+  // DEPLOY-001: `unit_price` is stored as NUMERIC and serialises as a STRING,
+  // like every other money field on this API (payment.amount,
+  // settlement.net_amount). `from_value`/`to_value` are band boundaries, not
+  // money, and remain numbers.
+  unit_price: string | number;
   active: boolean;
 };
 
@@ -402,7 +406,10 @@ export const getMatrixDetail = (id: string) => api<MatrixDetail>(`/v1/pricing-ma
 export type MatrixRowInput = {
   from_value: number;
   to_value: number;
-  unit_price: number;
+  // Accepts a JSON number or a numeric string; both are parsed into Decimal
+  // server-side, and a string is the exact form. Typed to match the response
+  // so a row read from the API can be written straight back.
+  unit_price: string | number;
   active?: boolean;
 };
 

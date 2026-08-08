@@ -12,6 +12,7 @@ Historical versions are never updated — changes happen on a new draft version.
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
@@ -20,6 +21,7 @@ from sqlalchemy import (
     Float,
     Index,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
     Uuid,
@@ -167,7 +169,19 @@ class PricingMatrixRow(Base, IdMixin):
     sequence: Mapped[int] = mapped_column(Integer)
     from_value: Mapped[float] = mapped_column(Float)
     to_value: Mapped[float] = mapped_column(Float)
-    unit_price: Mapped[float] = mapped_column(Float)
+    # NUMERIC, not FLOAT. This is the PRICE — the number every settlement,
+    # payment and receipt is ultimately derived from — and BR-0005's exact
+    # arithmetic was starting from an inexact input. `Numeric(12, 4)` matches
+    # `milk_collection_transaction.unit_price`, which has been the house
+    # standard for a unit price since PRC-004; the two are compared and copied
+    # constantly, so they must agree.
+    #
+    # `from_value`/`to_value` stay FLOAT deliberately. They are band
+    # BOUNDARIES compared against a quality reading, not money, and converting
+    # them changes which band a boundary-valued reading selects — a
+    # behavioural change to BR-0004 that needs its own analysis rather than a
+    # ride along with a storage fix.
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4))
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
