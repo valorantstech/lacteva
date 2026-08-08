@@ -138,3 +138,126 @@ The rule is now enforced rather than intended. `rebuildable_tables_without_a_reb
 | 1.2 | 2026-08-08 | Architecture Board | PITR-001: physical point-in-time recovery proven; WAL archiving enabled and its retention tied to base-backup retention. |
 | 1.1 | 2026-08-08 | Architecture Board | DR-001: `time` columns are serializable (their absence aborted every backup on a real schema); the manifest records the schema revision; `rebuildable` now requires an actual rebuilder. |
 | 1.0 | 2026-08-06 | Architecture Board | Established by BAK-001. |
+
+## Off-site replication (BKP-003)
+
+### The problem this closes
+
+`infra/backup/run-logical-backup.sh` writes to `/backup/logical`, which on the
+single-host deployment is **the same volume as the database**. Losing the volume
+— the most likely single failure there is — destroyed the data and every means
+of recovering it at the same instant. The DR and PITR proofs were real and they
+restored from a copy that might not survive the incident requiring it.
+
+### Architecture
+
+The backup engine is unchanged. DR-001 proved it produces a verifiable
+directory that restores, and replacing that would discard executed evidence to
+gain nothing. Replication is a layer ON TOP:
+
+```
+BackupEngine  ->  local directory  ->  pack (deterministic tar)  ->  S3 object
+                       verify              sha256                  read back + verify
+                                                                        |
+                                                                   sidecar manifest
+                                                                   (written LAST)
+```
+
+* **One object, not many.** A backup split across objects has no moment at
+  which it becomes valid — a restore could find nine tables of ten and no way
+  to know. The tar means it exists whole or not at all.
+* **Deterministic tar** (sorted members, no mtimes, normalised mode/ownership),
+  so the checksum is a function of the DATA. A checksum that changes when the
+  data does not cannot detect corruption.
+* **The sidecar is the completion marker.** Uploaded after the archive has been
+  read back and re-checksummed. A backup with no sidecar is invisible to
+  `list_backups` and therefore to retention — which is what stops an
+  interrupted upload from being counted as a copy worth keeping.
+* **Manifest stored twice** — inside the archive and beside it. Compared on
+  download, so an archive swapped under a sidecar is caught.
+
+### Manifest contents
+
+`backup_id`, `created_at`, `archive_key`, `archive_sha256`, `archive_bytes`,
+`database_identity` (name + PostgreSQL system identifier, never a URL),
+`postgres_version`, `schema_revision`, `platform_version`, `total_rows`,
+`table_count`, and the engine's own manifest verbatim.
+
+### Retention
+
+`offsite prune` applies three independent rules, each of which alone prevents
+the disaster:
+
+1. `keep < 1` is refused outright.
+2. The newest backup is excluded before anything is considered.
+3. Fewer backups than `keep` deletes nothing at all.
+
+It lists **only its own `backups/` prefix**, so it cannot be pointed at another
+directory — the generalised form of the DR-001 finding. `dry_run` is the
+DEFAULT; deleting requires `--delete`. The sidecar is removed before the
+archive, so an interrupted prune leaves an invisible orphan rather than a
+listed backup whose archive has gone.
+
+### Commands
+
+```bash
+python -m platform_core.core.backup.cli backup      /backup/logical/<stamp>
+python -m platform_core.core.backup.cli verify      /backup/logical/<stamp>
+python -m platform_core.core.backup.cli replicate   /backup/logical/<stamp>
+python -m platform_core.core.backup.cli offsite-list
+python -m platform_core.core.backup.cli offsite-fetch <backup-id> /restore/here
+python -m platform_core.core.backup.cli offsite-prune --keep 30 --delete
+```
+
+### Configuration
+
+| Variable | Purpose |
+| --- | --- |
+| `LACTEVA_BACKUP_OFFSITE_ENDPOINT` | S3-compatible host. **Deliberately separate from `LACTEVA_MINIO_*`** — the application's object storage lives on the host whose loss the backup exists to survive. |
+| `LACTEVA_BACKUP_OFFSITE_ACCESS_KEY` / `_SECRET_KEY` | Credentials, from the environment or a Docker secret. Never in source. |
+| `LACTEVA_BACKUP_OFFSITE_BUCKET` | Default `lacteva-backups`. |
+| `LACTEVA_BACKUP_OFFSITE_SECURE` | TLS in transit. Default true; **prod refuses false**. |
+| `LACTEVA_BACKUP_OFFSITE_RETAIN` | Copies to keep. Never below 1. |
+
+`prod` refuses to start with no off-site endpoint configured, for the same
+reason it refuses a development database credential.
+
+### Encryption
+
+* **In transit** — TLS to the object store, enforced in prod.
+* **At rest** — delegated to the bucket (SSE-S3 / SSE-KMS on AWS, server-side
+  encryption on MinIO). **The platform does not encrypt the archive itself**,
+  which is a deliberate limitation and is recorded as such: client-side
+  encryption would put a key in the recovery path, and a backup you cannot
+  decrypt during an incident is not a backup. Bucket-level encryption plus
+  restricted credentials is the standard posture; revisit if a market requires
+  the platform to hold the key.
+
+### What is proven, and what is not
+
+**PROVEN BY EXECUTION** (`./infra/ci/offsite-proof.sh`, 32 checks):
+real PostgreSQL 16.2 seeded through the platform's own API to a known state
+(STL-2026-000001 / PAY-2026-000001 / RCP-2026-000001, 5,647.50 KES); backup
+taken and verified; replicated to a real MinIO running as a separate process
+with its own credentials and its own directory; duplicate id refused; **the
+local backup directory deleted**; a fresh database migrated from empty;
+downloaded, checksum-verified and restored **from the object store alone**; row
+counts, monetary totals, settlement/payment relationships, RLS (53 policies, 0
+unforced), foreign keys, schema revision and the platform integrity check all
+verified on the recovered database.
+
+**PROVEN BY AUTOMATED TEST** (`tests/test_offsite_backup.py`, 22 tests):
+upload failure, interrupted upload, corrupted upload detected by read-back,
+corrupted archive at rest, truncated archive, swapped archive, unreadable
+sidecar, missing object, duplicate id, local-verify refusal, tar path escape,
+and every retention boundary including "only one backup" and "keep=0".
+
+**NOT PROVEN — same machine.** The object store was a separate process with a
+separate directory, so this proves independence from the database VOLUME, the
+database PROCESS and the local backup PATH. It does **not** prove independence
+from the host, the physical disk, the building or the region. A genuine
+off-site posture needs a bucket in a different failure domain from the database
+host; the code path is identical and unexercised against a remote endpoint.
+
+**NOT PROVEN — scale.** One small dairy. No multi-gigabyte archive, no slow
+link, no resumable upload.

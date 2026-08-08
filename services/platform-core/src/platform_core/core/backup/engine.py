@@ -91,6 +91,12 @@ class BackupManifest:
     # Defaults to "" so backups written before this field still load — an
     # unknown revision warns, a MISMATCHED one refuses.
     schema_revision: str = ""
+    #: BKP-003. The server the data came from and WHICH database it was.
+    #: Without them a restore cannot tell one deployment's backup from
+    #: another's, and DR-001 already showed what an unnoticed mismatch costs.
+    #: Defaulted so backups written before this field still load.
+    postgres_version: str = ""
+    database_identity: str = ""
     tables: list[TableBackup] = field(default_factory=list)
     include_rebuildable: bool = False
 
@@ -109,6 +115,29 @@ class BackupManifest:
         data = json.loads(raw)
         tables = [TableBackup(**t) for t in data.pop("tables", [])]
         return cls(**data, tables=tables)
+
+
+async def _database_identity(session) -> tuple[str, str]:
+    """(postgres_version, database_identity) — never credentials.
+
+    The identity is the database NAME plus PostgreSQL's own system identifier,
+    which survives a rename and differs between clusters. It is what lets a
+    restore refuse to load production data into a staging cluster.
+    """
+    from sqlalchemy import text
+
+    try:
+        version = str(await session.scalar(text("SHOW server_version")) or "")
+    except Exception:
+        return "", ""
+    try:
+        name = str(await session.scalar(text("SELECT current_database()")) or "")
+        system_id = str(
+            await session.scalar(text("SELECT system_identifier FROM pg_control_system()")) or ""
+        )
+        return version, f"{name}@{system_id}"
+    except Exception:  # pragma: no cover - non-superuser or older server
+        return version, ""
 
 
 async def _schema_revision(session) -> str:
@@ -226,6 +255,9 @@ class BackupEngine:
         )
         async with self._sf() as session:
             manifest.schema_revision = await _schema_revision(session)
+            manifest.postgres_version, manifest.database_identity = await _database_identity(
+                session
+            )
 
         for table in Base.metadata.sorted_tables:
             if table.name not in wanted:

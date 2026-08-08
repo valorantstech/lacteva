@@ -407,6 +407,9 @@ was never meant to leave a laptop.
 | `LACTEVA_OUTBOX_MODE` | `inline` | Dispatches inside the request transaction; bypasses retry and the DLQ |
 | `LACTEVA_RATE_LIMIT_BACKEND` | `memory` | Per-process, so each replica grants the full budget again |
 | `LACTEVA_RECEIPT_PDF_RENDERER` | `placeholder` | Cannot produce a printable receipt |
+| `LACTEVA_BACKUP_OFFSITE_ENDPOINT` | unset | Backups would live only on the database's own volume, which is not a backup (BKP-003) |
+| `LACTEVA_BACKUP_OFFSITE_SECURE` | `false` | A backup in flight carries every farmer's records |
+| `LACTEVA_BACKUP_OFFSITE_RETAIN` | `< 1` | "Keep zero backups" is never an instruction anyone means |
 | `LACTEVA_NOTIFICATION_SMS_PROVIDER=http` | with no `SMS_API_URL`/`SMS_API_KEY` | Fails per message instead of failing the deploy once |
 | `LACTEVA_NOTIFICATION_EMAIL_PROVIDER=smtp` | with no `SMTP_HOST` | As above |
 
@@ -445,3 +448,44 @@ connection can serve a query under another request's tenant.
 Operational data is purged, financial and audit records are anonymized and
 retained, the organization becomes a tombstone. Irreversible — take the export
 first.
+
+
+## Off-site backups (BKP-003)
+
+The nightly job now takes the backup, verifies it, **replicates it off-site**,
+and only then prunes — in that order, because the worst case must be too many
+copies rather than none.
+
+```bash
+LACTEVA_BACKUP_OFFSITE_ENDPOINT=s3.eu-central-1.amazonaws.com
+LACTEVA_BACKUP_OFFSITE_ACCESS_KEY=...      # from a Docker secret, never inline
+LACTEVA_BACKUP_OFFSITE_SECRET_KEY=...
+LACTEVA_BACKUP_OFFSITE_BUCKET=lacteva-backups
+LACTEVA_BACKUP_OFFSITE_SECURE=true
+LACTEVA_BACKUP_OFFSITE_RETAIN=30
+```
+
+**The endpoint must be in a different failure domain from the database host.**
+Pointing it at the MinIO in `docker-compose.production.yml` satisfies the
+configuration check and defeats the entire purpose — that container dies with
+the volume. Use the cloud provider's object storage, or a bucket somewhere the
+database host cannot take with it.
+
+**Enable bucket encryption at rest** (SSE-S3 or SSE-KMS). The platform does not
+encrypt the archive itself: client-side encryption puts a key in the recovery
+path, and a backup you cannot decrypt during an incident is not a backup.
+
+### Recovering when the host is gone
+
+```bash
+python -m platform_core.core.backup.cli offsite-list
+python -m platform_core.core.backup.cli offsite-fetch <backup-id> /restore/here
+alembic upgrade head                      # fresh database, schema first
+python -m platform_core.core.backup.cli restore /restore/here
+python -m platform_core.core.backup.cli integrity
+```
+
+`offsite-fetch` re-computes the archive checksum from the downloaded bytes and
+refuses a mismatch, so a corrupt object cannot be restored. This exact sequence
+is executed by `./infra/ci/offsite-proof.sh` with the local backup directory
+deleted first.

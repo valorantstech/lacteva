@@ -175,6 +175,23 @@ class Settings(BaseSettings):
     minio_secure: bool = False
     opensearch_url: str = "http://localhost:9200"
 
+    # --- Off-site backup replication (BKP-003) -----------------------------
+    # A backup on the database's own volume is not a backup: losing the volume
+    # loses both. These point replication at an INDEPENDENT S3-compatible
+    # endpoint — deliberately separate from `minio_*`, because the
+    # application's object storage lives on the same host and would die with
+    # it. Empty endpoint = replication disabled, which `prod` refuses.
+    backup_offsite_endpoint: str = ""
+    backup_offsite_access_key: str = ""
+    backup_offsite_secret_key: str = ""
+    backup_offsite_bucket: str = "lacteva-backups"
+    #: TLS to the object store — encryption IN TRANSIT. Default on; prod
+    #: refuses it off, because a backup in flight carries every farmer's record.
+    backup_offsite_secure: bool = True
+    #: How many complete off-site backups to retain. Never below 1, and the
+    #: newest is excluded from deletion regardless (see offsite.prune).
+    backup_offsite_retain: int = 30
+
     # CORS — browser origins allowed to call the API (the admin portal).
     # Dev defaults cover the local portal; set LACTEVA_CORS_ORIGINS in
     # staging/prod (JSON list, e.g. '["https://admin.lacteva.example"]').
@@ -316,6 +333,26 @@ class Settings(BaseSettings):
         # and marks itself `placeholder=True`. A dairy handing a farmer proof of
         # payment cannot use it, and a deployment should not discover that from
         # a supplier.
+        # BKP-003: a deployment with no off-site destination has backups that
+        # die with the volume they protect.
+        if not self.backup_offsite_endpoint:
+            problems.append(
+                "LACTEVA_BACKUP_OFFSITE_ENDPOINT is not set — backups would live only on "
+                "the database's own volume, which is not a backup"
+            )
+        elif not (self.backup_offsite_access_key and self.backup_offsite_secret_key):
+            problems.append(
+                "LACTEVA_BACKUP_OFFSITE_ENDPOINT is set but its access key / secret key "
+                "are not both configured"
+            )
+        if self.backup_offsite_endpoint and not self.backup_offsite_secure:
+            problems.append(
+                "LACTEVA_BACKUP_OFFSITE_SECURE must be true in prod — a backup in flight "
+                "carries every farmer's records"
+            )
+        if self.backup_offsite_retain < 1:
+            problems.append("LACTEVA_BACKUP_OFFSITE_RETAIN must be at least 1")
+
         if self.receipt_pdf_renderer == "placeholder":
             problems.append(
                 "LACTEVA_RECEIPT_PDF_RENDERER is 'placeholder', which cannot produce a "

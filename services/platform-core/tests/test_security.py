@@ -657,6 +657,13 @@ def _safe_prod(**overrides):
         notification_sms_provider="disabled",
         notification_email_provider="disabled",
         receipt_pdf_renderer="builtin",
+        # BKP-003: a production deployment with nowhere independent to put a
+        # backup has backups that die with the volume they protect, so the
+        # reference configuration has to name a destination.
+        backup_offsite_endpoint="s3.eu-central-1.amazonaws.com",
+        backup_offsite_access_key="an-access-key",
+        backup_offsite_secret_key="a-secret-key",
+        backup_offsite_secure=True,
     )
     base.update(overrides)
     return base
@@ -685,6 +692,13 @@ def test_the_reference_production_configuration_is_accepted():
         ({"receipt_pdf_renderer": "placeholder"}, "RECEIPT_PDF_RENDERER"),
         ({"notification_sms_provider": "http", "sms_api_url": "", "sms_api_key": ""}, "SMS_API"),
         ({"notification_email_provider": "smtp", "smtp_host": ""}, "SMTP_HOST"),
+        # BKP-003. A backup on the database's own volume is not a backup, and
+        # a backup shipped in clear text carries every farmer's records.
+        ({"backup_offsite_endpoint": ""}, "BACKUP_OFFSITE_ENDPOINT"),
+        ({"backup_offsite_access_key": ""}, "access key"),
+        ({"backup_offsite_secret_key": ""}, "access key"),
+        ({"backup_offsite_secure": False}, "BACKUP_OFFSITE_SECURE"),
+        ({"backup_offsite_retain": 0}, "BACKUP_OFFSITE_RETAIN"),
     ],
 )
 def test_production_refuses_every_configuration_that_pretends_to_work(overrides, expected):

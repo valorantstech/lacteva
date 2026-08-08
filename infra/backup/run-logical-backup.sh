@@ -39,6 +39,22 @@ if ! ${COMPOSE} exec -T api python -m platform_core.core.backup.cli verify "${TA
 fi
 log "backup verified"
 
+# BKP-003: get it OFF this volume before doing anything else. A verified backup
+# that only exists beside the database it protects is not a backup — losing the
+# volume loses both. Replication happens before pruning for the same reason
+# pruning happens after the backup: the worst case must be too many copies.
+if ! ${COMPOSE} exec -T api python -m platform_core.core.backup.cli replicate "${TARGET}"; then
+  log "FAILED: backup did not reach off-site storage. Nothing pruned."
+  exit 1
+fi
+log "backup replicated off-site"
+
+# Off-site retention. `--delete` is required because the CLI defaults to a dry
+# run; the platform's own rules (never below 1, never the newest, nothing when
+# there are fewer than `keep`) are enforced inside it, not here.
+${COMPOSE} exec -T api python -m platform_core.core.backup.cli offsite-prune --delete \
+  || log "WARNING: off-site retention failed. Copies retained; investigate."
+
 # Only now.
 log "pruning backups older than ${RETAIN_DAYS} days"
 DELETED=0
