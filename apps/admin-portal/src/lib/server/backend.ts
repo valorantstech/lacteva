@@ -72,8 +72,32 @@ export function crossOriginRefused(request: Request): boolean {
   if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return false;
   const origin = request.headers.get("origin");
   if (!origin) return false; // same-origin fetches may omit it
+
+  // AWS-001: compare against the host the BROWSER addressed, not the one this
+  // process was reached on.
+  //
+  // `new URL(request.url).host` is the upstream address behind a reverse
+  // proxy — `portal:3000` on the compose network — so every state-changing
+  // request from a real browser (`Origin: https://the-public-host`) was
+  // refused with 403 and the portal was unusable the moment it sat behind
+  // nginx. Found by logging in to the deployed stack.
+  //
+  // `Host`/`X-Forwarded-Host` is the right thing to compare with: a browser
+  // sets both `Origin` and `Host` itself and a cross-site page cannot forge
+  // either, which is exactly what makes Origin-vs-Host a CSRF check.
+  const expected =
+    request.headers.get("x-forwarded-host") ??
+    request.headers.get("host") ??
+    (() => {
+      try {
+        return new URL(request.url).host;
+      } catch {
+        return null;
+      }
+    })();
+  if (!expected) return true;
   try {
-    return new URL(origin).host !== new URL(request.url).host;
+    return new URL(origin).host !== expected;
   } catch {
     return true; // an unparseable Origin is not one we trust
   }

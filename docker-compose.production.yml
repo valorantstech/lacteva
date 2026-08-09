@@ -32,7 +32,26 @@ x-logging: &logging
 # API is a very confusing failure.
 x-api-base: &api-base
   image: ${LACTEVA_IMAGE:-lacteva/platform-core}:${LACTEVA_IMAGE_TAG:?set LACTEVA_IMAGE_TAG — deploys are pinned, never :latest}
-  env_file: [.env.production]
+  # AWS-001: an ABSOLUTE path, and overridable.
+  #
+  # `--env-file` (what deploy.sh passes) supplies variables for INTERPOLATING
+  # this file. `env_file:` is a different mechanism: it injects variables into
+  # the container, and it resolves relative to the compose file. deploy.sh and
+  # INFRASTRUCTURE.md both keep the environment at /etc/lacteva/.env.production
+  # (root, 0600) while this line looked for it next to the compose file inside
+  # the release directory, so the documented deployment failed at the first
+  # `compose` call with "env file /opt/lacteva/current/.env.production not
+  # found". Naming the real location makes the two agree, and keeps the secret
+  # out of the release tree.
+  env_file: ["${LACTEVA_ENV_FILE:-/etc/lacteva/.env.production}"]
+  volumes:
+    # AWS-001: the API had NO /backup mount, and it is the process that writes
+    # backups — `platform_core.core.backup.cli backup /backup/logical/...` is
+    # what DEPLOYMENT.md documents, what the nightly timer runs, and what
+    # deploy.sh takes before every upgrade. Without this the first real backup
+    # failed outright, and a pre-deployment backup would have been silently
+    # written into a container layer that the next deploy destroys.
+    - backups:/backup
   environment:
     LACTEVA_ENV: prod
     # VER-001: the APPLICATION role, which is deliberately not the owner and
@@ -430,6 +449,8 @@ services:
     restart: unless-stopped
 
 volumes:
+  # AWS-001: where the platform's own logical backups land. See x-api-base.
+  backups:
   pgdata:
   # PITR-001. Keep this on different storage from `pgdata` — an archive that
   # fails with the data directory is not a recovery path. Size it for the

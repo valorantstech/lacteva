@@ -28,6 +28,12 @@ provider "aws" {
 
 locals {
   name = "lacteva-${var.environment}"
+
+  # AWS Backup cannot select a resource without a role to assume, so asking for
+  # snapshots without one produces a vault and a plan that back nothing up.
+  # Requiring both makes the failure "you did not ask for snapshots" instead of
+  # "your snapshots silently do not exist".
+  provider_snapshots = var.enable_provider_snapshots && var.backup_role_arn != ""
   tags = {
     Project     = "lacteva"
     Environment = var.environment
@@ -56,8 +62,13 @@ resource "aws_security_group" "app" {
   description = "Lacteva: 80/443 from anywhere, SSH from known ranges only"
   vpc_id      = var.vpc_id
 
+  # AWS-001: AWS restricts security-group descriptions to a subset of ASCII
+  # (^[0-9A-Za-z_ .:/()#,@\[\]+=&;{}!$*-]*$). An em dash is refused, and the
+  # refusal happens at PLAN time, so this configuration could never have been
+  # planned — the same class of defect DEPLOY-001 found in the Hetzner config,
+  # in the file next to it. Hyphens here, prose everywhere else.
   ingress {
-    description = "HTTP — ACME and the redirect to HTTPS"
+    description = "HTTP - ACME and the redirect to HTTPS"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -73,7 +84,7 @@ resource "aws_security_group" "app" {
   }
 
   ingress {
-    description = "SSH — validated to reject 0.0.0.0/0 in variables.tf"
+    description = "SSH - validated to reject 0.0.0.0/0 in variables.tf"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
@@ -147,8 +158,18 @@ resource "aws_instance" "app" {
   }
 
   user_data = templatefile("${path.module}/../../cloud-init/lacteva.yaml", {
-    hostname        = local.name
-    data_device     = "/dev/xvdf"
+    hostname = local.name
+    # AWS-001: NOT "/dev/xvdf". Every instance type this platform would use is
+    # a Nitro type, and Nitro ignores the device name in the attachment and
+    # exposes the volume as an NVMe device (`/dev/nvme1n1`) whose number
+    # depends on attach order. cloud-init waited 60s for a device that was
+    # never going to appear, then tried to mkfs it and aborted the whole
+    # bootstrap — the host came up with no Docker.
+    #
+    # `/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_<volume-id>` is the
+    # stable path AWS guarantees, and it names THIS volume rather than
+    # whichever NVMe device happened to enumerate second.
+    data_device     = "/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${replace(aws_ebs_volume.data.id, "-", "")}"
     timezone        = "UTC"
     admin_user      = "lacteva"
     ssh_public_keys = values(var.ssh_public_keys)
@@ -175,13 +196,20 @@ resource "aws_eip" "public" {
 # Snapshots of the whole volume, independent of the platform's own logical
 # backups. Two lines of defence: this one survives a mistake INSIDE the
 # machine, which the on-volume backups would not.
+#
+# AWS-001: `backup_role_arn` says "Empty disables the plan rather than creating
+# a role this module should not own", and nothing implemented it. With the
+# default (`enable_provider_snapshots = true`, `backup_role_arn = ""`) the
+# vault and plan were created and the SELECTION failed on `IAM Role is null` —
+# a half-built backup plan that snapshots nothing, left behind by a failed
+# apply. `local.provider_snapshots` makes the documented contract true.
 resource "aws_backup_vault" "main" {
-  count = var.enable_provider_snapshots ? 1 : 0
+  count = local.provider_snapshots ? 1 : 0
   name  = "${local.name}-vault"
 }
 
 resource "aws_backup_plan" "daily" {
-  count = var.enable_provider_snapshots ? 1 : 0
+  count = local.provider_snapshots ? 1 : 0
   name  = "${local.name}-daily"
 
   rule {
@@ -195,7 +223,7 @@ resource "aws_backup_plan" "daily" {
 }
 
 resource "aws_backup_selection" "data" {
-  count        = var.enable_provider_snapshots ? 1 : 0
+  count        = local.provider_snapshots ? 1 : 0
   name         = "${local.name}-data"
   plan_id      = aws_backup_plan.daily[0].id
   iam_role_arn = var.backup_role_arn

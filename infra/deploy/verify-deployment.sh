@@ -18,8 +18,29 @@
 # Exit 0 = the deployment is serving. Non-zero = roll back (DEPLOYMENT.md §7).
 set -euo pipefail
 
-COMPOSE="${COMPOSE:-docker compose -f docker-compose.production.yml --env-file .env.production}"
+# AWS-001: the environment lives at /etc/lacteva/.env.production — where
+# deploy.sh, INFRASTRUCTURE.md and the compose file's own `env_file:` all agree
+# it lives. Defaulting to `.env.production` next to the compose file meant
+# every compose call here died with "couldn't find env file", and the checks
+# that depend on them reported the database down on a database that was up.
+ENV_FILE="${ENV_FILE:-/etc/lacteva/.env.production}"
+COMPOSE="${COMPOSE:-docker compose -f docker-compose.production.yml --env-file ${ENV_FILE}}"
 API="${API_URL:-http://localhost:${HTTP_PORT:-80}}"
+
+# AWS-001: FOLLOW the redirect.
+#
+# nginx answers plain HTTP with a 301 to HTTPS — correctly, and by design. The
+# default `API` above is http://localhost, so every `curl -fsS` here was
+# handed a 301 HTML body and `json.load` died on "Expecting value: line 1
+# column 1". The verifier therefore failed on a stack that was serving
+# perfectly, which then triggered deploy.sh's automatic rollback: a healthy
+# deployment torn down by its own smoke test.
+#
+# `VERIFY_TLS=0` additionally accepts a self-signed certificate. It is opt-in
+# and must stay that way — silently skipping certificate verification would
+# make this script pass against a machine-in-the-middle.
+CURL_OPTS=(--location --max-time 10)
+[ "${VERIFY_TLS:-1}" = "0" ] && CURL_OPTS+=(--insecure)
 TIMEOUT="${VERIFY_TIMEOUT:-120}"
 
 pass() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
@@ -31,7 +52,7 @@ step "Waiting for the API to report ready (up to ${TIMEOUT}s)"
 # Poll readiness rather than sleeping: readiness is the platform's own answer
 # to "should I receive traffic", and it already aggregates every probe below.
 deadline=$(( $(date +%s) + TIMEOUT ))
-until curl -fsS --max-time 5 "${API}/health/ready" >/dev/null 2>&1; do
+until curl -fsS "${CURL_OPTS[@]}" "${API}/health/ready" >/dev/null 2>&1; do
   if [ "$(date +%s)" -ge "${deadline}" ]; then
     fail "API never became ready within ${TIMEOUT}s"
     echo "  last response:" >&2
@@ -42,7 +63,7 @@ until curl -fsS --max-time 5 "${API}/health/ready" >/dev/null 2>&1; do
 done
 pass "API is ready"
 
-READY_JSON="$(curl -fsS --max-time 10 "${API}/health/ready")"
+READY_JSON="$(curl -fsS "${CURL_OPTS[@]}" "${API}/health/ready")"
 
 step "Component health"
 # The readiness payload carries every probe's status, so these are assertions
@@ -105,12 +126,24 @@ UNFORCED="$(${COMPOSE} exec -T postgres psql -U "${POSTGRES_USER:-lacteva}" -d "
 # ${POSTGRES_USER}, which the official postgres image creates as a superuser,
 # so every assertion above passed while not one policy was doing anything.
 APP_ROLE="${LACTEVA_APP_USER:-lacteva_app}"
-ROLE_STATE="$(${COMPOSE} exec -T postgres psql -U "${POSTGRES_USER:-lacteva_owner}" -d "${POSTGRES_DB:-lacteva}" -tAc \
+# AWS-001: `lacteva`, matching every other psql call in this file. This one
+# line defaulted to `lacteva_owner`, a role no deployment creates, so the
+# connection failed and the check errored out — and this is the check that
+# catches the VER-001 defect, where the API connects as a superuser and every
+# RLS policy is silently inert. A verification that cannot run is worse than
+# one that is absent, because the script still printed green above it.
+ROLE_STATE="$(${COMPOSE} exec -T postgres psql -U "${POSTGRES_USER:-lacteva}" -d "${POSTGRES_DB:-lacteva}" -tAc \
   "SELECT coalesce((SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname='${APP_ROLE}')::text, 'missing')" \
   2>/dev/null | tr -d '[:space:]')"
+# AWS-001: `false`/`true`, not `f`/`t`. `f` and `t` are how psql DISPLAYS a
+# boolean; an explicit `::text` cast — which the query above does — produces
+# `false`/`true`. So this case never matched, and a correctly configured
+# platform was told its application role did not exist. Both spellings are
+# accepted now, because the query could reasonably be written either way and
+# the cost of being wrong here is reporting RLS as enforced when it is inert.
 case "${ROLE_STATE}" in
-  f) pass "the API role ${APP_ROLE} is NOSUPERUSER/NOBYPASSRLS — policies are enforced" ;;
-  t) fail "the API role ${APP_ROLE} is SUPERUSER or has BYPASSRLS — RLS is INERT and every tenant can be read by any request" ;;
+  f|false) pass "the API role ${APP_ROLE} is NOSUPERUSER/NOBYPASSRLS — policies are enforced" ;;
+  t|true) fail "the API role ${APP_ROLE} is SUPERUSER or has BYPASSRLS — RLS is INERT and every tenant can be read by any request" ;;
   *) fail "the API role ${APP_ROLE} does not exist — infra/postgres/init/10-application-role.sh did not run (see DEPLOYMENT.md §Database roles)" ;;
 esac
 
@@ -129,9 +162,13 @@ step "Background work"
 # `background_workers` above says the loops are alive. This says they are
 # making progress, which is a different question: a loop can be alive and
 # stuck. Outbox lag that only grows is the signal.
-LAG_1="$(curl -fsS --max-time 10 "${API}/metrics" | awk '/^lacteva_outbox_pending /{print $2}' | head -1)"
+# AWS-001: `relay_pending_events` is the metric the platform actually exports
+# (core/metrics.py). `lacteva_outbox_pending` exists nowhere in the codebase,
+# so this check reported "the outbox depth is not being exported" on every
+# deployment — and deploy.sh rolled back a healthy platform because of it.
+LAG_1="$(curl -fsS "${CURL_OPTS[@]}" "${API}/metrics" | awk '/^relay_pending_events /{print $2}' | head -1)"
 sleep 5
-LAG_2="$(curl -fsS --max-time 10 "${API}/metrics" | awk '/^lacteva_outbox_pending /{print $2}' | head -1)"
+LAG_2="$(curl -fsS "${CURL_OPTS[@]}" "${API}/metrics" | awk '/^relay_pending_events /{print $2}' | head -1)"
 if [ -z "${LAG_1}" ]; then
   fail "outbox depth is not being exported — cannot tell whether the relay is moving"
 elif python3 -c "import sys; sys.exit(0 if float('${LAG_2}') <= float('${LAG_1}') or float('${LAG_2}') < 100 else 1)"; then
@@ -147,7 +184,7 @@ print(json.load(sys.stdin).get('checks', {}).get('projections', 'MISSING'))")"
 [ "${PROJ}" = "healthy" ] && pass "projections healthy" || fail "projections: ${PROJ}"
 
 step "Edge"
-if curl -fsS --max-time 5 "${API}/nginx-health" >/dev/null 2>&1; then
+if curl -fsS "${CURL_OPTS[@]}" "${API}/nginx-health" >/dev/null 2>&1; then
   pass "nginx serving"
 else
   fail "nginx is not answering its own health endpoint"

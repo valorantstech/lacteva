@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+# AWS-001: deploy.sh runs this as `./infra/deploy/smoke-test.py`, so it needs a
+# shebang. Without one the kernel handed it to the shell, which read the module
+# docstring as commands ("verify-deployment.sh: command not found") and step 6
+# of every deployment failed — taking a healthy platform down with it, because
+# a failed smoke test triggers the automatic rollback.
 """Post-deployment smoke test — one complete happy path (DEP-001).
 
     python3 infra/deploy/smoke-test.py --base-url https://api.example.com
@@ -29,6 +35,7 @@ import argparse
 import json
 import sys
 import time
+import ssl
 import urllib.error
 import urllib.request
 from datetime import date, timedelta
@@ -43,9 +50,11 @@ class SmokeFailure(RuntimeError):
 
 
 class Api:
-    def __init__(self, base_url: str, timeout: float) -> None:
+    def __init__(self, base_url: str, timeout: float, *, insecure: bool = False) -> None:
         self.base = base_url.rstrip("/")
         self.timeout = timeout
+        # None means "use the default context", i.e. verify normally.
+        self.ssl_context = ssl._create_unverified_context() if insecure else None
         self.headers: dict[str, str] = {"Content-Type": "application/json"}
 
     def call(self, method: str, path: str, body=None, *, expect=(200, 201), step=""):
@@ -56,7 +65,9 @@ class Api:
             headers=self.headers,
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
+            with urllib.request.urlopen(  # noqa: S310
+                request, timeout=self.timeout, context=self.ssl_context
+            ) as response:
                 payload = response.read()
                 status = response.status
         except urllib.error.HTTPError as exc:
@@ -76,7 +87,13 @@ def run(api: Api, *, consumer_wait: float) -> dict:
 
     # --- authentication ---------------------------------------------------
     step("register and authenticate a platform user")
-    email = f"smoke-{stamp}@smoke.invalid"
+    # AWS-001: NOT `.invalid`. It is an IANA special-use TLD, and the
+    # `email-validator` behind Pydantic's EmailStr refuses it outright — so
+    # this script could never get past its first step against a real API.
+    # `example.com` is the reserved-for-documentation domain that still parses
+    # as deliverable, and no message is ever sent to it: the smoke test runs
+    # with the notification providers disabled.
+    email = f"smoke-{stamp}@lacteva-smoke.example.com"
     api.call("POST", "/v1/auth/register",
              {"email": email, "password": PASSWORD, "full_name": "Smoke Test"},
              expect=(201,), step="register")
@@ -90,8 +107,12 @@ def run(api: Api, *, consumer_wait: float) -> dict:
     # authentication works; the rest needs a tenant that already exists.
     step("confirm the token is accepted")
     me = api.call("GET", "/v1/auth/me", expect=(200,), step="whoami")
-    if me.get("email") != email:
-        raise SmokeFailure("whoami", f"token resolved to {me.get('email')!r}")
+    # AWS-001: the address is NESTED. `/v1/auth/me` answers with `MeView` —
+    # `{user, tenant_id, permissions}` — so `me["email"]` was always None and
+    # this step could never pass, whatever the platform did.
+    resolved = (me.get("user") or {}).get("email")
+    if resolved != email:
+        raise SmokeFailure("whoami", f"token resolved to {resolved!r}")
 
     print("\n  Authentication verified.\n")
     print("  The remaining steps need an existing tenant and an operator with")
@@ -173,6 +194,14 @@ def business_path(api: Api, tenant_id: str, *, consumer_wait: float) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Lacteva post-deployment smoke test")
     parser.add_argument("--base-url", default="http://localhost", help="public API base URL")
+    # AWS-001: a FIRST deployment has no CA-issued certificate — there is no
+    # DNS name yet to issue one for — so the smoke test could not run against
+    # the thing it exists to smoke-test. Opt-in and loud: certificate
+    # verification stays on unless somebody asks for it to be off, because a
+    # smoke test that silently accepts any certificate would pass against a
+    # machine-in-the-middle.
+    parser.add_argument("--insecure", action="store_true",
+                        help="accept a self-signed certificate (staging/first deployment only)")
     parser.add_argument("--timeout", type=float, default=15.0, help="per-request timeout (s)")
     parser.add_argument("--consumer-wait", type=float, default=30.0,
                         help="how long to wait for consumer-generated artifacts (s)")
@@ -182,14 +211,14 @@ def main() -> int:
     parser.add_argument("--operator-password", default=None)
     args = parser.parse_args()
 
-    api = Api(args.base_url, args.timeout)
+    api = Api(args.base_url, args.timeout, insecure=args.insecure)
     print(f"Smoke test against {api.base}\n")
     started = time.time()
     try:
         created = run(api, consumer_wait=args.consumer_wait)
         if args.tenant_id and args.operator_email:
             print("Business path:")
-            operator = Api(args.base_url, args.timeout)
+            operator = Api(args.base_url, args.timeout, insecure=args.insecure)
             tokens = operator.call("POST", "/v1/auth/token", {
                 "email": args.operator_email,
                 "password": args.operator_password,

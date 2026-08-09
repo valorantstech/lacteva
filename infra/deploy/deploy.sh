@@ -136,7 +136,20 @@ step "4/6  applying migrations"
 set_tag "${TAG}"
 SCHEMA_BEFORE="$(compose exec -T postgres psql -U "${POSTGRES_USER:-lacteva}" -d "${POSTGRES_DB:-lacteva}" \
   -tAc 'SELECT version_num FROM alembic_version' 2>/dev/null | tr -d '[:space:]' || echo none)"
-if ! compose run --rm --no-deps -T api alembic upgrade head; then
+# AWS-001: the datastores FIRST, and the `migrate` service — not `api`.
+#
+# This step used to be `compose run --rm --no-deps -T api alembic upgrade
+# head`, which had two faults that only a first deployment exposes. `--no-deps`
+# meant nothing started PostgreSQL, so on an empty host alembic died on
+# "Temporary failure in name resolution" trying to reach `postgres`. And the
+# `api` service connects as the unprivileged application role, which
+# deliberately cannot issue DDL — the `migrate` service exists precisely
+# because migrations need the owner (see its comment in the compose file).
+#
+# `up -d` on the datastores is idempotent: on an upgrade they are already
+# running and this returns immediately.
+compose up -d postgres redis rabbitmq || die "datastores would not start — nothing has been migrated"
+if ! compose run --rm -T migrate; then
   log "migration FAILED"
   set_tag "${PREVIOUS}"
   die "migration failed. The old version is still running and the schema is unchanged. Read the log above."
@@ -171,7 +184,12 @@ fi
 # that passes the first and fails the second is the more dangerous one,
 # because every dashboard is green.
 step "6/6  smoke test"
-if ! ./infra/deploy/smoke-test.py --base-url "${SMOKE_URL:-http://localhost}"; then
+# AWS-001: `SMOKE_TLS=insecure` passes --insecure through, for a deployment
+# whose certificate is self-signed because it has no DNS name yet. Default is
+# unchanged and verifies normally.
+SMOKE_ARGS=()
+[ "${SMOKE_TLS:-}" = "insecure" ] && SMOKE_ARGS+=(--insecure)
+if ! ./infra/deploy/smoke-test.py --base-url "${SMOKE_URL:-http://localhost}" "${SMOKE_ARGS[@]}"; then
   log "SMOKE TEST FAILED"
   if [ "${AUTO_ROLLBACK}" = "1" ] && [ -n "${PREVIOUS}" ]; then
     rollback_to "${PREVIOUS}"

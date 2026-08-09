@@ -165,7 +165,7 @@ runcmd:
   # database must never be reformatted by a re-run, and cloud-init is exactly
   # the kind of thing that gets re-run by accident on a rebuilt image.
   - |
-    set -euxo pipefail
+    set -eux
     DEVICE="${data_device}"
     for _ in $(seq 1 30); do [ -b "$DEVICE" ] && break; sleep 2; done
     if ! blkid "$DEVICE" >/dev/null 2>&1; then
@@ -181,7 +181,7 @@ runcmd:
 
   # --- filesystem standard -------------------------------------------------
   - |
-    set -euxo pipefail
+    set -eux
     mkdir -p /opt/lacteva/releases /etc/lacteva/secrets /var/log/lacteva
     mkdir -p /var/lib/lacteva/{postgres,redis,prometheus,loki,grafana}
     mkdir -p /backup/{logical,base,wal}
@@ -199,10 +199,18 @@ runcmd:
 
   # --- Docker --------------------------------------------------------------
   - |
-    set -euxo pipefail
+    set -eux
     install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-      | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    # AWS-001: NOT a pipeline. cloud-init runs `runcmd` with /bin/sh (dash on
+    # Ubuntu), which has no `set -o pipefail` — the whole bootstrap used to
+    # abort on `set -euxo pipefail` at line 2, so nothing below here ever ran
+    # and the host came up with no Docker. Without pipefail a failed curl would
+    # still let gpg write an empty keyring and the script carry on, so the
+    # download is checked on its own instead of relying on a pipe's exit code.
+    curl -fsSL -o /tmp/docker.gpg https://download.docker.com/linux/ubuntu/gpg
+    test -s /tmp/docker.gpg
+    gpg --dearmor -o /etc/apt/keyrings/docker.gpg < /tmp/docker.gpg
+    rm -f /tmp/docker.gpg
     chmod a+r /etc/apt/keyrings/docker.gpg
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
       https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
@@ -218,7 +226,7 @@ runcmd:
   # holds if a rule there is edited by mistake, and it is what confines a
   # process that has already got onto the host.
   - |
-    set -euxo pipefail
+    set -eux
     ufw --force reset
     ufw default deny incoming
     ufw default allow outgoing
@@ -229,7 +237,7 @@ runcmd:
 
   # --- fail2ban ------------------------------------------------------------
   - |
-    set -euxo pipefail
+    set -eux
     cat > /etc/fail2ban/jail.d/lacteva.conf <<'JAIL'
     [sshd]
     enabled = true
@@ -245,7 +253,7 @@ runcmd:
   # `Unattended-Upgrade::Automatic-Reboot "false"` makes that explicit, and
   # the reboot is a maintenance task (INFRASTRUCTURE.md §Maintenance).
   - |
-    set -euxo pipefail
+    set -eux
     cat > /etc/apt/apt.conf.d/51-lacteva-unattended <<'AUTO'
     Unattended-Upgrade::Allowed-Origins { "$${distro_id}:$${distro_codename}-security"; };
     Unattended-Upgrade::Automatic-Reboot "false";
