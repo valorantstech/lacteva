@@ -166,10 +166,22 @@ step "Background work"
 # (core/metrics.py). `lacteva_outbox_pending` exists nowhere in the codebase,
 # so this check reported "the outbox depth is not being exported" on every
 # deployment — and deploy.sh rolled back a healthy platform because of it.
-LAG_1="$(curl -fsS "${CURL_OPTS[@]}" "${API}/metrics" | awk '/^relay_pending_events /{print $2}' | head -1)"
-sleep 5
-LAG_2="$(curl -fsS "${CURL_OPTS[@]}" "${API}/metrics" | awk '/^relay_pending_events /{print $2}' | head -1)"
-if [ -z "${LAG_1}" ]; then
+# TLS-001: /metrics is restricted to private ranges on purpose, so running
+# this script against the PUBLIC hostname gets a 403 — the guard working, not
+# a fault. Detect that and say so, rather than failing the deployment or
+# (worse) reporting the outbox as unexported.
+METRICS_CODE="$(curl -s -o /dev/null -w '%{http_code}' "${CURL_OPTS[@]}" "${API}/metrics" || echo 000)"
+if [ "${METRICS_CODE}" = "403" ]; then
+  pass "outbox depth not checked — /metrics is restricted to internal ranges (run this from the host to include it)"
+  LAG_1="" LAG_2="" SKIP_LAG=1
+else
+  LAG_1="$(curl -fsS "${CURL_OPTS[@]}" "${API}/metrics" | awk '/^relay_pending_events /{print $2}' | head -1)"
+  sleep 5
+  LAG_2="$(curl -fsS "${CURL_OPTS[@]}" "${API}/metrics" | awk '/^relay_pending_events /{print $2}' | head -1)"
+fi
+if [ "${SKIP_LAG:-0}" = "1" ]; then
+  :
+elif [ -z "${LAG_1}" ]; then
   fail "outbox depth is not being exported — cannot tell whether the relay is moving"
 elif python3 -c "import sys; sys.exit(0 if float('${LAG_2}') <= float('${LAG_1}') or float('${LAG_2}') < 100 else 1)"; then
   pass "outbox is draining (${LAG_1} → ${LAG_2})"

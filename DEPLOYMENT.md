@@ -67,6 +67,36 @@ Then fill it in. Every variable is documented in the template; the ones that wil
 - **`LACTEVA_APP_USER`** — the role the API connects as. It **must differ from `POSTGRES_USER`**; see §2b, which is the single most consequential setting on this page.
 - **`LACTEVA_CORS_ORIGINS`** — a JSON list of exact origins. Never a wildcard.
 
+### TLS certificates (TLS-001)
+
+`lacteva.conf` has always served `/.well-known/acme-challenge/` from
+`/var/www/certbot`, and nothing mounted a volume there — so the documented
+certbot step could not have worked. The `certbot_webroot` volume is now shared
+between nginx and certbot, and issuance is:
+
+```bash
+# DNS must already point at this host.
+docker run --rm \
+  -v /etc/lacteva/letsencrypt:/etc/letsencrypt \
+  -v lacteva-production_certbot_webroot:/var/www/certbot \
+  certbot/certbot:latest certonly --webroot -w /var/www/certbot \
+  -d your.domain --agree-tos --non-interactive --cert-name lacteva \
+  --email ops@your-domain            # or --register-unsafely-without-email
+
+sudo cp -L /etc/lacteva/letsencrypt/live/lacteva/fullchain.pem /etc/lacteva/certs/
+sudo cp -L /etc/lacteva/letsencrypt/live/lacteva/privkey.pem   /etc/lacteva/certs/
+sudo chmod 600 /etc/lacteva/certs/privkey.pem
+```
+
+nginx reads from `TLS_CERT_DIR`, not from certbot's live directory, so a
+renewal must copy the files across and reload. `infra/deploy/renew-tls.sh`
+does both and is driven by the `lacteva-tls-renew.timer` unit twice a day —
+certbot only acts inside the last 30 days, so it usually does nothing.
+`--dry-run` exercises the whole path without issuing.
+
+Set `LACTEVA_CORS_ORIGINS` to the same origin, or the portal's browser calls
+are refused.
+
 Put `fullchain.pem` and `privkey.pem` in `TLS_CERT_DIR`. To terminate TLS at a load balancer instead, point traffic at port 80 and remove the redirect block from `infra/nginx/conf.d/lacteva.conf`.
 
 **Sanity check before you start anything:**

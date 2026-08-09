@@ -327,6 +327,11 @@ services:
       - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
       - ${TLS_CERT_DIR:-./infra/nginx/certs}:/etc/nginx/certs:ro
       - nginx-cache:/var/cache/nginx
+      # TLS-001: the ACME webroot. `lacteva.conf` has always served
+      # `/.well-known/acme-challenge/` from /var/www/certbot, and nothing
+      # mounted anything there — so the documented certbot step could not
+      # have worked. Shared with the certbot one-shot below.
+      - certbot_webroot:/var/www/certbot
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/nginx-health || exit 1"]
       interval: 15s
@@ -451,6 +456,10 @@ services:
 volumes:
   # AWS-001: where the platform's own logical backups land. See x-api-base.
   backups:
+  # TLS-001: shared between nginx (serves the challenge) and certbot (writes
+  # it). A named volume rather than a bind, so nothing depends on the release
+  # directory still existing at renewal time.
+  certbot_webroot:
   pgdata:
   # PITR-001. Keep this on different storage from `pgdata` — an archive that
   # fails with the data directory is not a recovery path. Size it for the
