@@ -483,3 +483,143 @@ def test_deploy_never_rolls_the_schema_back_automatically():
     script = (INFRA / "deploy" / "deploy.sh").read_text()
     assert "alembic downgrade" not in script
     assert "SCHEMA MOVED" in script, "a schema change must at least be announced"
+
+
+# --- the deployment contract, end to end (DEPLOY-001) -----------------------
+
+
+def _interpolate(value: str, env: dict[str, str]) -> str:
+    """Resolve `${VAR}`, `${VAR:-default}` and `${VAR:?message}` the way
+    Compose does, so the test reads the same file the operator deploys."""
+    import re
+
+    def replace(match: re.Match) -> str:
+        name, op, arg = match.group(1), match.group(2), match.group(3)
+        present = env.get(name, "")
+        if present:
+            return present
+        if op == ":-":
+            return arg
+        if op == ":?":
+            raise AssertionError(
+                f"docker-compose.production.yml requires {name}, which "
+                f".env.production.example does not set: {arg}"
+            )
+        return ""
+
+    return re.sub(r"\$\{([A-Z_][A-Z0-9_]*)(:-|:\?)?([^}]*)\}", replace, value)
+
+
+def _example_env() -> dict[str, str]:
+    env = {}
+    for line in (REPO / ".env.production.example").read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            env[key.strip()] = value.strip()
+    return env
+
+
+def test_the_documented_production_stack_can_actually_start():
+    """The deployment contract, checked end to end rather than in pieces.
+
+    Take `.env.production.example` — the file DEPLOYMENT.md tells an operator
+    to copy — layer the compose `environment:` block over it exactly as the
+    container would see it, and hand the result to the platform's OWN
+    production validator.
+
+    **This is the test DEPLOY-001 exists for.** Running it for the first time
+    found that the documented stack could not start at all:
+
+      * there was no RabbitMQ service and no way to configure one, while
+        `prod` refuses `event_bus=memory` — so the API died at startup
+      * `LACTEVA_BACKUP_OFFSITE_ENDPOINT` was empty, which `prod` also refuses
+      * `LACTEVA_NOTIFICATION_EMAIL_PROVIDER=logging` is refused too
+      * every `SMTP_*` variable was missing the `LACTEVA_` prefix, so none of
+        them was ever read
+
+    Each piece had a test. Nothing tested the pieces TOGETHER, which is where
+    all four defects lived.
+    """
+    import os
+
+    from platform_core.core.config import Settings
+
+    compose = _compose()
+    env = _example_env()
+    api_environment = compose["x-api-base"]["environment"]
+
+    resolved = dict(env)
+    for key, value in api_environment.items():
+        resolved[key] = _interpolate(str(value), env)
+
+    # Build the environment from SCRATCH. `conftest.py` pins test values
+    # (`outbox_mode=inline`, `rate_limit_backend=memory`) before any import, and
+    # leaving them in place would let the test pass on settings the deployment
+    # never supplies — the container starts with a clean environment, so the
+    # test must too.
+    saved = {k: v for k, v in os.environ.items() if k.startswith("LACTEVA_")}
+    try:
+        for key in saved:
+            os.environ.pop(key, None)
+        for key, value in resolved.items():
+            if key.startswith("LACTEVA_"):
+                os.environ[key] = value
+        Settings()  # raises if production would refuse to start
+    finally:
+        for key in [k for k in os.environ if k.startswith("LACTEVA_")]:
+            os.environ.pop(key, None)
+        os.environ.update(saved)
+
+
+def test_every_lacteva_variable_in_the_example_is_a_real_setting():
+    """A variable nobody reads is worse than a missing one: it looks configured.
+
+    `SMTP_HOST=` sat in the example through two work orders. The setting is
+    `LACTEVA_SMTP_HOST`, so pydantic-settings never read it — an operator could
+    fill in a relay and find email silently dead.
+    """
+    from platform_core.core.config import Settings
+
+    known = {f"LACTEVA_{name.upper()}" for name in Settings.model_fields}
+    # Compose-level variables: consumed by docker-compose interpolation to
+    # build the image reference and create the database role. They are never
+    # read by the application, so they are legitimately not settings.
+    compose_only = {
+        "LACTEVA_IMAGE",
+        "LACTEVA_IMAGE_TAG",
+        "LACTEVA_APP_USER",
+        "LACTEVA_APP_PASSWORD",
+    }
+    unknown = sorted(
+        key
+        for key in _example_env()
+        if key.startswith("LACTEVA_") and key not in known and key not in compose_only
+    )
+    assert unknown == [], f"example sets LACTEVA_ variables that are not settings: {unknown}"
+
+
+def test_the_stack_provides_every_service_the_configuration_demands():
+    """Configuration and stack must agree.
+
+    `prod` refuses an in-memory event bus, so the compose file has to contain a
+    broker for the API to reach. It did not, and no test compared the two.
+    """
+    compose = _compose()
+    services = compose["services"]
+    api_env = compose["x-api-base"]["environment"]
+
+    assert api_env.get("LACTEVA_EVENT_BUS") == "rabbitmq", (
+        "the API is not configured for a real event transport"
+    )
+    assert "rabbitmq" in services, (
+        "LACTEVA_EVENT_BUS=rabbitmq but the stack defines no broker to connect to"
+    )
+    assert "rabbitmq" in str(api_env.get("LACTEVA_RABBITMQ_URL", "")), (
+        "the API has no RabbitMQ URL pointing at the broker service"
+    )
+    assert services["rabbitmq"].get("healthcheck"), "the broker has no health check"
+    assert services["api"]["depends_on"]["rabbitmq"]["condition"] == "service_healthy", (
+        "the API may start before the broker is ready"
+    )
+    assert "ports" not in services["rabbitmq"], "the broker must not be published to the host"

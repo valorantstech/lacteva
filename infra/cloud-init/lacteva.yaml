@@ -6,7 +6,10 @@
 # what makes a host replaceable: provisioning is reproducible and deployment
 # is repeatable, and neither needs the other to have just happened.
 #
-# Rendered by Terraform (templatefile), so ${...} are Terraform values.
+# Rendered by Terraform (templatefile), so $${...} are Terraform values.
+# (The `$$` escapes the marker: written bare, templatefile tries to EVALUATE
+#  this sentence and fails with "Invalid expression" — which is exactly what
+#  it did, so the comment explaining the templating broke the templating.)
 
 hostname: ${hostname}
 fqdn: ${hostname}

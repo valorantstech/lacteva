@@ -474,6 +474,88 @@ async def test_integrity_verification_catches_a_dangling_receipt(client):
     assert "one_receipt_per_completed_payment" in {c.name for c in report.failures}
 
 
+async def test_a_failed_payment_does_not_make_its_settlement_look_over_allocated(client):
+    """A settlement paid once unsuccessfully and then paid again is the normal
+    shape of a retry, not corruption. The status predicate sits in the JOIN
+    condition, so the failed payment's line survives the outer join with a NULL
+    payment — summing the line column directly counted it, and every restore
+    after a single failed payment reported over-allocation."""
+    from platform_core.modules.payment.models import Payment, PaymentLine
+
+    _headers, _c, _s, _settlement, payment = await _full_dairy(client)
+    async with db.get_session_factory()() as session:
+        live = await session.get(Payment, uuid.UUID(payment["id"]))
+        lines = (
+            await session.scalars(select(PaymentLine).where(PaymentLine.payment_id == live.id))
+        ).all()
+        assert lines, "the dairy produced a payment with no allocations"
+        dead = Payment(
+            tenant_id=live.tenant_id,
+            supplier_id=live.supplier_id,
+            payment_number="PAY-FAILED-EARLIER",
+            currency=live.currency,
+            method=live.method,
+            amount=live.amount,
+            status="failed",
+            failure_reason="gateway declined",
+        )
+        session.add(dead)
+        await session.flush()
+        for line in lines:
+            session.add(
+                PaymentLine(
+                    tenant_id=line.tenant_id,
+                    payment_id=dead.id,
+                    settlement_id=line.settlement_id,
+                    settlement_number=line.settlement_number,
+                    amount=line.amount,
+                )
+            )
+        await session.commit()
+
+    report = await _verifier().verify()
+    assert report.healthy, [f"{c.name}: {c.detail}" for c in report.failures]
+
+
+async def test_integrity_verification_catches_a_genuinely_over_allocated_settlement(client):
+    """The control for the test above: a SECOND LIVE payment for the same
+    settlement really is over-allocation, and must still be caught."""
+    from platform_core.modules.payment.models import Payment, PaymentLine
+
+    _headers, _c, _s, _settlement, payment = await _full_dairy(client)
+    async with db.get_session_factory()() as session:
+        live = await session.get(Payment, uuid.UUID(payment["id"]))
+        lines = (
+            await session.scalars(select(PaymentLine).where(PaymentLine.payment_id == live.id))
+        ).all()
+        second = Payment(
+            tenant_id=live.tenant_id,
+            supplier_id=live.supplier_id,
+            payment_number="PAY-PAID-TWICE",
+            currency=live.currency,
+            method=live.method,
+            amount=live.amount,
+            status="completed",
+        )
+        session.add(second)
+        await session.flush()
+        for line in lines:
+            session.add(
+                PaymentLine(
+                    tenant_id=line.tenant_id,
+                    payment_id=second.id,
+                    settlement_id=line.settlement_id,
+                    settlement_number=line.settlement_number,
+                    amount=line.amount,
+                )
+            )
+        await session.commit()
+
+    report = await _verifier().verify()
+    assert not report.healthy
+    assert "payments_never_exceed_the_payable" in {c.name for c in report.failures}
+
+
 async def test_integrity_verification_catches_orphaned_lines(client):
     from platform_core.modules.payment.models import Payment
 

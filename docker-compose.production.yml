@@ -42,6 +42,13 @@ x-api-base: &api-base
     # this back to the owner, because DDL needs it.
     LACTEVA_DATABASE_URL: postgresql+asyncpg://${LACTEVA_APP_USER:?set LACTEVA_APP_USER — the API must not connect as the superuser}:${LACTEVA_APP_PASSWORD:?set LACTEVA_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
     LACTEVA_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    # DEPLOY-001: the stack had NO event transport and no way to configure one,
+    # while `prod` refuses `event_bus=memory` because it accepts every publish
+    # and delivers nothing. Deploying exactly as documented therefore produced
+    # an API that refused to start — found by resolving this file rather than
+    # reading it. The guard was right; the stack simply could not satisfy it.
+    LACTEVA_EVENT_BUS: rabbitmq
+    LACTEVA_RABBITMQ_URL: amqp://${RABBITMQ_USER:?set RABBITMQ_USER}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}@rabbitmq:5672/
   logging: *logging
   restart: unless-stopped
 
@@ -159,6 +166,32 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  # The durable transport the Relay dispatches through. Internal only: nothing
+  # outside this network has any business reaching the broker, and the
+  # management plugin is deliberately NOT enabled — it is another listener and
+  # another credential for a UI nobody operates day to day.
+  rabbitmq:
+    image: rabbitmq:${RABBITMQ_VERSION:-3.13-alpine}
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}
+      # A broker that fills its disk stops accepting publishes, which stops
+      # milk collection. Leave headroom rather than discover the limit.
+      RABBITMQ_DISK_FREE_LIMIT: ${RABBITMQ_DISK_FREE_LIMIT:-2GB}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    expose: ["5672"]
+    healthcheck:
+      # `check_running` alone reports a broker that is up but not yet accepting
+      # connections; `check_port_connectivity` is what the API actually needs.
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    logging: *logging
+    restart: unless-stopped
+
   # --- schema -------------------------------------------------------------
   migrate:
     <<: *api-base
@@ -190,6 +223,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
     expose: ["8000"]
     command:
       - uvicorn
@@ -364,6 +399,7 @@ volumes:
   # fails with the data directory is not a recovery path. Size it for the
   # retention window: WAL volume x the days between base backups.
   wal_archive:
+  rabbitmq-data:
   redisdata:
   prometheus-data:
   loki-data:

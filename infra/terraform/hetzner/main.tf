@@ -39,12 +39,23 @@ resource "hcloud_ssh_key" "admin" {
 # certificate reissue. Without it, replacing a host is a DNS event with a TTL
 # attached to it.
 resource "hcloud_primary_ip" "public_v4" {
-  name          = "${local.name}-ipv4"
-  type          = "ipv4"
-  datacenter    = "${var.location}-dc3"
-  assignee_type = "server"
-  auto_delete   = false # survives `terraform destroy` of the server
-  labels        = local.labels
+  name = "${local.name}-ipv4"
+  type = "ipv4"
+  # DEPLOY-001: `location`, not a hand-built datacenter string.
+  #
+  # The provider requires exactly one of [location, assignee_id], and this
+  # resource set neither — it set `datacenter`, which is a different attribute.
+  # `terraform validate` refused it, which means this configuration had never
+  # been run: the very first gate rejects it. Hard-coding `-dc3` was also a
+  # guess about Hetzner's internal datacenter numbering that nothing verified,
+  # and an unassigned primary IP belongs to a LOCATION anyway — the server it
+  # later attaches to is what lands in a specific datacenter.
+  location = var.location
+  # No `assignee_type`: the provider warns it is unused without `assignee_id`,
+  # and these addresses are deliberately created UNASSIGNED — that is what lets
+  # them outlive any particular server.
+  auto_delete = false # survives `terraform destroy` of the server
+  labels      = local.labels
 
   lifecycle {
     # Losing the address means every client, DNS record and certificate is
@@ -54,12 +65,11 @@ resource "hcloud_primary_ip" "public_v4" {
 }
 
 resource "hcloud_primary_ip" "public_v6" {
-  name          = "${local.name}-ipv6"
-  type          = "ipv6"
-  datacenter    = "${var.location}-dc3"
-  assignee_type = "server"
-  auto_delete   = false
-  labels        = local.labels
+  name        = "${local.name}-ipv6"
+  type        = "ipv6"
+  location    = var.location
+  auto_delete = false
+  labels      = local.labels
 
   lifecycle {
     prevent_destroy = true
@@ -121,10 +131,10 @@ resource "hcloud_server" "app" {
   }
 
   user_data = templatefile("${path.module}/../../cloud-init/lacteva.yaml", {
-    hostname       = local.name
-    data_device    = "/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.data.id}"
-    timezone       = "UTC"
-    admin_user     = "lacteva"
+    hostname        = local.name
+    data_device     = "/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.data.id}"
+    timezone        = "UTC"
+    admin_user      = "lacteva"
     ssh_public_keys = values(var.ssh_public_keys)
   })
 

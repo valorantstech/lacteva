@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 log = structlog.get_logger("backup.integrity")
@@ -119,7 +119,16 @@ class IntegrityVerifier:
                 select(
                     Settlement.settlement_number,
                     Settlement.net_amount,
-                    func.coalesce(func.sum(PaymentLine.amount), 0),
+                    # The status predicate lives in the JOIN condition, so a
+                    # line belonging to a failed or cancelled payment survives
+                    # with a NULL payment rather than being dropped. Summing
+                    # PaymentLine.amount directly would therefore count it, and
+                    # a settlement paid once unsuccessfully and then paid again
+                    # would be reported as over-allocated on every restore.
+                    # Count only the rows the join actually matched.
+                    func.coalesce(
+                        func.sum(case((Payment.id.isnot(None), PaymentLine.amount), else_=0)), 0
+                    ),
                 )
                 .outerjoin(PaymentLine, PaymentLine.settlement_id == Settlement.id)
                 .outerjoin(

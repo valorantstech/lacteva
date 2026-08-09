@@ -43,6 +43,13 @@ APP_PASSWORD="${APP_PASSWORD:-lacteva_app_proof}"
 
 SOURCE_DB="${SOURCE_DB:-lacteva_proof}"
 RESTORE_DB="${RESTORE_DB:-lacteva_restore}"
+# Step 3's suites get a database of their OWN. They are tests: they fabricate
+# settlements with no lines and payments that are meant to lose a race, and
+# they commit that residue. Run them in ${SOURCE_DB} and step 8's deep
+# integrity check reads their leftovers as corruption — which is exactly what
+# it should say about them, and exactly what it must not say about the dairy
+# the API seeded. Separating the databases keeps both statements true.
+TESTS_DB="${TESTS_DB:-lacteva_pgtests}"
 WORKDIR="$(mktemp -d)"
 BACKUP_DIR="${WORKDIR}/backup"
 
@@ -92,9 +99,10 @@ cleanup() {
   if [ "${KEEP_DATABASES:-0}" != "1" ]; then
     psql_do postgres "DROP DATABASE IF EXISTS ${SOURCE_DB}" >/dev/null 2>&1 || true
     psql_do postgres "DROP DATABASE IF EXISTS ${RESTORE_DB}" >/dev/null 2>&1 || true
+    psql_do postgres "DROP DATABASE IF EXISTS ${TESTS_DB}" >/dev/null 2>&1 || true
   else
-    printf '\nKEEP_DATABASES=1 — %s and %s left in place for inspection.\n' \
-      "${SOURCE_DB}" "${RESTORE_DB}"
+    printf '\nKEEP_DATABASES=1 — %s, %s and %s left in place for inspection.\n' \
+      "${SOURCE_DB}" "${RESTORE_DB}" "${TESTS_DB}"
   fi
   return "${status}"
 }
@@ -142,13 +150,16 @@ psql_do postgres "DO \$\$ BEGIN
   END IF;
 END \$\$" >/dev/null
 psql_do postgres "ALTER ROLE ${APP_USER} NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE" >/dev/null
-psql_do "${SOURCE_DB}" "
-  GRANT CONNECT ON DATABASE ${SOURCE_DB} TO ${APP_USER};
-  GRANT USAGE ON SCHEMA public TO ${APP_USER};
-  GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${APP_USER};
-  GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${APP_USER};
-  ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${APP_USER};
-  ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${APP_USER};" >/dev/null
+grant_app_access() {
+  psql_do "$1" "
+    GRANT CONNECT ON DATABASE $1 TO ${APP_USER};
+    GRANT USAGE ON SCHEMA public TO ${APP_USER};
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${APP_USER};
+    GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${APP_USER};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${APP_USER};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${APP_USER};" >/dev/null
+}
+grant_app_access "${SOURCE_DB}"
 
 BYPASSES="$(psql_do "${SOURCE_DB}" \
   "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = '${APP_USER}'")"
@@ -185,6 +196,15 @@ ORG_POLICY="$(psql_do "${SOURCE_DB}" \
 echo "    every tenant_id table covered; organization isolated by identity"
 
 step "3/9  PostgreSQL-only test suites (RLS enforcement + exact aggregation)"
+# In ${TESTS_DB}, not ${SOURCE_DB} — see the TESTS_DB comment at the top. The
+# schema arrives the same way it did in step 1, so the suites still run against
+# migrated tables with every policy forced.
+psql_do postgres "DROP DATABASE IF EXISTS ${TESTS_DB}" >/dev/null
+psql_do postgres "CREATE DATABASE ${TESTS_DB}" >/dev/null
+LACTEVA_DATABASE_URL="$(url_for "${TESTS_DB}")" ${RUN} alembic upgrade head \
+  || fail "migrations did not apply to the test database"
+grant_app_access "${TESTS_DB}"
+echo "    suites run in ${TESTS_DB}; ${SOURCE_DB} carries only what the API seeds"
 RLS_LOG="${WORKDIR}/pg-tests.log"
 JUNIT="${WORKDIR}/pg-tests.xml"
 # Every suite that can only be evaluated on a real engine, in one run:
@@ -208,8 +228,8 @@ JUNIT="${WORKDIR}/pg-tests.xml"
 #                    every assertion while storing a float (DEPLOY-001)
 # Add new PostgreSQL-only modules HERE, not to a second job — this is the list
 # the skip assertion below protects.
-LACTEVA_TEST_POSTGRES_URL="$(app_url_for "${SOURCE_DB}")" \
-  LACTEVA_TEST_POSTGRES_ADMIN_URL="$(url_for "${SOURCE_DB}")" \
+LACTEVA_TEST_POSTGRES_URL="$(app_url_for "${TESTS_DB}")" \
+  LACTEVA_TEST_POSTGRES_ADMIN_URL="$(url_for "${TESTS_DB}")" \
   ${RUN} pytest tests/test_rls_postgres.py tests/test_exact_aggregation_postgres.py \
   tests/test_disaster_recovery_postgres.py tests/test_payment_concurrency_postgres.py \
   tests/test_consumer_concurrency_postgres.py tests/test_pricing_precision_postgres.py \

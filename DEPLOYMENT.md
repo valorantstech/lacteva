@@ -489,3 +489,38 @@ python -m platform_core.core.backup.cli integrity
 refuses a mismatch, so a corrupt object cannot be restored. This exact sequence
 is executed by `./infra/ci/offsite-proof.sh` with the local backup directory
 deleted first.
+
+
+## What DEPLOY-001 executed, and what it could not (2026-08-09)
+
+The container stack was **not** started. This machine has no root and Ubuntu
+24.04's `apparmor_restrict_unprivileged_userns=1` denies unprivileged user
+namespaces, so no container runtime — Docker, Podman, containerd — can run at
+all. That is a hard environmental boundary, not a missing package, and lifting
+it requires root.
+
+What WAS executed, against the real files, with the real tools:
+
+| Step | Tool | Result |
+| --- | --- | --- |
+| Terraform (hetzner, aws) | `terraform 1.9.8` init / validate / fmt | **PROVEN** — after fixing two defects that made both configs invalid |
+| SSH exposure guard | `terraform plan` | **PROVEN** — `0.0.0.0/0` refused at plan time |
+| Terraform plan/apply | — | **BLOCKED** — stops at provider authentication; needs a real cloud account |
+| Compose stack | `docker compose 2.29.7 config` | **PROVEN** — 10 services resolve; only nginx publishes ports |
+| Production configuration | the platform's own validator, fed the resolved container environment | **PROVEN** — after fixing four defects that stopped it starting |
+| nginx | `nginx 1.27.3 -t` (the pinned version) | **PROVEN** — `syntax is ok` |
+| cloud-init | `cloud-init 26.1` schema, on the Terraform-rendered output | **PROVEN** — valid |
+| systemd units | `systemd-analyze verify` | **PROVEN** — well-formed |
+| Deployment scripts | `bash -n` | **PROVEN** — 11/11 parse |
+| Container runtime, TLS issuance, failure/restart tests, rollback | — | **BLOCKED BY ENVIRONMENT** |
+
+**TLS is NOT proven.** The nginx TLS block parses and loads a certificate, but
+no certificate was issued and no handshake was performed. Treat the first real
+`certbot` run as an unexecuted step.
+
+**Rollback is NOT proven.** `LACTEVA_IMAGE_TAG` makes the application rollback
+a one-variable change and the compose file is structured for it, but no
+deployment was rolled back. The database boundary is unchanged and unchanged
+deliberately: expand-only migrations roll back freely, contract migrations do
+not, and `alembic downgrade` on a live database drops columns holding data
+written since the upgrade. Roll forward or restore.

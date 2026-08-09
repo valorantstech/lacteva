@@ -24,7 +24,7 @@ import asyncio
 import uuid
 
 import pytest_asyncio
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tests import postgres_support
@@ -222,16 +222,65 @@ async def test_a_second_runner_is_told_no_rather_than_blocking(factory):
             granted = await asyncio.wait_for(runner._claim(contender, name), timeout=5)
             assert granted is False, "the second claim was granted while the first was held"
 
-        # The lock belongs to the CONNECTION, not the session, so closing the
-        # session would NOT release it — a pooled connection would carry the
-        # lock away and no runner could ever claim that consumer again. This is
-        # why `_run_consumer` releases in a `finally` rather than relying on
-        # scope, and it is the bug this test caught.
+        # The lock is transaction-scoped, so ending the transaction releases
+        # it. `_run_consumer` still does this in a `finally`, because the batch
+        # must not depend on scope exit to hand the consumer back.
         await runner._release(holder, name)
 
     async with factory() as later:
         assert await runner._claim(later, name) is True, "the claim was never released"
         await runner._release(later, name)
+
+
+async def test_the_claim_cannot_be_borrowed_back_out_of_the_connection_pool(factory):
+    """The defect the four-runner test only caught about one run in four.
+
+    `pg_try_advisory_lock` is SESSION scoped — it belongs to the connection. The
+    runner used to commit the claim session immediately, "so it holds no row
+    locks for the duration of the batch", and that commit ended the transaction,
+    which handed the connection straight back to the pool WITH the lock still on
+    it. A second runner that checked out that same connection re-entered the
+    lock, `pg_try_advisory_lock` answered true, and both runners worked the same
+    consumer — surfacing as a `uq_notification_event` violation, one failed
+    execution, and a spent retry.
+
+    The invariant that makes borrowing impossible is that the claim is held by
+    an OPEN TRANSACTION: SQLAlchemy cannot return a connection to the pool while
+    its transaction is live. Assert exactly that, plus the release it buys.
+    """
+    from platform_core.core.rls import PlatformSessionFactory
+    from platform_core.modules.event_relay.consumers import ConsumerRunner, _lock_key
+
+    runner = ConsumerRunner(PlatformSessionFactory(factory, "pool borrow test"))
+    name = "pool-borrow-probe"
+    key = _lock_key(name)
+
+    async with factory() as holder:
+        assert await runner._claim(holder, name) is True
+        assert holder.in_transaction(), (
+            "the claim session has no open transaction — its connection is free to "
+            "return to the pool carrying the lock, which is the borrow bug itself"
+        )
+        async with factory() as other:
+            held = await other.scalar(
+                select(func.count())
+                .select_from(text("pg_locks"))
+                .where(text("locktype = 'advisory'"))
+                .where(text(f"(classid::bigint << 32) | objid::bigint = {key}"))
+            )
+            assert held == 1, f"expected exactly one advisory lock on {name}, saw {held}"
+        await runner._release(holder, name)
+
+    # Released by ending the transaction — no explicit unlock, and nothing left
+    # behind on the connection for the next borrower.
+    async with factory() as after:
+        remaining = await after.scalar(
+            select(func.count())
+            .select_from(text("pg_locks"))
+            .where(text("locktype = 'advisory'"))
+            .where(text(f"(classid::bigint << 32) | objid::bigint = {key}"))
+        )
+        assert remaining == 0, "the advisory lock outlived its transaction"
 
 
 def test_the_claim_is_a_no_op_off_postgres(monkeypatch):

@@ -197,16 +197,16 @@ class ConsumerRunner:
             #
             # Per consumer NAME, so different consumers still run in parallel;
             # `try`, so a second runner moves on instead of blocking behind the
-            # first; released in `finally` because the lock belongs to the
-            # CONNECTION and a pooled session would otherwise carry it away.
+            # first.
             if not await self._claim(claim, consumer.name):
                 return {"processed": 0, "failed": 0}
-            # This session now does NOTHING but hold the lock. Committing here
-            # drops the transaction it opened, so it holds no row locks for the
-            # duration of the batch — the first version kept the cursor INSERT
-            # open inside it and deadlocked against `_advance_in`, which waits
-            # on that same row from a different session. A single runner hung.
-            await claim.commit()
+            # This session now does NOTHING but hold the lock, and its
+            # transaction stays OPEN for the batch — that is what keeps the
+            # connection checked out and the lock unborrowable (see `_claim`).
+            # It must stay empty of writes: the first version kept the cursor
+            # INSERT open inside it and deadlocked against `_advance_in`, which
+            # waits on that same row from a different session, hanging a single
+            # runner. Every read and write below uses its own session.
             try:
                 async with self._sf() as session:
                     cursor = await self._cursor(session, consumer.name)
@@ -403,9 +403,20 @@ class ConsumerRunner:
         """Try to become the only runner for this consumer.
 
         PostgreSQL advisory locks are keyed by a bigint, so the consumer name
-        is hashed. `pg_try_advisory_lock` never waits: a second runner is told
-        no and gets on with something else, which is what keeps a slow
+        is hashed. `pg_try_advisory_xact_lock` never waits: a second runner is
+        told no and gets on with something else, which is what keeps a slow
         consumer on one host from stalling every other host's loop.
+
+        **`_xact_`, deliberately.** The session-scoped `pg_try_advisory_lock`
+        belongs to the CONNECTION, and this session's connection goes back to
+        the pool the moment its transaction ends. A second runner that then
+        checked out that same connection was handed the lock's owner, so its
+        `pg_try_advisory_lock` returned true re-entrantly and both runners
+        worked the consumer at once — the exact collision the claim exists to
+        stop, reproducible about one run in five as a `uq_notification_event`
+        violation. The transaction-scoped lock cannot be borrowed: it is held
+        for as long as the claim transaction is open, and PostgreSQL drops it
+        at commit or rollback, so it also cannot leak.
 
         SQLite has no advisory locks and no concurrent writers to protect
         against — it serialises writes itself — so this is a no-op there, and
@@ -417,15 +428,15 @@ class ConsumerRunner:
             return True
         # Stable across processes and restarts, unlike hash(), which is salted
         # per interpreter. Truncated to fit a signed 64-bit key.
-        return bool(await session.scalar(select(func.pg_try_advisory_lock(_lock_key(name)))))
+        return bool(await session.scalar(select(func.pg_try_advisory_xact_lock(_lock_key(name)))))
 
     async def _release(self, session: AsyncSession, name: str) -> None:
-        """Give the claim back on the SAME connection that took it."""
-        from platform_core.core.rls import is_postgres
+        """Give the claim back by ending the transaction that holds it.
 
-        if not is_postgres():
-            return
-        await session.scalar(select(func.pg_advisory_unlock(_lock_key(name))))
+        Nothing but the lock was ever written in this session, so a rollback
+        is the cheapest correct release and cannot discard business work.
+        """
+        await session.rollback()
 
     async def _cursor(self, session: AsyncSession, name: str) -> ConsumerCursor:
         cursor = await session.scalar(
