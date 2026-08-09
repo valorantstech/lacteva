@@ -160,6 +160,35 @@ write_files:
       provisioning and deployment, so the host is disposable.
 
 runcmd:
+  # --- swap ----------------------------------------------------------------
+  # COST-001: `vm.overcommit_memory=2` (set in 60-lacteva.conf) is strict — the
+  # kernel refuses to hand out more address space than CommitLimit, which is
+  # `swap + overcommit_ratio% of RAM`. With NO swap on a 4 GiB host that is
+  # ~3.3 GiB, and the twelve containers reserve ~3.0 GiB before anything
+  # touches it: `docker exec` then fails with "nsexec: Cannot allocate memory"
+  # while `free` still shows 2.5 GiB available. The deployment's own
+  # pre-deployment backup was the first casualty.
+  #
+  # Strict overcommit and no swap is the misconfiguration, not the host size.
+  # A swapfile the size of RAM restores the headroom the setting assumes and
+  # keeps the hardening. `swappiness=1` means it is reserve, not working
+  # memory. Idempotent: an existing swapfile is left alone.
+  - |
+    set -eux
+    if [ ! -f /swapfile ]; then
+      # Doubled dollars below so templatefile emits a literal shell
+      # variable. An unescaped one is a Terraform interpolation and fails the
+      # render -- including inside a comment, which is how DEPLOY-001 broke
+      # this same file, and how this comment broke it again while being
+      # written. Rendering is the only way to find out.
+      SWAP_MB=$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo)
+      fallocate -l "$${SWAP_MB}M" /swapfile || dd if=/dev/zero of=/swapfile bs=1M count="$${SWAP_MB}"
+      chmod 600 /swapfile
+      mkswap /swapfile
+      swapon /swapfile
+      grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    fi
+
   # --- data volume ---------------------------------------------------------
   # Formatted ONLY if it has no filesystem. A volume that already holds a
   # database must never be reformatted by a re-run, and cloud-init is exactly
