@@ -28,7 +28,7 @@ Nothing here is advisory. A "no" blocks the deployment.
 - [ ] `LACTEVA_DEBUG=false`.
 - [ ] `LACTEVA_HSTS_ENABLED=true` — **only** once TLS is permanent for the domain.
 - [ ] `LACTEVA_RATE_LIMIT_BACKEND=redis` and Redis reachable (the memory backend cannot see other workers).
-- [ ] Decide `LACTEVA_RATE_LIMIT_FAIL_OPEN` deliberately and record the decision.
+- [x] `LACTEVA_RATE_LIMIT_FAILURE_POLICY` decided: **`degrade`** (SEC-003/F-06). `fail_open` is refused in prod. Override only with a written reason.
 
 ### Database
 
@@ -106,7 +106,7 @@ RLS does not protect against a compromised database — an attacker with the dat
 
 ### Redis is down
 
-Rate limits fail open by default and log `rate_limiter_unavailable`. The platform stays up and collection continues. Treat as urgent-but-not-emergency: abuse protection is off until it returns.
+Rate limits degrade to the process-local counter and log `rate_limiter_degraded` (SEC-003/F-06). The platform stays up and collection continues, and abuse protection stays on at `limit x worker count`. Treat as urgent-but-not-emergency: the budget is looser than intended until Redis returns.
 
 ## 4. What this platform does not defend against
 

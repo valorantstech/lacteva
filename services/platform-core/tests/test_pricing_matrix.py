@@ -3,6 +3,7 @@
 import uuid
 from decimal import Decimal
 
+from tests.conftest import invite
 from tests.test_collection_centers import _center_fixture
 from tests.test_org_structure import _tenant_admin
 from tests.test_rate_cards import PRODUCT, _assign_scope, _create_card
@@ -387,17 +388,16 @@ async def test_matrix_requires_authentication(client):
 
 async def test_viewer_reads_but_cannot_manage_matrices(client):
     org, headers = await _tenant_admin(client)
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "viewer@kilima.example", "role_name": "tenant-viewer"},
-            headers=headers,
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        headers,
+        email="viewer@kilima.example",
+        role_name="tenant-viewer",
+    )
     await client.post(
         "/v1/invitations/accept",
         json={
-            "token": inv["invitation_token"],
+            "token": inv_token,
             "password": "viewer-password-1",
             "full_name": "Read Only",
         },

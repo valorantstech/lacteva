@@ -44,7 +44,24 @@ class Notification(Base, IdMixin):
     recipient_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
     recipient: Mapped[str | None] = mapped_column(String(200), nullable=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # template variables
+    #: SEC-003 / F-04: template variables that are SECRETS — today, the
+    #: one-time invitation token.
+    #:
+    #: They cannot live in `payload`, because `NotificationView` exposes it
+    #: and an operator with `notification.read` could then harvest live
+    #: invitation tokens from the delivery history — which would move F-04
+    #: rather than close it. They cannot be left out either, because delivery
+    #: retries re-render from the stored row and the token is a one-time
+    #: secret that cannot be re-derived from its hash.
+    #:
+    #: So: a separate column, absent from every view and every API response,
+    #: and CLEARED the moment the notification reaches a terminal state. A
+    #: delivered invitation leaves no secret behind in the database or in any
+    #: backup taken after it was sent.
+    secret_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    #: The body as STORED, with any secret replaced by a marker. The body the
+    #: provider was handed is the only place the real value ever appears.
     rendered_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
     provider: Mapped[str | None] = mapped_column(String(40), nullable=True)

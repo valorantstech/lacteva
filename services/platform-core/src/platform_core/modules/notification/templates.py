@@ -150,7 +150,9 @@ TEMPLATES: tuple[Template, ...] = (
         "en",
         "You have been invited to Lacteva",
         "You have been invited to join {organization} as {role}. "
-        "The invitation expires in {expires_days} days.",
+        "Use this code to complete your registration: {invite_token}. "
+        "The invitation expires in {expires_days} days. "
+        "Do not share this code with anyone, including the person who invited you.",
     ),
     _t(
         "invitation_accepted",

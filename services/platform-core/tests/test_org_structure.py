@@ -2,7 +2,7 @@
 
 import uuid
 
-from tests.conftest import register_and_login
+from tests.conftest import invite, register_and_login
 
 
 async def _tenant_admin(client):
@@ -16,17 +16,16 @@ async def _tenant_admin(client):
         )
     ).json()
     # Platform admin acts within the tenant via X-Tenant-ID (bootstrap path):
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "manager@kilima.example", "role_name": "tenant-admin"},
-            headers={**admin_headers, "X-Tenant-ID": org["id"]},
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        {**admin_headers, "X-Tenant-ID": org["id"]},
+        email="manager@kilima.example",
+        role_name="tenant-admin",
+    )
     r = await client.post(
         "/v1/invitations/accept",
         json={
-            "token": inv["invitation_token"],
+            "token": inv_token,
             "password": "manager-password-1",
             "full_name": "Kilima Manager",
         },
@@ -99,17 +98,16 @@ async def test_workspace_and_branch_lifecycle(client, bus):
 
 async def test_viewer_role_cannot_manage_structure(client):
     org, admin_headers = await _tenant_admin(client)
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "viewer@kilima.example", "role_name": "tenant-viewer"},
-            headers=admin_headers,
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        admin_headers,
+        email="viewer@kilima.example",
+        role_name="tenant-viewer",
+    )
     await client.post(
         "/v1/invitations/accept",
         json={
-            "token": inv["invitation_token"],
+            "token": inv_token,
             "password": "viewer-password-1",
             "full_name": "Viewer",
         },
@@ -132,15 +130,14 @@ async def test_viewer_role_cannot_manage_structure(client):
 
 async def test_invitation_is_single_use_and_tenant_isolated(client):
     org, headers = await _tenant_admin(client)
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "once@kilima.example", "role_name": "tenant-viewer"},
-            headers=headers,
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        headers,
+        email="once@kilima.example",
+        role_name="tenant-viewer",
+    )
     body = {
-        "token": inv["invitation_token"],
+        "token": inv_token,
         "password": "once-password-11",
         "full_name": "Once",
     }

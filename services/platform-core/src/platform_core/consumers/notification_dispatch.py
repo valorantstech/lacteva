@@ -31,7 +31,6 @@ SETTLEMENT_FINALIZED = "settlement.finalized.v1"
 PAYMENT_COMPLETED = "payment.completed.v1"  # emitted by PAY-001
 RECEIPT_GENERATED = "receipt.generated.v1"  # emitted by RCP-001
 PASSWORD_RESET_REQUESTED = "identity.password-reset-requested.v1"  # noqa: S105
-INVITATION_ISSUED = "organization.invitation-issued.v1"
 MEMBER_ADDED = "organization.member-added.v1"
 TRANSACTION_REJECTED = "collection.transaction-rejected.v1"
 
@@ -115,18 +114,6 @@ def _password_reset(envelope: EventEnvelope) -> dict | None:
     }
 
 
-def _invitation_issued(envelope: EventEnvelope) -> dict | None:
-    data = envelope.data
-    return {
-        "recipient": data.get("email"),
-        "variables": {
-            "role": data.get("role", ""),
-            "organization": data.get("organization", "Lacteva"),
-            "expires_days": data.get("expires_days", 7),
-        },
-    }
-
-
 def _member_added(envelope: EventEnvelope) -> dict | None:
     data = envelope.data
     return {
@@ -160,7 +147,14 @@ MAPPINGS: dict[str, EventMapping] = {
     PAYMENT_COMPLETED: EventMapping("payment_completed", "sms", _payment_completed),
     RECEIPT_GENERATED: EventMapping("receipt_available", "sms", _receipt_generated),
     PASSWORD_RESET_REQUESTED: EventMapping("password_reset", "email", _password_reset),
-    INVITATION_ISSUED: EventMapping("invitation", "email", _invitation_issued),
+    # SEC-003 / F-04: `INVITATION_ISSUED` is deliberately NOT mapped here.
+    # The invitation email carries a one-time token, and a consumer can only
+    # read what the event payload carries — which would put that token in
+    # `event_outbox`, a table that is never pruned and is in every backup.
+    # `InvitationService._send_invitation` sends it instead, through this same
+    # NotificationService, with the token as a secret variable. The event is
+    # still published: it is the record that an invitation was issued, and
+    # other consumers may read it.
     MEMBER_ADDED: EventMapping("invitation_accepted", "email", _member_added),
     TRANSACTION_REJECTED: EventMapping("milk_rejected", "sms", _transaction_rejected),
 }

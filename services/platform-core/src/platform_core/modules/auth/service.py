@@ -169,6 +169,35 @@ class AuthService:
             .values(revoked_at=utcnow(), revoke_reason=reason)
         )
 
+    async def set_user_active(
+        self,
+        user_id: uuid.UUID,
+        *,
+        active: bool,
+        actor_id: uuid.UUID,
+        tenant_id: uuid.UUID | None,
+    ):
+        """Deactivate or reactivate a user AND settle their sessions.
+
+        SEC-003 / F-02. Identity owns the flag; this module owns sessions, and
+        an offboarding that leaves a live refresh token behind is not an
+        offboarding. `get_current_principal` already re-reads `is_active` on
+        every request, so the access token dies at its next use whatever
+        happens here — this closes the refresh path too, which would otherwise
+        keep minting access tokens from a session nobody re-checked.
+
+        Reactivation does NOT restore sessions. They were revoked; the user
+        logs in again. Resurrecting a revoked session would make the revoke
+        reason a lie and would hand back a refresh token that may have been
+        captured in the meantime.
+        """
+        user = await self._identity.set_active(
+            user_id, active=active, actor_id=actor_id, tenant_id=tenant_id
+        )
+        if not active:
+            await self.revoke_all_for_user(user_id, reason="user-deactivated")
+        return user
+
     # --- password reset (foundation) --------------------------------------
 
     async def request_password_reset(self, email: str, tenant_id: uuid.UUID | None) -> str | None:

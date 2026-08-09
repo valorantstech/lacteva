@@ -2,6 +2,7 @@
 
 import uuid
 
+from tests.conftest import invite
 from tests.test_milk_collection import _drive_to_priced, _engine_fixture
 from tests.test_suppliers import _create_supplier
 
@@ -301,17 +302,16 @@ async def test_cancelled_transaction_is_immutable(client):
 
 async def test_viewer_can_read_but_not_record(client):
     headers, _, session, _ = await _engine_fixture(client)
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "txviewer@kilima.example", "role_name": "tenant-viewer"},
-            headers=headers,
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        headers,
+        email="txviewer@kilima.example",
+        role_name="tenant-viewer",
+    )
     await client.post(
         "/v1/invitations/accept",
         json={
-            "token": inv["invitation_token"],
+            "token": inv_token,
             "password": "viewer-password-1",
             "full_name": "Tx Viewer",
         },

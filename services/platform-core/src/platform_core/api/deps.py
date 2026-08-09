@@ -127,8 +127,8 @@ def get_organization_service(session: Session, bus: Bus, audit: Audit) -> Organi
     return OrganizationService(session, bus, audit)
 
 
-def get_authz_service(session: Session) -> AuthzService:
-    return AuthzService(session)
+def get_authz_service(session: Session, audit: Audit) -> AuthzService:
+    return AuthzService(session, audit)
 
 
 def get_permission_engine(session: Session) -> PermissionEngine:

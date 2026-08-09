@@ -2,7 +2,7 @@
 
 import uuid
 
-from tests.conftest import register_and_login
+from tests.conftest import invite, register_and_login
 from tests.test_collection_centers import _center_fixture
 from tests.test_org_structure import _tenant_admin
 
@@ -385,17 +385,16 @@ async def test_requires_authentication(client):
 async def test_viewer_reads_but_cannot_manage_or_approve(client):
     org, headers = await _tenant_admin(client)
     card = await _create_card(client, headers)
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "viewer@kilima.example", "role_name": "tenant-viewer"},
-            headers=headers,
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        headers,
+        email="viewer@kilima.example",
+        role_name="tenant-viewer",
+    )
     r = await client.post(
         "/v1/invitations/accept",
         json={
-            "token": inv["invitation_token"],
+            "token": inv_token,
             "password": "viewer-password-1",
             "full_name": "Read Only",
         },
@@ -438,17 +437,16 @@ async def test_tenant_isolation(client):
             headers=root2,
         )
     ).json()
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "manager@rift.example", "role_name": "tenant-admin"},
-            headers={**root2, "X-Tenant-ID": org2["id"]},
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        {**root2, "X-Tenant-ID": org2["id"]},
+        email="manager@rift.example",
+        role_name="tenant-admin",
+    )
     await client.post(
         "/v1/invitations/accept",
         json={
-            "token": inv["invitation_token"],
+            "token": inv_token,
             "password": "manager-password-2",
             "full_name": "Rift Manager",
         },

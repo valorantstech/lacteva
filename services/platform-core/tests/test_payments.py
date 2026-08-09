@@ -9,7 +9,7 @@ A settlement built by `_payable` is worth 7897.50 KES (125.5 kg + 50 kg at
 import uuid
 from decimal import Decimal
 
-from tests.conftest import register_and_login
+from tests.conftest import invite, register_and_login
 from tests.test_settlement_lifecycle import _post, _with_lines
 from tests.test_settlements import (
     _add_calculation,
@@ -97,17 +97,16 @@ async def _balance(client, headers, settlement_id) -> dict:
 async def _viewer(client, headers):
     """A tenant-viewer inside the SAME tenant as `headers`."""
     tenant_id = (await client.get("/v1/auth/me", headers=headers)).json()["tenant_id"]
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "viewer@kilima.example", "role_name": "tenant-viewer"},
-            headers=headers,
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        headers,
+        email="viewer@kilima.example",
+        role_name="tenant-viewer",
+    )
     await client.post(
         "/v1/invitations/accept",
         json={
-            "token": inv["invitation_token"],
+            "token": inv_token,
             "password": "viewer-password-1",
             "full_name": "Read Only",
         },
@@ -136,17 +135,16 @@ async def _second_tenant(client):
             headers=root,
         )
     ).json()
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "manager@rift.example", "role_name": "tenant-admin"},
-            headers={**root, "X-Tenant-ID": org["id"]},
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        {**root, "X-Tenant-ID": org["id"]},
+        email="manager@rift.example",
+        role_name="tenant-admin",
+    )
     await client.post(
         "/v1/invitations/accept",
         json={
-            "token": inv["invitation_token"],
+            "token": inv_token,
             "password": "manager-password-2",
             "full_name": "Rift Manager",
         },

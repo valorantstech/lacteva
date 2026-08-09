@@ -403,6 +403,38 @@ async def get_user(
     return await identity.get_user(user_id)
 
 
+class UserActiveRequest(BaseModel):
+    """SEC-003 / F-02. A desired end state, not a verb, so the same request
+    twice is the same answer twice — an administrator disabling an account
+    twice has not made a mistake worth a 409."""
+
+    is_active: bool
+    #: Free-text note for the access review that reads this later. Recorded in
+    #: the audit entry; never used to make a decision.
+    reason: str | None = Field(default=None, max_length=200)
+
+
+@identity_router.post("/users/{user_id}/status", response_model=UserView)
+async def set_user_status(
+    user_id: uuid.UUID,
+    body: UserActiveRequest,
+    auth_service: Annotated[AuthService, Depends(deps.get_auth_service)],
+    principal: Annotated[Principal, Depends(require_permission("identity.user.manage"))],
+) -> Any:
+    """Deactivate or reactivate a user, and settle their live sessions.
+
+    Goes through the AUTH service rather than identity directly: deactivating
+    a user without revoking their refresh tokens leaves them able to mint
+    fresh access tokens from a session nobody re-checked.
+    """
+    return await auth_service.set_user_active(
+        user_id,
+        active=body.is_active,
+        actor_id=principal.id,
+        tenant_id=principal.tenant_id,
+    )
+
+
 # --- Organizations --------------------------------------------------------
 org_router = APIRouter(prefix="/organizations", tags=["organizations"], route_class=IdempotentRoute)
 
@@ -506,15 +538,21 @@ async def create_invitation(
     service: Annotated[InvitationService, Depends(deps.get_invitation_service)],
     principal: Annotated[Principal, Depends(require_permission("organization.member.manage"))],
 ) -> dict:
-    invitation, raw_token = await service.invite(
+    invitation, _raw_token = await service.invite(
         email=body.email, role_name=body.role_name, actor_id=principal.id
     )
-    # FOUNDATION ONLY: token in the response until real delivery lands (M2).
+    # SEC-003 / F-04: the raw token is NOT returned. It used to be, "until
+    # real delivery lands" — which meant whoever issued the invitation could
+    # accept it themselves and create an account under the invitee's email,
+    # in the invitee's tenant, with the role they were being offered. The
+    # token now reaches the invitee through the notification channel and
+    # nowhere else. Everything below is non-secret metadata.
     return {
         "id": str(invitation.id),
         "email": invitation.email,
+        "role_name": invitation.role_name,
+        "status": "pending",
         "expires_at": invitation.expires_at.isoformat(),
-        "invitation_token": raw_token,
     }
 
 
@@ -2289,9 +2327,36 @@ async def assign_role(
     principal: Annotated[Principal, Depends(require_permission("authz.role.manage"))],
 ) -> dict:
     assignment = await service.assign_role(
-        user_id=body.user_id, role_name=body.role_name, tenant_id=principal.tenant_id
+        user_id=body.user_id,
+        role_name=body.role_name,
+        tenant_id=principal.tenant_id,
+        actor_id=principal.id,
     )
     return {"id": str(assignment.id)}
+
+
+@authz_router.delete("/assignments", status_code=204)
+async def revoke_role(
+    user_id: uuid.UUID,
+    role_name: str,
+    service: Annotated[AuthzService, Depends(deps.get_authz_service)],
+    principal: Annotated[Principal, Depends(require_permission("authz.role.manage"))],
+) -> None:
+    """Take a role back (SEC-003 / F-02).
+
+    Query parameters rather than a body: DELETE bodies are legal but widely
+    dropped by proxies, and this is the one verb where a silently discarded
+    body would look like a successful revocation.
+
+    204 whether or not the user held the role — the caller asked for an end
+    state, and after this call the end state holds.
+    """
+    await service.revoke_role(
+        user_id=user_id,
+        role_name=role_name,
+        tenant_id=principal.tenant_id,
+        actor_id=principal.id,
+    )
 
 
 # --- Configuration --------------------------------------------------------

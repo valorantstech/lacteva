@@ -486,9 +486,13 @@ async def test_password_reset_is_rate_limited(client):
     assert last.status_code == 429
 
 
-async def test_the_limiter_fails_open_when_its_backend_is_down(client):
-    """A dairy must not stop accepting milk because Redis is down. The
-    trade-off is explicit and configurable, never silent."""
+async def test_a_dead_limiter_still_lets_the_dairy_log_in(client):
+    """SEC-003 / F-06: `degrade` keeps the business function working.
+
+    This is what fail-open was protecting and the reason it survived so long:
+    a dairy at 5 a.m. must not stop accepting milk because a cache is down.
+    Under `degrade` the request still proceeds — it is charged against the
+    process-local counter instead of Redis."""
     from platform_core.core import rate_limit
 
     class _BrokenLimiter:
@@ -502,6 +506,35 @@ async def test_the_limiter_fails_open_when_its_backend_is_down(client):
     assert r.status_code == 401  # the request proceeded; only auth refused it
 
 
+async def test_a_dead_limiter_does_not_hand_out_unlimited_credential_attempts(client):
+    """SEC-003 / F-06, and the half fail-open gave away.
+
+    The old behaviour allowed EVERY request the limiter could not judge, so a
+    Redis outage silently removed brute-force protection from the login
+    endpoint entirely and the only trace was a log line. `degrade` charges the
+    process-local counter, so the budget still runs out.
+
+    `LOGIN` is 10 per 60s. The eleventh attempt must be refused with Redis
+    dead — under the old fail-open policy every one of these returned 401."""
+    from platform_core.core import rate_limit
+
+    class _BrokenLimiter:
+        async def hit(self, key, rule):
+            raise ConnectionError("redis is gone")
+
+    rate_limit.set_rate_limiter(_BrokenLimiter())
+    rate_limit.get_fallback_limiter()._counters.clear()
+
+    statuses = []
+    for _ in range(12):
+        r = await client.post(
+            "/v1/auth/token",
+            json={"email": "brute@example.com", "password": "wrong-password"},
+        )
+        statuses.append(r.status_code)
+    assert 429 in statuses, f"a dead limiter granted unlimited attempts: {statuses}"
+
+
 async def test_the_limiter_can_be_configured_to_fail_closed(client, monkeypatch):
     from platform_core.core import rate_limit
     from platform_core.core.config import get_settings
@@ -511,11 +544,53 @@ async def test_the_limiter_can_be_configured_to_fail_closed(client, monkeypatch)
             raise ConnectionError("redis is gone")
 
     rate_limit.set_rate_limiter(_BrokenLimiter())
-    monkeypatch.setattr(get_settings(), "rate_limit_fail_open", False)
+    monkeypatch.setattr(get_settings(), "rate_limit_failure_policy", "fail_closed")
     r = await client.post(
         "/v1/auth/token", json={"email": "x@example.com", "password": "wrong-password"}
     )
     assert r.status_code == 429
+
+
+async def test_fail_open_remains_reachable_but_must_be_asked_for(client, monkeypatch):
+    """It is still a supported posture — it just cannot be arrived at by
+    accident, and `prod` refuses it (see the production-config tests)."""
+    from platform_core.core import rate_limit
+    from platform_core.core.config import get_settings
+
+    class _BrokenLimiter:
+        async def hit(self, key, rule):
+            raise ConnectionError("redis is gone")
+
+    rate_limit.set_rate_limiter(_BrokenLimiter())
+    monkeypatch.setattr(get_settings(), "rate_limit_failure_policy", "fail_open")
+    statuses = []
+    for _ in range(12):
+        r = await client.post(
+            "/v1/auth/token",
+            json={"email": "open@example.com", "password": "wrong-password"},
+        )
+        statuses.append(r.status_code)
+    assert 429 not in statuses, "fail_open must allow everything it cannot judge"
+
+
+async def test_credential_rules_are_the_ones_that_deny_when_nothing_can_judge_them(client):
+    """The last-resort split, asserted as data rather than as behaviour: a
+    rule that guards a credential denies, a rule that guards compute allows."""
+    from platform_core.core.rate_limit import (
+        CONSUMER_REPLAY,
+        INVITATION_ACCEPT,
+        LOGIN,
+        LOGIN_PER_USER,
+        NOTIFICATION_PREVIEW,
+        PASSWORD_RESET,
+        PROJECTION_REBUILD,
+        REFRESH,
+    )
+
+    for rule in (LOGIN, LOGIN_PER_USER, REFRESH, PASSWORD_RESET, INVITATION_ACCEPT):
+        assert rule.fail_closed, f"{rule.name} guards a credential and must fail closed"
+    for rule in (NOTIFICATION_PREVIEW, PROJECTION_REBUILD, CONSUMER_REPLAY):
+        assert not rule.fail_closed, f"{rule.name} guards compute, not a secret"
 
 
 async def test_rate_limit_scopes_do_not_collide(client):

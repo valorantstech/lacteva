@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 
-from tests.conftest import register_and_login
+from tests.conftest import invite, register_and_login
 
 _ROOT: dict = {}
 
@@ -33,17 +33,16 @@ async def _admin(client, slug="alpha"):
             headers=admin_headers,
         )
     ).json()
-    invitation = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": f"manager@{slug}.example", "role_name": "tenant-admin"},
-            headers={**admin_headers, "X-Tenant-ID": org["id"]},
-        )
-    ).json()
+    _invitation, invitation_token = await invite(
+        client,
+        {**admin_headers, "X-Tenant-ID": org["id"]},
+        email=f"manager@{slug}.example",
+        role_name="tenant-admin",
+    )
     accepted = await client.post(
         "/v1/invitations/accept",
         json={
-            "token": invitation["invitation_token"],
+            "token": invitation_token,
             "password": "manager-password-1",
             "full_name": f"{slug.title()} Manager",
         },

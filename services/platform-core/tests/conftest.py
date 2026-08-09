@@ -1,6 +1,7 @@
 """Test fixtures: in-memory SQLite + in-memory event bus, no infrastructure needed."""
 
 import os
+import re
 
 # Must be set before any platform_core import (settings are cached).
 os.environ["LACTEVA_ENV"] = "test"
@@ -101,6 +102,54 @@ async def grant_platform_admin(user_id: uuid.UUID) -> None:
             user_id=user_id, role_name="platform-admin", tenant_id=None
         )
         await session.commit()
+
+
+async def invite(
+    client: AsyncClient, headers: dict[str, str], *, email: str, role_name: str
+) -> tuple[dict, str]:
+    """Issue an invitation and read the token the way the INVITEE gets it.
+
+    SEC-003 / F-04: the API used to return the raw token, and every test in
+    this suite read it from there. That was the defect — whoever issued the
+    invitation could accept it themselves — so the response no longer carries
+    it and the tests must obtain it the same way a real invitee does: out of
+    the message the notification channel delivered.
+
+    Capturing the outbound message is therefore not a workaround. It is the
+    only path to the token that exists, and every test that bootstraps a
+    tenant now exercises the real delivery of a real secret.
+    """
+    from platform_core.modules.notification import providers
+
+    captured: dict[str, str] = {}
+
+    class _CapturingEmailProvider:
+        name = "capture-email"
+
+        async def send(self, message):
+            captured["body"] = message.body
+            return providers.DeliveryResult(
+                provider_message_id=f"capture:{message.notification_id}",
+                status=providers.ACCEPTED,
+            )
+
+    previous = providers.get_provider("email")
+    providers.register_provider("email", _CapturingEmailProvider())
+    try:
+        response = await client.post(
+            "/v1/invitations",
+            json={"email": email, "role_name": role_name},
+            headers=headers,
+        )
+    finally:
+        providers.register_provider("email", previous)
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert "invitation_token" not in body, "the raw token is back in the API response"
+    assert "body" in captured, "no invitation message was delivered"
+    match = re.search(r"registration:\s*(\S+?)\.\s", captured["body"])
+    assert match, f"no token in the delivered message: {captured['body']!r}"
+    return body, match.group(1)
 
 
 async def register_and_login(

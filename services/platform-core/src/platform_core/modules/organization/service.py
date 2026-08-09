@@ -282,9 +282,20 @@ class InvitationService:
     async def invite(
         self, *, email: str, role_name: str, actor_id: uuid.UUID
     ) -> tuple[Invitation, str]:
-        """Returns (invitation, raw_token). The raw token is exposed in the
-        API response as a FOUNDATION-ONLY convenience until email/SMS delivery
-        lands (M2) — remove from the response when the notifier goes real."""
+        """Returns (invitation, raw_token). The raw token goes to the CALLER
+        (service layer) only — the API never exposes it, exactly as
+        `AuthService.request_password_reset` does.
+
+        SEC-003 / F-04: it used to be returned in the API response "as a
+        FOUNDATION-ONLY convenience until email delivery lands". Delivery has
+        landed, and the convenience was a hole: the inviter could accept the
+        invitation themselves and create an account bound to the invitee's
+        email address, inside the invitee's future tenant, with the role the
+        invitation named. Only the hash is stored, and the raw value travels
+        to the invitee through the notification channel as a SECRET variable
+        (see `Notification.secret_payload`) — never through this response,
+        never through the outbox payload, never through a log line.
+        """
         tenant_id = get_current_tenant()
         if tenant_id is None:
             raise ForbiddenError("tenant context required")
@@ -312,15 +323,55 @@ class InvitationService:
                 {
                     "invitation_id": str(invitation.id),
                     "role": role_name,
-                    # Delivery data for the notification consumer (NOT-001):
-                    # this module no longer sends anything itself.
                     "email": invitation.email,
                     "expires_days": INVITATION_TTL.days,
+                    # NOTE the absence of the token. This payload lands in
+                    # `event_outbox`, which is classified critical, is never
+                    # pruned, and is in every backup — the last place a live
+                    # one-time secret should be.
                 },
                 actor_id=actor_id,
             )
         )
+        await self._send_invitation(invitation, raw, role_name)
         return invitation, raw
+
+    async def _send_invitation(self, invitation: Invitation, raw_token: str, role_name: str):
+        """The one place a business module sends a notification itself, and
+        the reason is the secret (SEC-003 / F-04).
+
+        Everywhere else the module publishes and the notification consumer
+        sends — that separation is NOT-001/BR-0016 and it stands. It cannot
+        stand here: the consumer reads the durable outbox log, so anything the
+        consumer needs must be written into `event_outbox.payload`, which is
+        never pruned and is captured by every backup. Putting a live
+        invitation token there trades one exposure for a worse one.
+
+        Everything else about the message is unchanged — same template, same
+        provider, same delivery record, same retry budget, same idempotency
+        (keyed on the invitation id, so re-issuing is not re-sending).
+        """
+        from platform_core.modules.notification.service import (
+            NotificationRequest,
+            NotificationService,
+        )
+
+        return await NotificationService(self._session).dispatch(
+            NotificationRequest(
+                event_id=invitation.id,
+                event_name="organization.invitation-issued.v1",
+                tenant_id=invitation.tenant_id,
+                template_key="invitation",
+                channel="email",
+                recipient=invitation.email,
+                variables={
+                    "role": role_name,
+                    "organization": "Lacteva",
+                    "expires_days": INVITATION_TTL.days,
+                },
+                secret_variables={"invite_token": raw_token},
+            )
+        )
 
     async def accept(
         self,
@@ -368,7 +419,14 @@ class InvitationService:
             user_id=user.id, tenant_id=invitation.tenant_id, invited_by=invitation.invited_by
         )
         await authz.assign_role(
-            user_id=user.id, role_name=invitation.role_name, tenant_id=invitation.tenant_id
+            user_id=user.id,
+            role_name=invitation.role_name,
+            tenant_id=invitation.tenant_id,
+            # The new account grants itself the role the invitation named.
+            # There is no other actor: the inviter is not present at
+            # acceptance time, and attributing it to them would misreport who
+            # was at the keyboard.
+            actor_id=user.id,
         )
         invitation.accepted_at = utcnow()
         await self._audit.record(

@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy import update
 
-from tests.conftest import count_statements, register_and_login
+from tests.conftest import count_statements, invite, register_and_login
 from tests.test_org_structure import _tenant_admin
 from tests.test_procurement_e2e import _accept_complete, _procurement_env, _run_collection
 
@@ -338,17 +338,16 @@ async def test_reports_require_permission(client):
 
 async def test_viewer_can_read_reports(client):
     org, headers = await _tenant_admin(client)
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "viewer@kilima.example", "role_name": "tenant-viewer"},
-            headers=headers,
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        headers,
+        email="viewer@kilima.example",
+        role_name="tenant-viewer",
+    )
     await client.post(
         "/v1/invitations/accept",
         json={
-            "token": inv["invitation_token"],
+            "token": inv_token,
             "password": "viewer-password-1",
             "full_name": "Read Only",
         },
@@ -379,17 +378,16 @@ async def test_tenant_isolation(client):
             headers=root2,
         )
     ).json()
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "manager@rift.example", "role_name": "tenant-admin"},
-            headers={**root2, "X-Tenant-ID": org2["id"]},
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        {**root2, "X-Tenant-ID": org2["id"]},
+        email="manager@rift.example",
+        role_name="tenant-admin",
+    )
     await client.post(
         "/v1/invitations/accept",
         json={
-            "token": inv["invitation_token"],
+            "token": inv_token,
             "password": "manager-password-2",
             "full_name": "Rift Manager",
         },

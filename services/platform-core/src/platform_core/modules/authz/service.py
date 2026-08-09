@@ -1,6 +1,7 @@
 """Authorization module — permission engine and role administration."""
 
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from platform_core.core.errors import ConflictError, NotFoundError
 from platform_core.modules.authz.models import Role, RolePermission, UserRole
 from platform_core.modules.authz.permissions import SYSTEM_ROLES, WILDCARD, is_registered
+
+if TYPE_CHECKING:
+    from platform_core.modules.audit.service import AuditService
 
 
 class PermissionEngine:
@@ -47,8 +51,26 @@ class PermissionEngine:
 
 
 class AuthzService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, audit: "AuditService | None" = None):
         self._session = session
+        self._audit = audit
+
+    async def _record(self, action: str, assignment: UserRole, actor_id: uuid.UUID | None) -> None:
+        """Grants and revocations are the two entries an access review reads.
+
+        `audit` is optional only because `ensure_system_roles` runs at startup
+        where there is no actor and nothing to review; every caller that acts
+        on behalf of a person passes one.
+        """
+        if self._audit is None or actor_id is None:
+            return
+        await self._audit.record(
+            action=action,
+            resource_type="user_role",
+            resource_id=assignment.id,
+            actor_id=actor_id,
+            detail={"user_id": str(assignment.user_id), "role_id": str(assignment.role_id)},
+        )
 
     async def ensure_system_roles(self) -> None:
         """Idempotent bootstrap/sync of system roles (called at startup).
@@ -81,9 +103,7 @@ class AuthzService:
                         )
                     )
 
-    async def assign_role(
-        self, *, user_id: uuid.UUID, role_name: str, tenant_id: uuid.UUID | None
-    ) -> UserRole:
+    async def _resolve_role(self, role_name: str, tenant_id: uuid.UUID | None) -> Role:
         role = await self._session.scalar(
             select(Role).where(
                 ((Role.tenant_id == tenant_id) | (Role.tenant_id.is_(None))),
@@ -92,6 +112,17 @@ class AuthzService:
         )
         if role is None:
             raise NotFoundError("role not found")
+        return role
+
+    async def assign_role(
+        self,
+        *,
+        user_id: uuid.UUID,
+        role_name: str,
+        tenant_id: uuid.UUID | None,
+        actor_id: uuid.UUID | None = None,
+    ) -> UserRole:
+        role = await self._resolve_role(role_name, tenant_id)
         existing = await self._session.scalar(
             select(UserRole).where(
                 UserRole.user_id == user_id,
@@ -103,7 +134,47 @@ class AuthzService:
             return existing
         assignment = UserRole(user_id=user_id, role_id=role.id, tenant_id=tenant_id)
         self._session.add(assignment)
+        await self._session.flush()
+        await self._record("authz.role.granted", assignment, actor_id)
         return assignment
+
+    async def revoke_role(
+        self,
+        *,
+        user_id: uuid.UUID,
+        role_name: str,
+        tenant_id: uuid.UUID | None,
+        actor_id: uuid.UUID | None = None,
+    ) -> None:
+        """Take a role back (SEC-003 / F-02).
+
+        FINAL-001 found `assign_role` with no inverse anywhere in the
+        platform: a mis-granted permission was permanent. Deleting the
+        assignment row is the whole mechanism — `effective_permissions`
+        resolves per request from exactly these rows, with no cache in front
+        of it, so the next authorization check already disagrees with the
+        previous one. That is why the TODO about a Redis permission cache
+        matters more now than it did: whoever adds it owns the invalidation.
+
+        Revoking a role the user does not hold is NOT an error. The caller
+        asked for an end state and the end state is what they get; raising
+        would only tempt an administrator to check first and race themselves.
+        The assignment is scoped to the caller's tenant, so a platform-level
+        grant cannot be revoked through a tenant-scoped request.
+        """
+        role = await self._resolve_role(role_name, tenant_id)
+        assignment = await self._session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == user_id,
+                UserRole.role_id == role.id,
+                UserRole.tenant_id == tenant_id,
+            )
+        )
+        if assignment is None:
+            return
+        await self._record("authz.role.revoked", assignment, actor_id)
+        await self._session.delete(assignment)
+        await self._session.flush()
 
     async def create_role(
         self, *, tenant_id: uuid.UUID | None, name: str, permission_keys: list[str]

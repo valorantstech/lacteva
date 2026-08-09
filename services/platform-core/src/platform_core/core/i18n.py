@@ -28,6 +28,10 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.pricing_integrity": (
             "Pricing data is ambiguous for this transaction — contact an administrator."
         ),
+        "error.mock_hardware_refused": (
+            "Simulated scale and analyzer readings are not permitted here. "
+            "Weigh and test the milk, then enter the reading."
+        ),
         "notification.welcome.subject": "Welcome to Lacteva",
         "notification.password_reset.subject": "Reset your Lacteva password",
         "notification.invitation.subject": "You have been invited to Lacteva",
@@ -41,6 +45,9 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.idempotency_key_invalid": "Kichwa cha Idempotency-Key ni tupu au kirefu mno.",
         "error.idempotency_key_reused": "Idempotency-Key hii ilitumika kwa ombi tofauti.",
         "error.idempotency_in_progress": "Ombi linalofanana bado linaendelea. Jaribu tena baadaye.",
+        "error.mock_hardware_refused": (
+            "Vipimo vya mfano havihairuhusiwi hapa. Pima maziwa kisha uweke kipimo halisi."
+        ),
     },
     "hi": {  # Hindi — starter subset
         "error.not_found": "अनुरोधित संसाधन नहीं मिला।",
@@ -51,6 +58,9 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.idempotency_key_invalid": "Idempotency-Key हेडर खाली है या बहुत लंबा है।",
         "error.idempotency_key_reused": "यह Idempotency-Key किसी अन्य अनुरोध हेतु प्रयुक्त हुई।",
         "error.idempotency_in_progress": "समान अनुरोध अभी चल रहा है। शीघ्र पुनः प्रयास करें।",
+        "error.mock_hardware_refused": (
+            "यहाँ नकली रीडिंग की अनुमति नहीं है। दूध तौलें और वास्तविक रीडिंग दर्ज करें।"
+        ),
     },
 }
 

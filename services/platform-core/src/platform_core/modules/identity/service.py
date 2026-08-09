@@ -65,6 +65,65 @@ class IdentityService:
             select(User).where(User.tenant_id == tenant_id, User.email == email.lower())
         )
 
-    # TODO(M1): deactivate_user, password reset (token + notification),
-    # email verification, invitation-based org-scoped registration (the
-    # public register endpoint creates platform-level users only).
+    async def get_in_tenant(self, user_id: uuid.UUID, tenant_id: uuid.UUID | None) -> User:
+        """Read a user that the caller's tenant is allowed to see.
+
+        RLS makes another tenant's row invisible, so `get_user` would already
+        answer 404 in production — but the test stack has no RLS, and the
+        house rule is that the application filter is defence in depth rather
+        than a formality. A user belonging to another organization is NOT
+        FOUND here, never FORBIDDEN: 403 would confirm the account exists.
+        """
+        user = await self._session.get(User, user_id)
+        if user is None or user.tenant_id != tenant_id:
+            raise NotFoundError("user not found")
+        return user
+
+    async def set_active(
+        self,
+        user_id: uuid.UUID,
+        *,
+        active: bool,
+        actor_id: uuid.UUID,
+        tenant_id: uuid.UUID | None,
+    ) -> User:
+        """Deactivate or reactivate a user (SEC-003 / F-02).
+
+        FINAL-001 found `is_active` enforced in five places and settable in
+        none: an offboarded employee kept working credentials for as long as
+        the account existed, because logout only ends the session they are
+        holding and they can simply log in again.
+
+        Deactivation does NOT delete anything. The audit trail, the
+        collections they recorded and the settlements they finalized are
+        business history and stay exactly as they are — this closes the door,
+        it does not rewrite what happened while it was open.
+
+        Revoking the live sessions is deliberately NOT done here: sessions
+        belong to the auth module. `AuthService.set_user_active` is the one
+        call that does both, and it is what the route uses.
+        """
+        user = await self.get_in_tenant(user_id, tenant_id)
+        if user.is_active == active:
+            return user  # idempotent: the same request twice is not an error
+        user.is_active = active
+        action = "identity.user.reactivated" if active else "identity.user.deactivated"
+        await self._audit.record(
+            action=action,
+            resource_type="user",
+            resource_id=user.id,
+            actor_id=actor_id,
+            detail={"email": user.email},
+        )
+        await self._bus.publish(
+            EventEnvelope.new(
+                "identity.user-reactivated.v1" if active else "identity.user-deactivated.v1",
+                {"user_id": str(user.id), "email": user.email},
+                actor_id=actor_id,
+            )
+        )
+        return user
+
+    # TODO(M1): password reset (token + notification), email verification,
+    # invitation-based org-scoped registration (the public register endpoint
+    # creates platform-level users only).

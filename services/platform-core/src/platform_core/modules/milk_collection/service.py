@@ -22,7 +22,12 @@ from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
-from platform_core.infrastructure.hardware import mock_analyzer, mock_scale
+from platform_core.infrastructure.hardware import (
+    MockHardwareRefused,
+    mock_analyzer,
+    mock_hardware_allowed,
+    mock_scale,
+)
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.collection_center.models import CollectionCenter
 from platform_core.modules.milk_collection.models import (
@@ -47,6 +52,22 @@ if TYPE_CHECKING:
     from platform_core.modules.pricing.resolution import PricingResolutionService
 
 MAX_GROSS_KG = 200.0
+
+
+def _refuse_mock_source(source: str) -> None:
+    """SEC-003 / F-01: refuse a fabricated measurement where it is not allowed.
+
+    The adapter refuses too, and deliberately so — but refusing HERE means the
+    caller gets the same answer whether it arrived over HTTP or through the
+    offline sync replay, and gets it before any state is touched. Both paths
+    reach this method, so this is the one place that covers both.
+    """
+    if not mock_hardware_allowed():
+        raise MockHardwareRefused(
+            f"{source} is not permitted in this environment — capture a real reading"
+        )
+
+
 QUALITY_RANGES = {  # raw plausibility bounds; grading/calculations come later
     "fat": (0.0, 15.0),
     "snf": (0.0, 15.0),
@@ -401,6 +422,7 @@ class MilkCollectionService:
         if cmd.unit != "kg":
             raise ConflictError("only kg is supported in this sprint")
         if cmd.source == "mock_scale":
+            _refuse_mock_source("mock_scale")
             reading = mock_scale.read(tx.container_identifier or str(tx.id))
             gross, tare = reading.gross_kg, reading.tare_kg
         elif cmd.source == "manual":
@@ -435,6 +457,7 @@ class MilkCollectionService:
     ) -> MilkCollectionTransaction:
         tx = await self._get_mutable(tx_id, expected="QUALITY_PENDING")
         if cmd.source == "mock_analyzer":
+            _refuse_mock_source("mock_analyzer")
             r = mock_analyzer.read(tx.container_identifier or str(tx.id))
             values = {
                 "fat": r.fat,

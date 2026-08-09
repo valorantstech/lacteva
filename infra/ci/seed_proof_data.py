@@ -19,6 +19,7 @@ import asyncio
 import json
 import os
 import pathlib
+import re
 import sys
 from datetime import date, timedelta
 
@@ -31,6 +32,53 @@ async def _expect(response, *codes: int, what: str):
     if response.status_code not in codes:
         raise SystemExit(f"seed failed at {what}: {response.status_code} {response.text[:400]}")
     return response.json() if response.content else {}
+
+
+async def _invite_and_capture_token(client, *, headers: dict, email: str, role_name: str) -> str:
+    """Issue an invitation and read the token out of the delivered message.
+
+    SEC-003 / F-04. The seeder runs the app in-process, so it can install a
+    provider that records what was sent — which is the only place the raw
+    token ever appears. This is not a shortcut around the boundary; it is the
+    boundary, exercised: if the invitation email ever stopped carrying a
+    working token, the proof would fail here rather than pass with a dairy
+    nobody could have signed into.
+    """
+    from platform_core.modules.notification import providers
+
+    captured: dict[str, str] = {}
+
+    class _CapturingEmailProvider:
+        name = "proof-capture-email"
+
+        async def send(self, message):
+            captured["body"] = message.body
+            return providers.DeliveryResult(
+                provider_message_id=f"proof:{message.notification_id}",
+                status=providers.ACCEPTED,
+            )
+
+    previous = providers.get_provider("email")
+    providers.register_provider("email", _CapturingEmailProvider())
+    try:
+        await _expect(
+            await client.post(
+                "/v1/invitations",
+                json={"email": email, "role_name": role_name},
+                headers=headers,
+            ),
+            201,
+            what="invite manager",
+        )
+    finally:
+        providers.register_provider("email", previous)
+
+    match = re.search(r"registration:\s*(\S+?)\.\s", captured.get("body", ""))
+    if not match:
+        raise SystemExit(
+            "seed failed at invite manager: no invitation token in the delivered message"
+        )
+    return match.group(1)
 
 
 async def seed() -> dict:
@@ -74,20 +122,22 @@ async def seed() -> dict:
             201,
             what="create organization",
         )
-        inv = await _expect(
-            await c.post(
-                "/v1/invitations",
-                json={"email": "manager@proof.example", "role_name": "tenant-admin"},
-                headers={**root, "X-Tenant-ID": org["id"]},
-            ),
-            201,
-            what="invite manager",
+        # SEC-003 / F-04: the invite response no longer carries the raw token —
+        # returning it let the INVITER accept the invitation and create an
+        # account under the invitee's address. The token now reaches the
+        # invitee through the notification channel only, so the seeder reads it
+        # the same way a real invitee does: out of the delivered message.
+        invite_token = await _invite_and_capture_token(
+            c,
+            headers={**root, "X-Tenant-ID": org["id"]},
+            email="manager@proof.example",
+            role_name="tenant-admin",
         )
         accepted = await _expect(
             await c.post(
                 "/v1/invitations/accept",
                 json={
-                    "token": inv["invitation_token"],
+                    "token": invite_token,
                     "password": PASSWORD,
                     "full_name": "Proof Manager",
                 },

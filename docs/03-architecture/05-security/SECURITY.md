@@ -89,8 +89,10 @@ Nothing logs a credential, token, or key.
 | Failure | Behaviour | Rationale |
 | --- | --- | --- |
 | JWKS endpoint unavailable | Platform is unaffected — it verifies from its own registry, not over HTTP. External resource servers degrade. | Discovery is for consumers, not for us |
-| Redis unavailable | Rate limits **fail open** (configurable) and the failure is logged | A dairy must not stop accepting milk because a cache is down |
-| Rate limiter fails closed (opt-in) | 429 with retry information | For deployments that prefer refusal to permissiveness |
+| Redis unavailable | Rate limits **degrade**: the request is charged against the process-local counter and `rate_limiter_degraded` is logged | SEC-003/F-06. A dairy must not stop accepting milk because a cache is down — and an outage must not hand out unlimited credential attempts either. The budget becomes `limit x workers` instead of unlimited |
+| Redis unavailable AND the fallback fails | Credential and one-time-token rules (`login`, `login-user`, `refresh`, `password-reset`, `invitation-accept`) return 429; rules that guard compute allow | The last resort for a credential endpoint is "no". Refusing an authorised operator on a preview endpoint costs more than the load |
+| `LACTEVA_RATE_LIMIT_FAILURE_POLICY=fail_open` | Everything the limiter could not judge is allowed | Still supported, still a real posture — but it cannot be reached by accident and **prod refuses it** |
+| `LACTEVA_RATE_LIMIT_FAILURE_POLICY=fail_closed` | 429 with retry information | For deployments that would rather stop than be probed, knowing it also stops their own operators logging in |
 | Signing key missing | Startup fails in prod; dev generates an ephemeral key | A silent fallback to a weaker mode is how platforms ship insecure |
 | Unknown `kid` | 401. Never a fallback to another key | Trusting an unnamed key is the forgery path |
 | Expired / retired key | 401 immediately | Retirement is the emergency revocation lever |

@@ -87,7 +87,7 @@ Covered by §2. Worth separating because the *response* differs: reuse detection
 
 **Mitigation.** Per-user and per-IP budgets on exactly those endpoints, with structured `Retry-After`. Business endpoints keep their query budgets (asserted by statement-counting tests), so no single request can become unboundedly expensive.
 
-**Residual risk.** Limits fail open when Redis is down, by choice — see §11.
+**Residual risk.** When Redis is down the limits degrade to a process-local counter rather than disappearing (SEC-003/F-06), so the effective budget is `limit x worker count` for the duration of the outage. Bounded, not unlimited — and no longer silent: `rate_limiter_degraded` is logged per rule.
 
 **Proven by** `test_login_is_rate_limited_with_structured_retry_information`.
 

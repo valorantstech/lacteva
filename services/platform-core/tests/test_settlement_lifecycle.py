@@ -4,7 +4,7 @@ events, permissions."""
 import uuid
 from decimal import Decimal
 
-from tests.conftest import register_and_login
+from tests.conftest import invite, register_and_login
 from tests.test_org_structure import _tenant_admin
 from tests.test_settlements import (
     _add_calculation,
@@ -319,17 +319,16 @@ async def test_requires_permission(client):
 
 async def test_viewer_reads_but_cannot_manage_or_finalize(client):
     org, headers = await _tenant_admin(client)
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "viewer@kilima.example", "role_name": "tenant-viewer"},
-            headers=headers,
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        headers,
+        email="viewer@kilima.example",
+        role_name="tenant-viewer",
+    )
     await client.post(
         "/v1/invitations/accept",
         json={
-            "token": inv["invitation_token"],
+            "token": inv_token,
             "password": "viewer-password-1",
             "full_name": "Read Only",
         },

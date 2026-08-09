@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'build_flags.dart';
 
 /// Milk Collection Transaction Wizard (SPRINT-007).
 /// Steps: supplier -> milk -> weight -> quality -> review -> completion.
@@ -9,17 +10,23 @@ class CollectionWizardScreen extends StatefulWidget {
     super.key,
     required this.client,
     required this.sessionId,
+    this.initialStep = 0,
   });
 
   final ApiClient client;
   final String sessionId;
+
+  /// Which step to open on. Exists so a widget test can assert what a given
+  /// step offers without driving five API round trips to reach it; the app
+  /// always starts at 0.
+  final int initialStep;
 
   @override
   State<CollectionWizardScreen> createState() => _CollectionWizardScreenState();
 }
 
 class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
-  int _step = 0;
+  late int _step = widget.initialStep;
   String? _txId;
   Map<String, dynamic>? _tx;
   String? _error;
@@ -192,10 +199,12 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                 onPressed: _busy ? null : () => _weight(mock: false),
                 child: const Text('Capture weight'),
               ),
-              TextButton(
-                onPressed: _busy ? null : () => _weight(mock: true),
-                child: const Text('Use mock scale'),
-              ),
+              // SEC-003 / F-01: absent from a release build, not hidden.
+              if (kMockHardwareEnabled)
+                TextButton(
+                  onPressed: _busy ? null : () => _weight(mock: true),
+                  child: const Text('Use mock scale'),
+                ),
             ],
             if (_step == 3) ...[
               Text('Quality', style: Theme.of(context).textTheme.titleLarge),
@@ -222,10 +231,11 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                 onPressed: _busy ? null : () => _quality(mock: false),
                 child: const Text('Capture quality'),
               ),
-              TextButton(
-                onPressed: _busy ? null : () => _quality(mock: true),
-                child: const Text('Use mock analyzer'),
-              ),
+              if (kMockHardwareEnabled)
+                TextButton(
+                  onPressed: _busy ? null : () => _quality(mock: true),
+                  child: const Text('Use mock analyzer'),
+                ),
             ],
             if (_step == 4 && tx != null) ...[
               Text('Review', style: Theme.of(context).textTheme.titleLarge),

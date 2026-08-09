@@ -2,6 +2,7 @@
 
 import uuid
 
+from tests.conftest import invite
 from tests.test_org_structure import _tenant_admin
 
 
@@ -181,17 +182,16 @@ async def test_search_and_pagination(client):
 
 async def test_viewer_can_read_but_not_manage(client):
     headers, branch, center = await _center_fixture(client)
-    inv = (
-        await client.post(
-            "/v1/invitations",
-            json={"email": "cv@kilima.example", "role_name": "tenant-viewer"},
-            headers=headers,
-        )
-    ).json()
+    _inv, inv_token = await invite(
+        client,
+        headers,
+        email="cv@kilima.example",
+        role_name="tenant-viewer",
+    )
     await client.post(
         "/v1/invitations/accept",
         json={
-            "token": inv["invitation_token"],
+            "token": inv_token,
             "password": "viewer-password-1",
             "full_name": "Center Viewer",
         },

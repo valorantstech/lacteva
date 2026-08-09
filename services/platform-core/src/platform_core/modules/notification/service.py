@@ -51,6 +51,12 @@ from platform_core.modules.notification.templates import (
 
 log = structlog.get_logger("notification")
 
+#: What a secret variable looks like everywhere except the outbound message
+#: (SEC-003 / F-04). Deliberately not empty and not a plausible token: an
+#: operator reading a stored body should be able to tell that something was
+#: removed rather than that the message was malformed.
+REDACTED = "[redacted]"
+
 
 class NotificationRequest(BaseModel):
     """What the consumer asks for — never a message, always a template."""
@@ -64,6 +70,10 @@ class NotificationRequest(BaseModel):
     recipient: str | None = None  # explicit address when the event carries it
     language: str | None = None
     variables: dict = {}
+    #: SEC-003 / F-04: variables whose VALUES are secrets. Rendered into the
+    #: outbound message, stored in `secret_payload` only until delivery, never
+    #: returned by any API, never logged. See `Notification.secret_payload`.
+    secret_variables: dict = {}
 
 
 class NotificationView(BaseModel):
@@ -163,6 +173,7 @@ class NotificationService:
             recipient_ref=request.recipient_ref,
             recipient=request.recipient,
             payload=_jsonable(request.variables),
+            secret_payload=_jsonable(request.secret_variables) or None,
         )
         # DEPLOY-001: the uniqueness must decide the race, not the SELECT
         # above. `(event, template, channel)` is BR-0017's idempotency key, and
@@ -235,7 +246,18 @@ class NotificationService:
             variables = dict(notification.payload)
             if "name" in template.variables and "name" not in variables:
                 variables["name"] = await self._recipient_name(notification)
-            message = render(template, variables)
+            # SEC-003 / F-04: two renders of the same template. The provider
+            # gets the real secret; everything that is stored, shown or logged
+            # gets the redacted one. Rendering twice rather than substituting
+            # afterwards means the marker cannot be defeated by a token that
+            # happens to contain template syntax.
+            secrets_in_play = dict(notification.secret_payload or {})
+            message = render(template, {**variables, **secrets_in_play})
+            storable = (
+                render(template, {**variables, **{k: REDACTED for k in secrets_in_play}})
+                if secrets_in_play
+                else message
+            )
             provider = get_provider(notification.channel)
             # Provider latency is the number that tells an operator whether a
             # delivery backlog is the gateway's fault or ours.
@@ -290,13 +312,16 @@ class NotificationService:
             return
         notification.language = message.language
         notification.title = message.title
-        notification.rendered_text = message.body
+        notification.rendered_text = storable.body
         notification.provider = provider.name
         notification.provider_reference = result.provider_message_id
         notification.status = "sent"
         notification.sent_at = now
         notification.next_attempt_at = None
         notification.error = None
+        # Delivered: the secret has served its purpose and must not outlive it
+        # in the row, in a query, or in tonight's backup.
+        notification.secret_payload = None
         NOTIFICATIONS_SENT.labels(notification.channel, notification.template_key).inc()
 
     def _record_failure(
@@ -328,6 +353,12 @@ class NotificationService:
         if exhausted:
             notification.status = "dead"
             notification.next_attempt_at = None
+            # SEC-003 / F-04: dead is terminal for delivery, so it is terminal
+            # for the secret too. An operator retry of a dead invitation will
+            # correctly find no token and fail to render — which is the honest
+            # outcome: issue a new invitation rather than resurrect a secret
+            # that has been sitting in the database since it stopped working.
+            notification.secret_payload = None
             NOTIFICATIONS_DEAD.labels(notification.channel, notification.template_key).inc()
             log.error(
                 "notification_dead",

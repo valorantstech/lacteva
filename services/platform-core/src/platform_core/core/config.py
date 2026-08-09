@@ -47,9 +47,21 @@ class Settings(BaseSettings):
     # Rate limiting (per-IP / per-user / per-endpoint, Redis-backed).
     rate_limit_enabled: bool = True
     rate_limit_backend: Literal["redis", "memory"] = "redis"
-    # Fail-open keeps milk collection working when Redis is down; a deployment
-    # that prefers to fail closed sets this to False (see SECURITY.md).
-    rate_limit_fail_open: bool = True
+    #: What happens when the limiter itself is unreachable (SEC-003 / F-06).
+    #:
+    #: `degrade` — the recorded decision. Charge the request against the
+    #: process-local limiter instead. A dairy at 5 a.m. can still log in and
+    #: keep accepting milk, and an attacker gets `limit x workers` attempts
+    #: per window rather than unlimited ones. If even that fails, rules marked
+    #: `fail_closed` deny and the rest allow.
+    #: `fail_open` — allow everything the limiter could not judge. REFUSED in
+    #: prod: a Redis blip must not silently remove brute-force protection from
+    #: the credential endpoints, and `degrade` already protects the
+    #: availability that fail-open existed to protect.
+    #: `fail_closed` — deny everything the limiter could not judge. A
+    #: deployment that would rather stop than be probed sets this knowing it
+    #: also stops its own operators logging in.
+    rate_limit_failure_policy: Literal["degrade", "fail_open", "fail_closed"] = "degrade"
 
     # Security headers. HSTS is only meaningful behind TLS, so it is opt-in
     # and off by default in dev.
@@ -168,6 +180,18 @@ class Settings(BaseSettings):
     # receipt/pdf.py). `placeholder` is kept only so the pre-PROD-001
     # behaviour remains reachable in dev; prod refuses it.
     receipt_pdf_renderer: Literal["builtin", "placeholder"] = "builtin"
+    #: SEC-003 / F-01: may `mock_scale` and `mock_analyzer` fabricate a
+    #: measurement?
+    #:
+    #: `None` means "derive it from the environment" — allowed everywhere
+    #: except `prod`. That is the safe default: an operator who has never
+    #: heard of this setting still cannot invent milk in production, and a
+    #: developer who has never heard of it still gets working mocks.
+    #: Setting it to `true` in prod is REFUSED at startup rather than
+    #: honoured, because a fabricated weight is priced, settled, paid and
+    #: receipted like any other — there is no downstream check that can tell
+    #: an invented reading from a weighed one.
+    allow_mock_hardware: bool | None = None
     rabbitmq_url: str = "amqp://lacteva:lacteva@localhost:5672/"
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "lacteva"
@@ -203,6 +227,18 @@ class Settings(BaseSettings):
     # Localization
     default_locale: str = "en"
     supported_locales: tuple[str, ...] = ("en", "sw", "hi")
+
+    @property
+    def mock_hardware_enabled(self) -> bool:
+        """The single authority on whether a fabricated reading is permitted.
+
+        Everything that could invent a measurement asks this — the service that
+        accepts the source and the adapter that produces the number. One
+        predicate, so there is no second opinion to get wrong (SEC-003 / F-01).
+        """
+        if self.allow_mock_hardware is None:
+            return self.env != "prod"
+        return self.allow_mock_hardware
 
     @model_validator(mode="after")
     def _refuse_dev_secrets_in_prod(self) -> "Settings":
@@ -315,6 +351,30 @@ class Settings(BaseSettings):
             problems.append(
                 "LACTEVA_RATE_LIMIT_BACKEND must be 'redis' in prod — the memory backend is "
                 "per-process, so each replica grants the full budget again"
+            )
+
+        # SEC-003 / F-06. Fail-open means a Redis blip silently removes every
+        # brute-force limit from login, refresh, password reset and invitation
+        # acceptance — the four endpoints where an attacker gets the most value
+        # per request — and nothing in the request path reports it. `degrade`
+        # keeps the availability that fail-open was protecting (the operator
+        # can still log in at 5 a.m.) while leaving an attacker a bounded
+        # budget instead of an unlimited one, so there is nothing left for
+        # fail-open to buy.
+        if self.rate_limit_failure_policy == "fail_open":
+            problems.append(
+                "LACTEVA_RATE_LIMIT_FAILURE_POLICY must not be 'fail_open' in prod — an "
+                "unreachable limiter would silently allow unlimited credential attempts; "
+                "use 'degrade' (process-local fallback) or 'fail_closed'"
+            )
+
+        # SEC-003 / F-01. A fabricated weight or quality reading is priced,
+        # settled, paid and receipted exactly like a measured one, and no
+        # downstream check can tell them apart.
+        if self.allow_mock_hardware:
+            problems.append(
+                "LACTEVA_ALLOW_MOCK_HARDWARE must not be true in prod — mock_scale and "
+                "mock_analyzer fabricate measurements that become real money"
             )
 
         # A gateway selected but not configured fails every send at runtime,
