@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SessionControls } from "@/components/session-controls";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -70,9 +71,27 @@ export default function RootLayout({
             <a className="text-muted-foreground hover:text-foreground" href="/sync">
               Sync
             </a>
-            <a className="ml-auto text-muted-foreground hover:text-foreground" href="/login">
-              Sign in
+            {/* PORTAL-001 / F-10: the administrative half of the platform,
+                which had no portal surface at all until now. */}
+            <a className="text-muted-foreground hover:text-foreground" href="/admin/users">
+              Users
             </a>
+            <a className="text-muted-foreground hover:text-foreground" href="/admin/roles">
+              Roles
+            </a>
+            <a className="text-muted-foreground hover:text-foreground" href="/admin/organizations">
+              Organizations
+            </a>
+            <a className="text-muted-foreground hover:text-foreground" href="/admin/audit">
+              Audit
+            </a>
+            <a className="text-muted-foreground hover:text-foreground" href="/admin/configuration">
+              Configuration
+            </a>
+            <a className="text-muted-foreground hover:text-foreground" href="/admin/operations">
+              Operations
+            </a>
+            <SessionControls />
           </div>
         </nav>
         {children}

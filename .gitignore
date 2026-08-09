@@ -45,3 +45,11 @@ minio-data/
 .terraform.lock.hcl
 *.tfvars
 !*.tfvars.example
+
+# PORTAL-001 / F-05 — mobile release signing material. NEVER committed.
+# The keystore is a permanent credential: losing it means the app can never
+# be upgraded, and leaking it means anyone can publish as us.
+apps/mobile/android/key.properties
+*.jks
+*.keystore
+!apps/mobile/android/key.properties.example

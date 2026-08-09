@@ -23,12 +23,14 @@ This document is operational. It assumes the platform's guarantees rather than e
 
 ## 1. What the stack is
 
-Ten containers, one published port.
+Twelve containers, one published port.
 
 | Service | Purpose | Reachable from outside? |
 | --- | --- | --- |
 | `nginx` | TLS termination, compression, rate limiting, the only front door | **Yes** — 80/443 |
+| `portal` | The admin portal (Next.js). Holds the browser session and proxies to `api` | No |
 | `api` | The platform. Uvicorn, N workers | No |
+| `rabbitmq` | Event transport | No |
 | `migrate` | One-shot: `alembic upgrade head`, then exits | No |
 | `postgres` | The database | No |
 | `redis` | Rate-limit counters | No |
@@ -143,6 +145,7 @@ startup rather than documenting it here.
 ```bash
 export TAG=$(git rev-parse --short HEAD)
 docker build -t lacteva/platform-core:$TAG services/platform-core
+docker build -t lacteva/admin-portal:$TAG apps/admin-portal
 
 sed -i "s/^LACTEVA_IMAGE_TAG=.*/LACTEVA_IMAGE_TAG=$TAG/" .env.production
 
@@ -157,9 +160,83 @@ docker compose -f docker-compose.production.yml --env-file .env.production up -d
 1. `postgres` and `redis` start. Compose waits for their health checks — `pg_isready` and a `PING` that must answer `PONG`.
 2. `migrate` runs `alembic upgrade head` and exits. **A failure here stops the deployment**: `restart: "no"` means it does not retry, so the API's `service_completed_successfully` condition never fires and nothing serves traffic against a schema that did not apply.
 3. `api` starts, and is *healthy* only once `/health/ready` returns 200 — which now means every probe is non-critical, not merely that the database answered (§6).
-4. `nginx` starts once the API is healthy, and publishes the port.
+4. `portal` starts once the API is healthy, and is *healthy* once its own `/api/health` answers. That check is deliberately about the portal only — a database maintenance window must not restart a working frontend.
+5. `nginx` starts once BOTH the API and the portal are healthy, and publishes the port.
 
 A sleep anywhere in that chain would be a guess: too short and it fails under load, too long and it taxes every deploy forever. `tests/test_deployment.py::test_nothing_in_production_waits_on_a_sleep` keeps it that way.
+
+### The admin portal (PORTAL-001)
+
+The portal is a **server**, not a static bundle: it holds the browser's session
+in an HttpOnly cookie and proxies every API call itself. That is what keeps a
+session token out of reach of page script, and it is why there is a `portal`
+container rather than a directory of files behind nginx.
+
+**One image, any environment.** The portal reads `LACTEVA_API_URL` from its
+environment at request time. There is deliberately no `NEXT_PUBLIC_API_URL`
+build argument: Next inlines `NEXT_PUBLIC_*` into the browser bundle at build
+time, so an image built with one would only ever reach one backend, and an
+image built without it shipped `http://localhost:8000` to production browsers.
+Nothing secret is baked into the image, and no build argument is required.
+
+```bash
+docker build -t lacteva/admin-portal:$TAG apps/admin-portal
+```
+
+**Routing.** One TLS boundary, two upstreams:
+
+| Path | Goes to | Why |
+| --- | --- | --- |
+| `/` and everything unmatched | `portal` | The product a person opens |
+| `/_next/static/` | `portal` | Content-hashed, cached immutably |
+| `/v1/` | `api` | The mobile client and integrations |
+| `/health/live`, `/health/ready` | `api` | Platform health |
+| `/metrics` | `api` | Internal networks only |
+| `/docs`, `/redoc`, `/openapi.json` | `api` | Exact matches, so they cannot shadow a portal route |
+
+The browser never learns the platform's address: it talks only to the portal's
+own origin, and the portal talks to `http://api:8000` on the compose network.
+The API therefore needs no public hostname and no CORS entry for the portal.
+
+**Sessions.** `POST /api/auth/login` exchanges credentials for cookies
+(`HttpOnly`, `SameSite=Strict`, `Secure` in production) and returns no body.
+`POST /api/auth/logout` revokes the platform session as well as clearing the
+cookies — clearing the cookie alone would leave a captured refresh token
+working. CSRF is covered by `SameSite=Strict` plus an `Origin` check on every
+state-changing route; the backend still never sees a cookie, so its
+bearer-only, CSRF-free posture (divergence #22) is unchanged.
+
+**If the portal cannot reach the API**, it answers `502` rather than `500`.
+That distinction is what tells an operator reading nginx logs whether the
+frontend or the backend is the problem.
+
+### Mobile release builds (PORTAL-001 / F-05)
+
+Release builds were signed with the **public Android debug key** — not
+distributable, not upgradeable. They now fail unless a real keystore is
+supplied.
+
+```bash
+cp apps/mobile/android/key.properties.example apps/mobile/android/key.properties
+# point storeFile at the keystore, fill in the passwords, then:
+cd apps/mobile && flutter build apk --release \
+  --dart-define=LACTEVA_API_URL=https://lacteva.example
+```
+
+`android/key.properties` and every `*.jks` / `*.keystore` are gitignored and
+must never be committed. In CI, write `key.properties` from secrets
+immediately before the build and delete it immediately after; do not export
+the passwords as environment variables a build log could echo.
+
+**The keystore is a permanent credential.** Lose it and the app can never be
+upgraded again — a new key means a new listing and every user reinstalling.
+Back it up where more than one person can reach it, and treat it like the JWT
+signing key.
+
+Note the `--dart-define`: without it a release build defaults to
+`http://localhost:8000`. The same flag also compiles the mock scale and
+analyzer controls out of the build (SEC-003/F-01), which `kReleaseMode`
+already does by default.
 
 ### Zero-downtime deploys
 

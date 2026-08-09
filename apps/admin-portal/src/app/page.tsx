@@ -11,7 +11,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// PORTAL-001 / F-11: same-origin, through the portal's own proxy. The
+// browser no longer knows — or needs to know — where the platform lives.
+const API = "/api/proxy";
 
 type Overview = {
   centers: number;
@@ -37,15 +39,11 @@ export default function Home() {
   const [overview, setOverview] = useState<Overview | null>(null);
 
   const loadOverview = useCallback(async () => {
-    // Procurement snapshot — only renders when a session token exists.
-    const token =
-      typeof window !== "undefined" ? window.localStorage.getItem("lacteva.access_token") : null;
-    if (!token) return;
+    // Procurement snapshot. There is no token to check for any more: the
+    // proxy answers 401 when there is no session, and the catch below hides
+    // the row exactly as it did before.
     const count = async (path: string) => {
-      const res = await fetch(`${API_URL}${path}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
+      const res = await fetch(`${API}${path}`, { credentials: "same-origin", cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
       return ((await res.json()) as { total: number }).total;
     };
@@ -76,7 +74,7 @@ export default function Home() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/health/ready`, { cache: "no-store" });
+      const res = await fetch(`${API}/health/ready`, { cache: "no-store" });
       const readiness = (await res.json()) as Readiness;
       setStatus({ state: "ready", readiness });
     } catch (err) {
@@ -158,7 +156,7 @@ export default function Home() {
             )}
           </CardTitle>
           <CardDescription>
-            {API_URL} — polled every 10s
+            Platform API — polled every 10s
             {checkedAt ? ` · last check ${checkedAt}` : ""}
           </CardDescription>
         </CardHeader>
@@ -212,7 +210,7 @@ export default function Home() {
             </a>
             <a
               className="text-primary underline-offset-4 hover:underline"
-              href={`${API_URL}/docs`}
+              href={`${API}/docs`}
               target="_blank"
               rel="noreferrer"
             >
@@ -220,7 +218,7 @@ export default function Home() {
             </a>
             <a
               className="text-primary underline-offset-4 hover:underline"
-              href={`${API_URL}/metrics`}
+              href={`${API}/metrics`}
               target="_blank"
               rel="noreferrer"
             >

@@ -1,19 +1,26 @@
 // Minimal typed API client for platform-core.
 // TODO(M2): replace hand-written types with generation from /openapi.json.
+//
+// PORTAL-001 / F-11: this client holds NO credential.
+//
+// It used to read a bearer token out of `localStorage` and put it on every
+// request, which meant any script running on the page — an XSS, a compromised
+// dependency, a browser extension — could read a live session token. There is
+// no way to store a token in the browser that script cannot reach, so the
+// token is not in the browser any more: it lives in an HttpOnly cookie that
+// only the portal's own server can see, and every call goes same-origin to
+// `/api/proxy`, which attaches it (see `src/app/api/proxy`).
+//
+// Consequences worth knowing:
+//   * `API_URL` is gone. The browser does not know where the platform is.
+//   * requests carry the session cookie automatically, so nothing here has to
+//     remember to attach anything.
+//   * CSRF is handled by `SameSite=Strict` plus an Origin check in the route
+//     handlers, so the backend stays bearer-only and CSRF-free (divergence
+//     #22 still holds — it never sees a cookie).
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-const TOKEN_KEY = "lacteva.access_token";
-
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token: string | null) {
-  if (token === null) window.localStorage.removeItem(TOKEN_KEY);
-  else window.localStorage.setItem(TOKEN_KEY, token);
-}
+/** Same-origin. The platform's address is a server-side secret. */
+const PROXY_PREFIX = "/api/proxy";
 
 export class ApiError extends Error {
   constructor(
@@ -27,18 +34,19 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${PROXY_PREFIX}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
+    // The session cookie rides along automatically; there is no token to add.
+    credentials: "same-origin",
     cache: "no-store",
   });
   if (res.status === 401 && typeof window !== "undefined") {
-    setToken(null);
+    // The cookie is gone or the platform rejected it. Nothing to clear on
+    // this side — that is the point of it being HttpOnly.
     window.location.href = "/login";
   }
   if (!res.ok) {
@@ -83,14 +91,39 @@ export type Branch = {
   status: string;
 };
 
+/**
+ * Sign in. The token never comes back to this code — the route handler puts
+ * it in an HttpOnly cookie and answers 204.
+ */
 export async function login(email: string, password: string, tenantId?: string) {
   const body: Record<string, string> = { email, password };
   if (tenantId) body.tenant_id = tenantId;
-  const pair = await api<{ access_token: string }>("/v1/auth/token", {
+  const res = await fetch("/api/auth/login", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    credentials: "same-origin",
+    cache: "no-store",
   });
-  setToken(pair.access_token);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const problem = (await res.json()) as { detail?: string; title?: string };
+      detail = problem.detail ?? problem.title ?? detail;
+    } catch {
+      // non-JSON error body — keep statusText
+    }
+    throw new ApiError(res.status, detail);
+  }
+}
+
+/** Sign out here AND on the platform, so a captured refresh token dies too. */
+export async function logout() {
+  await fetch("/api/auth/logout", {
+    method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+  });
 }
 
 export function listCenters(params: {
@@ -1113,9 +1146,10 @@ export const renderReceipt = (id: string, format: string) =>
 export const receiptAction = (id: string, action: "deliver" | "archive") =>
   api<Receipt>(`/v1/receipts/${id}/${action}`, { method: "POST" });
 
-/** Download URL for the artifact — served by the API with a filename. */
+/** Download URL for the artifact — served through the proxy, which streams
+ *  `application/pdf` and its `Content-Disposition` through untouched. */
 export const receiptDownloadUrl = (id: string, format: string) =>
-  `${API_URL}/v1/receipts/${id}/download?format=${format}`;
+  `${PROXY_PREFIX}/v1/receipts/${id}/download?format=${format}`;
 
 // --- Offline sync monitor (OFF-001, read-only) ------------------------------
 
@@ -1184,3 +1218,137 @@ export const getSyncStats = () => api<SyncStats>("/v1/sync/stats");
 
 export const retrySyncOperation = (operationId: string) =>
   api<SyncOperation>(`/v1/sync/operations/${operationId}/retry`, { method: "POST" });
+
+// --- Administration (PORTAL-001 / F-10) -------------------------------------
+//
+// The platform's administrative half had no portal surface at all: users,
+// roles, organizations, the audit trail, configuration and backup status were
+// reachable only by hand-crafting HTTP requests. Everything below uses the
+// existing contracts — no backend endpoint was added for the portal.
+
+export type User = {
+  id: string;
+  email: string;
+  full_name: string;
+  locale: string;
+  is_active: boolean;
+};
+
+export type Me = {
+  user: User;
+  tenant_id: string | null;
+  permissions: string[];
+};
+
+export const getMe = () => api<Me>("/v1/auth/me");
+
+export type Member = {
+  user_id: string;
+  status: string;
+  joined_at: string;
+};
+
+export const listMembers = () => api<Member[]>("/v1/members");
+
+export const getUser = (id: string) => api<User>(`/v1/identity/users/${id}`);
+
+/**
+ * The tenant's people, joined to their accounts.
+ *
+ * `/v1/members` carries membership only — user id, status, joined date — so
+ * the names and addresses come from `/v1/identity/users/{id}`. One request per
+ * member: honest for a cooperative's staff list, and the alternative is a new
+ * backend endpoint that this work order is explicitly not to invent. A member
+ * whose account cannot be read is kept in the list rather than dropped — a row
+ * that says "unavailable" is information; a silently shorter list is not.
+ */
+export async function listPeople(): Promise<Array<Member & { user: User | null }>> {
+  const members = await listMembers();
+  return Promise.all(
+    members.map(async (m) => ({
+      ...m,
+      user: await getUser(m.user_id).catch(() => null),
+    })),
+  );
+}
+
+/** SEC-003 / F-02: deactivate or reactivate. An end state, not a verb. */
+export const setUserActive = (id: string, isActive: boolean, reason?: string) =>
+  api<User>(`/v1/identity/users/${id}/status`, {
+    method: "POST",
+    body: JSON.stringify({ is_active: isActive, reason: reason || null }),
+  });
+
+export const listPermissions = () => api<Record<string, string>>("/v1/authz/permissions");
+
+export const createRole = (name: string, permissionKeys: string[]) =>
+  api<{ id: string; name: string }>("/v1/authz/roles", {
+    method: "POST",
+    body: JSON.stringify({ name, permission_keys: permissionKeys }),
+  });
+
+export const assignRole = (userId: string, roleName: string) =>
+  api<{ id: string }>("/v1/authz/assignments", {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId, role_name: roleName }),
+  });
+
+/** SEC-003 / F-02. Query parameters, not a body — see the route's comment. */
+export const revokeRole = (userId: string, roleName: string) =>
+  api<void>(
+    `/v1/authz/assignments?user_id=${encodeURIComponent(userId)}&role_name=${encodeURIComponent(roleName)}`,
+    { method: "DELETE" },
+  );
+
+export type Organization = {
+  id: string;
+  name: string;
+  slug: string;
+  country_code: string;
+  status?: string;
+};
+
+export const getOrganization = (id: string) => api<Organization>(`/v1/organizations/${id}`);
+
+export type AuditRecord = {
+  id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  actor_id: string | null;
+  created_at: string;
+  detail: Record<string, unknown> | null;
+};
+
+export const listAudit = (limit = 100) => api<AuditRecord[]>(`/v1/audit?limit=${limit}`);
+
+export const getConfig = (key: string) =>
+  api<{ key: string; value: unknown }>(`/v1/config/${encodeURIComponent(key)}`);
+
+export const setConfig = (key: string, value: unknown, scope: "tenant" | "global" = "tenant") =>
+  api<{ key: string; scope: string; status: string }>(`/v1/config/${encodeURIComponent(key)}`, {
+    method: "PUT",
+    body: JSON.stringify({ value, scope }),
+  });
+
+export type BackupStatus = {
+  healthy: boolean;
+  last_backup_at: string | null;
+  last_verified_at: string | null;
+  detail?: string;
+  [key: string]: unknown;
+};
+
+export type BackupRun = {
+  id: string;
+  kind: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  error: string | null;
+  [key: string]: unknown;
+};
+
+export const getBackupStatus = () => api<BackupStatus>("/v1/_ops/backups/status");
+
+export const listBackupRuns = (limit = 20) => api<BackupRun[]>(`/v1/_ops/backups?limit=${limit}`);

@@ -49,7 +49,7 @@ jobs:
   # (SQLite, ~790 tests, no services); that one is the slow, real half.
 
   admin-portal:
-    name: admin-portal (build + lint)
+    name: admin-portal (build + lint + test)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -63,10 +63,16 @@ jobs:
           cache-dependency-path: apps/admin-portal/package-lock.json
       - name: Install
         run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
       - name: Build
         run: npm run build
       - name: Lint
         run: npx eslint src --max-warnings 0
+      # PORTAL-001 / F-09. Wired into CI from the start: an unwired suite is
+      # how a portal ends up with zero tests again.
+      - name: Test
+        run: npm test
 
   mobile:
     name: mobile (analyze + tests)
@@ -94,4 +100,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build image
         run: docker build -t lacteva/platform-core:${{ github.sha }} services/platform-core
+      # PORTAL-001 / F-03: the portal is a deployable artifact now, so it is
+      # built here too. A Dockerfile nobody builds is a Dockerfile that stops
+      # working.
+      - name: Build portal image
+        run: docker build -t lacteva/admin-portal:${{ github.sha }} apps/admin-portal
       # TODO(M3): push to ECR + deploy (AWS infra lands in infra/ per roadmap).
