@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { type Me, getMe, logout } from "@/lib/api";
+import { type Session, getSession, logout } from "@/lib/api";
 
 /**
  * Who am I, and how do I leave (PORTAL-001 / F-10, F-11).
@@ -15,12 +15,14 @@ import { type Me, getMe, logout } from "@/lib/api";
  */
 export function SessionControls() {
   const router = useRouter();
-  const [me, setMe] = useState<Me | null>(null);
+  const [me, setMe] = useState<Session | null>(null);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    getMe()
+    // SESSION-001: answers 200 whether or not anyone is signed in, so the
+    // login page logs nothing in the console for being signed out.
+    getSession()
       .then((session) => !cancelled && setMe(session))
       .catch(() => !cancelled && setMe(null))
       .finally(() => !cancelled && setChecked(true));
@@ -33,7 +35,7 @@ export function SessionControls() {
   // at somebody who is already signed in.
   if (!checked) return <span className="ml-auto" />;
 
-  if (!me) {
+  if (!me || !me.authenticated) {
     return (
       <a className="ml-auto text-muted-foreground hover:text-foreground" href="/login">
         Sign in

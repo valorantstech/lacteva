@@ -1273,8 +1273,29 @@ export type Me = {
 };
 
 /** Who am I? A 401 means "nobody" — an answer, not an error to escape from,
- *  so this never triggers the redirect (LOOP-001). */
+ *  so this never triggers the redirect (LOOP-001). Prefer `getSession()` for
+ *  a plain "am I signed in?": it answers 200 either way and leaves nothing in
+ *  the browser console. */
 export const getMe = () => api<Me>("/v1/auth/me", undefined, { redirectOn401: false });
+
+export type Session =
+  | { authenticated: false; unreachable?: boolean }
+  | ({ authenticated: true } & Me);
+
+/**
+ * SESSION-001: the signed-in question, asked so that "no" is an answer.
+ *
+ * Same-origin, always 200, so the login page does not log a failed request
+ * for being in its normal state.
+ */
+export async function getSession(): Promise<Session> {
+  const res = await fetch("/api/auth/session", {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  if (!res.ok) return { authenticated: false, unreachable: true };
+  return (await res.json()) as Session;
+}
 
 export type Member = {
   user_id: string;

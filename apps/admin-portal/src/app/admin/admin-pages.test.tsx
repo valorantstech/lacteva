@@ -182,7 +182,8 @@ describe("session controls", () => {
     const { SessionControls } = await import("@/components/session-controls");
 
     routeFetch({
-      "/v1/auth/me": {
+      "/api/auth/session": {
+        authenticated: true,
         user: { id: "u1", email: "boss@kilima.example", full_name: "Boss", locale: "en", is_active: true },
         tenant_id: "org-1",
         permissions: [],
@@ -192,15 +193,8 @@ describe("session controls", () => {
     expect(await screen.findByRole("button", { name: /sign out/i })).toBeInTheDocument();
     unmount();
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ title: "unauthorized" }), {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        }),
-      ),
-    );
+    // SESSION-001: signed out is a 200 with authenticated:false, not a 401.
+    routeFetch({ "/api/auth/session": { authenticated: false } });
     render(<SessionControls />);
     expect(await screen.findByRole("link", { name: /sign in/i })).toBeInTheDocument();
   });
@@ -208,7 +202,8 @@ describe("session controls", () => {
   it("signs out through the route handler", async () => {
     const { SessionControls } = await import("@/components/session-controls");
     const fetchSpy = routeFetch({
-      "/v1/auth/me": {
+      "/api/auth/session": {
+        authenticated: true,
         user: { id: "u1", email: "boss@kilima.example", full_name: "Boss", locale: "en", is_active: true },
         tenant_id: "org-1",
         permissions: [],

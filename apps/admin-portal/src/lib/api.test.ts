@@ -104,6 +104,21 @@ describe("authentication", () => {
   });
 });
 
+describe("session probe (SESSION-001)", () => {
+  it("asks a same-origin endpoint that answers 200 when nobody is signed in", async () => {
+    const fetchSpy = mockFetch({ status: 200, json: async () => ({ authenticated: false }) });
+    const { getSession } = await import("@/lib/api");
+    await expect(getSession()).resolves.toEqual({ authenticated: false });
+    expect(fetchSpy.mock.calls[0][0]).toBe("/api/auth/session");
+  });
+
+  it("reports an unreachable portal distinctly from being signed out", async () => {
+    mockFetch({ ok: false, status: 502, statusText: "Bad Gateway", json: async () => ({}) });
+    const { getSession } = await import("@/lib/api");
+    await expect(getSession()).resolves.toEqual({ authenticated: false, unreachable: true });
+  });
+});
+
 describe("error handling", () => {
   it("raises ApiError carrying the problem detail and its structured extra", async () => {
     mockFetch({
