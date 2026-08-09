@@ -1,4 +1,4 @@
-"""Seed a real dairy into the configured database (CI-001).
+"""Seed a real dairy (CI-001, extended by DEMO-001).
 
 The backup/restore proof is only worth running against **real business data**:
 an empty database restores perfectly and proves nothing. This drives the
@@ -6,9 +6,24 @@ platform's own API — the same endpoints an operator uses — to produce a
 complete chain: organization, center, supplier, rate card, collection,
 pricing, settlement, payment, receipt, notifications.
 
-It talks to the app in-process over ASGI rather than over the network, so it
-needs no running server, and it uses the database named by
-`LACTEVA_DATABASE_URL` — which under the proof script is a real PostgreSQL.
+Two modes:
+
+  * CI (default) — talks to the app IN-PROCESS over ASGI, needs no running
+    server, and uses the database named by `LACTEVA_DATABASE_URL`. It creates
+    its own throwaway organization, which is what proves migrations from empty.
+
+  * DEMO — set `SEED_BASE_URL` and it drives a RUNNING deployment over HTTPS
+    instead, through the same front door a user would. Add `SEED_TENANT_ID`,
+    `SEED_MANAGER_EMAIL` and `SEED_MANAGER_PASSWORD` to seed INTO an existing
+    organization rather than creating one, and `SEED_SUFFIX` to re-seed a
+    tenant that already holds the codes this script uses:
+
+        SEED_BASE_URL=https://dev.example \
+        SEED_TENANT_ID=<uuid> SEED_MANAGER_EMAIL=... SEED_MANAGER_PASSWORD=... \
+        python infra/ci/seed_proof_data.py out.json
+
+    In DEMO mode the deployment's own consumer loop produces the receipt and
+    the notifications, so this script waits rather than driving them.
 
 Run with `LACTEVA_ENV=staging` so the app does NOT create tables itself: the
 schema must come from Alembic, because applying migrations from empty is one
@@ -26,6 +41,32 @@ from datetime import date, timedelta
 from httpx import ASGITransport, AsyncClient
 
 PASSWORD = os.environ.get("SEED_PASSWORD", "correct-horse-battery")
+
+# DEMO-001: seed into an EXISTING tenant instead of creating a throwaway one.
+#
+# The CI proof wants a fresh dairy every run — that is what proves migrations
+# from empty. A demo environment wants the opposite: real business data inside
+# the organization somebody is about to be shown. Set all three and the
+# bootstrap below is skipped and the chain runs as that tenant's manager.
+#
+#   SEED_TENANT_ID / SEED_MANAGER_EMAIL / SEED_MANAGER_PASSWORD
+TENANT_ID = os.environ.get("SEED_TENANT_ID")
+MANAGER_EMAIL = os.environ.get("SEED_MANAGER_EMAIL")
+MANAGER_PASSWORD = os.environ.get("SEED_MANAGER_PASSWORD")
+SEED_EXISTING = bool(TENANT_ID and MANAGER_EMAIL and MANAGER_PASSWORD)
+
+# Codes are unique per organization, so a second run inside the same tenant
+# would collide on every one of them. A suffix per run keeps re-seeding
+# possible — a demo that can only be prepared once is a demo that goes stale.
+SUFFIX = os.environ.get("SEED_SUFFIX", "")
+
+# DEMO-001: drive a RUNNING deployment over HTTPS instead of the app
+# in-process. The production image has no httpx and no test dependencies, and
+# a deployed platform is exactly the thing worth seeding through its own front
+# door. Set SEED_BASE_URL to the public origin; the deployment's own consumer
+# loop then generates the receipt and notifications, so this script does not
+# drive them itself.
+BASE_URL = os.environ.get("SEED_BASE_URL")
 
 
 async def _expect(response, *codes: int, what: str):
@@ -84,92 +125,116 @@ async def _invite_and_capture_token(client, *, headers: dict, email: str, role_n
 async def seed() -> dict:
     from platform_core.main import create_app
 
-    await _bootstrap()
-    app = create_app()
+    if not BASE_URL:
+        await _bootstrap()
+    app = create_app() if not BASE_URL else None
     # Deliberately NOT the app lifespan: it starts background loops (relay,
     # consumers, health sampling) whose sessions would interleave with the
     # seeding requests. On SQLite's StaticPool that shares one connection and
     # silently loses writes; on PostgreSQL it merely adds nondeterminism.
     # Seeding drives the consumers explicitly instead, below.
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://seed") as c:
-        # --- platform admin, organization, tenant admin -----------------
-        await _expect(
-            await c.post(
-                "/v1/auth/register",
-                json={"email": "root@proof.example", "password": PASSWORD, "full_name": "Root"},
-            ),
-            201,
-            what="register root",
-        )
-        await _grant_platform_admin("root@proof.example")
-        pair = await _expect(
-            await c.post(
-                "/v1/auth/token",
-                json={"email": "root@proof.example", "password": PASSWORD},
-            ),
-            200,
-            what="root login",
-        )
-        root = {"Authorization": f"Bearer {pair['access_token']}"}
+    client_args = (
+        {"base_url": BASE_URL.rstrip("/"), "timeout": 30.0}
+        if BASE_URL
+        else {"transport": ASGITransport(app=app), "base_url": "http://seed"}
+    )
+    async with AsyncClient(**client_args) as c:
+        if SEED_EXISTING:
+            # The tenant and its manager already exist; just become them.
+            org = {"id": TENANT_ID}
+            pair = await _expect(
+                await c.post(
+                    "/v1/auth/token",
+                    json={
+                        "email": MANAGER_EMAIL,
+                        "password": MANAGER_PASSWORD,
+                        "tenant_id": TENANT_ID,
+                    },
+                ),
+                200,
+                what="manager login (existing tenant)",
+            )
+            h = {"Authorization": f"Bearer {pair['access_token']}"}
+            me = await _expect(await c.get("/v1/auth/me", headers=h), 200, what="whoami")
+            manager_id = me["user"]["id"]
+        else:
+            # --- platform admin, organization, tenant admin -----------------
+            await _expect(
+                await c.post(
+                    "/v1/auth/register",
+                    json={"email": "root@proof.example", "password": PASSWORD, "full_name": "Root"},
+                ),
+                201,
+                what="register root",
+            )
+            await _grant_platform_admin("root@proof.example")
+            pair = await _expect(
+                await c.post(
+                    "/v1/auth/token",
+                    json={"email": "root@proof.example", "password": PASSWORD},
+                ),
+                200,
+                what="root login",
+            )
+            root = {"Authorization": f"Bearer {pair['access_token']}"}
 
-        org = await _expect(
-            await c.post(
-                "/v1/organizations",
-                json={"name": "Proof Dairy", "slug": "proof", "country_code": "ke"},
-                headers=root,
-            ),
-            201,
-            what="create organization",
-        )
-        # SEC-003 / F-04: the invite response no longer carries the raw token —
-        # returning it let the INVITER accept the invitation and create an
-        # account under the invitee's address. The token now reaches the
-        # invitee through the notification channel only, so the seeder reads it
-        # the same way a real invitee does: out of the delivered message.
-        invite_token = await _invite_and_capture_token(
-            c,
-            headers={**root, "X-Tenant-ID": org["id"]},
-            email="manager@proof.example",
-            role_name="tenant-admin",
-        )
-        accepted = await _expect(
-            await c.post(
-                "/v1/invitations/accept",
-                json={
-                    "token": invite_token,
-                    "password": PASSWORD,
-                    "full_name": "Proof Manager",
-                },
-            ),
-            201,
-            what="accept invitation",
-        )
-        manager_id = accepted["id"]
-        pair = await _expect(
-            await c.post(
-                "/v1/auth/token",
-                json={
-                    "email": "manager@proof.example",
-                    "password": PASSWORD,
-                    "tenant_id": org["id"],
-                },
-            ),
-            200,
-            what="manager login",
-        )
-        h = {"Authorization": f"Bearer {pair['access_token']}"}
+            org = await _expect(
+                await c.post(
+                    "/v1/organizations",
+                    json={"name": "Proof Dairy", "slug": "proof", "country_code": "ke"},
+                    headers=root,
+                ),
+                201,
+                what="create organization",
+            )
+            # SEC-003 / F-04: the invite response no longer carries the raw token —
+            # returning it let the INVITER accept the invitation and create an
+            # account under the invitee's address. The token now reaches the
+            # invitee through the notification channel only, so the seeder reads it
+            # the same way a real invitee does: out of the delivered message.
+            invite_token = await _invite_and_capture_token(
+                c,
+                headers={**root, "X-Tenant-ID": org["id"]},
+                email="manager@proof.example",
+                role_name="tenant-admin",
+            )
+            accepted = await _expect(
+                await c.post(
+                    "/v1/invitations/accept",
+                    json={
+                        "token": invite_token,
+                        "password": PASSWORD,
+                        "full_name": "Proof Manager",
+                    },
+                ),
+                201,
+                what="accept invitation",
+            )
+            manager_id = accepted["id"]
+            pair = await _expect(
+                await c.post(
+                    "/v1/auth/token",
+                    json={
+                        "email": "manager@proof.example",
+                        "password": PASSWORD,
+                        "tenant_id": org["id"],
+                    },
+                ),
+                200,
+                what="manager login",
+            )
+            h = {"Authorization": f"Bearer {pair['access_token']}"}
 
         # --- structure ---------------------------------------------------
         ws = await _expect(
-            await c.post("/v1/workspaces", json={"name": "North", "slug": "north"}, headers=h),
+            await c.post("/v1/workspaces", json={"name": f"North{SUFFIX}", "slug": f"north{SUFFIX.lower()}"}, headers=h),
             201,
             what="workspace",
         )
         branch = await _expect(
             await c.post(
                 "/v1/branches",
-                json={"workspace_id": ws["id"], "name": "Kilima Hill", "code": "KH"},
+                json={"workspace_id": ws["id"], "name": f"Kilima Hill{SUFFIX}", "code": f"KH{SUFFIX}"},
                 headers=h,
             ),
             201,
@@ -178,7 +243,7 @@ async def seed() -> dict:
         center = await _expect(
             await c.post(
                 "/v1/collection-centers",
-                json={"branch_id": branch["id"], "name": "Kilima Center", "code": "KH-C1"},
+                json={"branch_id": branch["id"], "name": f"Kilima Center{SUFFIX}", "code": f"KH-C1{SUFFIX}"},
                 headers=h,
             ),
             201,
@@ -582,6 +647,12 @@ async def _price_one(c, headers, center_id: str) -> str:
 
 
 async def _run_consumers(times: int) -> None:
+    if BASE_URL:
+        # The deployment has a consumer loop of its own. Give it a moment to
+        # produce the receipt and the notifications rather than reaching into
+        # a database this script may not be able to see.
+        await asyncio.sleep(6)
+        return
     from platform_core.core.rls import platform_factory
     from platform_core.modules.event_relay.consumers import ConsumerRunner
 
@@ -618,7 +689,8 @@ async def _grant_platform_admin(email: str) -> None:
 
 
 if __name__ == "__main__":
-    if not os.environ.get("LACTEVA_DATABASE_URL"):
+    # A remote seed talks HTTP only — the database belongs to the deployment.
+    if not BASE_URL and not os.environ.get("LACTEVA_DATABASE_URL"):
         raise SystemExit("LACTEVA_DATABASE_URL must point at the database to seed")
     summary = asyncio.run(seed())
     payload = json.dumps(summary, indent=2)
