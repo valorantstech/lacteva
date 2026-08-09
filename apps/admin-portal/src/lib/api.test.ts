@@ -143,22 +143,43 @@ describe("error handling", () => {
 });
 
 describe("unauthorized access", () => {
-  it("sends the browser to the login page when the session is gone", async () => {
-    const assign = vi.fn();
-    // jsdom's location is not writable; replace it for this assertion only.
+  /** Replaces jsdom's read-only location and records navigations. */
+  function captureNavigation(pathname: string) {
+    const navigations: string[] = [];
     Object.defineProperty(window, "location", {
       configurable: true,
       value: {
+        pathname,
         get href() {
-          return "/centers";
+          return pathname;
         },
         set href(value: string) {
-          assign(value);
+          navigations.push(value);
         },
       },
     });
+    return navigations;
+  }
+
+  it("does not redirect a session probe — a 401 is its answer (LOOP-001)", async () => {
+    const navigations = captureNavigation("/login");
+    mockFetch({ ok: false, status: 401, statusText: "Unauthorized", json: async () => ({}) });
+    const { getMe } = await import("@/lib/api");
+    await getMe().catch(() => undefined);
+    expect(navigations).toEqual([]);
+  });
+
+  it("never navigates to /login from /login, whoever asks (LOOP-001)", async () => {
+    const navigations = captureNavigation("/login");
+    mockFetch({ ok: false, status: 401, statusText: "Unauthorized", json: async () => ({}) });
+    await api("/v1/anything").catch(() => undefined);
+    expect(navigations).toEqual([]);
+  });
+
+  it("sends the browser to the login page when the session is gone", async () => {
+    const navigations = captureNavigation("/centers");
     mockFetch({ ok: false, status: 401, statusText: "Unauthorized", json: async () => ({}) });
     await api("/v1/suppliers").catch(() => undefined);
-    expect(assign).toHaveBeenCalledWith("/login");
+    expect(navigations).toEqual(["/login"]);
   });
 });

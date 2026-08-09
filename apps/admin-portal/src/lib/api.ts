@@ -33,7 +33,23 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+/** Options that change how a call BEHAVES, as opposed to what it sends. */
+export type ApiOptions = {
+  /**
+   * Send the browser to /login on a 401. Default true.
+   *
+   * A session PROBE must set this false: a 401 is a valid answer to "am I
+   * signed in?", not a failure to recover from. See the loop described in
+   * `api()` below.
+   */
+  redirectOn401?: boolean;
+};
+
+export async function api<T>(
+  path: string,
+  init?: RequestInit,
+  options: ApiOptions = {},
+): Promise<T> {
   const res = await fetch(`${PROXY_PREFIX}${path}`, {
     ...init,
     headers: {
@@ -47,7 +63,23 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 401 && typeof window !== "undefined") {
     // The cookie is gone or the platform rejected it. Nothing to clear on
     // this side — that is the point of it being HttpOnly.
-    window.location.href = "/login";
+    //
+    // LOOP-001: two guards, and both are load-bearing.
+    //
+    // `SessionControls` lives in the root layout, so it mounts on EVERY page
+    // — including /login — and asks `getMe()` who is signed in. Unconditional
+    // redirection turned that into an infinite hard reload for anyone not
+    // signed in: /login mounts, probes, gets 401, navigates to /login, mounts,
+    // probes... Observed in production as 768 consecutive 401s from one
+    // browser in an hour, until nginx's rate limiter started refusing it.
+    //
+    // `redirectOn401: false` is how a probe opts out. The pathname check is
+    // the backstop: navigating to the page you are already on can only ever
+    // be a loop, whoever asked for it.
+    const alreadyThere = window.location.pathname === "/login";
+    if (options.redirectOn401 !== false && !alreadyThere) {
+      window.location.href = "/login";
+    }
   }
   if (!res.ok) {
     let detail = res.statusText;
@@ -1240,7 +1272,9 @@ export type Me = {
   permissions: string[];
 };
 
-export const getMe = () => api<Me>("/v1/auth/me");
+/** Who am I? A 401 means "nobody" — an answer, not an error to escape from,
+ *  so this never triggers the redirect (LOOP-001). */
+export const getMe = () => api<Me>("/v1/auth/me", undefined, { redirectOn401: false });
 
 export type Member = {
   user_id: string;

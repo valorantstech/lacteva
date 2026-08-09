@@ -73,6 +73,30 @@ x-api-base: &api-base
 
 services:
   # --- data ---------------------------------------------------------------
+  # WAL-001: give the archive volume to the postgres user BEFORE postgres
+  # starts.
+  #
+  # Docker creates a named volume's mount point ROOT-OWNED when the path does
+  # not exist in the image, and `/wal-archive` does not exist in postgres:16.
+  # The server runs as uid 999, so `archive_command` failed with "Permission
+  # denied" on every segment: `pg_stat_archiver` read archived_count=0,
+  # failed_count=114 on the first real deployment. PostgreSQL treats that as a
+  # WARNING and keeps serving, so the container stayed HEALTHY and nothing
+  # alerted — while point-in-time recovery, the entire point of PITR-001, did
+  # not exist. The same defect as the API's /backup mount (AWS-001), in the
+  # service where it costs the most.
+  #
+  # A one-shot rather than a custom image: it is three lines, it is idempotent,
+  # and it keeps the stock postgres image.
+  wal-archive-init:
+    image: postgres:${POSTGRES_VERSION:-16}
+    user: root
+    volumes:
+      - wal_archive:/wal-archive
+    command: ["sh", "-c", "chown 999:999 /wal-archive && chmod 700 /wal-archive"]
+    restart: "no"
+    logging: *logging
+
   postgres:
     image: postgres:${POSTGRES_VERSION:-16}
     environment:
@@ -97,6 +121,9 @@ services:
       # needs the same statements applied by hand (DEPLOYMENT.md §Database
       # roles). The API refuses to start if it is skipped.
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    depends_on:
+      wal-archive-init:
+        condition: service_completed_successfully
     # Deliberately NOT published. Reaching the database means being on this
     # network or opening an SSH tunnel, which is a decision someone makes
     # rather than a port someone forgets.

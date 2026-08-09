@@ -229,8 +229,12 @@ def test_no_development_mounts_or_debug_flags_in_production():
 def test_every_service_has_a_healthcheck_or_says_why_not():
     compose = _compose()
     for name, service in compose["services"].items():
-        if name == "migrate":
-            continue  # a one-shot job is healthy by exiting zero
+        # One-shot jobs are healthy by exiting zero; a health check on a
+        # container that is meant to stop would report it as unhealthy for
+        # doing its job. Both are gated by `service_completed_successfully`,
+        # which is the real ordering guarantee.
+        if name in ("migrate", "wal-archive-init"):
+            continue
         assert "healthcheck" in service, f"{name} has no healthcheck"
 
 
