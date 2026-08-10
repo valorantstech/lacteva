@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { type Session, getSession } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +38,21 @@ export default function Home() {
   const [status, setStatus] = useState<PlatformStatus>({ state: "loading" });
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
+  // DASH-001: everything on this page is tenant-scoped or session-guarded, so
+  // a signed-out visitor produced a wall of 401s in the console and a
+  // dashboard that could never fill in. Ask once, then decide.
+  const [session, setSession] = useState<Session | null>(null);
+  const signedIn = session?.authenticated === true;
+
+  useEffect(() => {
+    let cancelled = false;
+    getSession()
+      .then((s) => !cancelled && setSession(s))
+      .catch(() => !cancelled && setSession({ authenticated: false }));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadOverview = useCallback(async () => {
     // Procurement snapshot. There is no token to check for any more: the
@@ -68,13 +84,24 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!signedIn) return;
     const t = setTimeout(() => void loadOverview(), 0);
     return () => clearTimeout(t);
-  }, [loadOverview]);
+  }, [loadOverview, signedIn]);
 
   const refresh = useCallback(async () => {
     try {
       const res = await fetch(`${API}/health/ready`, { cache: "no-store" });
+      // DASH-001: check the STATUS before believing the body. A 401 answers
+      // with a problem document — `{title, detail, status}`, no `checks` — and
+      // `as Readiness` is a claim TypeScript cannot verify, so the render
+      // reached `Object.entries(undefined)` and took the whole page down with
+      // "Cannot convert undefined or null to object". A cast is not a check.
+      if (!res.ok) {
+        setStatus({ state: "unreachable", error: `HTTP ${res.status}` });
+        setCheckedAt(new Date().toLocaleTimeString());
+        return;
+      }
       const readiness = (await res.json()) as Readiness;
       setStatus({ state: "ready", readiness });
     } catch (err) {
@@ -87,6 +114,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!signedIn) return;
     const tick = () => void refresh();
     const initial = setTimeout(tick, 0); // deferred: no sync setState in effect body
     const timer = setInterval(tick, 10_000);
@@ -94,7 +122,7 @@ export default function Home() {
       clearTimeout(initial);
       clearInterval(timer);
     };
-  }, [refresh]);
+  }, [refresh, signedIn]);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-8">
@@ -107,12 +135,37 @@ export default function Home() {
             Procurement operations dashboard
           </p>
         </div>
-        <Button variant="outline" onClick={() => void refresh()}>
-          Refresh
-        </Button>
+        {signedIn ? (
+          <Button variant="outline" onClick={() => void refresh()}>
+            Refresh
+          </Button>
+        ) : null}
       </header>
 
-      {overview && (
+      {/* DASH-001: signed out, this page has nothing it can show — every tile
+          and every probe below needs a session. Say so and offer the way in,
+          rather than polling a dashboard that will only ever render zeros. */}
+      {session !== null && !signedIn ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Sign in to continue</CardTitle>
+            <CardDescription>
+              The dashboard, collections, settlements and administration all
+              belong to an organization, so they need a session.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <a
+              className="text-primary underline-offset-4 hover:underline"
+              href="/login"
+            >
+              Go to sign in →
+            </a>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {signedIn && overview && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {(
             [
@@ -135,6 +188,7 @@ export default function Home() {
         </div>
       )}
 
+      {signedIn ? (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-3">
@@ -170,7 +224,7 @@ export default function Home() {
           )}
           {status.state === "ready" && (
             <ul className="flex flex-col gap-2">
-              {Object.entries(status.readiness.checks).map(([name, healthy]) => (
+              {Object.entries(status.readiness.checks ?? {}).map(([name, healthy]) => (
                 <li
                   key={name}
                   className="flex items-center justify-between text-sm"
@@ -184,9 +238,6 @@ export default function Home() {
             </ul>
           )}
           <div className="flex gap-4 pt-2 text-sm">
-            <a className="text-primary underline-offset-4 hover:underline" href="/login">
-              Sign in →
-            </a>
             <a className="text-primary underline-offset-4 hover:underline" href="/transactions">
               Transactions →
             </a>
@@ -227,6 +278,7 @@ export default function Home() {
           </div>
         </CardContent>
       </Card>
+      ) : null}
     </main>
   );
 }
