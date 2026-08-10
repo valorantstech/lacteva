@@ -177,46 +177,65 @@ describe("audit", () => {
   });
 });
 
-describe("session controls", () => {
-  it("offers sign-out when there is a session and sign-in when there is not", async () => {
-    const { SessionControls } = await import("@/components/session-controls");
+describe("navigation (NAV-001)", () => {
+  const SIGNED_IN = {
+    "/api/auth/session": {
+      authenticated: true,
+      user: { id: "u1", email: "boss@kilima.example", full_name: "Boss", locale: "en", is_active: true },
+      tenant_id: "org-1",
+      permissions: [],
+    },
+  };
 
-    routeFetch({
-      "/api/auth/session": {
-        authenticated: true,
-        user: { id: "u1", email: "boss@kilima.example", full_name: "Boss", locale: "en", is_active: true },
-        tenant_id: "org-1",
-        permissions: [],
-      },
-    });
-    const { unmount } = render(<SessionControls />);
-    expect(await screen.findByRole("button", { name: /sign out/i })).toBeInTheDocument();
-    unmount();
-
-    // SESSION-001: signed out is a 200 with authenticated:false, not a 401.
+  it("shows no destinations to a signed-out visitor — every one of them needs a session", async () => {
+    const { Nav } = await import("@/components/nav");
     routeFetch({ "/api/auth/session": { authenticated: false } });
-    render(<SessionControls />);
+
+    render(<Nav />);
     expect(await screen.findByRole("link", { name: /sign in/i })).toBeInTheDocument();
+    for (const label of ["Centers", "Suppliers", "Settlements", "Users", "Audit"]) {
+      expect(screen.queryByRole("link", { name: label })).not.toBeInTheDocument();
+    }
+    // The product name stays: it is the way back to a known page.
+    expect(screen.getByRole("link", { name: "Lacteva" })).toBeInTheDocument();
   });
 
-  it("signs out through the route handler", async () => {
-    const { SessionControls } = await import("@/components/session-controls");
-    const fetchSpy = routeFetch({
-      "/api/auth/session": {
-        authenticated: true,
-        user: { id: "u1", email: "boss@kilima.example", full_name: "Boss", locale: "en", is_active: true },
-        tenant_id: "org-1",
-        permissions: [],
-      },
-      "/api/auth/logout": {},
-    });
+  it("shows the menu once there is a session", async () => {
+    const { Nav } = await import("@/components/nav");
+    routeFetch(SIGNED_IN);
+
+    render(<Nav />);
+    expect(await screen.findByRole("link", { name: "Centers" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Settlements" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Users" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
+  });
+
+  it("shows nothing at all until the answer is known, rather than flashing a menu", async () => {
+    const { Nav } = await import("@/components/nav");
+    // A probe that never resolves: the bar must stay quiet, not guess.
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+
+    render(<Nav />);
+    expect(screen.queryByRole("link", { name: "Centers" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Lacteva" })).toBeInTheDocument();
+  });
+
+  it("signs out through the route handler and hides the menu again", async () => {
+    const { Nav } = await import("@/components/nav");
+    const fetchSpy = routeFetch({ ...SIGNED_IN, "/api/auth/logout": {} });
     const user = userEvent.setup();
 
-    render(<SessionControls />);
+    render(<Nav />);
     await user.click(await screen.findByRole("button", { name: /sign out/i }));
 
     await waitFor(() =>
       expect(fetchSpy.mock.calls.some(([url]) => String(url) === "/api/auth/logout")).toBe(true),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: "Centers" })).not.toBeInTheDocument(),
     );
   });
 });

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { SessionControls } from "@/components/session-controls";
+import { Nav } from "@/components/nav";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -30,70 +29,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <nav className="border-b border-border bg-background/95 px-8 py-2 text-sm">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-1">
-            <Link className="font-semibold" href="/">
-              Lacteva
-            </Link>
-            <a className="text-muted-foreground hover:text-foreground" href="/centers">
-              Centers
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/suppliers">
-              Suppliers
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/transactions">
-              Transactions
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/rate-cards">
-              Rate cards
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/matrices">
-              Matrices
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/resolve">
-              Playground
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/settlements">
-              Settlements
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/payments">
-              Payments
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/receipts">
-              Receipts
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/reports">
-              Reports
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/notifications">
-              Notifications
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/sync">
-              Sync
-            </a>
-            {/* PORTAL-001 / F-10: the administrative half of the platform,
-                which had no portal surface at all until now. */}
-            <a className="text-muted-foreground hover:text-foreground" href="/admin/users">
-              Users
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/admin/roles">
-              Roles
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/admin/organizations">
-              Organizations
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/admin/audit">
-              Audit
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/admin/configuration">
-              Configuration
-            </a>
-            <a className="text-muted-foreground hover:text-foreground" href="/admin/operations">
-              Operations
-            </a>
-            <SessionControls />
-          </div>
-        </nav>
+        <Nav />
         {children}
       </body>
     </html>
