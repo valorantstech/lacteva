@@ -54,6 +54,23 @@ set_tag() {
   rm -f "${tmp}"
 }
 
+repoint_nginx() {
+  # PILOT-F03: nginx resolves `upstream lacteva_api`/`lacteva_portal` — plain
+  # container names — ONCE, at startup, and caches the address forever. Every
+  # deployment recreates api and portal, Docker hands them new addresses, and
+  # nginx keeps proxying to the old ones: eleven healthy containers behind a
+  # 502. `up -d` will not fix it, because nginx's own image and config have
+  # not changed, so Compose correctly leaves it alone.
+  #
+  # This bit the FIRST real deployment after the script was written. Worse, the
+  # rollback path recreated api again and hit exactly the same wall, so the
+  # automatic recovery could not recover — it reported "ROLLBACK ALSO FAILED
+  # VERIFICATION" on a platform whose only problem was a stale address in
+  # nginx. Restarting nginx after the app containers move is the whole fix.
+  step "repointing nginx at the new containers"
+  compose restart nginx || die "nginx would not restart — the platform is DOWN, page someone"
+}
+
 rollback_to() {
   local tag="$1"
   step "ROLLING BACK to ${tag}"
@@ -61,6 +78,7 @@ rollback_to() {
   # Only the application services. `migrate` is deliberately excluded — see
   # the header, and DEPLOYMENT.md §5.
   compose up -d --no-deps api nginx || die "rollback failed to start — the platform is DOWN, page someone"
+  repoint_nginx
   if "${CURRENT}/infra/deploy/verify-deployment.sh"; then
     log "rollback verified: running ${tag}"
     return 0
@@ -169,6 +187,7 @@ compose up -d --remove-orphans || {
   [ "${AUTO_ROLLBACK}" = "1" ] && [ -n "${PREVIOUS}" ] && rollback_to "${PREVIOUS}"
   die "deployment failed to start"
 }
+repoint_nginx
 
 if ! ./infra/deploy/verify-deployment.sh; then
   log "VERIFICATION FAILED"

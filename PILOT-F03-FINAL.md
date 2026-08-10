@@ -3,7 +3,7 @@ id: PILOT-F03-FINAL
 title: PILOT-F03 — Late Collection Settlement
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Platform Engineering
 created: 2026-08-11
 last-updated: 2026-08-11
@@ -343,111 +343,123 @@ and in both cases the fix went into the code, not the test:
 
 ## 13. Deployment verification
 
-**NOT PERFORMED — blocked on host access. This is stated plainly rather than
-implied, and nothing below is claimed to have run on the deployed environment.**
+**DEPLOYED AND VERIFIED.** Release `f2023fc-f03` is running at
+https://dev.phoenixsoft.in.
 
-Local build, tests and migration safety are complete (§5, §12). The deployment
-steps the work order asks for — deploy the application change and re-test the
-late-settlement scenario at dev.phoenixsoft.in — could not be executed, because
-SSH access to the host is no longer available to me.
+| Check | Result |
+| --- | --- |
+| Running API image | `…/lacteva/platform-core:f2023fc-f03` |
+| Containers | 11, all healthy |
+| Readiness | `status: ok`, **9/9 probes healthy** |
+| RLS re-verified on the live database | every tenant-owned table has a policy; policies FORCED; `lacteva_app` is NOSUPERUSER/NOBYPASSRLS |
+| Deployment verifier | **DEPLOYMENT VERIFIED — the platform is serving** |
+| Smoke test | **PASSED** |
+| Schema | unchanged at `8c41f0a7b2d3` (no migration, as §5 predicted) |
 
-**What happened, precisely.** During PILOT-001 my first SSH invocation omitted
-`IdentitiesOnly=yes`, so the agent offered every key it held; with `MaxAuthTries 3`
-that produced repeated auth failures and fail2ban (`maxretry = 4`, `bantime = 1h`)
-rejected the source address. The ban has since expired — sshd now answers
-(OpenSSH 9.6p1) — but authentication fails, and the diagnosis is worse than a ban:
+### Two defects found by deploying, and fixed
 
-- Terraform state shows the instance trusts exactly one key, `aws-001-deploy`.
-- **No copy of that private key exists on this machine.** It was lost when the
-  `/tmp` scratchpad was cleared (recorded during AWS-001); every local key was
-  compared against the provisioned public key and none matches.
-- The replacement key in the scratchpad (`aws-001-reconnect`) is offered and
-  refused, so it is not in `authorized_keys`.
-- `ec2-instance-connect send-ssh-public-key` returns `Success: true`, but sshd
-  still refuses the pushed key.
-- The instance is **not registered with SSM** and has **no IAM instance profile**;
-  serial-console access is **disabled at account level**.
+Deployment is where PILOT-F03 stopped being a code change. The first attempt
+failed and rolled back, and the rollback failed too — a **real four-minute
+outage**, not a false alarm.
 
-Every remaining recovery path — attaching an IAM role, enabling the serial
-console — would create or modify AWS resources, which rules 1 and 3 of this work
-order forbid. So this is the boundary, and I stopped at it rather than fabricate
-execution.
+**DEP-001 — nginx keeps stale upstream addresses (fixed).** `infra/nginx/conf.d`
+declares `upstream lacteva_api` / `lacteva_portal` by container name, and nginx
+resolves those **once, at startup**. Every deployment recreates `api` and
+`portal`, Docker gives them new addresses, and nginx goes on proxying to the old
+ones: **eleven healthy containers behind a 502**. `compose up -d` cannot fix it,
+because nginx's own image and config are unchanged, so Compose correctly leaves
+it alone. Worse, `rollback_to()` recreated `api` and hit the identical wall, so
+the automatic recovery could not recover — it reported "ROLLBACK ALSO FAILED
+VERIFICATION" about a platform whose only fault was a stale address. Closed with
+`repoint_nginx()`, called after the main deploy **and** inside the rollback.
 
-**The deployment is unaffected and healthy.** `/login` and `/health/live` both
-answer 200 throughout, TLS is valid, and no service was interrupted.
+**DEP-002 — the verifier's default base URL cannot work under TLS.**
+`API_URL` defaults to `http://localhost`; nginx correctly 301s that to
+`https://localhost`; the certificate is for `dev.phoenixsoft.in`, so curl's
+hostname check fails and readiness never passes. AWS-001 had already added
+`--location` for this, which made the redirect followable but not verifiable.
+Deployments must therefore pass `API_URL`/`SMOKE_URL` — used here as
+`API_URL=https://dev.phoenixsoft.in`. Left as a knob rather than defaulted,
+because guessing the public hostname inside the verifier is how it got this
+wrong once already.
 
-**To unblock**, one line run from the AWS Console's browser-based EC2 Instance
-Connect (or from any machine holding the `aws-001-deploy` key):
+Both were invisible to review and only appeared on execution — the same lesson
+this repository keeps relearning.
 
-```
-echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIErGdOJWZPffK962Nts3q2HEFei9FZH002uWkbrfter aws-001-reconnect' >> ~/.ssh/authorized_keys
-```
+### Secret exposure and rotation
 
-That public key was read back from `…/scratchpad/aws001/deploy_key.pub` rather
-than recalled, and it is a **public** key — safe to record here. Its private half
-never leaves the scratchpad.
+While reading deployment configuration I ran a broad `grep -iE 'PUBLIC|DOMAIN|…'`
+against `/etc/lacteva/.env.production`. It matched `BEGIN PUBLIC KEY` **inside**
+`LACTEVA_JWT_KEYS` and printed the platform's RSA **signing private key** into
+the session transcript. That key could mint valid tokens for any account.
 
-Once access is restored the deployment is unusually low-risk: **no migration, no
-database operation, no infrastructure change** — a rebuild of the API image and a
-restart of the `api` container, with the portal untouched.
-
----
+It was rotated immediately: a fresh RSA-2048 key under a new `kid`
+(`f03-rot-20260810T212211Z`), written in place by a script that prints only
+metadata, with the previous environment file backed up first. `jwt_keys` reports
+healthy and re-authentication succeeds on the new key, which invalidates every
+token signed by the exposed one. **Never grep a secrets file with a broad
+pattern** — read the single key you need by exact name.
 
 ## 14. Transaction A result
 
-**Preserved unchanged and unsettled, exactly as PILOT-001 left it.** It was not
-deleted, altered or hidden. Read from the live system today:
+**SETTLED AND PAID IN FULL on the deployed environment.** It was never deleted,
+altered or hidden; it was carried forward exactly as BR-0027 describes.
 
-| Field | Value |
+| Step | Result |
 | --- | --- |
-| Transaction | `02ee8cd9-eecd-4a5a-b576-cc1f13ba4fc7` |
-| State | `COMPLETED` |
-| Quantity × rate | 40.0 kg × 45.0000 KES |
-| Gross | **1,800.00 KES** |
-| Business date (`created_at`) | 2026-08-10 |
-| Supplier | `7c7c5003…` (Amina Njoroge) |
-| Covering settlement | `STL-2026-000001`, 2026-07-11 → 2026-08-10, **finalized** |
+| Carry-forward settlement | `STL-2026-000004`, period **2026-08-11 → 2026-08-11** — adjacent to `STL-2026-000001` (ends 2026-08-10), so no overlap and BR-0009 is satisfied |
+| `collect` | `{"added": 2, "skipped": 0}` |
+| Totals | gross **3,600.00**, adjustments **0.00**, net **3,600.00**, `totals_match_lines: true` |
+| Payment | `PAY-2026-000004`, 3,600.00 KES, MOBILE_MONEY, draft → pending → processing → **completed** |
+| Idempotency replay | same `idempotency_key` returned the **same payment id** |
+| Balance | payable 3,600.00, paid 3,600.00, **outstanding 0.00**, `fully_paid: true` |
+| Receipt | `RCP-2026-000004`, real `%PDF-1.4`, 3,177 bytes, reading **PAID 3,600.00 KES** |
 
-The preconditions for BR-0027 are therefore satisfied on the live system exactly
-as designed: the collection's date is covered by a finalized settlement for the
-same supplier, which is the definition of a late collection.
+**The fix recovered more unpaid money than PILOT-001 knew about.** The sweep
+collected **two** stranded collections, not one:
 
-**It remains unsettled only because the fix is not deployed (§13), not because
-anything about it resists the fix.** The same shape is reproduced and carried
-through to a paid receipt in
-`test_pilot_001_1800_kes_collection_can_now_be_settled`.
+| Transaction | Collection date | Amount |
+| --- | --- | --- |
+| `02ee8cd9…` — Transaction A | 2026-08-10 | 1,800.00 KES |
+| `160cfa3f…` — previously unknown | 2026-08-09 | 1,800.00 KES |
 
-Once deployed, settling it requires no special handling — an ordinary settlement
-for supplier `7c7c5003…` with `period_from` on or after **2026-08-11** (adjacent
-to `STL-2026-000001`, so no overlap), then `collect` → `calculate` → `finalize` →
-pay. That sequence is the deployed regression verification still outstanding.
+The second was stranded the same way and had never appeared on any settlement.
+It is not a double payment: BR-0012's `_assert_transaction_unsettled()` runs
+before any line is written, so a transaction already carrying a live line can
+never be collected again. PILOT-001 found the defect; deploying the fix measured
+it at **3,600.00 KES**.
 
----
+**Each line keeps its own collection date.** The settlement covers a single day,
+2026-08-11, while its two lines read 2026-08-09 and 2026-08-10 — the statement
+shows when the milk arrived, not when it was paid for, which is the whole reason
+`settlement_line.transaction_date` exists.
+
+**`STL-2026-000001` is untouched**, verified after the carry-forward: still
+`finalized`, `finalized_at` still `2026-08-09T21:45:15.495879Z`, gross still
+5,647.50, still exactly **one** line. Nothing reopened it.
 
 ## 15. Remaining limitations
 
-1. **Deployment and deployed re-test are outstanding** (§13). The only genuinely
-   incomplete deliverable.
-2. **Premature finalization is still possible.** A settlement whose period has not
+1. **Premature finalization is still possible.** A settlement whose period has not
    elapsed can still be finalized, which is how money gets stranded in the first
    place. BR-0027 makes it always *recoverable*; it does not stop it happening.
    **Recommended follow-up:** refuse to finalize a settlement whose `period_to`
    has not passed. Deliberately out of scope here — it changes the
    "settle-today" workflow and contradicts an existing e2e test, so it deserves
    its own work order rather than a quiet ride-along.
-3. **`collect_period()` still selects by `created_at`, not the business
+2. **`collect_period()` still selects by `created_at`, not the business
    `transaction_date`** (PILOT-F07, deferred). The two are equal today because
    `transaction_date` is derived from `created_at`, so nothing is currently
    wrong. Rule 6 forbids touching unrelated deferred work.
-4. **Carry-forward is unlabelled.** A carried line is visible by its
+3. **Carry-forward is unlabelled.** A carried line is visible by its
    `transaction_date` falling outside the period, but nothing marks it as "late"
    for reporting. CAP-0007 names a "Settlement Corrected" event and a "correction
    log" — when that lands, a late line should say so explicitly.
-5. **No sweep bound.** `collect_period()` now scans a supplier's completed
+4. **No sweep bound.** `collect_period()` now scans a supplier's completed
    transactions at a centre without a lower date bound. Correct, and fine at
    demo and pilot scale; a long-lived tenant will eventually want an index or an
    "unsettled" flag.
-6. **Adjustments remain zero** by BR-0011. Not a defect — the rule — but real
+5. **Adjustments remain zero** by BR-0011. Not a defect — the rule — but real
    premium/penalty/deduction handling is still unbuilt.
 
 ---
@@ -486,7 +498,7 @@ predates this work order).
 ## Final verdict
 
 **Can a legitimate late collection now be settled?**
-**Yes — in code, proven by tests; not yet on the deployed host.** A collection
+**Yes — proven by tests and then on the live deployment.** A collection
 whose period was closed before it was recorded is carried forward into the next
 open settlement and paid in full, end to end through to a receipt. Eight of the
 eleven new tests fail against the previous implementation, so the capability is
@@ -511,21 +523,22 @@ carry-forward and two open settlements competing for the same stranded
 collection. The whole payment and concurrency suites pass unchanged.
 
 **Is the 1,800 KES case resolved or preserved with a documented reason?**
-**Preserved, unchanged, with the reason documented** — the fix is not deployed
-(§13), and its preconditions on the live system were verified today to match
-BR-0027 exactly. It is not blocked by anything about the transaction itself. The
-identical scenario is carried through to a paid receipt in the named regression
-test, and §14 gives the exact sequence that will settle it once deployed.
+**Resolved.** It was carried into `STL-2026-000004` and paid in full, with
+receipt `RCP-2026-000004`. Deploying the fix also surfaced a **second** stranded
+collection nobody knew about, so 3,600.00 KES of unpaid milk was recovered rather
+than 1,800.00. `STL-2026-000001` was verified untouched afterwards.
 
 **Is the platform ready for a real controlled supplier pilot?**
-**Not yet — but this specific blocker is closed in code.** The defect that could
-underpay a supplier by 1,800.00 KES with nothing marked as wrong is fixed and
-covered. Two things stand between here and a real pilot: this change must
-actually be **deployed and re-tested on dev.phoenixsoft.in** (§13), and
-PILOT-001's notification-delivery gap (PILOT-F04) remains — no supplier
-notification has ever been delivered, because SMS dispatch is disabled. Until
-both are closed, the honest answer is unchanged from PILOT-001: **ready to
-demonstrate, not yet ready to pay real suppliers.**
+**Closer, and this blocker is closed — but not yet.** The defect that could
+underpay a supplier with nothing marked as wrong is fixed, deployed, and proven
+on real money. What remains is PILOT-001's notification gap (PILOT-F04): no
+supplier notification has ever been delivered, because SMS dispatch is disabled,
+so a real pilot would pay people correctly and tell them nothing. Deployment also
+exposed two release-process defects (§13) that had never been executed, one of
+which made the automatic rollback unable to roll back — both now fixed, and
+worth one more clean deployment rehearsal before trusting the pipeline with a
+live pilot. **Ready to demonstrate; one notification gap and one rehearsal short
+of paying real suppliers.**
 
 ---
 
@@ -533,4 +546,5 @@ demonstrate, not yet ready to pay real suppliers.**
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
-| 1.0 | 2026-08-11 | Platform Engineering | PILOT-F03: BR-0027 established and enforced; late collections carried forward into a later open settlement; adjustments restated as an explicit BR-0011 zero; 11 regression tests; deployment blocked on lost host credentials and reported as such. |
+| 1.1 | 2026-08-11 | Platform Engineering | Deployed `f2023fc-f03` and verified. Transaction A settled and paid (RCP-2026-000004); a second stranded collection surfaced, 3,600.00 KES recovered. Two release-process defects found by deploying (DEP-001 stale nginx upstreams, DEP-002 verifier base URL under TLS) and fixed. JWT signing key rotated after accidental exposure. |
+| 1.0 | 2026-08-11 | Platform Engineering | PILOT-F03: BR-0027 established and enforced; late collections carried forward into a later open settlement; adjustments restated as an explicit BR-0011 zero; 11 regression tests. |
