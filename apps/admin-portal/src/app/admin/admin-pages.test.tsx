@@ -178,12 +178,21 @@ describe("audit", () => {
 });
 
 describe("navigation (NAV-001)", () => {
+  const USER = { id: "u1", email: "boss@kilima.example", full_name: "Boss", locale: "en", is_active: true };
+  const ALL = [
+    "collection.center.read", "supplier.read", "collection.transaction.read",
+    "pricing.ratecard.read", "settlement.read", "payment.read", "receipt.read",
+    "reporting.read", "notification.read", "sync.read", "identity.user.read",
+    "authz.role.read", "organization.read", "audit.read", "configuration.read",
+    "platform.relay.manage",
+  ];
   const SIGNED_IN = {
     "/api/auth/session": {
       authenticated: true,
-      user: { id: "u1", email: "boss@kilima.example", full_name: "Boss", locale: "en", is_active: true },
+      user: USER,
       tenant_id: "org-1",
-      permissions: [],
+      acting_tenant_id: null,
+      permissions: ALL,
     },
   };
 
@@ -198,6 +207,69 @@ describe("navigation (NAV-001)", () => {
     }
     // The product name stays: it is the way back to a known page.
     expect(screen.getByRole("link", { name: "Lacteva" })).toBeInTheDocument();
+  });
+
+  it("shows only what this session may use — a viewer is not offered Users (PERM-001)", async () => {
+    const { Nav } = await import("@/components/nav");
+    routeFetch({
+      "/api/auth/session": {
+        authenticated: true,
+        user: USER,
+        tenant_id: "org-1",
+        acting_tenant_id: null,
+        permissions: ["collection.center.read", "supplier.read"],
+      },
+    });
+
+    render(<Nav />);
+    expect(await screen.findByRole("link", { name: "Centers" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Suppliers" })).toBeInTheDocument();
+    for (const hidden of ["Users", "Roles", "Audit", "Settlements", "Payments"]) {
+      expect(screen.queryByRole("link", { name: hidden })).not.toBeInTheDocument();
+    }
+  });
+
+  it("treats the platform wildcard as every permission", async () => {
+    const { Nav } = await import("@/components/nav");
+    routeFetch({
+      "/api/auth/session": {
+        authenticated: true,
+        user: USER,
+        tenant_id: null,
+        acting_tenant_id: "org-9",
+        permissions: ["*"],
+      },
+    });
+
+    render(<Nav />);
+    expect(await screen.findByRole("link", { name: "Users" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Centers" })).toBeInTheDocument();
+  });
+
+  it("asks a platform session with no organization to choose one (TENANT-001)", async () => {
+    const { Nav } = await import("@/components/nav");
+    routeFetch({
+      "/api/auth/session": {
+        authenticated: true,
+        user: USER,
+        tenant_id: null,
+        acting_tenant_id: null,
+        permissions: ["*"],
+      },
+    });
+
+    render(<Nav />);
+    expect(await screen.findByLabelText("Organization ID")).toBeInTheDocument();
+    expect(screen.getByText(/choose an organization/i)).toBeInTheDocument();
+  });
+
+  it("does not ask a tenant-scoped session to choose an organization", async () => {
+    const { Nav } = await import("@/components/nav");
+    routeFetch(SIGNED_IN);
+
+    render(<Nav />);
+    await screen.findByRole("link", { name: "Centers" });
+    expect(screen.queryByLabelText("Organization ID")).not.toBeInTheDocument();
   });
 
   it("shows the menu once there is a session", async () => {

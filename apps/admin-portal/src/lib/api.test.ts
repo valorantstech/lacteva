@@ -198,3 +198,50 @@ describe("unauthorized access", () => {
     expect(navigations).toEqual(["/login"]);
   });
 });
+
+describe("permission and tenant helpers (PERM-001 / TENANT-001)", () => {
+  const base = {
+    authenticated: true as const,
+    user: { id: "u1", email: "a@b.example", full_name: "A", locale: "en", is_active: true },
+    acting_tenant_id: null,
+  };
+
+  it("answers false for a session that is not signed in", async () => {
+    const { can } = await import("@/lib/api");
+    expect(can(null, "audit.read")).toBe(false);
+    expect(can({ authenticated: false }, "audit.read")).toBe(false);
+  });
+
+  it("grants only what the session lists", async () => {
+    const { can } = await import("@/lib/api");
+    const s = { ...base, tenant_id: "org-1", permissions: ["audit.read"] };
+    expect(can(s, "audit.read")).toBe(true);
+    expect(can(s, "identity.user.read")).toBe(false);
+  });
+
+  it("treats * as every permission — the platform wildcard", async () => {
+    const { can } = await import("@/lib/api");
+    const s = { ...base, tenant_id: null, permissions: ["*"] };
+    expect(can(s, "anything.at.all")).toBe(true);
+  });
+
+  it("prefers the token's tenant over a selected one — the token is authoritative", async () => {
+    const { actingTenant } = await import("@/lib/api");
+    expect(actingTenant({ ...base, tenant_id: "from-token", acting_tenant_id: "chosen", permissions: [] })).toBe(
+      "from-token",
+    );
+    expect(actingTenant({ ...base, tenant_id: null, acting_tenant_id: "chosen", permissions: [] })).toBe("chosen");
+    expect(actingTenant({ ...base, tenant_id: null, permissions: [] })).toBeNull();
+  });
+
+  it("refuses to set an organization that is not a UUID", async () => {
+    const { setActingTenant } = await import("@/lib/api");
+    mockFetch({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => ({ detail: "tenant_id must be a UUID" }),
+    });
+    await expect(setActingTenant("not-a-uuid")).rejects.toMatchObject({ status: 400 });
+  });
+});

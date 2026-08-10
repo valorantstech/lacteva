@@ -1,6 +1,12 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { ACCESS_COOKIE, REFRESH_COOKIE, backendUrl, readAccessToken } from "@/lib/server/backend";
+import {
+  ACCESS_COOKIE,
+  REFRESH_COOKIE,
+  backendUrl,
+  readAccessToken,
+  readActingTenant,
+} from "@/lib/server/backend";
 
 /**
  * Who is signed in? (SESSION-001)
@@ -49,5 +55,11 @@ export async function GET() {
   }
 
   const me = (await upstream.json()) as Record<string, unknown>;
-  return NextResponse.json({ authenticated: true, ...me }, { status: 200 });
+  // TENANT-001: `tenant_id` is what the TOKEN carries (null for a platform
+  // session); `acting_tenant_id` is the organization this browser selected.
+  // The nav needs both to say "you are platform-level, currently acting in X".
+  return NextResponse.json(
+    { authenticated: true, ...me, acting_tenant_id: await readActingTenant() },
+    { status: 200 },
+  );
 }

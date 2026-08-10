@@ -29,6 +29,24 @@ export const ACCESS_COOKIE = "lacteva_session";
 export const REFRESH_COOKIE = "lacteva_refresh";
 
 /**
+ * TENANT-001: which organization a PLATFORM-level session is acting inside.
+ *
+ * A platform administrator's token carries no tenant, and every business
+ * endpoint calls `require_current_tenant()` — so without this the account with
+ * `*` permissions got 403 from almost every page in the portal. The platform
+ * has always supported `X-Tenant-ID` for exactly this ("platform-level
+ * principals may act inside a tenant, permission-guarded per route"); the
+ * portal simply never sent it.
+ *
+ * A cookie, not a URL parameter or client state: the proxy is the only thing
+ * that talks to the platform, so the choice has to survive on the server side
+ * of that boundary. Not HttpOnly-critical — an organization id is not a
+ * secret — but kept `HttpOnly` anyway so page script cannot quietly retarget
+ * a request the user did not choose.
+ */
+export const TENANT_COOKIE = "lacteva_tenant";
+
+/**
  * Cookie attributes for a credential the browser must never read.
  *
  * `httpOnly` is the point of the exercise: script cannot reach it, so an XSS
@@ -58,6 +76,20 @@ export async function readAccessToken(): Promise<string | null> {
 export async function readRefreshToken(): Promise<string | null> {
   const store = await cookies();
   return store.get(REFRESH_COOKIE)?.value ?? null;
+}
+
+export async function readActingTenant(): Promise<string | null> {
+  const store = await cookies();
+  return store.get(TENANT_COOKIE)?.value ?? null;
+}
+
+/** A tenant id is a UUID or it is nothing — never forward what a caller made
+ *  up, so the platform is asked a well-formed question or none at all. */
+export function isTenantId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+  );
 }
 
 /**

@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { backendUrl, crossOriginRefused, readAccessToken } from "@/lib/server/backend";
+import {
+  backendUrl,
+  crossOriginRefused,
+  readAccessToken,
+  readActingTenant,
+} from "@/lib/server/backend";
 
 /**
  * The portal's only route to the platform (PORTAL-001 / F-11).
@@ -39,6 +44,13 @@ async function forward(request: Request, path: string[]) {
 
   const headers = new Headers();
   headers.set("Authorization", `Bearer ${token}`);
+
+  // TENANT-001: a platform-level session acts inside the organization it
+  // selected. A tenant-scoped token carries its own tenant and the platform
+  // treats the token as authoritative, so sending this alongside one changes
+  // nothing — which is why it is safe to send whenever it is set.
+  const actingTenant = await readActingTenant();
+  if (actingTenant) headers.set("X-Tenant-ID", actingTenant);
   for (const name of ["content-type", "accept", "accept-language", "idempotency-key"]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);

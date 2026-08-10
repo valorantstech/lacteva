@@ -1280,7 +1280,48 @@ export const getMe = () => api<Me>("/v1/auth/me", undefined, { redirectOn401: fa
 
 export type Session =
   | { authenticated: false; unreachable?: boolean }
-  | ({ authenticated: true } & Me);
+  | ({ authenticated: true; acting_tenant_id: string | null } & Me);
+
+/** Does this session hold `permission`? `*` is the platform wildcard. */
+export function can(session: Session | null, permission: string): boolean {
+  if (!session?.authenticated) return false;
+  return session.permissions.includes("*") || session.permissions.includes(permission);
+}
+
+/** The organization every request will be scoped to, whether it came from the
+ *  token (a tenant user) or from the selection a platform admin made. */
+export function actingTenant(session: Session | null): string | null {
+  if (!session?.authenticated) return null;
+  return session.tenant_id ?? session.acting_tenant_id ?? null;
+}
+
+/** TENANT-001: act inside an organization (platform-level sessions only). */
+export async function setActingTenant(tenantId: string): Promise<void> {
+  const res = await fetch("/api/auth/tenant", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tenant_id: tenantId }),
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      detail = ((await res.json()) as { detail?: string }).detail ?? detail;
+    } catch {
+      // keep statusText
+    }
+    throw new ApiError(res.status, detail);
+  }
+}
+
+export async function clearActingTenant(): Promise<void> {
+  await fetch("/api/auth/tenant", {
+    method: "DELETE",
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+}
 
 /**
  * SESSION-001: the signed-in question, asked so that "no" is an answer.

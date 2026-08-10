@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   ACCESS_COOKIE,
   REFRESH_COOKIE,
+  TENANT_COOKIE,
   backendUrl,
   crossOriginRefused,
   readAccessToken,
@@ -39,5 +40,8 @@ export async function POST(request: Request) {
   const store = await cookies();
   store.delete(ACCESS_COOKIE);
   store.delete(REFRESH_COOKIE);
+  // TENANT-001: the next person at this browser must not inherit the last
+  // administrator's choice of organization.
+  store.delete(TENANT_COOKIE);
   return new NextResponse(null, { status: 204 });
 }
