@@ -128,27 +128,78 @@ def business_path(api: Api, tenant_id: str, *, consumer_wait: float) -> dict:
     stamp = str(int(time.time()))
     api.headers["X-Tenant-ID"] = tenant_id
 
+    center_id = api.call("GET", "/v1/collection-centers", step="list centers")["items"][0]["id"]
+
     print("  → supplier")
     supplier = api.call("POST", "/v1/suppliers",
                         {"full_name": f"Smoke Supplier {stamp}", "phone": f"+254700{stamp[-6:]}"},
                         expect=(201,), step="create supplier")
     created["supplier"] = supplier["id"]
+    # PILOT-001: a supplier is born `draft`, and `draft` cannot be identified
+    # at a collection point — "supplier is draft, not active". Creating one and
+    # walking away left this path unusable, which is why it had never run.
+    # The centre assignment comes FIRST: the platform refuses to activate a
+    # supplier who has nowhere to deliver ("cannot activate a supplier without
+    # a collection center assignment").
+    api.call("POST", f"/v1/suppliers/{supplier['id']}/centers", {"center_id": center_id},
+             expect=(201,), step="link supplier to center")
+    api.call("POST", f"/v1/suppliers/{supplier['id']}/status", {"status": "active"},
+             expect=(200,), step="activate supplier")
+
+    # PILOT-001: the milk is the point. The previous version asserted that "a
+    # settlement with no lines finalizes to zero", but the platform refuses
+    # exactly that — BR: "cannot finalize a settlement with no lines" — so this
+    # path could never have passed on any deployment. A smoke test that skips
+    # collection is not exercising the chain it claims to; every measurement
+    # here is entered manually, the same way an operator enters one.
+    print("  → collection (manual measurements)")
+    # A centre may hold only one open session, and on a live deployment an
+    # operator's session is very likely already open — so join it rather than
+    # demand an idle centre. It is left open afterwards for the same reason:
+    # closing someone else's shift is not a smoke test's business.
+    open_sessions = api.call("GET", f"/v1/collection-sessions?center_id={center_id}&status=open",
+                             step="list open sessions")["items"]
+    if open_sessions:
+        session = open_sessions[0]
+    else:
+        session = api.call("POST", "/v1/collection-sessions",
+                           {"center_id": center_id, "label": f"Smoke {stamp}"},
+                           expect=(201,), step="open collection session")
+    tx = api.call("POST", "/v1/milk-transactions", {"session_id": session["id"]},
+                  expect=(201,), step="create transaction")
+    created["transaction"] = tx["id"]
+    for name, body in (
+        ("identify", {"method": "manual", "supplier_id": supplier["id"]}),
+        ("milk", {"milk_type": "cow", "container_type": "can",
+                  "container_identifier": f"SMOKE-{stamp[-4:]}", "temperature_c": 4.0}),
+        ("weight", {"source": "manual", "unit": "kg", "gross": 12.0, "tare": 2.0}),
+        ("quality", {"source": "manual", "fat": 4.2, "snf": 8.6, "clr": 28.5}),
+        ("accept", {}),
+        ("complete", {}),
+    ):
+        tx = api.call("POST", f"/v1/milk-transactions/{tx['id']}/{name}", body,
+                      expect=(200,), step=f"transaction {name}")
+    if tx.get("state") != "COMPLETED" or not tx.get("calculation_id"):
+        raise SmokeFailure("transaction complete",
+                           f"transaction ended {tx.get('state')} with no price")
 
     print("  → settlement")
     today = date.today()
     settlement = api.call("POST", "/v1/settlements", {
         "supplier_id": supplier["id"],
-        "center_id": api.call("GET", "/v1/collection-centers", step="list centers")["items"][0]["id"],
+        "center_id": center_id,
         "period_from": (today - timedelta(days=1)).isoformat(),
         "period_to": today.isoformat(),
         "currency": "KES",
     }, expect=(201,), step="create settlement")
     created["settlement"] = settlement["settlement_number"]
 
-    # A settlement with no lines finalizes to zero, which is a legitimate
-    # business state and exactly what a smoke test wants: it exercises the
-    # lifecycle without inventing milk that was never collected.
-    print("  → calculate and finalize")
+    print("  → collect, calculate and finalize")
+    collected = api.call("POST", f"/v1/settlements/{settlement['id']}/collect",
+                         expect=(200,), step="settlement collect")
+    if not collected.get("added"):
+        raise SmokeFailure("settlement collect",
+                           f"the completed transaction was not collected: {collected}")
     for transition in ("calculate", "finalize"):
         settlement = api.call("POST", f"/v1/settlements/{settlement['id']}/{transition}",
                               expect=(200,), step=f"settlement {transition}")
