@@ -3,10 +3,10 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.16"
+version: "1.17"
 owner: Architecture Board
 created: 2026-08-03
-last-updated: 2026-08-06
+last-updated: 2026-08-11
 related: [STD-0003, CAP-0001]
 baseline: ARCH-BASELINE-V1
 ---
@@ -339,6 +339,18 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0027 — A late collection is carried forward; a closed period is never reopened to receive it.
+
+**Clarification.** A collection's business date is the day it was recorded, so a collection can arrive *after* the period containing that date has already been closed by a finalized settlement. Its own period is immutable (BR-0010) and no overlapping settlement may be created for it (BR-0009), so without a carry-forward it can never be paid at all — a real 1,800.00 KES collection was stranded exactly that way in PILOT-001. Such a line may therefore be added to a *later open* settlement, where it keeps its own `transaction_date`: the statement shows the day the milk arrived, not the period that paid for it. The relaxation is narrow and one-directional — a line dated **after** the settlement period is always refused (milk that has not been collected cannot be settled), and a line dated before it is admitted **only** when a finalized settlement already covers that date. A collection whose own period is still open is not late and belongs in that settlement. Nothing about the closed settlement changes, and double payment remains impossible under BR-0008 and BR-0012.
+
+**Enforcement.** `settlement/service.py` — `_assert_line_date_settleable()` on every line add; `collect_period()` sweeps stranded collections and excludes already-settled ones in SQL.
+
+**Verification.** `test_settlement_late_collection.py` — the full set: carry-forward admitted, still-open period refused, future-dated refused, the finalized settlement unchanged byte for byte, idempotent re-collection, exact money through to the receipt, tenant isolation, and the PILOT-001 1,800.00 KES case as a named regression.
+
+**Status:** Active (since PILOT-F03).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -352,6 +364,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.17 | 2026-08-11 | Architecture Board | PILOT-F03: BR-0027 (a late collection is carried forward; a closed period is never reopened). BR-0011's "adjustments fixed at 0" restated in code as a named rule rather than a placeholder literal. |
 | 1.16 | 2026-08-07 | Architecture Board | MSG-001: BR-0017 extended — retry only what a retry can fix; permanence is claimed, and unknown means retryable. |
 | 1.15 | 2026-08-06 | Architecture Board | MT-001: BR-0022 extended — the bypass must be set, is the only isolation inside itself, and tenant boundaries extend to key namespaces. |
 | 1.14 | 2026-08-06 | Architecture Board | DB-002: BR-0005 extended to SQL aggregation; BR-0015 gains flush independence. |

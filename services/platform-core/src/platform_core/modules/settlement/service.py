@@ -9,7 +9,8 @@ amounts. Totals are exact Decimal sums of the lines (BR-0011).
 Rules (Business Rules Register): BR-0008 one settlement per calculation,
 BR-0009 no overlapping settlements per supplier, BR-0010 finalized is
 immutable, BR-0011 totals equal the sum of lines, BR-0012 no duplicate
-transaction references.
+transaction references, BR-0027 a late collection is carried forward into a
+later open settlement rather than reopening the closed one.
 
 NO payment concepts (SET-002+).
 """
@@ -47,6 +48,11 @@ BUS_EVENTS = {
 }
 
 OPEN_STATUSES = ("draft", "calculated")  # line-editable states
+
+# BR-0011 fixes adjustments at zero until the bonus/penalty/tax engines land.
+# Named rather than inlined so it is a stated rule with one home, not a literal
+# repeated at each call site that someone later "fills in" locally.
+NO_ADJUSTMENTS = Decimal("0.00")
 
 
 # --- DTOs ------------------------------------------------------------------
@@ -173,11 +179,7 @@ class SettlementService:
         if cmd.transaction_id is not None:
             await self._assert_transaction_unsettled(settlement, cmd.transaction_id)
         tx_date = date.fromisoformat(record["transaction_date"])
-        if not (settlement.period_from <= tx_date <= settlement.period_to):
-            raise ConflictError(
-                f"calculation transaction date {tx_date.isoformat()} is outside "
-                f"the settlement period"
-            )
+        await self._assert_line_date_settleable(settlement, tx_date)
         line = SettlementLine(
             tenant_id=settlement.tenant_id,
             settlement_id=settlement.id,
@@ -196,6 +198,53 @@ class SettlementService:
         await self._session.flush()
         await self._record(settlement, "updated", {"line_added": str(cmd.calculation_id)}, actor_id)
         return line
+
+    async def _assert_line_date_settleable(self, settlement: Settlement, tx_date: date) -> None:
+        """BR-0027: where a collection's money is allowed to land.
+
+        The ordinary case is a line inside its own settlement's period. The
+        exception is a LATE collection — one recorded after the period it
+        belongs to was already closed by a finalized settlement. Its own period
+        is immutable (BR-0010) and no overlapping settlement may be created
+        (BR-0009), so without this it can never be paid at all: PILOT-001 left
+        a real 1,800.00 KES collection stranded exactly that way.
+
+        Such a line is carried forward into a later open settlement, which is
+        why `settlement_line` has always stored its own `transaction_date` —
+        the statement shows the day the milk arrived, not the period that paid
+        for it. Nothing about the closed settlement is touched, and paying
+        twice stays impossible: BR-0008 and BR-0012 still hold the line.
+
+        A collection whose own period is still OPEN is not late — it belongs in
+        that settlement, and pulling it forward would scatter a period's money
+        across two statements for no reason.
+        """
+        if settlement.period_from <= tx_date <= settlement.period_to:
+            return
+        if tx_date > settlement.period_to:
+            # Never settle milk that has not been collected yet. The wording
+            # keeps the long-standing "outside the settlement period" contract
+            # that callers and tests match on, and adds the direction.
+            raise ConflictError(
+                f"calculation transaction date {tx_date.isoformat()} is outside "
+                f"the settlement period — it is after {settlement.period_to.isoformat()}"
+            )
+        closed = await self._session.scalar(
+            select(Settlement.settlement_number)
+            .where(
+                Settlement.tenant_id == settlement.tenant_id,
+                Settlement.supplier_id == settlement.supplier_id,
+                Settlement.status == "finalized",
+                Settlement.period_from <= tx_date,
+                Settlement.period_to >= tx_date,
+            )
+            .limit(1)
+        )
+        if closed is None:
+            raise ConflictError(
+                f"calculation transaction date {tx_date.isoformat()} is outside "
+                f"the settlement period"
+            )
 
     async def add_transaction(
         self, settlement_id: uuid.UUID, transaction_id: uuid.UUID, *, actor_id: uuid.UUID
@@ -217,7 +266,16 @@ class SettlementService:
         """MVP-001 integration: add every eligible (completed, accepted,
         priced, unsettled) milk transaction of the settlement's supplier,
         center, and period. Already-settled and conflicting transactions are
-        skipped, not errors — the operation is idempotent."""
+        skipped, not errors — the operation is idempotent.
+
+        BR-0027: the sweep also reaches BACK past `period_from` to pick up late
+        collections stranded by a closed period. There is no lower bound here
+        because `add_calculation` is the one authority on what may be settled —
+        anything it refuses is counted as skipped, exactly as an already-settled
+        transaction is. Nothing is filtered out in SQL for the same reason: a
+        candidate excluded by the query is invisible, and `skipped` is how an
+        operator learns that a transaction was seen and passed over.
+        """
         from datetime import timedelta
 
         from platform_core.modules.milk_collection.models import MilkCollectionTransaction
@@ -232,8 +290,6 @@ class SettlementService:
                 MilkCollectionTransaction.state == "COMPLETED",
                 MilkCollectionTransaction.rejected_reason.is_(None),
                 MilkCollectionTransaction.calculation_id.is_not(None),
-                MilkCollectionTransaction.created_at
-                >= datetime.combine(settlement.period_from, datetime.min.time()),
                 MilkCollectionTransaction.created_at
                 < datetime.combine(settlement.period_to + timedelta(days=1), datetime.min.time()),
             )
@@ -292,11 +348,18 @@ class SettlementService:
         settlement = await self.get(settlement_id)
         self._require_open(settlement)
         gross = await self._sum_lines(settlement)
+        # BR-0011: net = gross + adjustments, and adjustments are ZERO by rule,
+        # not by omission — the register fixes them at zero until the
+        # bonus/penalty/tax engines exist, and there is no other legitimate
+        # source for them in the domain today. Inventing one here would put
+        # money on a statement that no business rule can account for. The
+        # addition is still performed through Money rather than assumed away,
+        # so the day adjustments become real this arithmetic already carries
+        # them.
+        adjustments = Money(amount=NO_ADJUSTMENTS, currency=settlement.currency)
         settlement.gross_amount = gross.amount
-        settlement.adjustments_amount = Decimal("0.00")  # placeholder (bonus/penalty/tax later)
-        settlement.net_amount = gross.plus(
-            Money(amount=Decimal("0.00"), currency=settlement.currency)
-        ).amount
+        settlement.adjustments_amount = adjustments.amount
+        settlement.net_amount = gross.plus(adjustments).amount
         settlement.status = "calculated"
         await self._record(
             settlement,
