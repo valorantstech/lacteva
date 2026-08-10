@@ -19,12 +19,15 @@ from datetime import timedelta
 from typing import Any, Literal
 
 import jwt
+import structlog
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
+from argon2.exceptions import Argon2Error, VerifyMismatchError
 
 from platform_core.core.config import get_settings
 from platform_core.core.db import utcnow
 from platform_core.core.keys import ALGORITHM, KeyRegistryError, get_key_registry
+
+log = structlog.get_logger("security")
 
 _hasher = PasswordHasher()
 
@@ -36,9 +39,30 @@ def hash_password(plain: str) -> str:
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    """Does this password match this stored hash? Never raises.
+
+    HASH-001: a MALFORMED stored hash used to escape as `InvalidHashError`,
+    which nothing caught, so a corrupted `password_hash` column turned every
+    login attempt for that account into a 500 instead of a refusal. Found on a
+    live deployment after a row was written with a truncated hash.
+
+    Two reasons that is worth catching. A password check must fail CLOSED —
+    "I cannot verify this" is not a reason to return anything but False. And a
+    500 where every other account gives 401 tells an unauthenticated caller
+    that this particular row is special, which is exactly the kind of oracle
+    the uniform `invalid_credentials` response exists to avoid.
+
+    Both hierarchies are caught deliberately: `InvalidHashError` derives from
+    `ValueError`, NOT from `Argon2Error`, so catching the library's own base
+    class alone silently misses the malformed-hash case — which is the one
+    that actually happened.
+    """
     try:
         return _hasher.verify(hashed, plain)
     except VerifyMismatchError:
+        return False
+    except (Argon2Error, ValueError):
+        log.error("password_hash_unusable", hash_len=len(hashed or ""))
         return False
 
 

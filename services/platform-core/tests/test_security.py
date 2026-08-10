@@ -1128,3 +1128,48 @@ async def test_rebind_moves_the_context_and_the_database_together():
     finally:
         rls.bind_tenant = real
         set_current_tenant(None)
+
+
+async def test_a_corrupted_password_hash_is_a_refusal_not_a_500(client):
+    """HASH-001, found on a live deployment.
+
+    A `password_hash` column written with a truncated value made argon2 raise
+    `InvalidHashError`, which nothing caught: every login attempt for that one
+    account returned 500 while every other account returned 401. Two problems —
+    a password check must fail CLOSED, and a 500 where others give 401 tells an
+    unauthenticated caller that this row is special.
+
+    `InvalidHashError` derives from `ValueError`, not from `Argon2Error`, so
+    catching the library's own base class alone does not cover it.
+    """
+    from sqlalchemy import update
+
+    from platform_core.core import db
+    from platform_core.modules.identity.models import User
+    from tests.conftest import register_and_login
+
+    await register_and_login(client, "corrupt@example.com")
+    async with db.get_session_factory()() as session:
+        await session.execute(
+            update(User)
+            .where(User.email == "corrupt@example.com")
+            .values(password_hash="=19=65536,t=3,p=4+truncated")
+        )
+        await session.commit()
+
+    r = await client.post(
+        "/v1/auth/token",
+        json={"email": "corrupt@example.com", "password": "correct-horse-battery"},
+    )
+    assert r.status_code == 401, f"a corrupt hash must refuse, not error: {r.status_code}"
+    assert r.json()["title"] == "invalid_credentials"
+
+
+def test_verify_password_never_raises_whatever_is_stored():
+    from platform_core.core.security import hash_password, verify_password
+
+    good = hash_password("correct-horse-battery")
+    assert verify_password("correct-horse-battery", good) is True
+    assert verify_password("wrong-password-here", good) is False
+    for broken in ("", "not-a-hash", "=19=65536,t=3,p=4+truncated", "$argon2id$broken"):
+        assert verify_password("anything", broken) is False, broken
