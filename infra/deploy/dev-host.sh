@@ -17,8 +17,15 @@
 #     TLS certificate stay valid across a stop/start. Release it (see below)
 #     if the address does not need to survive.
 #
-# Docker's `restart: unless-stopped` brings the whole stack back by itself on
-# boot, so `start` needs no deployment step.
+# Docker's `restart: unless-stopped` brings the stack back on boot — but ONLY
+# if the containers were left running when the host went down. `unless-stopped`
+# means exactly what it says: a container someone stopped by hand stays stopped
+# across a reboot, deliberately. So `stop` below powers the host off and leaves
+# the containers in the running state, and `start` needs no deployment step.
+#
+# If you ever run `docker compose stop` yourself before shutting down, the
+# stack will NOT come back on its own — bring it up with:
+#   docker compose -f docker-compose.production.yml --env-file /etc/lacteva/.env.production up -d
 
 set -euo pipefail
 
@@ -40,6 +47,7 @@ case "${1:-status}" in
     aws --profile "${PROFILE}" --region "${REGION}" ec2 stop-instances --instance-ids "${INSTANCE}" \
       --query 'StoppingInstances[0].CurrentState.Name' --output text
     echo "stopping ${INSTANCE} — compute billing ends when it reaches 'stopped'"
+    echo "containers are left in the running state, so they come back on start"
     ;;
   start)
     aws --profile "${PROFILE}" --region "${REGION}" ec2 start-instances --instance-ids "${INSTANCE}" \
