@@ -42,7 +42,14 @@ import sys
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "services/platform-core/src"))
+# Run from the repository, where the package lives under `src/`, OR from inside
+# the deployed image, where it is already installed. Neither should require the
+# other's directory layout to exist.
+_here = pathlib.Path(__file__).resolve()
+if len(_here.parents) > 2:
+    _src = _here.parents[2] / "services/platform-core/src"
+    if _src.is_dir():
+        sys.path.insert(0, str(_src))
 
 # The seeder drives the app in process; it must not also try to create tables.
 os.environ.setdefault("LACTEVA_ENV", "staging")
@@ -68,20 +75,59 @@ CENTERS = [
 ]
 
 SUPPLIER_NAMES = [
-    "Amina Njoroge", "Joseph Kamau", "Grace Wanjiru", "Peter Otieno",
-    "Mary Achieng", "Daniel Kiprono", "Esther Mwangi", "Samuel Barasa",
-    "Ruth Chebet", "John Muriithi", "Lydia Nekesa", "Francis Ochieng",
-    "Beatrice Wairimu", "Patrick Kimani", "Agnes Cherono", "Michael Wekesa",
-    "Sarah Atieno", "Stephen Njuguna", "Faith Mutindi", "Charles Rotich",
-    "Priscilla Adhiambo", "Anthony Gitau", "Jane Kerubo", "Elijah Maina",
+    "Amina Njoroge",
+    "Joseph Kamau",
+    "Grace Wanjiru",
+    "Peter Otieno",
+    "Mary Achieng",
+    "Daniel Kiprono",
+    "Esther Mwangi",
+    "Samuel Barasa",
+    "Ruth Chebet",
+    "John Muriithi",
+    "Lydia Nekesa",
+    "Francis Ochieng",
+    "Beatrice Wairimu",
+    "Patrick Kimani",
+    "Agnes Cherono",
+    "Michael Wekesa",
+    "Sarah Atieno",
+    "Stephen Njuguna",
+    "Faith Mutindi",
+    "Charles Rotich",
+    "Priscilla Adhiambo",
+    "Anthony Gitau",
+    "Jane Kerubo",
+    "Elijah Maina",
 ]
 
 # Fat percentage per supplier, fixed so a supplier always prices the same way.
 # Values straddle the band boundaries below, so the demo shows three rates.
 FAT_BY_SUPPLIER = [
-    3.4, 4.2, 5.1, 3.8, 4.5, 4.9, 3.6, 5.3,
-    4.1, 3.9, 4.7, 5.0, 3.5, 4.3, 4.8, 3.7,
-    4.4, 5.2, 4.0, 3.3, 4.6, 5.4, 3.2, 4.05,
+    3.4,
+    4.2,
+    5.1,
+    3.8,
+    4.5,
+    4.9,
+    3.6,
+    5.3,
+    4.1,
+    3.9,
+    4.7,
+    5.0,
+    3.5,
+    4.3,
+    4.8,
+    3.7,
+    4.4,
+    5.2,
+    4.0,
+    3.3,
+    4.6,
+    5.4,
+    3.2,
+    4.05,
 ]
 
 # (from, to, price) — FAT bands in KES per kg. Contiguous and half-open, which
@@ -93,8 +139,16 @@ PRODUCT = "RAW-COW-MILK"
 # Gross/tare pairs, cycled by index. Net weights land between 8 and 42 kg,
 # which is the range a smallholder actually delivers.
 WEIGHTS = [
-    (14.0, 2.0), (22.5, 2.5), (31.0, 3.0), (18.5, 2.5), (27.0, 2.0),
-    (35.5, 3.5), (12.0, 2.0), (24.0, 2.0), (29.5, 2.5), (44.0, 4.0),
+    (14.0, 2.0),
+    (22.5, 2.5),
+    (31.0, 3.0),
+    (18.5, 2.5),
+    (27.0, 2.0),
+    (35.5, 3.5),
+    (12.0, 2.0),
+    (24.0, 2.0),
+    (29.5, 2.5),
+    (44.0, 4.0),
 ]
 
 
@@ -108,8 +162,111 @@ class SeedError(SystemExit):
 
 async def expect(response, *codes: int, what: str):
     if response.status_code not in codes:
-        raise SeedError(f"demo seed failed at {what}: {response.status_code} {response.text[:400]}")
+        raise SeedError(
+            f"demo seed failed at {what}: {response.status_code} {response.text[:400]}"
+        )
     return response.json() if response.content else {}
+
+
+# --- a client with no dependencies -------------------------------------------
+
+
+class Response:
+    """Just enough of a response for `expect()` to read."""
+
+    def __init__(self, status_code: int, body: bytes):
+        self.status_code = status_code
+        self.content = body
+
+    @property
+    def text(self) -> str:
+        return self.content.decode("utf-8", "replace")
+
+    def json(self):
+        import json as _json
+
+        return _json.loads(self.content) if self.content else {}
+
+
+class AsgiClient:
+    """Call the FastAPI app in process, over ASGI, with nothing installed.
+
+    `httpx` is a DEV dependency and the production image installs `--no-dev`,
+    quite rightly — a test client has no business in a runtime image. But the
+    seeder has to run where the database is, which is inside that image, so
+    depending on httpx would have meant either bloating production or building
+    a second image to hold one library.
+
+    The surface actually used here is four verbs and a JSON body, so the ASGI
+    call is written out instead. This is not a re-implementation of an HTTP
+    client: there is no connection, no pooling and no wire format — the app is
+    a coroutine and this hands it a scope.
+    """
+
+    def __init__(self, app, base_url: str = "http://demo-seed"):
+        self._app = app
+        self._base = base_url
+
+    async def request(
+        self, method: str, path: str, *, json=None, headers=None
+    ) -> Response:
+        import json as _json
+        from urllib.parse import urlsplit
+
+        split = urlsplit(path)
+        body = b"" if json is None else _json.dumps(json).encode()
+        raw_headers = [(b"host", b"demo-seed")]
+        if json is not None:
+            raw_headers.append((b"content-type", b"application/json"))
+        raw_headers.append((b"content-length", str(len(body)).encode()))
+        for key, value in (headers or {}).items():
+            raw_headers.append((key.lower().encode(), str(value).encode()))
+
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0", "spec_version": "2.3"},
+            "http_version": "1.1",
+            "method": method.upper(),
+            "scheme": "http",
+            "path": split.path,
+            "raw_path": split.path.encode(),
+            "query_string": split.query.encode(),
+            "root_path": "",
+            "headers": raw_headers,
+            "client": ("127.0.0.1", 50000),
+            "server": ("demo-seed", 80),
+        }
+
+        sent = {"status": 500, "body": bytearray()}
+        request_done = False
+
+        async def receive():
+            nonlocal request_done
+            if request_done:
+                return {"type": "http.disconnect"}
+            request_done = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        async def send(message):
+            if message["type"] == "http.response.start":
+                sent["status"] = message["status"]
+            elif message["type"] == "http.response.body":
+                sent["body"].extend(message.get("body", b""))
+
+        await self._app(scope, receive, send)
+        return Response(sent["status"], bytes(sent["body"]))
+
+    async def get(self, path, *, headers=None):
+        return await self.request("GET", path, headers=headers)
+
+    async def post(self, path, *, json=None, headers=None):
+        return await self.request("POST", path, json=json, headers=headers)
+
+    async def put(self, path, *, json=None, headers=None):
+        return await self.request("PUT", path, json=json, headers=headers)
+
+    async def delete(self, path, *, headers=None):
+        return await self.request("DELETE", path, headers=headers)
 
 
 # --- platform plumbing -------------------------------------------------------
@@ -181,7 +338,9 @@ async def run_consumers() -> dict:
     totals = {"relayed": 0, "processed": 0, "failed": 0}
     for _ in range(200):  # a bound, so a stuck consumer cannot spin forever
         async with platform_factory("demo seed: relay the outbox")() as session:
-            relayed = await RelayService(session, get_event_bus()).dispatch_pending(limit=200)
+            relayed = await RelayService(session, get_event_bus()).dispatch_pending(
+                limit=200
+            )
             await session.commit()
         result = await runner.run_once(limit=200)
         totals["relayed"] += relayed
@@ -213,7 +372,9 @@ async def grant_platform_admin(email: str) -> None:
         if user is None or role is None:
             raise SeedError("could not grant platform-admin: user or role missing")
         existing = await session.scalar(
-            select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == role.id)
+            select(UserRole).where(
+                UserRole.user_id == user.id, UserRole.role_id == role.id
+            )
         )
         if existing is None:
             session.add(UserRole(user_id=user.id, role_id=role.id, tenant_id=None))
@@ -228,10 +389,14 @@ async def platform_admin(client) -> dict:
         json={"email": email, "password": PASSWORD, "full_name": "Demo Platform Admin"},
     )
     if r.status_code not in (201, 409):
-        raise SeedError(f"demo seed failed at register admin: {r.status_code} {r.text[:300]}")
+        raise SeedError(
+            f"demo seed failed at register admin: {r.status_code} {r.text[:300]}"
+        )
     await grant_platform_admin(email)
     tokens = await expect(
-        await client.post("/v1/auth/token", json={"email": email, "password": PASSWORD}),
+        await client.post(
+            "/v1/auth/token", json={"email": email, "password": PASSWORD}
+        ),
         200,
         what="admin login",
     )
@@ -251,7 +416,9 @@ async def make_org(client, admin: dict, name: str, slug: str) -> dict:
     return org
 
 
-async def invite_and_capture_token(client, *, headers: dict, email: str, role_name: str) -> str:
+async def invite_and_capture_token(
+    client, *, headers: dict, email: str, role_name: str
+) -> str:
     """Issue an invitation and read the token out of the delivered message.
 
     The seeder runs the app in process, so it can install a provider that
@@ -280,7 +447,9 @@ async def invite_and_capture_token(client, *, headers: dict, email: str, role_na
     try:
         await expect(
             await client.post(
-                "/v1/invitations", json={"email": email, "role_name": role_name}, headers=headers
+                "/v1/invitations",
+                json={"email": email, "role_name": role_name},
+                headers=headers,
             ),
             201,
             what=f"invite {email}",
@@ -343,7 +512,9 @@ def acting(admin: dict, org_id: str) -> dict:
 # --- the dairy ---------------------------------------------------------------
 
 
-async def make_center(client, h: dict, branch_id: str, name: str, code: str, operator_id: str) -> dict:
+async def make_center(
+    client, h: dict, branch_id: str, name: str, code: str, operator_id: str
+) -> dict:
     """A centre that is actually READY — hours, active, an operator, a live scale.
 
     Readiness is not decoration: `collection-sessions` refuses to open at a
@@ -365,7 +536,8 @@ async def make_center(client, h: dict, branch_id: str, name: str, code: str, ope
             f"/v1/collection-centers/{cid}/operating-hours",
             json={
                 "windows": [
-                    {"day_of_week": d, "opens": "06:00", "closes": "19:00"} for d in range(7)
+                    {"day_of_week": d, "opens": "06:00", "closes": "19:00"}
+                    for d in range(7)
                 ]
             },
             headers=h,
@@ -382,7 +554,9 @@ async def make_center(client, h: dict, branch_id: str, name: str, code: str, ope
     )
     await expect(
         await client.post(
-            f"/v1/collection-centers/{cid}/operators", json={"user_id": operator_id}, headers=h
+            f"/v1/collection-centers/{cid}/operators",
+            json={"user_id": operator_id},
+            headers=h,
         ),
         201,
         200,
@@ -391,7 +565,11 @@ async def make_center(client, h: dict, branch_id: str, name: str, code: str, ope
     scale = await expect(
         await client.post(
             "/v1/devices",
-            json={"category": "scale", "serial_number": f"SCALE-{code}", "name": f"{name} scale"},
+            json={
+                "category": "scale",
+                "serial_number": f"SCALE-{code}",
+                "name": f"{name} scale",
+            },
             headers=h,
         ),
         201,
@@ -416,8 +594,16 @@ async def make_center(client, h: dict, branch_id: str, name: str, code: str, ope
 
 
 async def make_rate_card(
-    client, h: dict, *, code: str, name: str, effective_from: str,
-    effective_until: str | None, center_ids: list[str], bands, publish: bool,
+    client,
+    h: dict,
+    *,
+    code: str,
+    name: str,
+    effective_from: str,
+    effective_until: str | None,
+    center_ids: list[str],
+    bands,
+    publish: bool,
 ) -> dict:
     card = await expect(
         await client.post(
@@ -438,14 +624,18 @@ async def make_rate_card(
     for cid in center_ids:
         await expect(
             await client.post(
-                f"/v1/rate-cards/{card['id']}/centers", json={"center_id": cid}, headers=h
+                f"/v1/rate-cards/{card['id']}/centers",
+                json={"center_id": cid},
+                headers=h,
             ),
             201,
             what=f"scope {code}",
         )
     await expect(
         await client.post(
-            f"/v1/rate-cards/{card['id']}/products", json={"product_code": PRODUCT}, headers=h
+            f"/v1/rate-cards/{card['id']}/products",
+            json={"product_code": PRODUCT},
+            headers=h,
         ),
         201,
         what=f"product {code}",
@@ -468,7 +658,11 @@ async def make_rate_card(
         await expect(
             await client.post(
                 f"/v1/pricing-matrices/{matrix['id']}/rows",
-                json={"from_value": from_value, "to_value": to_value, "unit_price": price},
+                json={
+                    "from_value": from_value,
+                    "to_value": to_value,
+                    "unit_price": price,
+                },
                 headers=h,
             ),
             201,
@@ -499,7 +693,9 @@ async def make_supplier(client, h: dict, name: str, index: int, center_id: str) 
     )
     await expect(
         await client.post(
-            f"/v1/suppliers/{supplier['id']}/centers", json={"center_id": center_id}, headers=h
+            f"/v1/suppliers/{supplier['id']}/centers",
+            json={"center_id": center_id},
+            headers=h,
         ),
         201,
         what=f"assign {name}",
@@ -508,7 +704,9 @@ async def make_supplier(client, h: dict, name: str, index: int, center_id: str) 
     # activate a supplier with nowhere to deliver.
     await expect(
         await client.post(
-            f"/v1/suppliers/{supplier['id']}/status", json={"status": "active"}, headers=h
+            f"/v1/suppliers/{supplier['id']}/status",
+            json={"status": "active"},
+            headers=h,
         ),
         200,
         what=f"activate {name}",
@@ -517,7 +715,14 @@ async def make_supplier(client, h: dict, name: str, index: int, center_id: str) 
 
 
 async def collect_one(
-    client, h: dict, *, session_id: str, supplier: dict, index: int, when: date, container: str,
+    client,
+    h: dict,
+    *,
+    session_id: str,
+    supplier: dict,
+    index: int,
+    when: date,
+    container: str,
 ) -> dict:
     """One collection, walked through the real state machine on a real date.
 
@@ -526,7 +731,9 @@ async def collect_one(
     separate business decisions.
     """
     tx = await expect(
-        await client.post("/v1/milk-transactions", json={"session_id": session_id}, headers=h),
+        await client.post(
+            "/v1/milk-transactions", json={"session_id": session_id}, headers=h
+        ),
         201,
         what="create transaction",
     )
@@ -535,27 +742,40 @@ async def collect_one(
     # Before pricing: give the collection its real day (see module docstring).
     # 07:30 UTC is a plausible morning round and keeps every collection inside
     # the centre's operating window.
-    await backdate_transaction(tid, datetime.combine(when, time(7, 30), tzinfo=timezone.utc))
+    await backdate_transaction(
+        tid, datetime.combine(when, time(7, 30), tzinfo=timezone.utc)
+    )
 
     gross, tare = WEIGHTS[index % len(WEIGHTS)]
     fat = FAT_BY_SUPPLIER[index % len(FAT_BY_SUPPLIER)]
     steps = [
         ("identify", {"method": "manual", "supplier_id": supplier["id"]}),
-        ("milk", {
-            "milk_type": "cow", "container_type": "can",
-            "container_identifier": container, "temperature_c": 4.0,
-        }),
+        (
+            "milk",
+            {
+                "milk_type": "cow",
+                "container_type": "can",
+                "container_identifier": container,
+                "temperature_c": 4.0,
+            },
+        ),
         ("weight", {"source": "manual", "unit": "kg", "gross": gross, "tare": tare}),
-        ("quality", {
-            "source": "manual", "fat": fat,
-            "snf": round(8.0 + (index % 7) * 0.1, 2),
-            "clr": round(26.0 + (index % 5) * 0.5, 2),
-            "temperature_c": 4.0,
-        }),
+        (
+            "quality",
+            {
+                "source": "manual",
+                "fat": fat,
+                "snf": round(8.0 + (index % 7) * 0.1, 2),
+                "clr": round(26.0 + (index % 5) * 0.5, 2),
+                "temperature_c": 4.0,
+            },
+        ),
     ]
     for name, body in steps:
         await expect(
-            await client.post(f"/v1/milk-transactions/{tid}/{name}", json=body, headers=h),
+            await client.post(
+                f"/v1/milk-transactions/{tid}/{name}", json=body, headers=h
+            ),
             200,
             what=f"transaction {name}",
         )
@@ -564,10 +784,14 @@ async def collect_one(
 
 async def accept_and_complete(client, h: dict, tid: str) -> dict:
     await expect(
-        await client.post(f"/v1/milk-transactions/{tid}/accept", headers=h), 200, what="accept"
+        await client.post(f"/v1/milk-transactions/{tid}/accept", headers=h),
+        200,
+        what="accept",
     )
     return await expect(
-        await client.post(f"/v1/milk-transactions/{tid}/complete", headers=h), 200, what="complete"
+        await client.post(f"/v1/milk-transactions/{tid}/complete", headers=h),
+        200,
+        what="complete",
     )
 
 
@@ -584,7 +808,13 @@ async def reject(client, h: dict, tid: str, reason: str) -> dict:
 
 
 async def settle(
-    client, h: dict, *, supplier_id: str, center_id: str, period_from: date, period_to: date,
+    client,
+    h: dict,
+    *,
+    supplier_id: str,
+    center_id: str,
+    period_from: date,
+    period_to: date,
     finalize: bool,
 ) -> dict | None:
     """Create a settlement and sweep the period into it.
@@ -621,15 +851,25 @@ async def settle(
     )
     if finalize:
         settlement = await expect(
-            await client.post(f"/v1/settlements/{settlement['id']}/finalize", headers=h),
+            await client.post(
+                f"/v1/settlements/{settlement['id']}/finalize", headers=h
+            ),
             200,
             what="finalize settlement",
         )
     return settlement
 
 
-async def pay(client, h: dict, *, supplier_id: str, settlement_id: str, method: str,
-              reference: str, outcome: str) -> dict:
+async def pay(
+    client,
+    h: dict,
+    *,
+    supplier_id: str,
+    settlement_id: str,
+    method: str,
+    reference: str,
+    outcome: str,
+) -> dict:
     """Take a finalized settlement through the payment lifecycle.
 
     `outcome` is one of completed | processing | failed, so the demo can show
@@ -696,17 +936,24 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
     summary: dict = {"organization": org["name"], "organization_id": org["id"]}
 
     manager = await make_member(
-        client, admin, org["id"],
+        client,
+        admin,
+        org["id"],
         email="manager@lacteva-demo.example.com",
-        full_name="Wanjiku Mbugua", role_name="tenant-admin",
+        full_name="Wanjiku Mbugua",
+        role_name="tenant-admin",
     )
     viewer = await make_member(
-        client, admin, org["id"],
+        client,
+        admin,
+        org["id"],
         email="viewer@lacteva-demo.example.com",
-        full_name="Otieno Odhiambo", role_name="tenant-viewer",
+        full_name="Otieno Odhiambo",
+        role_name="tenant-viewer",
     )
     summary["users"] = [
-        {"email": u["email"], "name": u["full_name"], "role": u["role"]} for u in (manager, viewer)
+        {"email": u["email"], "name": u["full_name"], "role": u["role"]}
+        for u in (manager, viewer)
     ]
     # Everything below is done AS the manager, so the audit trail names a
     # person with the permissions to have done it.
@@ -715,7 +962,9 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
 
     ws = await expect(
         await client.post(
-            "/v1/workspaces", json={"name": "Central Region", "slug": "central"}, headers=h
+            "/v1/workspaces",
+            json={"name": "Central Region", "slug": "central"},
+            headers=h,
         ),
         201,
         what="workspace",
@@ -739,8 +988,10 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
     # Two rate cards: the one in force, and a superseded one that shows the
     # customer their price history is kept, not overwritten.
     await make_rate_card(
-        client, h,
-        code="RC-2025-LEGACY", name="2025 Season Rates",
+        client,
+        h,
+        code="RC-2025-LEGACY",
+        name="2025 Season Rates",
         effective_from=(today - timedelta(days=365)).isoformat(),
         effective_until=(today - timedelta(days=HISTORY_DAYS + 1)).isoformat(),
         center_ids=[c["id"] for c in centers],
@@ -748,8 +999,10 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
         publish=True,
     )
     current = await make_rate_card(
-        client, h,
-        code="RC-2026-MAIN", name="2026 Main Season Rates",
+        client,
+        h,
+        code="RC-2026-MAIN",
+        name="2026 Main Season Rates",
         effective_from=(today - timedelta(days=HISTORY_DAYS)).isoformat(),
         effective_until=None,
         center_ids=[c["id"] for c in centers],
@@ -759,8 +1012,10 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
     # A draft card as well: rate cards under review are a real state, and a
     # demo that only ever shows `published` hides the approval workflow.
     await make_rate_card(
-        client, h,
-        code="RC-2027-DRAFT", name="2027 Proposed Rates (draft)",
+        client,
+        h,
+        code="RC-2027-DRAFT",
+        name="2027 Proposed Rates (draft)",
         effective_from=(today + timedelta(days=90)).isoformat(),
         effective_until=None,
         center_ids=[c["id"] for c in centers],
@@ -785,7 +1040,9 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
     for day_offset in range(HISTORY_DAYS, -1, -1):
         day = today - timedelta(days=day_offset)
         for center in centers:
-            todays = [s for i, s in enumerate(suppliers) if s["_center"]["id"] == center["id"]]
+            todays = [
+                s for i, s in enumerate(suppliers) if s["_center"]["id"] == center["id"]
+            ]
             # Not every supplier delivers every day — a dairy where all 24
             # arrive daily reads as generated data.
             delivering = [s for i, s in enumerate(todays) if (i + day_offset) % 3 != 0]
@@ -794,7 +1051,10 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
             session = await expect(
                 await client.post(
                     "/v1/collection-sessions",
-                    json={"center_id": center["id"], "label": f"{day.isoformat()} morning"},
+                    json={
+                        "center_id": center["id"],
+                        "label": f"{day.isoformat()} morning",
+                    },
                     headers=h,
                 ),
                 201,
@@ -803,8 +1063,12 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
             for n, supplier in enumerate(delivering):
                 idx = suppliers.index(supplier)
                 tid = await collect_one(
-                    client, h,
-                    session_id=session["id"], supplier=supplier, index=idx, when=day,
+                    client,
+                    h,
+                    session_id=session["id"],
+                    supplier=supplier,
+                    index=idx,
+                    when=day,
                     container=f"CAN-{center['code']}-{n + 1:02d}",
                 )
                 # One rejection in the whole history, on a single day, so the
@@ -815,7 +1079,9 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
                     # the milk was refused, the paperwork was not abandoned. The
                     # session cannot close while anything is in flight.
                     await expect(
-                        await client.post(f"/v1/milk-transactions/{tid}/complete", headers=h),
+                        await client.post(
+                            f"/v1/milk-transactions/{tid}/complete", headers=h
+                        ),
                         200,
                         what="complete rejected transaction",
                     )
@@ -834,8 +1100,14 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
                 )
     summary["transactions_completed"] = sum(len(v) for v in completed.values())
     summary["transactions_rejected"] = rejected
-    return {"summary": summary, "headers": h, "centers": centers, "suppliers": suppliers,
-            "today": today, "current_card": current}
+    return {
+        "summary": summary,
+        "headers": h,
+        "centers": centers,
+        "suppliers": suppliers,
+        "today": today,
+        "current_card": current,
+    }
 
 
 async def build_money(client, built: dict) -> dict:
@@ -850,13 +1122,24 @@ async def build_money(client, built: dict) -> dict:
     a_from, a_to = today - timedelta(days=21), today - timedelta(days=15)
     b_from, b_to = today - timedelta(days=14), today - timedelta(days=8)
 
-    counts = {"finalized": 0, "paid": 0, "awaiting_payment": 0, "failed": 0, "processing": 0}
+    counts = {
+        "finalized": 0,
+        "paid": 0,
+        "awaiting_payment": 0,
+        "failed": 0,
+        "processing": 0,
+    }
     paid_settlements = []
     for i, supplier in enumerate(suppliers):
         center = supplier["_center"]
         a = await settle(
-            client, h, supplier_id=supplier["id"], center_id=center["id"],
-            period_from=a_from, period_to=a_to, finalize=True,
+            client,
+            h,
+            supplier_id=supplier["id"],
+            center_id=center["id"],
+            period_from=a_from,
+            period_to=a_to,
+            finalize=True,
         )
         if a:
             counts["finalized"] += 1
@@ -868,17 +1151,30 @@ async def build_money(client, built: dict) -> dict:
             elif i % 11 == 4:
                 outcome = "processing"
             await pay(
-                client, h, supplier_id=supplier["id"], settlement_id=a["id"],
+                client,
+                h,
+                supplier_id=supplier["id"],
+                settlement_id=a["id"],
                 method="MOBILE_MONEY" if i % 3 else "BANK_TRANSFER",
-                reference=f"MPESA-{a['settlement_number']}", outcome=outcome,
+                reference=f"MPESA-{a['settlement_number']}",
+                outcome=outcome,
             )
-            counts[{"completed": "paid", "failed": "failed", "processing": "processing"}[outcome]] += 1
+            counts[
+                {"completed": "paid", "failed": "failed", "processing": "processing"}[
+                    outcome
+                ]
+            ] += 1
             if outcome == "completed":
                 paid_settlements.append(a["settlement_number"])
 
         b = await settle(
-            client, h, supplier_id=supplier["id"], center_id=center["id"],
-            period_from=b_from, period_to=b_to, finalize=True,
+            client,
+            h,
+            supplier_id=supplier["id"],
+            center_id=center["id"],
+            period_from=b_from,
+            period_to=b_to,
+            finalize=True,
         )
         if b:
             counts["finalized"] += 1
@@ -908,19 +1204,28 @@ async def demonstrate_br_0027(client, built: dict) -> dict:
             json={"center_id": center["id"], "label": "late slip entry"},
             headers=h,
         ),
-        201, 409, what="late session",
+        201,
+        409,
+        what="late session",
     )
     if "id" not in session:  # a session is already open at this centre — reuse it
         page = await expect(
             await client.get(
-                f"/v1/collection-sessions?center_id={center['id']}&status=open", headers=h
+                f"/v1/collection-sessions?center_id={center['id']}&status=open",
+                headers=h,
             ),
-            200, what="find open session",
+            200,
+            what="find open session",
         )
         session = page["items"][0]
 
     tid = await collect_one(
-        client, h, session_id=session["id"], supplier=supplier, index=0, when=late_day,
+        client,
+        h,
+        session_id=session["id"],
+        supplier=supplier,
+        index=0,
+        when=late_day,
         container="CAN-LATE-01",
     )
     await accept_and_complete(client, h, tid)
@@ -928,13 +1233,22 @@ async def demonstrate_br_0027(client, built: dict) -> dict:
     # Its own period is closed, so it lands in a settlement dated after it.
     carry_from = today - timedelta(days=7)
     carried = await settle(
-        client, h, supplier_id=supplier["id"], center_id=center["id"],
-        period_from=carry_from, period_to=carry_from, finalize=True,
+        client,
+        h,
+        supplier_id=supplier["id"],
+        center_id=center["id"],
+        period_from=carry_from,
+        period_to=carry_from,
+        finalize=True,
     )
     if carried:
         await pay(
-            client, h, supplier_id=supplier["id"], settlement_id=carried["id"],
-            method="MOBILE_MONEY", reference=f"MPESA-LATE-{carried['settlement_number']}",
+            client,
+            h,
+            supplier_id=supplier["id"],
+            settlement_id=carried["id"],
+            method="MOBILE_MONEY",
+            reference=f"MPESA-LATE-{carried['settlement_number']}",
             outcome="completed",
         )
         built["summary"]["br_0027_carry_forward"] = {
@@ -954,31 +1268,44 @@ async def build_isolation_org(client, admin: dict, org: dict) -> dict:
     """
     today = utc_today()
     manager = await make_member(
-        client, admin, org["id"],
+        client,
+        admin,
+        org["id"],
         email="manager@lacteva-isolation.example.com",
-        full_name="Chelimo Kiplagat", role_name="tenant-admin",
+        full_name="Chelimo Kiplagat",
+        role_name="tenant-admin",
     )
     h = manager["headers"]
     admin_user_id = manager["id"]
     ws = await expect(
         await client.post(
             "/v1/workspaces", json={"name": "Rift Region", "slug": "rift"}, headers=h
-        ), 201, what="isolation workspace",
+        ),
+        201,
+        what="isolation workspace",
     )
     branch = await expect(
         await client.post(
             "/v1/branches",
             json={"workspace_id": ws["id"], "name": "Rift Valley Hub", "code": "RVH"},
             headers=h,
-        ), 201, what="isolation branch",
+        ),
+        201,
+        what="isolation branch",
     )
     center = await make_center(
         client, h, branch["id"], "Eldoret Ridge Centre", "ER-C1", admin_user_id
     )
     await make_rate_card(
-        client, h, code="RC-RIFT-2026", name="Rift Valley Rates",
-        effective_from=(today - timedelta(days=30)).isoformat(), effective_until=None,
-        center_ids=[center["id"]], bands=FAT_BANDS, publish=True,
+        client,
+        h,
+        code="RC-RIFT-2026",
+        name="Rift Valley Rates",
+        effective_from=(today - timedelta(days=30)).isoformat(),
+        effective_until=None,
+        center_ids=[center["id"]],
+        bands=FAT_BANDS,
+        publish=True,
     )
     suppliers = [
         await make_supplier(client, h, name, 100 + i, center["id"])
@@ -989,18 +1316,34 @@ async def build_isolation_org(client, admin: dict, org: dict) -> dict:
             "/v1/collection-sessions",
             json={"center_id": center["id"], "label": "morning"},
             headers=h,
-        ), 201, what="isolation session",
+        ),
+        201,
+        what="isolation session",
     )
     for i, supplier in enumerate(suppliers):
         tid = await collect_one(
-            client, h, session_id=session["id"], supplier=supplier, index=i, when=today,
+            client,
+            h,
+            session_id=session["id"],
+            supplier=supplier,
+            index=i,
+            when=today,
             container=f"CAN-ER-{i + 1:02d}",
         )
         await accept_and_complete(client, h, tid)
     return {
-        "organization": org["name"], "organization_id": org["id"],
-        "users": [{"email": manager["email"], "name": manager["full_name"], "role": manager["role"]}],
-        "centers": ["ER-C1"], "suppliers": len(suppliers), "transactions_completed": len(suppliers),
+        "organization": org["name"],
+        "organization_id": org["id"],
+        "users": [
+            {
+                "email": manager["email"],
+                "name": manager["full_name"],
+                "role": manager["role"],
+            }
+        ],
+        "centers": ["ER-C1"],
+        "suppliers": len(suppliers),
+        "transactions_completed": len(suppliers),
     }
 
 
@@ -1014,7 +1357,9 @@ async def demo_org_ids() -> list[str]:
 
     async with platform_factory("demo seed: locate demo organizations")() as session:
         rows = await session.scalars(
-            select(Organization.id).where(Organization.slug.in_([DEMO_ORG_SLUG, ISOLATION_ORG_SLUG]))
+            select(Organization.id).where(
+                Organization.slug.in_([DEMO_ORG_SLUG, ISOLATION_ORG_SLUG])
+            )
         )
         return [str(x) for x in rows.all()]
 
@@ -1044,12 +1389,16 @@ async def purge() -> dict:
             if table.name not in owned or "tenant_id" not in table.c:
                 continue
             result = await session.execute(
-                delete(table).where(table.c.tenant_id.in_([__import__("uuid").UUID(i) for i in ids]))
+                delete(table).where(
+                    table.c.tenant_id.in_([__import__("uuid").UUID(i) for i in ids])
+                )
             )
             removed += result.rowcount or 0
         # The organization row itself is platform-global, not tenant-owned.
         result = await session.execute(
-            delete(Organization).where(Organization.slug.in_([DEMO_ORG_SLUG, ISOLATION_ORG_SLUG]))
+            delete(Organization).where(
+                Organization.slug.in_([DEMO_ORG_SLUG, ISOLATION_ORG_SLUG])
+            )
         )
         await session.commit()
     _ = text  # imported for callers that want ad-hoc checks
@@ -1075,41 +1424,66 @@ async def verify() -> dict:
     problems: list[str] = []
     async with platform_factory("demo seed: verify")() as session:
         checks["organizations"] = len(
-            (await session.scalars(select(Organization.id).where(Organization.id.in_(ids)))).all()
+            (
+                await session.scalars(
+                    select(Organization.id).where(Organization.id.in_(ids))
+                )
+            ).all()
         )
         for label, model in (
-            ("suppliers", Supplier), ("transactions", MilkCollectionTransaction),
-            ("settlements", Settlement), ("payments", Payment), ("receipts", Receipt),
+            ("suppliers", Supplier),
+            ("transactions", MilkCollectionTransaction),
+            ("settlements", Settlement),
+            ("payments", Payment),
+            ("receipts", Receipt),
         ):
             checks[label] = await session.scalar(
                 select(func.count()).select_from(model).where(model.tenant_id.in_(ids))
             )
         checks["completed_transactions"] = await session.scalar(
-            select(func.count()).select_from(MilkCollectionTransaction).where(
+            select(func.count())
+            .select_from(MilkCollectionTransaction)
+            .where(
                 MilkCollectionTransaction.tenant_id.in_(ids),
                 MilkCollectionTransaction.state == "COMPLETED",
             )
         )
         checks["finalized_settlements"] = await session.scalar(
-            select(func.count()).select_from(Settlement).where(
-                Settlement.tenant_id.in_(ids), Settlement.status == "finalized"
-            )
+            select(func.count())
+            .select_from(Settlement)
+            .where(Settlement.tenant_id.in_(ids), Settlement.status == "finalized")
         )
         # BR-0011: every settlement's stored net must equal gross + adjustments.
-        rows = (await session.scalars(select(Settlement).where(Settlement.tenant_id.in_(ids)))).all()
+        rows = (
+            await session.scalars(
+                select(Settlement).where(Settlement.tenant_id.in_(ids))
+            )
+        ).all()
         for s in rows:
-            if Decimal(s.net_amount) != Decimal(s.gross_amount) + Decimal(s.adjustments_amount):
+            if Decimal(s.net_amount) != Decimal(s.gross_amount) + Decimal(
+                s.adjustments_amount
+            ):
                 problems.append(f"{s.settlement_number}: net != gross + adjustments")
         # No settlement may be finalized with nothing in it.
-        empty = [s.settlement_number for s in rows if s.status == "finalized" and not s.gross_amount]
+        empty = [
+            s.settlement_number
+            for s in rows
+            if s.status == "finalized" and not s.gross_amount
+        ]
         problems.extend(f"{n}: finalized with zero gross" for n in empty)
 
     for label, minimum in (
-        ("organizations", 2), ("suppliers", 20), ("completed_transactions", 50),
-        ("finalized_settlements", 5), ("payments", 5), ("receipts", 5),
+        ("organizations", 2),
+        ("suppliers", 20),
+        ("completed_transactions", 50),
+        ("finalized_settlements", 5),
+        ("payments", 5),
+        ("receipts", 5),
     ):
         if (checks.get(label) or 0) < minimum:
-            problems.append(f"{label}: {checks.get(label)} < expected minimum {minimum}")
+            problems.append(
+                f"{label}: {checks.get(label)} < expected minimum {minimum}"
+            )
 
     checks["problems"] = problems
     checks["ok"] = not problems
@@ -1120,27 +1494,23 @@ async def verify() -> dict:
 
 
 async def seed() -> dict:
-    from httpx import ASGITransport, AsyncClient
     from platform_core.main import create_app
 
     await bootstrap()
-    app = create_app()
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://demo-seed", timeout=60.0
-    ) as client:
-        admin = await platform_admin(client)
+    client = AsgiClient(create_app())
 
-        demo = await make_org(client, admin, DEMO_ORG, DEMO_ORG_SLUG)
-        isolation = await make_org(client, admin, ISOLATION_ORG, ISOLATION_ORG_SLUG)
+    admin = await platform_admin(client)
+    demo = await make_org(client, admin, DEMO_ORG, DEMO_ORG_SLUG)
+    isolation = await make_org(client, admin, ISOLATION_ORG, ISOLATION_ORG_SLUG)
 
-        built = await build_demo_org(client, admin, demo)
-        built = await build_money(client, built)
-        built = await demonstrate_br_0027(client, built)
-        # Receipts and notifications are consumer work, exactly as in production.
-        await run_consumers()
+    built = await build_demo_org(client, admin, demo)
+    built = await build_money(client, built)
+    built = await demonstrate_br_0027(client, built)
+    # Receipts and notifications are consumer work, exactly as in production.
+    await run_consumers()
 
-        isolation_summary = await build_isolation_org(client, admin, isolation)
-        await run_consumers()
+    isolation_summary = await build_isolation_org(client, admin, isolation)
+    await run_consumers()
 
     return {"demo": built["summary"], "isolation": isolation_summary}
 

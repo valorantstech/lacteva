@@ -18,6 +18,7 @@
  * invisible; a rounding error in a total is a wrong statement.
  */
 
+import Link from "next/link";
 import { useId, useState } from "react";
 import { Money, Quantity } from "@/components/money";
 import { EmptyState } from "@/components/states";
@@ -183,7 +184,14 @@ export function BarBreakdown({
   emptyTitle = "Nothing to show",
   emptyDescription,
 }: {
-  rows: { key: string; label: string; detail?: React.ReactNode; magnitude: number }[];
+  rows: {
+    key: string;
+    label: string;
+    detail?: React.ReactNode;
+    magnitude: number;
+    /** DEMO-003: where this row leads. Omitted when the page does not exist. */
+    href?: string;
+  }[];
   emptyTitle?: string;
   emptyDescription?: string;
 }) {
@@ -196,7 +204,13 @@ export function BarBreakdown({
       {rows.map((row) => (
         <li key={row.key} className="flex flex-col gap-1">
           <div className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="truncate font-medium">{row.label}</span>
+            {row.href ? (
+              <Link className="truncate font-medium hover:underline" href={row.href}>
+                {row.label}
+              </Link>
+            ) : (
+              <span className="truncate font-medium">{row.label}</span>
+            )}
             <span className="shrink-0 text-muted-foreground">{row.detail}</span>
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">

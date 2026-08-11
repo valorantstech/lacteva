@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy import Numeric, case, cast, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from platform_core.core.db import utcnow
+from platform_core.core.db import as_utc, utcnow
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.collection_center.models import CollectionCenter
 from platform_core.modules.milk_collection.models import MilkCollectionTransaction as Tx
@@ -104,6 +104,10 @@ class CenterSummaryRow(BaseModel):
     payable_amount: Decimal
     currency: str | None  # "MIX" when more than one currency appears
     weighted_avg_fat: float | None
+    #: DEMO-003: when this centre last took milk. An operator scanning a list
+    #: needs "is this centre still working?" and a quantity alone cannot say —
+    #: a busy centre and one that stopped a fortnight ago look identical.
+    last_collection_at: datetime | None = None
 
 
 class SupplierSummaryRow(BaseModel):
@@ -116,6 +120,7 @@ class SupplierSummaryRow(BaseModel):
     payable_amount: Decimal
     currency: str | None
     weighted_avg_fat: float | None
+    last_collection_at: datetime | None = None
 
 
 class SummaryPage(BaseModel):
@@ -365,6 +370,7 @@ class ReportingService:
                     case((ACCEPTED & Tx.fat.is_not(None), _exact(Tx.fat) * _exact(Tx.net_weight)))
                 ),
                 func.sum(case((ACCEPTED & Tx.fat.is_not(None), _exact(Tx.net_weight)))),
+                func.max(Tx.created_at),
             )
             .join(CollectionCenter, CollectionCenter.id == Tx.center_id)
             .where(*conditions)
@@ -386,6 +392,7 @@ class ReportingService:
                 payable_amount=Decimal(str(payable or 0)),
                 currency=("MIX" if (ncur or 0) > 1 else currency),
                 weighted_avg_fat=self._weighted(fat_sum, fat_weight),
+                last_collection_at=as_utc(last_at) if last_at else None,
             )
             for (
                 center_id,
@@ -399,6 +406,7 @@ class ReportingService:
                 ncur,
                 fat_sum,
                 fat_weight,
+                last_at,
             ) in rows.all()
         ]
         return SummaryPage(items=items, total=total or 0, limit=limit, offset=offset)
@@ -437,6 +445,7 @@ class ReportingService:
                     case((ACCEPTED & Tx.fat.is_not(None), _exact(Tx.fat) * _exact(Tx.net_weight)))
                 ),
                 func.sum(case((ACCEPTED & Tx.fat.is_not(None), _exact(Tx.net_weight)))),
+                func.max(Tx.created_at),
             )
             .join(Supplier, Supplier.id == Tx.supplier_id)
             .join(SupplierProfile, SupplierProfile.supplier_id == Supplier.id)
@@ -457,6 +466,7 @@ class ReportingService:
                 payable_amount=Decimal(str(payable or 0)),
                 currency=("MIX" if (ncur or 0) > 1 else currency),
                 weighted_avg_fat=self._weighted(fat_sum, fat_weight),
+                last_collection_at=as_utc(last_at) if last_at else None,
             )
             for (
                 supplier_id,
@@ -470,6 +480,7 @@ class ReportingService:
                 ncur,
                 fat_sum,
                 fat_weight,
+                last_at,
             ) in rows.all()
         ]
         return SummaryPage(items=items, total=total or 0, limit=limit, offset=offset)

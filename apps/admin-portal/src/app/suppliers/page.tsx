@@ -1,437 +1,482 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import Link from "next/link";
+import { Plus, Search, Truck } from "lucide-react";
 import {
   ApiError,
-  Branch,
-  Center,
-  Supplier,
-  SupplierDetail,
-  SupplierPage,
+  type Center,
+  type ReportPage,
+  type Supplier,
+  type SupplierSummaryRow,
   assignSupplierCenter,
   createSupplier,
-  getSupplierDetail,
-  getSupplierQr,
-  listBranches,
+  getSupplierReport,
   listCenters,
   listSuppliers,
   setSupplierStatus,
   updateSupplier,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { type Column, DataTable } from "@/components/data-table";
+import { Money, Quantity } from "@/components/money";
+import { PageHeader, StatTile } from "@/components/page-header";
+import { StatusBadge } from "@/components/status-badge";
+import { ErrorState } from "@/components/states";
+
+/**
+ * Suppliers (DEMO-003).
+ *
+ * Search, status and centre filters and pagination are all the platform's —
+ * `q`, `status`, `center_id`, `limit`, `offset` go to the server. The whole
+ * supplier table is never loaded to compute anything, which matters at 24
+ * suppliers and matters much more at 24,000.
+ *
+ * Activity comes from `/v1/reports/collection/by-supplier`, aggregated in SQL.
+ */
 
 const PAGE_SIZE = 10;
 const STATUSES = ["", "draft", "active", "suspended", "archived"] as const;
 
-const statusVariant = (s: Supplier["status"]) =>
-  s === "active" ? "default" : s === "archived" ? "outline" : "secondary";
+type FormState = { mode: "closed" } | { mode: "create" } | { mode: "edit"; supplier: Supplier };
 
-type FormState =
-  | { mode: "closed" }
-  | { mode: "create" }
-  | { mode: "edit"; supplier: Supplier };
+function activityWindow() {
+  const to = new Date();
+  const from = new Date(to);
+  from.setUTCDate(from.getUTCDate() - 29);
+  return { date_from: from.toISOString().slice(0, 10), date_to: to.toISOString().slice(0, 10) };
+}
 
 export default function SuppliersPage() {
-  const [page, setPage] = useState<SupplierPage | null>(null);
-  const [branches, setBranches] = useState<Branch[]>([]);
+  const [page, setPage] = useState<{ items: Supplier[]; total: number } | null>(null);
+  const [activity, setActivity] = useState<Record<string, SupplierSummaryRow>>({});
   const [centers, setCenters] = useState<Center[]>([]);
   const [q, setQ] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState<(typeof STATUSES)[number]>("");
+  const [centerId, setCenterId] = useState("");
   const [offset, setOffset] = useState(0);
-  const [form, setForm] = useState<FormState>({ mode: "closed" });
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [detail, setDetail] = useState<{
-    data: SupplierDetail;
-    qr: string;
-  } | null>(null);
+  const [form, setForm] = useState<FormState>({ mode: "closed" });
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setPage(await listSuppliers({ q, status, limit: PAGE_SIZE, offset }));
-      setError(null);
+      const result = await listSuppliers({
+        q: q || undefined,
+        status: status || undefined,
+        center_id: centerId || undefined,
+        limit: PAGE_SIZE,
+        offset,
+      });
+      setPage(result);
+      getSupplierReport({ ...activityWindow(), limit: "100" })
+        .then((report: ReportPage<SupplierSummaryRow>) =>
+          setActivity(
+            Object.fromEntries((report.items ?? []).map((row) => [row.supplier_id, row])),
+          ),
+        )
+        .catch(() => setActivity({}));
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load suppliers");
+      setError(err instanceof ApiError ? err.detail : "Could not load suppliers");
+    } finally {
+      setLoading(false);
     }
-  }, [q, status, offset]);
+  }, [centerId, offset, q, status]);
 
   useEffect(() => {
-    const t = setTimeout(() => void refresh(), 150);
+    const t = setTimeout(() => void load(), 0);
     return () => clearTimeout(t);
-  }, [refresh]);
+  }, [load]);
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      listBranches().then(setBranches).catch(() => setBranches([]));
-      listCenters({ limit: 100, offset: 0 })
-        .then((p) => setCenters(p.items))
-        .catch(() => setCenters([]));
-    }, 0);
-    return () => clearTimeout(t);
+    listCenters({ limit: 100, offset: 0 })
+      .then((c) => setCenters(c.items ?? []))
+      .catch(() => setCenters([]));
   }, []);
 
-  async function openDetail(supplier: Supplier) {
+  const activate = async (supplier: Supplier) => {
+    setNotice(null);
     try {
-      const [data, qr] = await Promise.all([
-        getSupplierDetail(supplier.id),
-        getSupplierQr(supplier.id),
-      ]);
-      setDetail({ data, qr: qr.payload });
+      await setSupplierStatus(supplier.id, "active");
+      setNotice(`${supplier.full_name} is now active.`);
+      void load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load supplier");
+      // BR: a supplier must be assigned to a collection centre before it can
+      // be activated. The platform decides; this shows exactly what it said
+      // rather than guessing at the reason or hiding the button.
+      setNotice(
+        err instanceof ApiError
+          ? `${supplier.full_name} could not be activated — ${err.detail}`
+          : `${supplier.full_name} could not be activated.`,
+      );
     }
-  }
+  };
 
-  async function changeStatus(supplier: Supplier, next: string) {
-    try {
-      await setSupplierStatus(supplier.id, next);
-      setError(null);
-      await refresh();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Status change failed");
-    }
-  }
-
-  async function assignCenter(supplierId: string, centerId: string) {
-    try {
-      await assignSupplierCenter(supplierId, centerId);
-      const data = await getSupplierDetail(supplierId);
-      setDetail((d) => (d ? { ...d, data } : d));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Assignment failed");
-    }
-  }
-
-  const totalPages = page ? Math.max(1, Math.ceil(page.total / PAGE_SIZE)) : 1;
+  const columns: Column<Supplier>[] = [
+    {
+      key: "name",
+      header: "Supplier",
+      cell: (s) => (
+        <div className="flex flex-col">
+          <Link className="font-medium hover:underline" href={`/suppliers/${s.id}`}>
+            {s.full_name}
+          </Link>
+          <span className="text-xs text-muted-foreground">{s.code}</span>
+        </div>
+      ),
+    },
+    { key: "status", header: "Status", cell: (s) => <StatusBadge status={s.status} /> },
+    {
+      key: "phone",
+      header: "Phone",
+      secondary: true,
+      cell: (s) => <span className="text-muted-foreground">{s.phone}</span>,
+    },
+    {
+      key: "collections",
+      header: "Collections",
+      align: "end",
+      cell: (s) => <span className="tabular-nums">{activity[s.id]?.deliveries ?? "—"}</span>,
+    },
+    {
+      key: "quantity",
+      header: "Quantity",
+      align: "end",
+      cell: (s) =>
+        activity[s.id] ? (
+          <Quantity value={activity[s.id].total_net_weight_kg} unit="kg" />
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      key: "value",
+      header: "Value",
+      align: "end",
+      cell: (s) =>
+        activity[s.id] ? (
+          <Money amount={activity[s.id].payable_amount} currency={activity[s.id].currency} />
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      key: "last",
+      header: "Last collection",
+      secondary: true,
+      cell: (s) => {
+        const at = activity[s.id]?.last_collection_at;
+        return <span className="text-muted-foreground">{at ? at.slice(0, 10) : "none"}</span>;
+      },
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "end",
+      cell: (s) => (
+        <div className="flex justify-end gap-2">
+          {s.status === "draft" || s.status === "suspended" ? (
+            <Button type="button" size="sm" variant="ghost" onClick={() => void activate(s)}>
+              Activate
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => setForm({ mode: "edit", supplier: s })}
+          >
+            Edit
+          </Button>
+          <Link
+            href={`/suppliers/${s.id}`}
+            className="inline-flex h-8 items-center rounded-md border border-input px-3 text-sm hover:bg-muted"
+          >
+            Open
+          </Link>
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 p-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Suppliers</h1>
-          <p className="text-sm text-muted-foreground">
-            Producers delivering to your collection centers
-          </p>
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+      <PageHeader
+        title="Suppliers"
+        description="The producers who deliver milk. Activity figures cover the last 30 days and are computed by the platform."
+        actions={
+          <Button type="button" onClick={() => setForm({ mode: "create" })}>
+            <Plus aria-hidden className="mr-1.5 size-4" />
+            New supplier
+          </Button>
+        }
+      />
+
+      <section aria-label="Supplier summary" className="grid gap-4 sm:grid-cols-3">
+        <StatTile label="Suppliers" value={page?.total ?? 0} icon={<Truck className="size-4" />} />
+        <StatTile
+          label="Active on this page"
+          value={(page?.items ?? []).filter((s) => s.status === "active").length}
+          hint="of the rows shown"
+        />
+        <StatTile
+          label="Delivered recently"
+          value={Object.keys(activity).length}
+          hint="last 30 days"
+        />
+      </section>
+
+      {notice ? (
+        <div role="status" className="rounded-md border border-border bg-card px-4 py-2 text-sm">
+          {notice}
         </div>
-        <Button onClick={() => setForm({ mode: "create" })}>New supplier</Button>
-      </header>
+      ) : null}
 
-      <div className="flex gap-3">
-        <Input
-          placeholder="Search name, code, or phone…"
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setOffset(0);
-          }}
-          className="max-w-xs"
-        />
-        <select
-          className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setOffset(0);
-          }}
-        >
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s === "" ? "All statuses" : s}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
-      {form.mode !== "closed" && (
+      {form.mode !== "closed" ? (
         <SupplierForm
-          branches={branches}
-          supplier={form.mode === "edit" ? form.supplier : null}
-          onDone={async () => {
+          state={form}
+          centers={centers}
+          onClose={() => setForm({ mode: "closed" })}
+          onSaved={(message) => {
             setForm({ mode: "closed" });
-            await refresh();
+            setNotice(message);
+            void load();
           }}
-          onCancel={() => setForm({ mode: "closed" })}
         />
-      )}
+      ) : null}
 
       <Card>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {page?.items.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell className="font-mono">{s.code}</TableCell>
-                  <TableCell>{s.full_name}</TableCell>
-                  <TableCell>{s.phone}</TableCell>
-                  <TableCell>
-                    <Badge variant={statusVariant(s.status)}>{s.status}</Badge>
-                  </TableCell>
-                  <TableCell className="flex justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openDetail(s)}>
-                      Detail
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setForm({ mode: "edit", supplier: s })}
-                    >
-                      Edit
-                    </Button>
-                    {s.status === "draft" && (
-                      <Button size="sm" variant="outline" onClick={() => changeStatus(s, "active")}>
-                        Activate
-                      </Button>
-                    )}
-                    {s.status === "active" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => changeStatus(s, "suspended")}
-                      >
-                        Suspend
-                      </Button>
-                    )}
-                    {s.status === "suspended" && (
-                      <Button size="sm" variant="outline" onClick={() => changeStatus(s, "active")}>
-                        Reinstate
-                      </Button>
-                    )}
-                    {s.status !== "archived" && (
-                      <Button size="sm" variant="ghost" onClick={() => changeStatus(s, "archived")}>
-                        Archive
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {page && page.items.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">
-                    No suppliers match.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+        <CardContent className="pt-6">
+          <DataTable
+            caption="Suppliers in this organization"
+            columns={columns}
+            rows={page?.items ?? []}
+            rowKey={(s) => s.id}
+            loading={loading}
+            error={error}
+            onRetry={() => void load()}
+            empty={{
+              title:
+                q || status || centerId ? "No supplier matches this search" : "No suppliers yet",
+              description:
+                q || status || centerId
+                  ? "Try a different name, code, status or centre."
+                  : "Register a supplier, assign them to a centre, then activate them to begin collecting.",
+            }}
+            toolbar={
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="supplier-search">Search</Label>
+                  <div className="relative">
+                    <Search
+                      aria-hidden
+                      className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                    />
+                    <Input
+                      id="supplier-search"
+                      className="w-64 pl-8"
+                      placeholder="Name, code or phone"
+                      value={q}
+                      onChange={(e) => {
+                        setQ(e.target.value);
+                        setOffset(0);
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="supplier-status">Status</Label>
+                  <select
+                    id="supplier-status"
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    value={status}
+                    onChange={(e) => {
+                      setStatus(e.target.value as (typeof STATUSES)[number]);
+                      setOffset(0);
+                    }}
+                  >
+                    {STATUSES.map((s) => (
+                      <option key={s || "all"} value={s}>
+                        {s || "All statuses"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="supplier-center">Centre</Label>
+                  <select
+                    id="supplier-center"
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    value={centerId}
+                    onChange={(e) => {
+                      setCenterId(e.target.value);
+                      setOffset(0);
+                    }}
+                  >
+                    <option value="">All centres</option>
+                    {centers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            }
+            page={{
+              offset,
+              limit: PAGE_SIZE,
+              total: page?.total ?? 0,
+              onChange: setOffset,
+              busy: loading,
+            }}
+          />
         </CardContent>
       </Card>
-
-      {detail && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-3">
-              {detail.data.supplier.full_name}
-              <Badge variant={statusVariant(detail.data.supplier.status)}>
-                {detail.data.supplier.status}
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              {detail.data.supplier.code} · {detail.data.profile.village || "no village"} ·{" "}
-              {detail.data.bank_accounts.length} bank account(s) ·{" "}
-              {detail.data.documents.length} document(s)
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4 text-sm">
-            <div>
-              <span className="font-medium">Collection centers:</span>{" "}
-              {detail.data.center_ids.length === 0
-                ? "none — required before activation"
-                : centers
-                    .filter((c) => detail.data.center_ids.includes(c.id))
-                    .map((c) => c.code)
-                    .join(" · ") || `${detail.data.center_ids.length} assigned`}
-            </div>
-            <div className="flex items-center gap-2">
-              <select
-                className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
-                defaultValue=""
-                id="assign-center"
-              >
-                <option value="" disabled>
-                  Assign to center…
-                </option>
-                {centers
-                  .filter((c) => !detail.data.center_ids.includes(c.id))
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.code} — {c.name}
-                    </option>
-                  ))}
-              </select>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const el = document.getElementById("assign-center") as HTMLSelectElement;
-                  if (el?.value) void assignCenter(detail.data.supplier.id, el.value);
-                }}
-              >
-                Assign
-              </Button>
-            </div>
-            <div>
-              <span className="font-medium">QR payload:</span>{" "}
-              <code className="rounded bg-muted px-1 break-all">{detail.qr}</code>
-            </div>
-            <div>
-              <Button size="sm" variant="ghost" onClick={() => setDetail(null)}>
-                Close
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <footer className="flex items-center justify-between text-sm">
-        <span className="text-muted-foreground">
-          {page ? `${page.total} supplier${page.total === 1 ? "" : "s"}` : "Loading…"}
-        </span>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={offset === 0}
-            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-          >
-            Previous
-          </Button>
-          <span>
-            {Math.floor(offset / PAGE_SIZE) + 1} / {totalPages}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!page || offset + PAGE_SIZE >= page.total}
-            onClick={() => setOffset(offset + PAGE_SIZE)}
-          >
-            Next
-          </Button>
-        </div>
-      </footer>
-    </main>
+    </div>
   );
 }
 
 function SupplierForm({
-  branches,
-  supplier,
-  onDone,
-  onCancel,
+  state,
+  centers,
+  onClose,
+  onSaved,
 }: {
-  branches: Branch[];
-  supplier: Supplier | null;
-  onDone: () => Promise<void>;
-  onCancel: () => void;
+  state: Exclude<FormState, { mode: "closed" }>;
+  centers: Center[];
+  onClose: () => void;
+  onSaved: (message: string) => void;
 }) {
-  const [fullName, setFullName] = useState(supplier?.full_name ?? "");
-  const [phone, setPhone] = useState(supplier?.phone ?? "");
-  const [village, setVillage] = useState("");
-  const [branchId, setBranchId] = useState(supplier?.branch_id ?? "");
-  const [error, setError] = useState<string | null>(null);
+  const editing = state.mode === "edit";
+  const [fullName, setFullName] = useState(editing ? state.supplier.full_name : "");
+  const [phone, setPhone] = useState(editing ? state.supplier.phone : "");
+  const [centerId, setCenterId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  async function submit(e: React.FormEvent) {
+  const validate = () => {
+    const errors: Record<string, string> = {};
+    if (fullName.trim().length < 2) errors.fullName = "Enter the supplier's full name.";
+    if (!/^\+?\d{7,15}$/.test(phone.trim()))
+      errors.phone = "Enter a phone number, digits only, optionally starting with +.";
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validate()) return;
     setBusy(true);
     setError(null);
     try {
-      if (supplier) await updateSupplier(supplier.id, { full_name: fullName, phone, village });
-      else
-        await createSupplier({
-          full_name: fullName,
-          phone,
-          village,
-          ...(branchId ? { branch_id: branchId } : {}),
+      if (editing) {
+        await updateSupplier(state.supplier.id, {
+          full_name: fullName.trim(),
+          phone: phone.trim(),
         });
-      await onDone();
+        onSaved(`${fullName.trim()} updated.`);
+      } else {
+        const created = await createSupplier({ full_name: fullName.trim(), phone: phone.trim() });
+        if (centerId) await assignSupplierCenter(created.id, centerId);
+        onSaved(
+          centerId
+            ? `${created.full_name} created and assigned to a centre. Activate them when ready.`
+            : `${created.full_name} created as a draft. Assign a centre before activating.`,
+        );
+      }
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Save failed");
+      setError(err instanceof ApiError ? err.detail : "The supplier could not be saved");
     } finally {
       setBusy(false);
     }
-  }
+  };
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{supplier ? `Edit ${supplier.code}` : "New supplier"}</CardTitle>
-        <CardDescription>
-          Suppliers start as drafts; activation requires a collection center assignment.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={submit} className="grid max-w-xl grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="s-name">Full name</Label>
-            <Input
-              id="s-name"
-              required
-              minLength={2}
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="s-phone">Phone</Label>
-            <Input id="s-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="s-village">Village</Label>
-            <Input id="s-village" value={village} onChange={(e) => setVillage(e.target.value)} />
-          </div>
-          {!supplier && (
+      <CardContent className="pt-6">
+        <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+          <h2 className="text-base font-semibold">
+            {editing ? `Edit ${state.supplier.full_name}` : "New supplier"}
+          </h2>
+          {error ? <ErrorState message={error} /> : null}
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="s-branch">Branch (optional)</Label>
-              <select
-                id="s-branch"
-                className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
-                value={branchId}
-                onChange={(e) => setBranchId(e.target.value)}
-              >
-                <option value="">No branch</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.code} — {b.name}
-                  </option>
-                ))}
-              </select>
+              <Label htmlFor="supplier-name">
+                Full name<span aria-hidden className="ml-0.5 text-destructive">*</span>
+                <span className="sr-only"> (required)</span>
+              </Label>
+              <Input
+                id="supplier-name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                aria-invalid={Boolean(fieldErrors.fullName)}
+                placeholder="Amina Njoroge"
+              />
+              {fieldErrors.fullName ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {fieldErrors.fullName}
+                </p>
+              ) : null}
             </div>
-          )}
-          {error && <p className="col-span-2 text-sm text-destructive">{error}</p>}
-          <div className="col-span-2 flex gap-2">
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="supplier-phone">
+                Phone<span aria-hidden className="ml-0.5 text-destructive">*</span>
+                <span className="sr-only"> (required)</span>
+              </Label>
+              <Input
+                id="supplier-phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                aria-invalid={Boolean(fieldErrors.phone)}
+                placeholder="+254700000001"
+              />
+              {fieldErrors.phone ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {fieldErrors.phone}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Used to notify them about payments.</p>
+              )}
+            </div>
+
+            {!editing ? (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="supplier-form-center">Collection centre</Label>
+                <select
+                  id="supplier-form-center"
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  value={centerId}
+                  onChange={(e) => setCenterId(e.target.value)}
+                >
+                  <option value="">Assign later</option>
+                  {centers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  A supplier must be assigned to a centre before they can be activated.
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex gap-2">
             <Button type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Save"}
+              {busy ? "Saving…" : editing ? "Save changes" : "Create supplier"}
             </Button>
-            <Button type="button" variant="ghost" onClick={onCancel}>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
               Cancel
             </Button>
           </div>

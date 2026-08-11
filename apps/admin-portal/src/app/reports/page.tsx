@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -230,9 +232,12 @@ export default function ReportsPage() {
               {bySort(centerRows, centerSort, (r) => r.transactions).map((row) => (
                 <TableRow key={row.center_id}>
                   <TableCell>
-                    <a className="text-primary hover:underline" href="/centers">
+                    <Link
+                      className="text-primary hover:underline"
+                      href={`/centers/${row.center_id}`}
+                    >
                       {row.center_code} — {row.center_name}
-                    </a>
+                    </Link>
                   </TableCell>
                   <TableCell className="text-right">{row.transactions}</TableCell>
                   <TableCell className="text-right">{row.accepted}</TableCell>
@@ -287,9 +292,12 @@ export default function ReportsPage() {
               {bySort(supplierRows, supplierSort, (r) => r.deliveries).map((row) => (
                 <TableRow key={row.supplier_id}>
                   <TableCell>
-                    <a className="text-primary hover:underline" href="/suppliers">
+                    <Link
+                      className="text-primary hover:underline"
+                      href={`/suppliers/${row.supplier_id}`}
+                    >
                       {row.supplier_code} — {row.supplier_name}
-                    </a>
+                    </Link>
                   </TableCell>
                   <TableCell className="text-right">{row.deliveries}</TableCell>
                   <TableCell className="text-right">{row.accepted}</TableCell>

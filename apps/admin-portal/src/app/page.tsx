@@ -457,6 +457,7 @@ export default function Home() {
                 rows={(centers.data.items ?? []).map((row) => ({
                   key: row.center_id,
                   label: row.center_name,
+                  href: `/centers/${row.center_id}`,
                   magnitude: row.total_net_weight_kg,
                   detail: (
                     <span className="flex items-center gap-2">
@@ -486,6 +487,7 @@ export default function Home() {
                 rows={(suppliers.data.items ?? []).map((row) => ({
                   key: row.supplier_id,
                   label: row.supplier_name,
+                  href: `/suppliers/${row.supplier_id}`,
                   magnitude: row.total_net_weight_kg,
                   detail: (
                     <span className="flex items-center gap-2">

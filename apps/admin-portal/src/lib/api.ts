@@ -211,6 +211,22 @@ export const listCenterDevices = (centerId: string) =>
     `/v1/devices?center_id=${centerId}&limit=100&offset=0`,
   );
 
+export type OperatingWindow = {
+  day_of_week: number;
+  opens: string;
+  closes: string;
+};
+
+export type CenterDetail = {
+  center: Center;
+  settings: Record<string, unknown>;
+  operating_windows: OperatingWindow[];
+  calendar: { date: string; is_open: boolean; note?: string }[];
+};
+
+export const getCenterDetail = (id: string) =>
+  api<CenterDetail>(`/v1/collection-centers/${id}`);
+
 export const setCenterStatus = (id: string, status: string) =>
   api<Center>(`/v1/collection-centers/${id}/status`, {
     method: "POST",
@@ -252,11 +268,15 @@ export type SupplierDetail = {
 export function listSuppliers(params: {
   q?: string;
   status?: string;
+  // DEMO-003: the platform already filters by centre server-side; the portal
+  // simply had no way to ask.
+  center_id?: string;
   limit: number;
   offset: number;
 }): Promise<SupplierPage> {
   const search = new URLSearchParams();
   if (params.q) search.set("q", params.q);
+  if (params.center_id) search.set("center_id", params.center_id);
   if (params.status) search.set("status", params.status);
   search.set("limit", String(params.limit));
   search.set("offset", String(params.offset));
@@ -721,6 +741,7 @@ export type CenterSummaryRow = {
   payable_amount: string | number;
   currency: string | null;
   weighted_avg_fat: number | null;
+  last_collection_at: string | null;
 };
 
 export type SupplierSummaryRow = {
@@ -733,6 +754,7 @@ export type SupplierSummaryRow = {
   payable_amount: string | number;
   currency: string | null;
   weighted_avg_fat: number | null;
+  last_collection_at: string | null;
 };
 
 export type ReportPage<T> = { items: T[]; total: number; limit: number; offset: number };
@@ -894,12 +916,14 @@ export type TransactionEvent = {
 export function listMilkTransactions(params: {
   state?: string;
   center_id?: string;
+  supplier_id?: string;
   limit: number;
   offset: number;
 }): Promise<MilkTransactionPage> {
   const search = new URLSearchParams();
   if (params.state) search.set("state", params.state);
   if (params.center_id) search.set("center_id", params.center_id);
+  if (params.supplier_id) search.set("supplier_id", params.supplier_id);
   search.set("limit", String(params.limit));
   search.set("offset", String(params.offset));
   return api<MilkTransactionPage>(`/v1/milk-transactions?${search.toString()}`);
