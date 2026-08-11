@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Activity, Banknote, Droplets, Percent } from "lucide-react";
+import { Activity, Banknote, Droplets, Percent, Plus } from "lucide-react";
 import {
   ApiError,
   type Center,
@@ -207,6 +207,15 @@ export default function TransactionsPage() {
       <PageHeader
         title="Collections"
         description="Every delivery of milk, priced by the rate card in force at the moment it was received."
+        actions={
+          <Link
+            href="/transactions/new"
+            className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
+          >
+            <Plus aria-hidden className="mr-1.5 size-4" />
+            Record collection
+          </Link>
+        }
       />
 
       <DateRangePicker value={range} onChange={setRange} busy={loading} />

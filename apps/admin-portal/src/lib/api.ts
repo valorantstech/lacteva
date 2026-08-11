@@ -943,6 +943,66 @@ export function listMilkTransactions(params: {
   return api<MilkTransactionPage>(`/v1/milk-transactions?${search.toString()}`);
 }
 
+/** DEMO-005: the collection state machine, driven step by step. */
+export type CollectionSession = {
+  id: string;
+  center_id: string;
+  status: string;
+  label?: string;
+  opened_at?: string;
+};
+
+export const listCollectionSessions = (params: { center_id?: string; status?: string }) => {
+  const search = new URLSearchParams();
+  if (params.center_id) search.set("center_id", params.center_id);
+  if (params.status) search.set("status", params.status);
+  search.set("limit", "20");
+  return api<{ items: CollectionSession[]; total: number }>(
+    `/v1/collection-sessions?${search.toString()}`,
+  );
+};
+
+export const openCollectionSession = (centerId: string, label: string) =>
+  api<CollectionSession>("/v1/collection-sessions", {
+    method: "POST",
+    body: JSON.stringify({ center_id: centerId, label }),
+  });
+
+export const createMilkTransaction = (sessionId: string) =>
+  api<MilkTransaction>("/v1/milk-transactions", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+
+/** Every step is one real call against the platform's own state machine. */
+const step = (id: string, name: string, body: unknown) =>
+  api<MilkTransaction>(`/v1/milk-transactions/${id}/${name}`, {
+    method: "POST",
+    body: JSON.stringify(body ?? {}),
+  });
+
+export const identifySupplier = (id: string, supplierId: string) =>
+  step(id, "identify", { method: "manual", supplier_id: supplierId });
+
+export const captureMilk = (
+  id: string,
+  body: { milk_type: string; container_type: string; container_identifier: string; temperature_c?: number },
+) => step(id, "milk", body);
+
+export const captureWeight = (id: string, body: { gross: number; tare: number }) =>
+  // `source: "manual"` is the domain's own name for an operator-entered
+  // reading. The mock scale is refused outright in this environment.
+  step(id, "weight", { source: "manual", unit: "kg", ...body });
+
+export const captureQuality = (
+  id: string,
+  body: { fat: number; snf: number; clr: number; temperature_c?: number; remarks?: string },
+) => step(id, "quality", { source: "manual", ...body });
+
+export const acceptTransaction = (id: string) => step(id, "accept", {});
+export const rejectTransaction = (id: string, reason: string) => step(id, "reject", { reason });
+export const completeTransaction = (id: string) => step(id, "complete", {});
+
 export const getMilkTransaction = (id: string) =>
   api<MilkTransaction>(`/v1/milk-transactions/${id}`);
 

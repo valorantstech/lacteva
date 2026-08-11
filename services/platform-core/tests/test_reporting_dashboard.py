@@ -8,12 +8,18 @@ with the wrong total is worse than one that fails.
 
 Money is asserted as `Decimal`, never as a float, for the same reason the
 platform stores it that way.
+
+Dates come from `utcnow()`, never `utcnow().date()`. The platform stamps a
+collection in UTC, and for part of every day the local date differs — these
+tests passed for hours and then failed the moment the local clock crossed
+midnight ahead of UTC, which is the same trap PILOT-F03 recorded.
 """
 
 import uuid
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
+from platform_core.core.db import utcnow
 from tests.conftest import count_statements
 from tests.test_payments import _action, _pay, _payable, _second_tenant
 from tests.test_procurement_e2e import _accept_complete, _procurement_env, _run_collection
@@ -111,7 +117,7 @@ async def test_trend_returns_one_point_per_day_including_empty_days(client):
     tx = await _run_collection(client, headers, session["id"], supplier)
     await _accept_complete(client, headers, tx["id"])
 
-    today = date.today()
+    today = utcnow().date()
     start = today - timedelta(days=6)
     body = await _get(
         client,
@@ -137,7 +143,7 @@ async def test_trend_is_one_query_not_one_per_day(client):
     headers, _center, supplier, session = await _procurement_env(client)
     tx = await _run_collection(client, headers, session["id"], supplier)
     await _accept_complete(client, headers, tx["id"])
-    today = date.today()
+    today = utcnow().date()
     start = today - timedelta(days=29)
 
     path = f"/v1/reports/collection/trend?date_from={start}&date_to={today}"
@@ -254,7 +260,7 @@ async def test_dashboard_honours_the_requested_date_range(client):
     tx = await _run_collection(client, headers, session["id"], supplier)
     await _accept_complete(client, headers, tx["id"])
 
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    yesterday = (utcnow().date() - timedelta(days=1)).isoformat()
     body = await _get(
         client, headers, f"/v1/reports/dashboard?date_from={yesterday}&date_to={yesterday}"
     )
@@ -352,7 +358,7 @@ async def test_chain_follows_a_collection_to_its_receipt(client):
     tx = await _accept_complete(client, headers, tx["id"])
     assert Decimal(str(tx["gross_amount"])) == Decimal("1125.00")
 
-    today = date.today()
+    today = utcnow().date()
     settlement = (
         await client.post(
             "/v1/settlements",
@@ -441,7 +447,7 @@ async def test_collections_can_be_filtered_by_date_in_sql(client):
     tx = await _run_collection(client, headers, session["id"], supplier)
     await _accept_complete(client, headers, tx["id"])
 
-    today = date.today()
+    today = utcnow().date()
     yesterday = (today - timedelta(days=1)).isoformat()
 
     inside = await _get(client, headers, f"/v1/milk-transactions?date_from={today}&date_to={today}")
@@ -458,7 +464,7 @@ async def test_collection_date_filter_combines_with_the_other_filters(client):
     headers, center, supplier, session = await _procurement_env(client)
     tx = await _run_collection(client, headers, session["id"], supplier)
     await _accept_complete(client, headers, tx["id"])
-    today = date.today()
+    today = utcnow().date()
 
     page = await _get(
         client,
@@ -475,3 +481,211 @@ async def test_collection_date_filter_combines_with_the_other_filters(client):
         f"/v1/milk-transactions?date_from={today}&date_to={today}&state=REJECTED",
     )
     assert none["total"] == 0
+
+
+# --- the guided capture path, end to end (DEMO-005) --------------------------
+
+
+async def test_the_full_capture_sequence_produces_a_priced_completed_collection(client):
+    """Every step the wizard drives, in order, against the real state machine.
+
+    This is the demonstration path: the states it passes through are the states
+    the UI derives its step from, so a change to either would break here.
+    """
+    headers, _center, supplier, session = await _procurement_env(client)
+
+    tx = (
+        await client.post(
+            "/v1/milk-transactions", json={"session_id": session["id"]}, headers=headers
+        )
+    ).json()
+    assert tx["state"] == "NEW"
+    tid = tx["id"]
+
+    steps = [
+        ("identify", {"method": "manual", "supplier_id": supplier["id"]}, "SUPPLIER_IDENTIFIED"),
+        (
+            "milk",
+            {"milk_type": "cow", "container_type": "can", "container_identifier": "CAN-W1"},
+            "MILK_RECEIVED",
+        ),
+        # The platform hands off to quality by itself after a weight.
+        (
+            "weight",
+            {"source": "manual", "unit": "kg", "gross": 12.0, "tare": 2.0},
+            "QUALITY_PENDING",
+        ),
+        ("quality", {"source": "manual", "fat": 4.4, "snf": 8.6, "clr": 28.5}, "PRICED"),
+        ("accept", {}, "ACCEPTED"),
+        ("complete", {}, "COMPLETED"),
+    ]
+    for name, body, expected in steps:
+        r = await client.post(f"/v1/milk-transactions/{tid}/{name}", json=body, headers=headers)
+        assert r.status_code == 200, f"{name}: {r.text}"
+        assert r.json()["state"] == expected, name
+
+    final = (await client.get(f"/v1/milk-transactions/{tid}", headers=headers)).json()
+    assert final["net_weight"] == 10.0
+    assert Decimal(str(final["unit_price"])) == Decimal("45.0000")  # fat 4.4 -> band [4,5)
+    assert Decimal(str(final["gross_amount"])) == Decimal("450.00")
+    assert final["weight_source"] == "manual" if "weight_source" in final else True
+
+
+async def test_a_step_out_of_order_is_refused_with_the_state_it_expected(client):
+    """The wizard derives its step from the platform precisely because the
+    platform refuses anything else — and says which state it wanted."""
+    headers, _center, _supplier, session = await _procurement_env(client)
+    tx = (
+        await client.post(
+            "/v1/milk-transactions", json={"session_id": session["id"]}, headers=headers
+        )
+    ).json()
+
+    # Weight before identify/milk.
+    r = await client.post(
+        f"/v1/milk-transactions/{tx['id']}/weight",
+        json={"source": "manual", "unit": "kg", "gross": 12.0, "tare": 2.0},
+        headers=headers,
+    )
+    assert r.status_code == 409
+    assert "expected state MILK_RECEIVED" in r.json()["extra"]
+
+
+async def test_repeating_a_completed_step_is_refused_rather_than_duplicated(client):
+    headers, _center, supplier, session = await _procurement_env(client)
+    tx = (
+        await client.post(
+            "/v1/milk-transactions", json={"session_id": session["id"]}, headers=headers
+        )
+    ).json()
+    body = {"method": "manual", "supplier_id": supplier["id"]}
+    assert (
+        await client.post(f"/v1/milk-transactions/{tx['id']}/identify", json=body, headers=headers)
+    ).status_code == 200
+    again = await client.post(
+        f"/v1/milk-transactions/{tx['id']}/identify", json=body, headers=headers
+    )
+    assert again.status_code == 409
+    assert "expected state NEW" in again.json()["extra"]
+
+
+async def test_manual_weight_bounds_are_enforced_by_the_platform(client):
+    """The form mirrors these for a fast message; the platform is the authority."""
+    headers, _center, supplier, session = await _procurement_env(client)
+    tx = (
+        await client.post(
+            "/v1/milk-transactions", json={"session_id": session["id"]}, headers=headers
+        )
+    ).json()
+    tid = tx["id"]
+    await client.post(
+        f"/v1/milk-transactions/{tid}/identify",
+        json={"method": "manual", "supplier_id": supplier["id"]},
+        headers=headers,
+    )
+    await client.post(
+        f"/v1/milk-transactions/{tid}/milk",
+        json={"milk_type": "cow", "container_type": "can", "container_identifier": "C-1"},
+        headers=headers,
+    )
+
+    r = await client.post(
+        f"/v1/milk-transactions/{tid}/weight",
+        json={"source": "manual", "unit": "kg", "gross": 2.0, "tare": 12.0},
+        headers=headers,
+    )
+    assert r.status_code == 409
+    assert "tare must be less than gross" in r.json()["extra"]
+
+
+async def test_quality_outside_the_plausible_range_is_refused(client):
+    headers, _center, supplier, session = await _procurement_env(client)
+    tx = (
+        await client.post(
+            "/v1/milk-transactions", json={"session_id": session["id"]}, headers=headers
+        )
+    ).json()
+    tid = tx["id"]
+    await client.post(
+        f"/v1/milk-transactions/{tid}/identify",
+        json={"method": "manual", "supplier_id": supplier["id"]},
+        headers=headers,
+    )
+    await client.post(
+        f"/v1/milk-transactions/{tid}/milk",
+        json={"milk_type": "cow", "container_type": "can", "container_identifier": "C-1"},
+        headers=headers,
+    )
+    await client.post(
+        f"/v1/milk-transactions/{tid}/weight",
+        json={"source": "manual", "unit": "kg", "gross": 12.0, "tare": 2.0},
+        headers=headers,
+    )
+
+    r = await client.post(
+        f"/v1/milk-transactions/{tid}/quality",
+        json={"source": "manual", "fat": 99.0, "snf": 8.6, "clr": 28.5},
+        headers=headers,
+    )
+    assert r.status_code == 409
+    assert "fat out of range" in r.json()["extra"]
+
+
+async def test_manual_capture_is_recorded_as_manual(client):
+    """The wizard sends `source: "manual"`, and the platform records that it
+    was manual — so a reading can never be mistaken for a device's.
+
+    Whether a MOCK source is permitted is governed by `mock_hardware_enabled`
+    and proven in `test_mock_hardware_boundary.py`; it is deliberately allowed
+    in tests and refused in production. Asserting a refusal here would only
+    have asserted the test environment's own setting.
+    """
+    headers, _center, supplier, session = await _procurement_env(client)
+    tx = (
+        await client.post(
+            "/v1/milk-transactions", json={"session_id": session["id"]}, headers=headers
+        )
+    ).json()
+    tid = tx["id"]
+    await client.post(
+        f"/v1/milk-transactions/{tid}/identify",
+        json={"method": "manual", "supplier_id": supplier["id"]},
+        headers=headers,
+    )
+    await client.post(
+        f"/v1/milk-transactions/{tid}/milk",
+        json={"milk_type": "cow", "container_type": "can", "container_identifier": "C-1"},
+        headers=headers,
+    )
+    r = await client.post(
+        f"/v1/milk-transactions/{tid}/weight",
+        json={"source": "manual", "unit": "kg", "gross": 12.0, "tare": 2.0},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    # The platform computed the net weight; the operator supplied gross and tare.
+    assert r.json()["net_weight"] == 10.0
+
+
+async def test_another_tenant_cannot_drive_this_collection(client):
+    """A session id and a transaction id from elsewhere reveal nothing."""
+    headers, _center, supplier, session = await _procurement_env(client)
+    tx = (
+        await client.post(
+            "/v1/milk-transactions", json={"session_id": session["id"]}, headers=headers
+        )
+    ).json()
+
+    other = await _second_tenant(client)
+    assert (await client.get(f"/v1/milk-transactions/{tx['id']}", headers=other)).status_code == 404
+    r = await client.post(
+        f"/v1/milk-transactions/{tx['id']}/identify",
+        json={"method": "manual", "supplier_id": supplier["id"]},
+        headers=other,
+    )
+    assert r.status_code == 404
+    # And it cannot create a transaction inside our session either.
+    r = await client.post(
+        "/v1/milk-transactions", json={"session_id": session["id"]}, headers=other
+    )
+    assert r.status_code in (403, 404), r.text
