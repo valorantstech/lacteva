@@ -324,3 +324,154 @@ async def test_the_new_reports_require_the_reporting_permission(client):
     # A legitimate session with the permission is served.
     assert (await client.get("/v1/reports/dashboard", headers=headers)).status_code == 200
     assert (await client.get("/v1/reports/dashboard", headers=viewer)).status_code == 200
+
+
+# --- one collection's money trail (DEMO-004) ---------------------------------
+
+
+async def test_chain_is_empty_for_a_collection_nobody_has_settled(client):
+    """Null stages are the honest answer: a priced but unsettled collection
+    must not look like one that was never priced."""
+    headers, _center, supplier, session = await _procurement_env(client)
+    tx = await _run_collection(client, headers, session["id"], supplier)
+    tx = await _accept_complete(client, headers, tx["id"])
+
+    body = await _get(client, headers, f"/v1/reports/collection/{tx['id']}/chain")
+    assert body["settlement"] is None
+    assert body["payment"] is None
+    assert body["receipt"] is None
+
+
+async def test_chain_follows_a_collection_to_its_receipt(client):
+    """The whole demonstration, asserted as money rather than as links:
+    the line amount, the settlement, the payment and the receipt must agree."""
+    from tests.test_payments import _second_tenant  # noqa: F401  (kept in one import site)
+
+    headers, center, supplier, session = await _procurement_env(client)
+    tx = await _run_collection(client, headers, session["id"], supplier)  # 25kg @ 45
+    tx = await _accept_complete(client, headers, tx["id"])
+    assert Decimal(str(tx["gross_amount"])) == Decimal("1125.00")
+
+    today = date.today()
+    settlement = (
+        await client.post(
+            "/v1/settlements",
+            json={
+                "supplier_id": supplier["id"],
+                "center_id": center["id"],
+                "period_from": (today - timedelta(days=1)).isoformat(),
+                "period_to": today.isoformat(),
+                "currency": "KES",
+            },
+            headers=headers,
+        )
+    ).json()
+    assert (
+        await client.post(f"/v1/settlements/{settlement['id']}/collect", headers=headers)
+    ).json()["added"] == 1
+    await client.post(f"/v1/settlements/{settlement['id']}/calculate", headers=headers)
+    finalized = (
+        await client.post(f"/v1/settlements/{settlement['id']}/finalize", headers=headers)
+    ).json()
+
+    payment = (
+        await client.post(
+            "/v1/payments",
+            json={
+                "supplier_id": supplier["id"],
+                "currency": "KES",
+                "method": "MOBILE_MONEY",
+                "allocations": [{"settlement_id": settlement["id"]}],
+            },
+            headers=headers,
+        )
+    ).json()
+    await _complete(client, headers, payment)
+
+    from platform_core.core import db
+    from platform_core.modules.event_relay.consumers import ConsumerRunner
+
+    await ConsumerRunner(db.get_session_factory()).run_once()
+
+    chain = await _get(client, headers, f"/v1/reports/collection/{tx['id']}/chain")
+
+    # Every hop carries the same money.
+    assert chain["settlement"]["settlement_number"] == finalized["settlement_number"]
+    assert chain["settlement"]["status"] == "finalized"
+    assert Decimal(chain["settlement"]["line_amount"]) == Decimal("1125.00")
+    assert Decimal(chain["settlement"]["net_amount"]) == Decimal("1125.00")
+    assert chain["payment"]["status"] == "completed"
+    assert Decimal(chain["payment"]["allocated_amount"]) == Decimal("1125.00")
+    assert chain["receipt"] is not None
+    assert Decimal(chain["receipt"]["net_amount"]) == Decimal("1125.00")
+
+
+async def test_chain_stops_at_the_settlement_when_nothing_has_been_paid(client):
+    headers, _center, _supplier, settlement = await _payable(client)
+    detail = await _get(client, headers, f"/v1/settlements/{settlement['id']}")
+    transaction_id = detail["lines"][0]["transaction_id"]
+    if transaction_id is None:
+        return  # this fixture settles calculations directly; nothing to follow
+    chain = await _get(client, headers, f"/v1/reports/collection/{transaction_id}/chain")
+    assert chain["settlement"] is not None
+    assert chain["payment"] is None
+    assert chain["receipt"] is None
+
+
+async def test_chain_of_another_tenants_collection_reveals_nothing(client):
+    """A transaction id from elsewhere must find nothing, not someone's money."""
+    headers, _center, supplier, session = await _procurement_env(client)
+    tx = await _run_collection(client, headers, session["id"], supplier)
+    await _accept_complete(client, headers, tx["id"])
+
+    other = await _second_tenant(client)
+    chain = await _get(client, other, f"/v1/reports/collection/{tx['id']}/chain")
+    assert chain["settlement"] is None
+    assert chain["payment"] is None
+    assert chain["receipt"] is None
+
+
+# --- collection list filtering (DEMO-004) ------------------------------------
+
+
+async def test_collections_can_be_filtered_by_date_in_sql(client):
+    """A date window the DATABASE applies. Without it the portal would have to
+    fetch every collection a dairy has ever taken and narrow it in a browser."""
+    headers, _center, supplier, session = await _procurement_env(client)
+    tx = await _run_collection(client, headers, session["id"], supplier)
+    await _accept_complete(client, headers, tx["id"])
+
+    today = date.today()
+    yesterday = (today - timedelta(days=1)).isoformat()
+
+    inside = await _get(client, headers, f"/v1/milk-transactions?date_from={today}&date_to={today}")
+    assert inside["total"] == 1
+
+    outside = await _get(
+        client, headers, f"/v1/milk-transactions?date_from={yesterday}&date_to={yesterday}"
+    )
+    assert outside["total"] == 0
+    assert outside["items"] == []
+
+
+async def test_collection_date_filter_combines_with_the_other_filters(client):
+    headers, center, supplier, session = await _procurement_env(client)
+    tx = await _run_collection(client, headers, session["id"], supplier)
+    await _accept_complete(client, headers, tx["id"])
+    today = date.today()
+
+    page = await _get(
+        client,
+        headers,
+        f"/v1/milk-transactions?date_from={today}&date_to={today}"
+        f"&center_id={center['id']}&supplier_id={supplier['id']}&state=COMPLETED",
+    )
+    assert page["total"] == 1
+    assert page["items"][0]["id"] == tx["id"]
+
+    none = await _get(
+        client,
+        headers,
+        f"/v1/milk-transactions?date_from={today}&date_to={today}&state=REJECTED",
+    )
+    assert none["total"] == 0

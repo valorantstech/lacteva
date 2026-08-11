@@ -153,6 +153,7 @@ from platform_core.modules.receipt.service import (
     RenderedReceiptView,
 )
 from platform_core.modules.reporting.service import (
+    CollectionChain,
     CollectionTrend,
     DailyCollectionSummary,
     DashboardSummary,
@@ -1085,6 +1086,8 @@ async def list_milk_transactions(
     center_id: uuid.UUID | None = None,
     supplier_id: uuid.UUID | None = None,
     state: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> TransactionPage:
@@ -1093,6 +1096,8 @@ async def list_milk_transactions(
         center_id=center_id,
         supplier_id=supplier_id,
         state=state,
+        date_from=date_from,
+        date_to=date_to,
         limit=limit,
         offset=offset,
     )
@@ -2104,6 +2109,20 @@ async def report_dashboard(
     """One round trip for the KPI block: collection, settlements, payments,
     rate distribution, active counts and what needs attention."""
     return await service.dashboard(date_from=date_from, date_to=date_to)
+
+
+@report_router.get("/collection/{transaction_id}/chain", response_model=CollectionChain)
+async def report_collection_chain(
+    transaction_id: uuid.UUID,
+    service: ReportSvc,
+    _: ReportRead,
+) -> CollectionChain:
+    """Where one collection's money went: settlement, payment, receipt.
+
+    Each stage is null until it happens, which is what a timeline needs — a
+    priced-but-unsettled collection must not look like an unpriced one.
+    """
+    return await service.collection_chain(transaction_id)
 
 
 @report_router.get("/payments", response_model=PaymentSummary)

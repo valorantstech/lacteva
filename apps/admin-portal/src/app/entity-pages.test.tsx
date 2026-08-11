@@ -140,8 +140,9 @@ const READINESS = {
 const EMPTY_PAGE = { items: [], total: 0, limit: 10, offset: 0 };
 
 function routeAll(overrides: Record<string, () => Response> = {}) {
-  const spy = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+  const spy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    void init;
     for (const [fragment, handler] of Object.entries(overrides)) {
       if (url.includes(fragment)) return handler();
     }

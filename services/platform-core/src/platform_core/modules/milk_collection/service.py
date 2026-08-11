@@ -10,7 +10,7 @@ to the ordered transaction event log, audited, and published on the bus.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -703,6 +703,8 @@ class MilkCollectionService:
         center_id: uuid.UUID | None = None,
         supplier_id: uuid.UUID | None = None,
         state: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> TransactionPage:
@@ -711,6 +713,22 @@ class MilkCollectionService:
         stmt = select(MilkCollectionTransaction).where(
             MilkCollectionTransaction.tenant_id == tenant_id
         )
+        # DEMO-004: a date window, applied in SQL. Without it a portal wanting
+        # "last 7 days" has to pull every collection the tenant has ever taken
+        # and narrow it in the browser — which is both slow and, once a real
+        # dairy has a year of history, wrong at the page boundary.
+        # The range is CLOSED [date_from, date_to], expressed as half-open
+        # datetimes, matching how the reporting module reads the same column.
+        if date_from is not None:
+            stmt = stmt.where(
+                MilkCollectionTransaction.created_at
+                >= datetime.combine(date_from, datetime.min.time())
+            )
+        if date_to is not None:
+            stmt = stmt.where(
+                MilkCollectionTransaction.created_at
+                < datetime.combine(date_to + timedelta(days=1), datetime.min.time())
+            )
         if session_id:
             stmt = stmt.where(MilkCollectionTransaction.session_id == session_id)
         if center_id:

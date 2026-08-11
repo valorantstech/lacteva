@@ -28,8 +28,9 @@ from platform_core.core.db import as_utc, utcnow
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.collection_center.models import CollectionCenter
 from platform_core.modules.milk_collection.models import MilkCollectionTransaction as Tx
-from platform_core.modules.payment.models import Payment
+from platform_core.modules.payment.models import Payment, PaymentLine
 from platform_core.modules.pricing.models import PricingMatrix, PricingMatrixRow, RateCard
+from platform_core.modules.receipt.models import Receipt
 from platform_core.modules.settlement.models import Settlement, SettlementLine
 from platform_core.modules.supplier.models import Supplier, SupplierProfile
 
@@ -141,6 +142,61 @@ class SettlementSummary(BaseModel):
     finalized_net_total: Decimal
     total_settlements: int
     total_lines: int
+
+
+class ChainSettlement(BaseModel):
+    id: uuid.UUID
+    settlement_number: str
+    status: str
+    period_from: date
+    period_to: date
+    currency: str
+    gross_amount: Decimal
+    adjustments_amount: Decimal
+    net_amount: Decimal
+    line_amount: Decimal  #: what THIS collection contributed
+    finalized_at: datetime | None
+
+
+class ChainPayment(BaseModel):
+    id: uuid.UUID
+    payment_number: str
+    status: str
+    method: str
+    currency: str
+    amount: Decimal
+    allocated_amount: Decimal  #: allocated against the settlement above
+    reference: str | None
+    paid_at: datetime | None
+
+
+class ChainReceipt(BaseModel):
+    id: uuid.UUID
+    receipt_number: str
+    status: str
+    net_amount: Decimal
+    currency: str
+    generated_at: datetime
+
+
+class CollectionChain(BaseModel):
+    """Where one collection's money went — settlement, payment, receipt.
+
+    DEMO-004: the portal could not answer "was this paid?" without joining
+    three modules in the browser, which is both an N+1 and a place for the
+    answer to drift from the platform's. Reporting is the module allowed to
+    SELECT across boundaries — it owns no data, writes nothing, and derives
+    every field from the columns the owning modules wrote.
+
+    Each stage is `None` when it has not happened, which is the honest answer
+    and the one the timeline needs: a collection that is priced but unsettled
+    must look different from one that was never priced.
+    """
+
+    transaction_id: uuid.UUID
+    settlement: ChainSettlement | None
+    payment: ChainPayment | None
+    receipt: ChainReceipt | None
 
 
 class PaymentStatusRow(BaseModel):
@@ -531,6 +587,105 @@ class ReportingService:
             finalized_net_total=finalized,
             total_settlements=sum(r.count for r in by_status),
             total_lines=total_lines,
+        )
+
+    # --- one collection's money trail (DEMO-004) ----------------------------
+
+    async def collection_chain(self, transaction_id: uuid.UUID) -> CollectionChain:
+        """Follow a collection to its settlement, payment and receipt.
+
+        Four small keyed lookups, not a scan: settlement_line by transaction,
+        payment_line by settlement, receipt by payment. Every one is filtered
+        by tenant as well as by key — a transaction id from another
+        organization finds nothing rather than someone else's money.
+        """
+        tenant_id = require_current_tenant()
+
+        line = (
+            await self._session.execute(
+                select(SettlementLine, Settlement)
+                .join(Settlement, Settlement.id == SettlementLine.settlement_id)
+                .where(
+                    SettlementLine.tenant_id == tenant_id,
+                    SettlementLine.transaction_id == transaction_id,
+                    Settlement.status != "cancelled",
+                )
+                .limit(1)
+            )
+        ).first()
+        if line is None:
+            return CollectionChain(
+                transaction_id=transaction_id, settlement=None, payment=None, receipt=None
+            )
+
+        settlement_line, settlement = line
+        chain_settlement = ChainSettlement(
+            id=settlement.id,
+            settlement_number=settlement.settlement_number,
+            status=settlement.status,
+            period_from=settlement.period_from,
+            period_to=settlement.period_to,
+            currency=settlement.currency,
+            gross_amount=Decimal(settlement.gross_amount),
+            adjustments_amount=Decimal(settlement.adjustments_amount),
+            net_amount=Decimal(settlement.net_amount),
+            line_amount=Decimal(settlement_line.gross_amount),
+            finalized_at=as_utc(settlement.finalized_at) if settlement.finalized_at else None,
+        )
+
+        paid = (
+            await self._session.execute(
+                select(PaymentLine, Payment)
+                .join(Payment, Payment.id == PaymentLine.payment_id)
+                .where(
+                    PaymentLine.tenant_id == tenant_id,
+                    PaymentLine.settlement_id == settlement.id,
+                    Payment.status != "cancelled",
+                )
+                .order_by(Payment.created_at.desc())
+                .limit(1)
+            )
+        ).first()
+        if paid is None:
+            return CollectionChain(
+                transaction_id=transaction_id,
+                settlement=chain_settlement,
+                payment=None,
+                receipt=None,
+            )
+
+        payment_line, payment = paid
+        chain_payment = ChainPayment(
+            id=payment.id,
+            payment_number=payment.payment_number,
+            status=payment.status,
+            method=payment.method,
+            currency=payment.currency,
+            amount=Decimal(payment.amount),
+            allocated_amount=Decimal(payment_line.amount),
+            reference=payment.reference,
+            paid_at=as_utc(payment.completed_at) if payment.completed_at else None,
+        )
+
+        receipt = await self._session.scalar(
+            select(Receipt).where(Receipt.tenant_id == tenant_id, Receipt.payment_id == payment.id)
+        )
+        return CollectionChain(
+            transaction_id=transaction_id,
+            settlement=chain_settlement,
+            payment=chain_payment,
+            receipt=(
+                ChainReceipt(
+                    id=receipt.id,
+                    receipt_number=receipt.receipt_number,
+                    status=receipt.status,
+                    net_amount=Decimal(receipt.net_amount),
+                    currency=receipt.currency,
+                    generated_at=as_utc(receipt.generated_at),
+                )
+                if receipt is not None
+                else None
+            ),
         )
 
     # --- payment summary (DEMO-002) -----------------------------------------

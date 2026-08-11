@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -238,6 +240,13 @@ export default function RateCardsPage() {
                     <Badge variant={statusVariant(c.status)}>{statusLabel(c.status)}</Badge>
                   </TableCell>
                   <TableCell className="flex justify-end gap-2">
+                    {/* DEMO-004: the bands live on their own page now. */}
+                    <Link
+                      href={`/rate-cards/${c.id}`}
+                      className="inline-flex h-8 items-center rounded-md border border-input px-3 text-sm hover:bg-muted"
+                    >
+                      Bands
+                    </Link>
                     <Button size="sm" variant="outline" onClick={() => openDetail(c)}>
                       Detail
                     </Button>

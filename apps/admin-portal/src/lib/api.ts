@@ -882,12 +882,21 @@ export type MilkTransaction = {
   session_id: string;
   center_id: string;
   supplier_id: string | null;
+  operator_id: string;
   state: string;
   milk_type: string | null;
+  // DEMO-004: the platform has always returned these; the portal type simply
+  // did not name them, so the detail page could not show a gross/tare split.
+  container_type: string | null;
+  container_identifier: string | null;
+  weight_unit: string | null;
+  gross_weight: number | null;
+  tare_weight: number | null;
   net_weight: number | null;
   fat: number | null;
   snf: number | null;
   clr: number | null;
+  density: number | null;
   pricing_status: string | null;
   unit_price: string | number | null;
   gross_amount: string | number | null;
@@ -917,6 +926,9 @@ export function listMilkTransactions(params: {
   state?: string;
   center_id?: string;
   supplier_id?: string;
+  // DEMO-004: the window the DATABASE filters on.
+  date_from?: string;
+  date_to?: string;
   limit: number;
   offset: number;
 }): Promise<MilkTransactionPage> {
@@ -924,6 +936,8 @@ export function listMilkTransactions(params: {
   if (params.state) search.set("state", params.state);
   if (params.center_id) search.set("center_id", params.center_id);
   if (params.supplier_id) search.set("supplier_id", params.supplier_id);
+  if (params.date_from) search.set("date_from", params.date_from);
+  if (params.date_to) search.set("date_to", params.date_to);
   search.set("limit", String(params.limit));
   search.set("offset", String(params.offset));
   return api<MilkTransactionPage>(`/v1/milk-transactions?${search.toString()}`);
@@ -931,6 +945,46 @@ export function listMilkTransactions(params: {
 
 export const getMilkTransaction = (id: string) =>
   api<MilkTransaction>(`/v1/milk-transactions/${id}`);
+
+/** DEMO-004: where one collection's money went. Stages are null until they happen. */
+export type CollectionChain = {
+  transaction_id: string;
+  settlement: {
+    id: string;
+    settlement_number: string;
+    status: string;
+    period_from: string;
+    period_to: string;
+    currency: string;
+    gross_amount: string | number;
+    adjustments_amount: string | number;
+    net_amount: string | number;
+    line_amount: string | number;
+    finalized_at: string | null;
+  } | null;
+  payment: {
+    id: string;
+    payment_number: string;
+    status: string;
+    method: string;
+    currency: string;
+    amount: string | number;
+    allocated_amount: string | number;
+    reference: string | null;
+    paid_at: string | null;
+  } | null;
+  receipt: {
+    id: string;
+    receipt_number: string;
+    status: string;
+    net_amount: string | number;
+    currency: string;
+    generated_at: string;
+  } | null;
+};
+
+export const getCollectionChain = (transactionId: string) =>
+  api<CollectionChain>(`/v1/reports/collection/${transactionId}/chain`);
 
 export const getMilkTransactionEvents = (id: string) =>
   api<TransactionEvent[]>(`/v1/milk-transactions/${id}/events`);

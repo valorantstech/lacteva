@@ -360,9 +360,9 @@ export default function ReportsPage() {
           <CardHeader>
             <CardTitle>Pricing</CardTitle>
             <CardDescription>
-              <a className="text-primary hover:underline" href="/rate-cards">
+              <Link className="text-primary hover:underline" href="/rate-cards">
                 Open rate cards →
-              </a>
+              </Link>
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm">
