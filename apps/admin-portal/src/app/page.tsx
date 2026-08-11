@@ -1,81 +1,90 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Activity, Banknote, Droplets, Handshake, Truck, Users } from "lucide-react";
-import { type Session, getSession } from "@/lib/api";
+import {
+  Activity,
+  AlertTriangle,
+  Banknote,
+  Building2,
+  CheckCircle2,
+  Droplets,
+  Handshake,
+  Percent,
+  Truck,
+} from "lucide-react";
+import {
+  type AuditRecord,
+  type CenterSummaryRow,
+  type CollectionTrend,
+  type DashboardReport,
+  type ReportPage,
+  type Session,
+  type SupplierSummaryRow,
+  getCenterReport,
+  getCollectionTrend,
+  getDashboardReport,
+  getSession,
+  getSupplierReport,
+  listAudit,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { type DateRange, DateRangePicker, resolveRange } from "@/components/date-range";
+import { BarBreakdown, TrendChart } from "@/components/trend-chart";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
-import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import { EmptyState, ErrorState, LoadingState, TableSkeleton } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 
-// PORTAL-001 / F-11: same-origin, through the portal's own proxy. The
-// browser no longer knows — or needs to know — where the platform lives.
-const API = "/api/proxy";
-
 /**
- * DEMO-001: every figure on this page is COMPUTED BY THE PLATFORM.
+ * The customer dashboard (DEMO-002).
  *
- * The previous dashboard counted rows by asking five list endpoints for
- * `total`, which is fine for "how many suppliers" and useless for "how much
- * milk, worth what". Those answers are aggregations over money and quantity,
- * and the platform already has them in `/v1/reports/*` — where the sums are
- * exact `Decimal` inside the database rather than added up in a browser.
+ * Two rules shape this file.
  *
- * So this page fetches summaries and renders them. It does not add, average,
- * convert or round anything. `payable_by_currency` arrives as a map of exact
- * decimal STRINGS and is displayed as sent.
+ * 1. EVERY NUMBER COMES FROM THE PLATFORM. There is no counting of list
+ *    endpoints and no arithmetic over money here — the aggregates live in
+ *    `modules/reporting`, where the sums are exact `Decimal` inside the
+ *    database. The date range is a QUERY PARAMETER, not a filter applied to
+ *    rows that were fetched and then narrowed in the browser.
+ *
+ * 2. EACH REGION LOADS AND FAILS ON ITS OWN. Five independent requests, five
+ *    independent states. A reporting endpoint that fails costs its own card and
+ *    nothing else, because a dashboard that goes blank when one widget breaks
+ *    tells an operator less than one that admits which part is missing.
+ *
+ * Every field read from a response is guarded (`?? []`, `?? {}`). DEMO-001
+ * caught a real crash here — `by_status.map` on a body that had merely been
+ * cast — and that lesson is cheap to keep and expensive to relearn.
  */
-
-type DailySummary = {
-  date_from: string;
-  date_to: string;
-  transactions: number;
-  accepted: number;
-  rejected: number;
-  in_progress: number;
-  suppliers_served: number;
-  total_net_weight_kg: number;
-  payable_by_currency: Record<string, string>;
-  weighted_avg_fat: number | null;
-};
-
-type SettlementStatusRow = { status: string; count: number };
-type SettlementSummary = {
-  by_status: SettlementStatusRow[];
-  finalized_net_total: string;
-  total_settlements: number;
-  total_lines: number;
-};
-
-type Readiness = { status: string; platform_status?: string; checks: Record<string, string> };
 
 type Load<T> =
   | { state: "loading" }
   | { state: "error"; message: string }
   | { state: "ready"; data: T };
 
-async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${API}${path}`, { credentials: "same-origin", cache: "no-store" });
-  // DASH-001: check the STATUS before believing the body. A 401 answers with a
-  // problem document, and a cast is not a check — that is how this page once
-  // reached `Object.entries(undefined)` and took itself down.
-  if (!res.ok) throw new Error(res.status === 403 ? "Not permitted" : `HTTP ${res.status}`);
-  // A 200 proves the request succeeded, NOT that the body has the shape this
-  // cast claims — so every field read from it below is guarded. Written after
-  // the first draft of this page crashed on `by_status.map` in exactly the way
-  // DASH-001 crashed on `Object.entries`.
-  return (await res.json()) as T;
+const LOADING = { state: "loading" } as const;
+
+/** Narrow an unknown failure into something an operator can read. */
+function describe(error: unknown): string {
+  if (error && typeof error === "object" && "detail" in error) {
+    const detail = (error as { detail?: unknown }).detail;
+    if (typeof detail === "string" && detail) return detail;
+  }
+  return error instanceof Error ? error.message : "the request failed";
 }
 
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [checked, setChecked] = useState(false);
-  const [daily, setDaily] = useState<Load<DailySummary>>({ state: "loading" });
-  const [settlements, setSettlements] = useState<Load<SettlementSummary>>({ state: "loading" });
-  const [readiness, setReadiness] = useState<Load<Readiness>>({ state: "loading" });
-  const [checkedAt, setCheckedAt] = useState<string | null>(null);
+  const [range, setRange] = useState<DateRange>(() => resolveRange("7d"));
+  const [metric, setMetric] = useState<"quantity" | "value">("quantity");
+
+  const [dashboard, setDashboard] = useState<Load<DashboardReport>>(LOADING);
+  const [trend, setTrend] = useState<Load<CollectionTrend>>(LOADING);
+  const [centers, setCenters] = useState<Load<ReportPage<CenterSummaryRow>>>(LOADING);
+  const [suppliers, setSuppliers] = useState<Load<ReportPage<SupplierSummaryRow>>>(LOADING);
+  const [activity, setActivity] = useState<Load<AuditRecord[]>>(LOADING);
+  const [busy, setBusy] = useState(false);
 
   const signedIn = session?.authenticated === true;
 
@@ -90,27 +99,34 @@ export default function Home() {
     };
   }, []);
 
-  const load = useCallback(async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    await Promise.all([
-      getJson<DailySummary>(`/v1/reports/collection/daily?date_from=${today}&date_to=${today}`)
-        .then((data) => setDaily({ state: "ready", data }))
-        .catch((e: Error) => setDaily({ state: "error", message: e.message })),
-      getJson<SettlementSummary>("/v1/reports/settlements")
-        .then((data) => setSettlements({ state: "ready", data }))
-        .catch((e: Error) => setSettlements({ state: "error", message: e.message })),
-      getJson<Readiness>("/health/ready")
-        .then((data) => setReadiness({ state: "ready", data }))
-        .catch((e: Error) => setReadiness({ state: "error", message: e.message })),
+  const load = useCallback(async (window: DateRange) => {
+    setBusy(true);
+    const params = { date_from: window.from, date_to: window.to };
+    const ok =
+      <T,>(set: (v: Load<T>) => void) =>
+      (data: T) =>
+        set({ state: "ready", data });
+    const fail =
+      <T,>(set: (v: Load<T>) => void) =>
+      (e: unknown) =>
+        set({ state: "error", message: describe(e) });
+
+    // `allSettled`: one rejection must not cancel the others.
+    await Promise.allSettled([
+      getDashboardReport(params).then(ok(setDashboard), fail(setDashboard)),
+      getCollectionTrend(params).then(ok(setTrend), fail(setTrend)),
+      getCenterReport({ ...params, limit: "8" }).then(ok(setCenters), fail(setCenters)),
+      getSupplierReport({ ...params, limit: "8" }).then(ok(setSuppliers), fail(setSuppliers)),
+      listAudit(12).then(ok(setActivity), fail(setActivity)),
     ]);
-    setCheckedAt(new Date().toLocaleTimeString());
+    setBusy(false);
   }, []);
 
   useEffect(() => {
     if (!signedIn) return;
-    const initial = setTimeout(() => void load(), 0);
+    const initial = setTimeout(() => void load(range), 0);
     return () => clearTimeout(initial);
-  }, [load, signedIn]);
+  }, [load, range, signedIn]);
 
   if (!checked) {
     return (
@@ -139,165 +155,381 @@ export default function Home() {
     );
   }
 
-  const currencies =
-    daily.state === "ready" ? Object.entries(daily.data.payable_by_currency ?? {}) : [];
+  const report = dashboard.state === "ready" ? dashboard.data : null;
+  const collection = report?.collection;
+  const payments = report?.payments;
+  const currencies = Object.entries(collection?.payable_by_currency ?? {});
+  const primary = currencies[0];
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-6 lg:p-8">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
         title="Dashboard"
-        description="Today's collection across every centre in this organization, priced by the rate cards in force."
+        description="Collection, settlement and payment across this organization — every figure computed by the platform."
         actions={
-          <Button type="button" variant="outline" onClick={() => void load()}>
-            Refresh
+          <Button type="button" variant="outline" disabled={busy} onClick={() => void load(range)}>
+            {busy ? "Refreshing…" : "Refresh"}
           </Button>
         }
       />
 
-      {daily.state === "error" ? (
+      <DateRangePicker value={range} onChange={setRange} busy={busy} />
+
+      {dashboard.state === "error" ? (
         <ErrorState
-          message={`Today's collection summary is unavailable — ${daily.message}.`}
+          message={`The summary could not be loaded — ${dashboard.message}. The sections below load separately and may still be available.`}
           action={
-            <Button type="button" size="sm" variant="outline" onClick={() => void load()}>
+            <Button type="button" size="sm" variant="outline" onClick={() => void load(range)}>
               Try again
             </Button>
           }
         />
       ) : null}
 
-      <section aria-label="Today at a glance" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Collection summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatTile
-          label="Collections today"
-          value={daily.state === "ready" ? daily.data.transactions : "—"}
+          label="Collections"
+          value={collection ? collection.transactions : "—"}
           hint={
-            daily.state === "ready"
-              ? `${daily.data.accepted} accepted · ${daily.data.rejected} rejected`
+            collection
+              ? `${collection.accepted} accepted · ${collection.rejected} rejected`
               : undefined
           }
           icon={<Activity className="size-4" />}
         />
         <StatTile
-          label="Quantity today"
-          value={
-            daily.state === "ready" ? (
-              <Quantity value={daily.data.total_net_weight_kg} unit="kg" />
-            ) : (
-              "—"
-            )
-          }
-          hint={
-            daily.state === "ready" && daily.data.weighted_avg_fat !== null
-              ? `weighted average fat ${daily.data.weighted_avg_fat}%`
-              : undefined
-          }
+          label="Quantity"
+          value={collection ? <Quantity value={collection.total_net_weight_kg} unit="kg" /> : "—"}
+          hint={collection ? `${collection.suppliers_served} suppliers served` : undefined}
           icon={<Droplets className="size-4" />}
         />
         <StatTile
-          label="Value today"
+          label="Collection value"
           value={
-            currencies.length > 0 ? (
-              <Money amount={currencies[0][1]} currency={currencies[0][0]} />
-            ) : daily.state === "ready" ? (
+            primary ? (
+              <Money amount={primary[1]} currency={primary[0]} />
+            ) : collection ? (
               <Money amount="0.00" currency="KES" />
             ) : (
               "—"
             )
           }
-          hint={currencies.length > 1 ? `+ ${currencies.length - 1} more currency` : "payable"}
+          hint={currencies.length > 1 ? `+${currencies.length - 1} more currency` : "payable"}
           icon={<Banknote className="size-4" />}
         />
         <StatTile
-          label="Suppliers served"
-          value={daily.state === "ready" ? daily.data.suppliers_served : "—"}
-          hint={
-            daily.state === "ready" && daily.data.in_progress
-              ? `${daily.data.in_progress} still in progress`
-              : "today"
-          }
+          label="Average fat"
+          value={collection?.weighted_avg_fat != null ? `${collection.weighted_avg_fat}%` : "—"}
+          hint="weighted by quantity"
+          icon={<Percent className="size-4" />}
+        />
+        <StatTile
+          label="Active suppliers"
+          value={report ? report.active_suppliers : "—"}
+          hint="registered and active"
           icon={<Truck className="size-4" />}
         />
+        <StatTile
+          label="Active centres"
+          value={report ? report.active_centers : "—"}
+          hint={report?.inactive_centers ? `${report.inactive_centers} not active` : "all active"}
+          icon={<Building2 className="size-4" />}
+        />
       </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <AlertTriangle aria-hidden className="size-4 text-muted-foreground" />
+            Needs attention
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {dashboard.state === "loading" ? (
+            <LoadingState label="Checking for exceptions…" />
+          ) : !report ? (
+            <p className="text-sm text-muted-foreground">Unavailable.</p>
+          ) : (report.attention ?? []).length === 0 ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CheckCircle2 aria-hidden className="size-4" />
+              No action required.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {(report.attention ?? []).map((item) => (
+                <li key={item.key} className="flex items-center gap-3 text-sm">
+                  <StatusBadge status={item.severity === "critical" ? "failed" : "pending"} />
+                  <span className="font-medium tabular-nums">{item.count}</span>
+                  <span className="text-muted-foreground">{item.label}</span>
+                  {item.href ? (
+                    <a
+                      className="ml-auto text-xs underline-offset-4 hover:underline"
+                      href={item.href}
+                    >
+                      review
+                    </a>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">Collection trend</CardTitle>
+            <CardDescription>
+              {range.from} to {range.to}
+            </CardDescription>
+          </div>
+          <div
+            role="group"
+            aria-label="Trend metric"
+            className="flex gap-1 rounded-lg border border-border p-1"
+          >
+            {(["quantity", "value"] as const).map((m) => (
+              <Button
+                key={m}
+                type="button"
+                size="sm"
+                variant={metric === m ? "secondary" : "ghost"}
+                aria-pressed={metric === m}
+                onClick={() => setMetric(m)}
+              >
+                {m === "quantity" ? "Quantity" : "Value"}
+              </Button>
+            ))}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {trend.state === "loading" ? (
+            <LoadingState label="Loading the trend…" />
+          ) : trend.state === "error" ? (
+            <ErrorState message={`The trend is unavailable — ${trend.message}.`} />
+          ) : (
+            <TrendChart
+              metric={metric}
+              data={(trend.data.points ?? []).map((p) => ({
+                day: p.day,
+                quantity: p.total_net_weight_kg,
+                value: String(p.payable_amount),
+                currency: p.currency,
+                transactions: p.transactions,
+              }))}
+            />
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Handshake aria-hidden className="size-4 text-muted-foreground" />
-              Settlements
+              Settlements and payments
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            {settlements.state === "loading" ? (
-              <LoadingState label="Loading settlements…" />
-            ) : settlements.state === "error" ? (
-              <ErrorState message={`Unavailable — ${settlements.message}.`} />
-            ) : !settlements.data.by_status?.length ? (
-              <EmptyState
-                title="No settlements yet"
-                description="Settlements appear once a period is created and collected."
-              />
+          <CardContent className="flex flex-col gap-5">
+            {dashboard.state === "loading" ? (
+              <LoadingState label="Loading money…" />
+            ) : !report || !payments ? (
+              <p className="text-sm text-muted-foreground">Unavailable.</p>
             ) : (
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-wrap gap-2">
-                  {(settlements.data.by_status ?? []).map((row) => (
-                    <span key={row.status} className="flex items-center gap-1.5">
-                      <StatusBadge status={row.status} />
-                      <span className="text-sm tabular-nums text-muted-foreground">
-                        {row.count}
-                      </span>
-                    </span>
-                  ))}
+              <>
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Settlements
+                  </p>
+                  {(report.settlements?.by_status ?? []).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No settlements yet.</p>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {(report.settlements?.by_status ?? []).map((row) => (
+                        <span key={row.status} className="flex items-center gap-1.5">
+                          <StatusBadge status={row.status} />
+                          <span className="text-sm tabular-nums text-muted-foreground">
+                            {row.count}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <dt className="text-muted-foreground">Finalized net total</dt>
+                      <dd className="mt-0.5">
+                        <Money amount={report.settlements?.finalized_net_total} emphasis />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Settlement lines</dt>
+                      <dd className="mt-0.5 tabular-nums">{report.settlements?.total_lines ?? 0}</dd>
+                    </div>
+                  </dl>
                 </div>
-                <dl className="grid grid-cols-2 gap-3 border-t border-border pt-3 text-sm">
-                  <div>
-                    <dt className="text-muted-foreground">Finalized net total</dt>
-                    <dd className="mt-0.5">
-                      <Money amount={settlements.data.finalized_net_total} emphasis />
-                    </dd>
+
+                <div className="border-t border-border pt-4">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Payments
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {[
+                      { label: "Completed", value: payments.completed_count },
+                      { label: "Processing", value: payments.processing_count },
+                      { label: "Pending", value: payments.pending_count },
+                      { label: "Failed", value: payments.failed_count },
+                    ].map((cell) => (
+                      <div key={cell.label}>
+                        <p className="text-xs text-muted-foreground">{cell.label}</p>
+                        <p className="text-lg font-semibold tabular-nums">{cell.value ?? 0}</p>
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <dt className="text-muted-foreground">Settlement lines</dt>
-                    <dd className="mt-0.5 tabular-nums">{settlements.data.total_lines ?? 0}</dd>
-                  </div>
-                </dl>
-              </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <dt className="text-muted-foreground">Paid</dt>
+                      <dd className="mt-0.5">
+                        <Money amount={payments.completed_amount} emphasis />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Outstanding</dt>
+                      <dd className="mt-0.5">
+                        <Money amount={payments.outstanding_amount} />
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Users aria-hidden className="size-4 text-muted-foreground" />
-              Platform health
-            </CardTitle>
+            <CardTitle className="text-base">Quantity by rate</CardTitle>
+            <CardDescription>
+              What was bought at each unit price the rate card resolved to.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {readiness.state === "loading" ? (
-              <LoadingState label="Checking the platform…" />
-            ) : readiness.state === "error" ? (
-              <ErrorState message={`The platform is unreachable — ${readiness.message}.`} />
+            {dashboard.state === "loading" ? (
+              <LoadingState label="Loading rates…" />
+            ) : !report ? (
+              <p className="text-sm text-muted-foreground">Unavailable.</p>
             ) : (
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center gap-2">
-                  <StatusBadge status={readiness.data.platform_status ?? readiness.data.status} />
-                  {checkedAt ? (
-                    <span className="text-xs text-muted-foreground">checked {checkedAt}</span>
-                  ) : null}
-                </div>
-                <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-                  {Object.entries(readiness.data.checks ?? {}).map(([name, value]) => (
-                    <li key={name} className="flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">{name.replace(/_/g, " ")}</span>
-                      <StatusBadge status={value} />
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <BarBreakdown
+                emptyTitle="No priced collection in this period"
+                emptyDescription="Rate bands appear once milk has been collected and priced."
+                rows={(report.rate_bands ?? []).map((band) => ({
+                  key: String(band.unit_price),
+                  label: `${band.unit_price} ${band.currency ?? ""} / kg`,
+                  magnitude: band.total_net_weight_kg,
+                  detail: (
+                    <span className="flex items-center gap-2">
+                      <Quantity value={band.total_net_weight_kg} unit="kg" />
+                      <Money amount={band.payable_amount} currency={band.currency} />
+                    </span>
+                  ),
+                }))}
+              />
             )}
           </CardContent>
         </Card>
       </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Centre performance</CardTitle>
+            <CardDescription>Highest volume first, over the selected range.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {centers.state === "loading" ? (
+              <TableSkeleton rows={4} columns={3} />
+            ) : centers.state === "error" ? (
+              <ErrorState message={`Centre performance is unavailable — ${centers.message}.`} />
+            ) : (
+              <BarBreakdown
+                emptyTitle="No centre activity in this period"
+                rows={(centers.data.items ?? []).map((row) => ({
+                  key: row.center_id,
+                  label: row.center_name,
+                  magnitude: row.total_net_weight_kg,
+                  detail: (
+                    <span className="flex items-center gap-2">
+                      <Quantity value={row.total_net_weight_kg} unit="kg" />
+                      <Money amount={row.payable_amount} currency={row.currency} />
+                    </span>
+                  ),
+                }))}
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Top suppliers</CardTitle>
+            <CardDescription>By quantity delivered over the selected range.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {suppliers.state === "loading" ? (
+              <TableSkeleton rows={4} columns={3} />
+            ) : suppliers.state === "error" ? (
+              <ErrorState message={`Supplier performance is unavailable — ${suppliers.message}.`} />
+            ) : (
+              <BarBreakdown
+                emptyTitle="No supplier deliveries in this period"
+                rows={(suppliers.data.items ?? []).map((row) => ({
+                  key: row.supplier_id,
+                  label: row.supplier_name,
+                  magnitude: row.total_net_weight_kg,
+                  detail: (
+                    <span className="flex items-center gap-2">
+                      <Quantity value={row.total_net_weight_kg} unit="kg" />
+                      <Money amount={row.payable_amount} currency={row.currency} />
+                    </span>
+                  ),
+                }))}
+              />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Recent activity</CardTitle>
+          <CardDescription>From the platform&apos;s own audit trail.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {activity.state === "loading" ? (
+            <TableSkeleton rows={5} columns={3} />
+          ) : activity.state === "error" ? (
+            <ErrorState message={`Recent activity is unavailable — ${activity.message}.`} />
+          ) : (activity.data ?? []).length === 0 ? (
+            <EmptyState title="No recorded activity yet" />
+          ) : (
+            <ul className="flex flex-col divide-y divide-border">
+              {(activity.data ?? []).map((record) => (
+                <li
+                  key={record.id}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm"
+                >
+                  <span className="font-medium">{record.action.replace(/\./g, " ")}</span>
+                  <span className="text-muted-foreground">{record.resource_type}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {String(record.created_at).slice(0, 19).replace("T", " ")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

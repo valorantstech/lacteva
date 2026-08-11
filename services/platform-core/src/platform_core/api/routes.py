@@ -153,8 +153,12 @@ from platform_core.modules.receipt.service import (
     RenderedReceiptView,
 )
 from platform_core.modules.reporting.service import (
+    CollectionTrend,
     DailyCollectionSummary,
+    DashboardSummary,
+    PaymentSummary,
     PricingSummary,
+    RateBandRow,
     ReportingService,
     SettlementSummary,
     SummaryPage,
@@ -2079,6 +2083,70 @@ async def report_settlements(
 ) -> SettlementSummary:
     return await service.settlement_summary(
         date_from=date_from, date_to=date_to, supplier_id=supplier_id, center_id=center_id
+    )
+
+
+# DEMO-002 — the dashboard's own aggregates.
+#
+# Every one of these answers a question the portal would otherwise have had to
+# answer by pulling rows into a browser and adding them up. They are read-only,
+# tenant-scoped through the same principal as every other route, and each is a
+# fixed number of grouped queries.
+
+
+@report_router.get("/dashboard", response_model=DashboardSummary)
+async def report_dashboard(
+    service: ReportSvc,
+    _: ReportRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> DashboardSummary:
+    """One round trip for the KPI block: collection, settlements, payments,
+    rate distribution, active counts and what needs attention."""
+    return await service.dashboard(date_from=date_from, date_to=date_to)
+
+
+@report_router.get("/payments", response_model=PaymentSummary)
+async def report_payments(
+    service: ReportSvc,
+    _: ReportRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    supplier_id: uuid.UUID | None = None,
+) -> PaymentSummary:
+    """Counts and money by payment status (DEMO-001 recorded this as missing)."""
+    return await service.payment_summary(
+        date_from=date_from, date_to=date_to, supplier_id=supplier_id
+    )
+
+
+@report_router.get("/collection/trend", response_model=CollectionTrend)
+async def report_collection_trend(
+    service: ReportSvc,
+    _: ReportRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    center_id: uuid.UUID | None = None,
+    supplier_id: uuid.UUID | None = None,
+) -> CollectionTrend:
+    """Quantity and value per day, with empty days present as zeroes."""
+    return await service.collection_trend(
+        date_from=date_from, date_to=date_to, center_id=center_id, supplier_id=supplier_id
+    )
+
+
+@report_router.get("/collection/by-rate", response_model=list[RateBandRow])
+async def report_collection_by_rate(
+    service: ReportSvc,
+    _: ReportRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    center_id: uuid.UUID | None = None,
+) -> list[RateBandRow]:
+    """What was bought at each resolved unit price — the quality-band effect,
+    read back off the transactions that were actually paid."""
+    return await service.rate_distribution(
+        date_from=date_from, date_to=date_to, center_id=center_id
     )
 
 

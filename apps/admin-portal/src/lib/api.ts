@@ -756,6 +756,71 @@ export type PricingReport = {
   active_bands: number;
 };
 
+/**
+ * DEMO-002 aggregates. Money arrives as an exact decimal STRING; these types
+ * say `string | number` because JSON allows either, and every one of them is
+ * handed to `<Money>` rather than to arithmetic.
+ */
+export type PaymentStatusRow = {
+  status: string;
+  count: number;
+  amount: string | number;
+  currency: string | null;
+};
+
+export type PaymentReport = {
+  by_status: PaymentStatusRow[];
+  total_payments: number;
+  completed_count: number;
+  processing_count: number;
+  pending_count: number;
+  failed_count: number;
+  completed_amount: string | number;
+  outstanding_amount: string | number;
+  failed_amount: string | number;
+  total_by_currency: Record<string, string | number>;
+};
+
+export type TrendPoint = {
+  day: string;
+  transactions: number;
+  accepted: number;
+  total_net_weight_kg: number;
+  payable_amount: string | number;
+  currency: string | null;
+};
+
+export type CollectionTrend = { date_from: string; date_to: string; points: TrendPoint[] };
+
+export type RateBandRow = {
+  unit_price: string | number;
+  currency: string | null;
+  transactions: number;
+  total_net_weight_kg: number;
+  payable_amount: string | number;
+};
+
+export type AttentionItem = {
+  key: string;
+  label: string;
+  count: number;
+  severity: string;
+  href: string | null;
+};
+
+export type DashboardReport = {
+  date_from: string;
+  date_to: string;
+  collection: DailyCollectionSummary;
+  settlements: SettlementReport;
+  payments: PaymentReport;
+  rate_bands: RateBandRow[];
+  active_suppliers: number;
+  active_centers: number;
+  inactive_centers: number;
+  attention: AttentionItem[];
+};
+
 const reportQuery = (params: Record<string, string | undefined>) => {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) if (value) search.set(key, value);
@@ -778,6 +843,15 @@ export const getSettlementReport = (params: Record<string, string | undefined>) 
 
 export const getPricingReport = (params: Record<string, string | undefined>) =>
   api<PricingReport>(`/v1/reports/pricing?${reportQuery(params)}`);
+
+export const getDashboardReport = (params: Record<string, string | undefined>) =>
+  api<DashboardReport>(`/v1/reports/dashboard?${reportQuery(params)}`);
+
+export const getPaymentReport = (params: Record<string, string | undefined>) =>
+  api<PaymentReport>(`/v1/reports/payments?${reportQuery(params)}`);
+
+export const getCollectionTrend = (params: Record<string, string | undefined>) =>
+  api<CollectionTrend>(`/v1/reports/collection/trend?${reportQuery(params)}`);
 
 // --- Milk transactions ------------------------------------------------------
 

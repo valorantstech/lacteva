@@ -28,6 +28,7 @@ from platform_core.core.db import utcnow
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.collection_center.models import CollectionCenter
 from platform_core.modules.milk_collection.models import MilkCollectionTransaction as Tx
+from platform_core.modules.payment.models import Payment
 from platform_core.modules.pricing.models import PricingMatrix, PricingMatrixRow, RateCard
 from platform_core.modules.settlement.models import Settlement, SettlementLine
 from platform_core.modules.supplier.models import Supplier, SupplierProfile
@@ -135,6 +136,97 @@ class SettlementSummary(BaseModel):
     finalized_net_total: Decimal
     total_settlements: int
     total_lines: int
+
+
+class PaymentStatusRow(BaseModel):
+    status: str
+    count: int
+    amount: Decimal
+    #: "MIX" when one status holds payments in more than one currency, the
+    #: same convention `CenterSummaryRow` already uses. `amount` is then a sum
+    #: across currencies and must be read as a count-weighted indicator, not a
+    #: payable — which is why `total_by_currency` below is the exact answer.
+    currency: str | None
+
+
+class PaymentSummary(BaseModel):
+    """DEMO-002: the aggregate DEMO-001 recorded as missing.
+
+    The dashboard needs "how much is stuck in processing" and "how much failed"
+    without pulling the payment table into a browser and adding it up there.
+    Every figure is `SUM(payment.amount)` over persisted amounts.
+    """
+
+    by_status: list[PaymentStatusRow]
+    total_payments: int
+    completed_count: int
+    processing_count: int
+    pending_count: int
+    failed_count: int
+    completed_amount: Decimal
+    outstanding_amount: Decimal  #: draft + pending + processing — money not yet delivered
+    failed_amount: Decimal
+    total_by_currency: dict[str, Decimal]
+
+
+class TrendPoint(BaseModel):
+    day: date
+    transactions: int
+    accepted: int
+    total_net_weight_kg: float
+    payable_amount: Decimal
+    currency: str | None
+
+
+class CollectionTrend(BaseModel):
+    date_from: date
+    date_to: date
+    points: list[TrendPoint]
+
+
+class RateBandRow(BaseModel):
+    """One resolved unit price, and what was bought at it.
+
+    NOT a new business concept: a pricing matrix maps a quality band to exactly
+    one unit price, so grouping accepted, priced collections by the unit price
+    the engine resolved IS the band distribution — read back off the
+    transactions rather than re-derived from the matrix, which would risk
+    disagreeing with what was actually paid.
+    """
+
+    unit_price: Decimal
+    currency: str | None
+    transactions: int
+    total_net_weight_kg: float
+    payable_amount: Decimal
+
+
+class AttentionItem(BaseModel):
+    key: str
+    label: str
+    count: int
+    severity: str  #: warning | critical
+    href: str | None = None
+
+
+class DashboardSummary(BaseModel):
+    """One round trip for the whole KPI block.
+
+    Composed from the summaries that already exist rather than re-implementing
+    them, so a definition has exactly one home. Anything a widget needs that is
+    not here is its own endpoint, so one failing widget cannot blank the page.
+    """
+
+    date_from: date
+    date_to: date
+    collection: DailyCollectionSummary
+    settlements: SettlementSummary
+    payments: PaymentSummary
+    rate_bands: list[RateBandRow]
+    active_suppliers: int
+    active_centers: int
+    inactive_centers: int
+    attention: list[AttentionItem]
 
 
 class PricingSummary(BaseModel):
@@ -428,6 +520,314 @@ class ReportingService:
             finalized_net_total=finalized,
             total_settlements=sum(r.count for r in by_status),
             total_lines=total_lines,
+        )
+
+    # --- payment summary (DEMO-002) -----------------------------------------
+
+    async def payment_summary(
+        self,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        supplier_id: uuid.UUID | None = None,
+    ) -> PaymentSummary:
+        """Counts and money by payment status, entirely in SQL.
+
+        Dated by `created_at`, because a payment's business moment is when it
+        was raised — a failed payment never acquires a completion date, and a
+        dashboard that only counted completed ones would hide exactly the
+        payments somebody needs to act on.
+        """
+        tenant_id = require_current_tenant()
+        conditions = [Payment.tenant_id == tenant_id]
+        if date_from is not None:
+            conditions.append(
+                Payment.created_at >= datetime.combine(date_from, datetime.min.time())
+            )
+        if date_to is not None:
+            conditions.append(
+                Payment.created_at
+                < datetime.combine(date_to + timedelta(days=1), datetime.min.time())
+            )
+        if supplier_id is not None:
+            conditions.append(Payment.supplier_id == supplier_id)
+
+        rows = (
+            await self._session.execute(
+                select(
+                    Payment.status,
+                    Payment.currency,
+                    func.count(),
+                    func.coalesce(func.sum(Payment.amount), 0),
+                )
+                .where(*conditions)
+                .group_by(Payment.status, Payment.currency)
+            )
+        ).all()
+
+        per_status: dict[str, dict] = {}
+        by_currency: dict[str, Decimal] = {}
+        for status, currency, count, amount in rows:
+            amount = Decimal(str(amount))
+            slot = per_status.setdefault(
+                status, {"count": 0, "amount": Decimal("0"), "currencies": set()}
+            )
+            slot["count"] += count
+            slot["amount"] += amount
+            if currency:
+                slot["currencies"].add(currency)
+                by_currency[currency] = by_currency.get(currency, Decimal("0")) + amount
+
+        by_status = [
+            PaymentStatusRow(
+                status=status,
+                count=slot["count"],
+                amount=slot["amount"],
+                currency=(
+                    next(iter(slot["currencies"]))
+                    if len(slot["currencies"]) == 1
+                    else ("MIX" if slot["currencies"] else None)
+                ),
+            )
+            for status, slot in sorted(per_status.items())
+        ]
+
+        def count_of(*statuses: str) -> int:
+            return sum(r.count for r in by_status if r.status in statuses)
+
+        def amount_of(*statuses: str) -> Decimal:
+            return sum((r.amount for r in by_status if r.status in statuses), Decimal("0"))
+
+        return PaymentSummary(
+            by_status=by_status,
+            total_payments=sum(r.count for r in by_status),
+            completed_count=count_of("completed"),
+            processing_count=count_of("processing"),
+            pending_count=count_of("pending", "draft"),
+            failed_count=count_of("failed"),
+            completed_amount=amount_of("completed"),
+            outstanding_amount=amount_of("draft", "pending", "processing"),
+            failed_amount=amount_of("failed"),
+            total_by_currency=by_currency,
+        )
+
+    # --- collection trend (DEMO-002) ----------------------------------------
+
+    async def collection_trend(
+        self,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        center_id: uuid.UUID | None = None,
+        supplier_id: uuid.UUID | None = None,
+    ) -> CollectionTrend:
+        """Quantity and value per day — one grouped query, not one per day.
+
+        Days with no collection are filled in as zeroes rather than omitted, so
+        a chart shows a gap in supply as a gap rather than silently closing it.
+        """
+        tenant_id = require_current_tenant()
+        date_to = date_to or utcnow().date()
+        date_from = date_from or date_to
+        conditions = self._tx_conditions(
+            tenant_id, date_from, date_to, center_id=center_id, supplier_id=supplier_id
+        )
+        # `date()` is a function-style cast on PostgreSQL and a built-in on
+        # SQLite, so one expression buckets correctly on both engines. The
+        # database runs in UTC, which is the clock `created_at` is stamped with.
+        day = func.date(Tx.created_at)
+        rows = (
+            await self._session.execute(
+                select(
+                    day,
+                    func.count(),
+                    func.sum(case((ACCEPTED, 1), else_=0)),
+                    func.coalesce(
+                        func.sum(case((ACCEPTED, _exact(Tx.net_weight)), else_=_EXACT_ZERO)),
+                        _EXACT_ZERO,
+                    ),
+                    func.coalesce(func.sum(case((ACCEPTED & PRICED, Tx.gross_amount), else_=0)), 0),
+                    func.max(case((ACCEPTED & PRICED, Tx.currency))),
+                )
+                .where(*conditions)
+                .group_by(day)
+                .order_by(day)
+            )
+        ).all()
+
+        found = {
+            (value if isinstance(value, date) else date.fromisoformat(str(value)[:10])): (
+                transactions,
+                accepted,
+                weight,
+                payable,
+                currency,
+            )
+            for value, transactions, accepted, weight, payable, currency in rows
+        }
+        points: list[TrendPoint] = []
+        cursor = date_from
+        while cursor <= date_to:
+            transactions, accepted, weight, payable, currency = found.get(
+                cursor, (0, 0, _EXACT_ZERO, 0, None)
+            )
+            points.append(
+                TrendPoint(
+                    day=cursor,
+                    transactions=transactions or 0,
+                    accepted=accepted or 0,
+                    total_net_weight_kg=_kg(weight),
+                    payable_amount=Decimal(str(payable or 0)),
+                    currency=currency,
+                )
+            )
+            cursor += timedelta(days=1)
+        return CollectionTrend(date_from=date_from, date_to=date_to, points=points)
+
+    # --- rate/quality distribution (DEMO-002) -------------------------------
+
+    async def rate_distribution(
+        self,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        center_id: uuid.UUID | None = None,
+    ) -> list[RateBandRow]:
+        tenant_id = require_current_tenant()
+        date_to = date_to or utcnow().date()
+        date_from = date_from or date_to
+        conditions = self._tx_conditions(tenant_id, date_from, date_to, center_id=center_id)
+        rows = (
+            await self._session.execute(
+                select(
+                    Tx.unit_price,
+                    Tx.currency,
+                    func.count(),
+                    func.coalesce(func.sum(_exact(Tx.net_weight)), _EXACT_ZERO),
+                    func.coalesce(func.sum(Tx.gross_amount), 0),
+                )
+                .where(*conditions, ACCEPTED, PRICED)
+                .group_by(Tx.unit_price, Tx.currency)
+                .order_by(Tx.unit_price)
+            )
+        ).all()
+        return [
+            RateBandRow(
+                unit_price=Decimal(str(unit_price)),
+                currency=currency,
+                transactions=count,
+                total_net_weight_kg=_kg(weight),
+                payable_amount=Decimal(str(payable)),
+            )
+            for unit_price, currency, count, weight, payable in rows
+            if unit_price is not None
+        ]
+
+    # --- the dashboard block (DEMO-002) -------------------------------------
+
+    async def dashboard(
+        self, *, date_from: date | None = None, date_to: date | None = None
+    ) -> DashboardSummary:
+        """Everything the KPI block needs, composed from the summaries above.
+
+        Composition rather than re-implementation: `daily_summary` remains the
+        only definition of "accepted", `settlement_summary` the only definition
+        of settlement status. A second definition here would be a second thing
+        to keep true.
+        """
+        tenant_id = require_current_tenant()
+        date_to = date_to or utcnow().date()
+        date_from = date_from or date_to
+
+        collection = await self.daily_summary(date_from=date_from, date_to=date_to)
+        settlements = await self.settlement_summary()
+        payments = await self.payment_summary()
+        rate_bands = await self.rate_distribution(date_from=date_from, date_to=date_to)
+
+        active_suppliers = (
+            await self._session.scalar(
+                select(func.count())
+                .select_from(Supplier)
+                .where(Supplier.tenant_id == tenant_id, Supplier.status == "active")
+            )
+        ) or 0
+        center_states = (
+            await self._session.execute(
+                select(CollectionCenter.status, func.count())
+                .where(CollectionCenter.tenant_id == tenant_id)
+                .group_by(CollectionCenter.status)
+            )
+        ).all()
+        active_centers = sum(c for s, c in center_states if s == "active")
+        inactive_centers = sum(c for s, c in center_states if s != "active")
+
+        # Every item below is a real backend state with a real count. Nothing is
+        # invented, and an item with a count of zero is omitted rather than
+        # shown as reassuringly green — "no action required" is the empty state.
+        attention: list[AttentionItem] = []
+        if payments.failed_count:
+            attention.append(
+                AttentionItem(
+                    key="failed_payments",
+                    label="payments failed and need retrying",
+                    count=payments.failed_count,
+                    severity="critical",
+                    href="/payments",
+                )
+            )
+        ready = sum(r.count for r in settlements.by_status if r.status == "calculated")
+        if ready:
+            attention.append(
+                AttentionItem(
+                    key="settlements_ready",
+                    label="settlements calculated and awaiting finalization",
+                    count=ready,
+                    severity="warning",
+                    href="/settlements",
+                )
+            )
+        if collection.rejected:
+            attention.append(
+                AttentionItem(
+                    key="rejected_collections",
+                    label="collections rejected in this period",
+                    count=collection.rejected,
+                    severity="warning",
+                    href="/transactions",
+                )
+            )
+        if collection.unpriced_accepted:
+            attention.append(
+                AttentionItem(
+                    key="unpriced",
+                    label="accepted collections with no price",
+                    count=collection.unpriced_accepted,
+                    severity="critical",
+                    href="/transactions",
+                )
+            )
+        if inactive_centers:
+            attention.append(
+                AttentionItem(
+                    key="inactive_centers",
+                    label="collection centres not active",
+                    count=inactive_centers,
+                    severity="warning",
+                    href="/centers",
+                )
+            )
+
+        return DashboardSummary(
+            date_from=date_from,
+            date_to=date_to,
+            collection=collection,
+            settlements=settlements,
+            payments=payments,
+            rate_bands=rate_bands,
+            active_suppliers=active_suppliers,
+            active_centers=active_centers,
+            inactive_centers=inactive_centers,
+            attention=attention,
         )
 
     # --- pricing summary -------------------------------------------------------
