@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => "/",
 }));
 
 import AuditPage from "@/app/admin/audit/page";
@@ -197,10 +198,10 @@ describe("navigation (NAV-001)", () => {
   };
 
   it("shows no destinations to a signed-out visitor — every one of them needs a session", async () => {
-    const { Nav } = await import("@/components/nav");
+    const { AppShell } = await import("@/components/app-shell");
     routeFetch({ "/api/auth/session": { authenticated: false } });
 
-    render(<Nav />);
+    render(<AppShell>{null}</AppShell>);
     expect(await screen.findByRole("link", { name: /sign in/i })).toBeInTheDocument();
     for (const label of ["Centers", "Suppliers", "Settlements", "Users", "Audit"]) {
       expect(screen.queryByRole("link", { name: label })).not.toBeInTheDocument();
@@ -210,7 +211,7 @@ describe("navigation (NAV-001)", () => {
   });
 
   it("shows only what this session may use — a viewer is not offered Users (PERM-001)", async () => {
-    const { Nav } = await import("@/components/nav");
+    const { AppShell } = await import("@/components/app-shell");
     routeFetch({
       "/api/auth/session": {
         authenticated: true,
@@ -221,7 +222,7 @@ describe("navigation (NAV-001)", () => {
       },
     });
 
-    render(<Nav />);
+    render(<AppShell>{null}</AppShell>);
     expect(await screen.findByRole("link", { name: "Centers" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Suppliers" })).toBeInTheDocument();
     for (const hidden of ["Users", "Roles", "Audit", "Settlements", "Payments"]) {
@@ -230,7 +231,7 @@ describe("navigation (NAV-001)", () => {
   });
 
   it("treats the platform wildcard as every permission", async () => {
-    const { Nav } = await import("@/components/nav");
+    const { AppShell } = await import("@/components/app-shell");
     routeFetch({
       "/api/auth/session": {
         authenticated: true,
@@ -241,13 +242,13 @@ describe("navigation (NAV-001)", () => {
       },
     });
 
-    render(<Nav />);
+    render(<AppShell>{null}</AppShell>);
     expect(await screen.findByRole("link", { name: "Users" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Centers" })).toBeInTheDocument();
   });
 
   it("asks a platform session with no organization to choose one (TENANT-001)", async () => {
-    const { Nav } = await import("@/components/nav");
+    const { AppShell } = await import("@/components/app-shell");
     routeFetch({
       "/api/auth/session": {
         authenticated: true,
@@ -258,25 +259,25 @@ describe("navigation (NAV-001)", () => {
       },
     });
 
-    render(<Nav />);
+    render(<AppShell>{null}</AppShell>);
     expect(await screen.findByLabelText("Organization ID")).toBeInTheDocument();
     expect(screen.getByText(/choose an organization/i)).toBeInTheDocument();
   });
 
   it("does not ask a tenant-scoped session to choose an organization", async () => {
-    const { Nav } = await import("@/components/nav");
+    const { AppShell } = await import("@/components/app-shell");
     routeFetch(SIGNED_IN);
 
-    render(<Nav />);
+    render(<AppShell>{null}</AppShell>);
     await screen.findByRole("link", { name: "Centers" });
     expect(screen.queryByLabelText("Organization ID")).not.toBeInTheDocument();
   });
 
   it("shows the menu once there is a session", async () => {
-    const { Nav } = await import("@/components/nav");
+    const { AppShell } = await import("@/components/app-shell");
     routeFetch(SIGNED_IN);
 
-    render(<Nav />);
+    render(<AppShell>{null}</AppShell>);
     expect(await screen.findByRole("link", { name: "Centers" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Settlements" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Users" })).toBeInTheDocument();
@@ -285,22 +286,22 @@ describe("navigation (NAV-001)", () => {
   });
 
   it("shows nothing at all until the answer is known, rather than flashing a menu", async () => {
-    const { Nav } = await import("@/components/nav");
+    const { AppShell } = await import("@/components/app-shell");
     // A probe that never resolves: the bar must stay quiet, not guess.
     vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
 
-    render(<Nav />);
+    render(<AppShell>{null}</AppShell>);
     expect(screen.queryByRole("link", { name: "Centers" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Lacteva" })).toBeInTheDocument();
   });
 
   it("signs out through the route handler and hides the menu again", async () => {
-    const { Nav } = await import("@/components/nav");
+    const { AppShell } = await import("@/components/app-shell");
     const fetchSpy = routeFetch({ ...SIGNED_IN, "/api/auth/logout": {} });
     const user = userEvent.setup();
 
-    render(<Nav />);
+    render(<AppShell>{null}</AppShell>);
     await user.click(await screen.findByRole("button", { name: /sign out/i }));
 
     await waitFor(() =>

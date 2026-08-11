@@ -1,0 +1,1176 @@
+"""Deterministic demo dataset for customer demonstrations (DEMO-001).
+
+    python infra/demo/seed_demo.py seed      # build the demo dataset
+    python infra/demo/seed_demo.py verify    # assert it is complete and correct
+    python infra/demo/seed_demo.py purge     # remove it, leaving nothing else touched
+    python infra/demo/seed_demo.py reset     # purge, then seed
+
+Every business fact here is produced by driving the platform's OWN API in
+process — the same endpoints an operator uses, through the same authorization,
+the same pricing engine and the same settlement rules. Nothing is inserted
+directly into a business table and no amount is computed by this script. If a
+rate card says 45.0000 and the scale says 40 kg, the 1,800.00 on the demo
+dashboard came from `pricing/calculator.py`, not from here. That is the point:
+a demo that fakes its numbers is a demo that lies about the product.
+
+THE ONE DELIBERATE EXCEPTION is `created_at` on a collection transaction. A
+collection's business date IS its creation date (`tx_date =
+as_utc(tx.created_at).date()`), and the platform has no back-dating API — quite
+rightly, because an operator must not be able to move milk through time. But a
+demo with only today's data looks dead, and settlements need history to settle.
+So the seeder stamps the transaction row's `created_at` immediately after
+creation and BEFORE pricing, so the domain then prices, settles and pays it as
+a genuine collection on that day. The timestamp is the only value this script
+writes directly, and it writes it before any money exists.
+
+DETERMINISM. No randomness anywhere: quantities, quality readings, names and
+dates are all derived from fixed tables and the index of the row being built.
+Two runs a week apart produce the same dairy (relative to the day it is run),
+so a screenshot taken today still matches the demo tomorrow.
+
+SAFETY. Everything lives inside two organizations named below. `purge` deletes
+those organizations' rows and nothing else — it is keyed on tenant id, so
+development or pilot data in other organizations cannot be caught by it.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import pathlib
+import sys
+from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "services/platform-core/src"))
+
+# The seeder drives the app in process; it must not also try to create tables.
+os.environ.setdefault("LACTEVA_ENV", "staging")
+
+PASSWORD = os.environ.get("DEMO_PASSWORD", "Demo-Lacteva-2026!")
+
+DEMO_ORG = "Lacteva Demo Cooperative"
+DEMO_ORG_SLUG = "lacteva-demo"
+ISOLATION_ORG = "Lacteva Isolation Demo"
+ISOLATION_ORG_SLUG = "lacteva-isolation-demo"
+
+# --- the dairy ---------------------------------------------------------------
+# Kenyan cooperative names, because the platform's currency is KES and its
+# demo receipts already read "Amina Njoroge". A believable dairy beats a
+# clever one: nobody is persuaded by "Test Supplier 1".
+
+CENTERS = [
+    ("Kilima Hill Collection Centre", "KH-C1"),
+    ("Ngong Valley Collection Centre", "NV-C1"),
+    ("Limuru Ridge Collection Centre", "LR-C1"),
+    ("Naivasha Lakeside Centre", "NL-C1"),
+    ("Kiambu Highlands Centre", "KB-C1"),
+]
+
+SUPPLIER_NAMES = [
+    "Amina Njoroge", "Joseph Kamau", "Grace Wanjiru", "Peter Otieno",
+    "Mary Achieng", "Daniel Kiprono", "Esther Mwangi", "Samuel Barasa",
+    "Ruth Chebet", "John Muriithi", "Lydia Nekesa", "Francis Ochieng",
+    "Beatrice Wairimu", "Patrick Kimani", "Agnes Cherono", "Michael Wekesa",
+    "Sarah Atieno", "Stephen Njuguna", "Faith Mutindi", "Charles Rotich",
+    "Priscilla Adhiambo", "Anthony Gitau", "Jane Kerubo", "Elijah Maina",
+]
+
+# Fat percentage per supplier, fixed so a supplier always prices the same way.
+# Values straddle the band boundaries below, so the demo shows three rates.
+FAT_BY_SUPPLIER = [
+    3.4, 4.2, 5.1, 3.8, 4.5, 4.9, 3.6, 5.3,
+    4.1, 3.9, 4.7, 5.0, 3.5, 4.3, 4.8, 3.7,
+    4.4, 5.2, 4.0, 3.3, 4.6, 5.4, 3.2, 4.05,
+]
+
+# (from, to, price) — FAT bands in KES per kg. Contiguous and half-open, which
+# is how `pricing/resolution.py` reads them.
+FAT_BANDS = [(3.0, 4.0, 42.0), (4.0, 5.0, 45.5), (5.0, 6.0, 49.0)]
+
+PRODUCT = "RAW-COW-MILK"
+
+# Gross/tare pairs, cycled by index. Net weights land between 8 and 42 kg,
+# which is the range a smallholder actually delivers.
+WEIGHTS = [
+    (14.0, 2.0), (22.5, 2.5), (31.0, 3.0), (18.5, 2.5), (27.0, 2.0),
+    (35.5, 3.5), (12.0, 2.0), (24.0, 2.0), (29.5, 2.5), (44.0, 4.0),
+]
+
+
+def utc_today() -> date:
+    return datetime.now(timezone.utc).date()
+
+
+class SeedError(SystemExit):
+    pass
+
+
+async def expect(response, *codes: int, what: str):
+    if response.status_code not in codes:
+        raise SeedError(f"demo seed failed at {what}: {response.status_code} {response.text[:400]}")
+    return response.json() if response.content else {}
+
+
+# --- platform plumbing -------------------------------------------------------
+
+
+async def bootstrap() -> None:
+    """What the app lifespan does, minus the background loops."""
+    from platform_core.core.rls import platform_factory
+    from platform_core.modules.authz.service import AuthzService
+    from platform_core.modules.event_relay.consumers import discover_consumers
+    from platform_core.modules.event_relay.projections import discover_projections
+
+    discover_consumers()
+    discover_projections()
+    async with platform_factory("demo seed: system-role catalog")() as session:
+        await AuthzService(session).ensure_system_roles()
+        await session.commit()
+
+
+async def backdate_transaction(tx_id: str, when: datetime) -> None:
+    """Stamp a collection's creation instant — the one direct write.
+
+    See the module docstring. This runs BEFORE the quality step, so the pricing
+    engine reads the back-dated day and the whole downstream chain (calculation
+    date, settlement eligibility, receipt) is genuinely that day's business.
+    """
+    import uuid as _uuid
+
+    from platform_core.core.rls import platform_factory
+    from platform_core.modules.milk_collection.models import MilkCollectionTransaction
+    from sqlalchemy import update
+
+    async with platform_factory("demo seed: back-date a collection")() as session:
+        await session.execute(
+            update(MilkCollectionTransaction)
+            .where(MilkCollectionTransaction.id == _uuid.UUID(tx_id))
+            .values(created_at=when)
+        )
+        await session.commit()
+
+
+async def run_consumers() -> dict:
+    """Let receipts and notifications be generated the way production does.
+
+    Drains rather than pulses: `run_once` takes a bounded batch per consumer,
+    and a seeded history produces far more events than one batch. Looping until
+    a pass processes nothing is what the deployed worker loop does over time —
+    doing it once here would leave the demo with settlements but no receipts,
+    which is precisely the "healthy but empty" state this platform keeps
+    learning to distrust.
+    """
+    from platform_core.core import db
+    from platform_core.core.rls import platform_factory
+    from platform_core.infrastructure.events import get_event_bus
+    from platform_core.modules.event_relay.consumers import (
+        ConsumerRunner,
+        discover_consumers,
+    )
+    from platform_core.modules.event_relay.projections import discover_projections
+    from platform_core.modules.event_relay.service import RelayService
+
+    # Both halves, in order. Publishing writes an outbox row inside the
+    # business transaction; the RELAY moves it onto the bus; only then can a
+    # consumer see it. Running the consumer alone yields "processed: 0" and a
+    # demo with no receipts, which looks like a broken product.
+    discover_consumers()
+    discover_projections()
+    runner = ConsumerRunner(db.get_session_factory())
+    totals = {"relayed": 0, "processed": 0, "failed": 0}
+    for _ in range(200):  # a bound, so a stuck consumer cannot spin forever
+        async with platform_factory("demo seed: relay the outbox")() as session:
+            relayed = await RelayService(session, get_event_bus()).dispatch_pending(limit=200)
+            await session.commit()
+        result = await runner.run_once(limit=200)
+        totals["relayed"] += relayed
+        totals["processed"] += result["processed"]
+        totals["failed"] += result["failed"]
+        if not relayed and not result["processed"]:
+            break
+    return totals
+
+
+# --- account setup -----------------------------------------------------------
+
+
+async def grant_platform_admin(email: str) -> None:
+    """Registration cannot grant platform-admin to itself, by design (SEC-002).
+
+    The grant is cross-tenant by definition — it attaches a PLATFORM role and
+    the lookup spans tenants — so it needs the platform session factory. Under
+    an ordinary session RLS would find neither row.
+    """
+    from platform_core.core.rls import platform_factory
+    from platform_core.modules.authz.models import Role, UserRole
+    from platform_core.modules.identity.models import User
+    from sqlalchemy import select
+
+    async with platform_factory("demo seed: grant platform-admin")() as session:
+        user = await session.scalar(select(User).where(User.email == email))
+        role = await session.scalar(select(Role).where(Role.name == "platform-admin"))
+        if user is None or role is None:
+            raise SeedError("could not grant platform-admin: user or role missing")
+        existing = await session.scalar(
+            select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == role.id)
+        )
+        if existing is None:
+            session.add(UserRole(user_id=user.id, role_id=role.id, tenant_id=None))
+            await session.commit()
+
+
+async def platform_admin(client) -> dict:
+    """A platform administrator, reused across runs if it already exists."""
+    email = "demo-admin@lacteva.example.com"
+    r = await client.post(
+        "/v1/auth/register",
+        json={"email": email, "password": PASSWORD, "full_name": "Demo Platform Admin"},
+    )
+    if r.status_code not in (201, 409):
+        raise SeedError(f"demo seed failed at register admin: {r.status_code} {r.text[:300]}")
+    await grant_platform_admin(email)
+    tokens = await expect(
+        await client.post("/v1/auth/token", json={"email": email, "password": PASSWORD}),
+        200,
+        what="admin login",
+    )
+    return {"Authorization": f"Bearer {tokens['access_token']}"}
+
+
+async def make_org(client, admin: dict, name: str, slug: str) -> dict:
+    org = await expect(
+        await client.post(
+            "/v1/organizations",
+            json={"name": name, "slug": slug, "country_code": "ke"},
+            headers=admin,
+        ),
+        201,
+        what=f"create organization {slug}",
+    )
+    return org
+
+
+async def invite_and_capture_token(client, *, headers: dict, email: str, role_name: str) -> str:
+    """Issue an invitation and read the token out of the delivered message.
+
+    The seeder runs the app in process, so it can install a provider that
+    records what was sent — which is the only place the raw token ever appears.
+    This is not a shortcut around the invitation boundary; it IS the boundary,
+    exercised.
+    """
+    import re
+
+    from platform_core.modules.notification import providers
+
+    captured: dict[str, str] = {}
+
+    class _CapturingEmailProvider:
+        name = "demo-capture-email"
+
+        async def send(self, message):
+            captured["body"] = message.body
+            return providers.DeliveryResult(
+                provider_message_id=f"demo:{message.notification_id}",
+                status=providers.ACCEPTED,
+            )
+
+    previous = providers.get_provider("email")
+    providers.register_provider("email", _CapturingEmailProvider())
+    try:
+        await expect(
+            await client.post(
+                "/v1/invitations", json={"email": email, "role_name": role_name}, headers=headers
+            ),
+            201,
+            what=f"invite {email}",
+        )
+    finally:
+        providers.register_provider("email", previous)
+
+    match = re.search(r"registration:\s*(\S+?)\.\s", captured.get("body", ""))
+    if not match:
+        raise SeedError(f"no invitation token in the message sent to {email}")
+    return match.group(1)
+
+
+async def make_member(
+    client, admin: dict, org_id: str, *, email: str, full_name: str, role_name: str
+) -> dict:
+    """A real member of an organization, created through the invitation flow.
+
+    Demo accounts a customer can actually sign in with — and, for the manager,
+    the identity the whole dairy is then built under, so the audit trail reads
+    like a person did the work rather than a script.
+    """
+    token = await invite_and_capture_token(
+        client, headers=acting(admin, org_id), email=email, role_name=role_name
+    )
+    user = await expect(
+        await client.post(
+            "/v1/invitations/accept",
+            json={"token": token, "password": PASSWORD, "full_name": full_name},
+        ),
+        201,
+        what=f"accept invitation {email}",
+    )
+    tokens = await expect(
+        await client.post(
+            "/v1/auth/token",
+            json={"email": email, "password": PASSWORD, "tenant_id": org_id},
+        ),
+        200,
+        what=f"login {email}",
+    )
+    return {
+        "id": user["id"],
+        "email": email,
+        "full_name": full_name,
+        "role": role_name,
+        "headers": {"Authorization": f"Bearer {tokens['access_token']}"},
+    }
+
+
+def acting(admin: dict, org_id: str) -> dict:
+    """A platform admin acting inside one organization.
+
+    The platform treats a tenant-scoped TOKEN as authoritative and only honours
+    this header for a platform session — which is exactly what the seeder is.
+    """
+    return {**admin, "X-Tenant-ID": org_id}
+
+
+# --- the dairy ---------------------------------------------------------------
+
+
+async def make_center(client, h: dict, branch_id: str, name: str, code: str, operator_id: str) -> dict:
+    """A centre that is actually READY — hours, active, an operator, a live scale.
+
+    Readiness is not decoration: `collection-sessions` refuses to open at a
+    centre that is not ready, so a demo whose centres are merely "created"
+    cannot collect a single litre.
+    """
+    center = await expect(
+        await client.post(
+            "/v1/collection-centers",
+            json={"branch_id": branch_id, "name": name, "code": code},
+            headers=h,
+        ),
+        201,
+        what=f"create centre {code}",
+    )
+    cid = center["id"]
+    await expect(
+        await client.put(
+            f"/v1/collection-centers/{cid}/operating-hours",
+            json={
+                "windows": [
+                    {"day_of_week": d, "opens": "06:00", "closes": "19:00"} for d in range(7)
+                ]
+            },
+            headers=h,
+        ),
+        200,
+        what=f"hours {code}",
+    )
+    await expect(
+        await client.post(
+            f"/v1/collection-centers/{cid}/status", json={"status": "active"}, headers=h
+        ),
+        200,
+        what=f"activate {code}",
+    )
+    await expect(
+        await client.post(
+            f"/v1/collection-centers/{cid}/operators", json={"user_id": operator_id}, headers=h
+        ),
+        201,
+        200,
+        what=f"operator {code}",
+    )
+    scale = await expect(
+        await client.post(
+            "/v1/devices",
+            json={"category": "scale", "serial_number": f"SCALE-{code}", "name": f"{name} scale"},
+            headers=h,
+        ),
+        201,
+        what=f"scale {code}",
+    )
+    await expect(
+        await client.post(
+            f"/v1/devices/{scale['id']}/assign", json={"center_id": cid}, headers=h
+        ),
+        200,
+        201,
+        what=f"assign scale {code}",
+    )
+    await expect(
+        await client.post(
+            f"/v1/devices/{scale['id']}/status", json={"status": "active"}, headers=h
+        ),
+        200,
+        what=f"activate scale {code}",
+    )
+    return center
+
+
+async def make_rate_card(
+    client, h: dict, *, code: str, name: str, effective_from: str,
+    effective_until: str | None, center_ids: list[str], bands, publish: bool,
+) -> dict:
+    card = await expect(
+        await client.post(
+            "/v1/rate-cards",
+            json={
+                "code": code,
+                "name": name,
+                "currency": "KES",
+                "effective_from": effective_from,
+                "effective_until": effective_until,
+                "description": "Quality-banded rate for raw cow milk",
+            },
+            headers=h,
+        ),
+        201,
+        what=f"rate card {code}",
+    )
+    for cid in center_ids:
+        await expect(
+            await client.post(
+                f"/v1/rate-cards/{card['id']}/centers", json={"center_id": cid}, headers=h
+            ),
+            201,
+            what=f"scope {code}",
+        )
+    await expect(
+        await client.post(
+            f"/v1/rate-cards/{card['id']}/products", json={"product_code": PRODUCT}, headers=h
+        ),
+        201,
+        what=f"product {code}",
+    )
+    matrix = await expect(
+        await client.post(
+            "/v1/pricing-matrices",
+            json={
+                "rate_card_id": card["id"],
+                "name": f"{name} — FAT bands",
+                "product_code": PRODUCT,
+                "dimension_code": "FAT",
+            },
+            headers=h,
+        ),
+        201,
+        what=f"matrix {code}",
+    )
+    for from_value, to_value, price in bands:
+        await expect(
+            await client.post(
+                f"/v1/pricing-matrices/{matrix['id']}/rows",
+                json={"from_value": from_value, "to_value": to_value, "unit_price": price},
+                headers=h,
+            ),
+            201,
+            what=f"band {code} {from_value}",
+        )
+    if publish:
+        # A rate card is not published by fiat: it is submitted, approved and
+        # then published. Skipping the ceremony in a seeder would hide the very
+        # governance a customer is being shown.
+        for step in ("submit", "approve", "publish"):
+            await expect(
+                await client.post(f"/v1/rate-cards/{card['id']}/{step}", headers=h),
+                200,
+                what=f"{step} {code}",
+            )
+    return card
+
+
+async def make_supplier(client, h: dict, name: str, index: int, center_id: str) -> dict:
+    supplier = await expect(
+        await client.post(
+            "/v1/suppliers",
+            json={"full_name": name, "phone": f"+2547{20000000 + index:08d}"},
+            headers=h,
+        ),
+        201,
+        what=f"supplier {name}",
+    )
+    await expect(
+        await client.post(
+            f"/v1/suppliers/{supplier['id']}/centers", json={"center_id": center_id}, headers=h
+        ),
+        201,
+        what=f"assign {name}",
+    )
+    # A centre assignment must exist BEFORE activation: the platform refuses to
+    # activate a supplier with nowhere to deliver.
+    await expect(
+        await client.post(
+            f"/v1/suppliers/{supplier['id']}/status", json={"status": "active"}, headers=h
+        ),
+        200,
+        what=f"activate {name}",
+    )
+    return supplier
+
+
+async def collect_one(
+    client, h: dict, *, session_id: str, supplier: dict, index: int, when: date, container: str,
+) -> dict:
+    """One collection, walked through the real state machine on a real date.
+
+    Measurements are `manual` — the demo must never present mock hardware as a
+    reading. `accept` and `complete` are separate steps because they are
+    separate business decisions.
+    """
+    tx = await expect(
+        await client.post("/v1/milk-transactions", json={"session_id": session_id}, headers=h),
+        201,
+        what="create transaction",
+    )
+    tid = tx["id"]
+
+    # Before pricing: give the collection its real day (see module docstring).
+    # 07:30 UTC is a plausible morning round and keeps every collection inside
+    # the centre's operating window.
+    await backdate_transaction(tid, datetime.combine(when, time(7, 30), tzinfo=timezone.utc))
+
+    gross, tare = WEIGHTS[index % len(WEIGHTS)]
+    fat = FAT_BY_SUPPLIER[index % len(FAT_BY_SUPPLIER)]
+    steps = [
+        ("identify", {"method": "manual", "supplier_id": supplier["id"]}),
+        ("milk", {
+            "milk_type": "cow", "container_type": "can",
+            "container_identifier": container, "temperature_c": 4.0,
+        }),
+        ("weight", {"source": "manual", "unit": "kg", "gross": gross, "tare": tare}),
+        ("quality", {
+            "source": "manual", "fat": fat,
+            "snf": round(8.0 + (index % 7) * 0.1, 2),
+            "clr": round(26.0 + (index % 5) * 0.5, 2),
+            "temperature_c": 4.0,
+        }),
+    ]
+    for name, body in steps:
+        await expect(
+            await client.post(f"/v1/milk-transactions/{tid}/{name}", json=body, headers=h),
+            200,
+            what=f"transaction {name}",
+        )
+    return tid
+
+
+async def accept_and_complete(client, h: dict, tid: str) -> dict:
+    await expect(
+        await client.post(f"/v1/milk-transactions/{tid}/accept", headers=h), 200, what="accept"
+    )
+    return await expect(
+        await client.post(f"/v1/milk-transactions/{tid}/complete", headers=h), 200, what="complete"
+    )
+
+
+async def reject(client, h: dict, tid: str, reason: str) -> dict:
+    """A rejected collection. Real dairies reject milk; a demo without a single
+    rejection quietly implies the platform cannot express one."""
+    return await expect(
+        await client.post(
+            f"/v1/milk-transactions/{tid}/reject", json={"reason": reason}, headers=h
+        ),
+        200,
+        what="reject",
+    )
+
+
+async def settle(
+    client, h: dict, *, supplier_id: str, center_id: str, period_from: date, period_to: date,
+    finalize: bool,
+) -> dict | None:
+    """Create a settlement and sweep the period into it.
+
+    Returns None when the sweep found nothing — an empty settlement cannot be
+    finalized (the platform refuses), and a demo should not display one.
+    """
+    settlement = await expect(
+        await client.post(
+            "/v1/settlements",
+            json={
+                "supplier_id": supplier_id,
+                "center_id": center_id,
+                "period_from": period_from.isoformat(),
+                "period_to": period_to.isoformat(),
+                "currency": "KES",
+            },
+            headers=h,
+        ),
+        201,
+        what="create settlement",
+    )
+    swept = await expect(
+        await client.post(f"/v1/settlements/{settlement['id']}/collect", headers=h),
+        200,
+        what="collect period",
+    )
+    if not swept.get("added"):
+        return None
+    settlement = await expect(
+        await client.post(f"/v1/settlements/{settlement['id']}/calculate", headers=h),
+        200,
+        what="calculate settlement",
+    )
+    if finalize:
+        settlement = await expect(
+            await client.post(f"/v1/settlements/{settlement['id']}/finalize", headers=h),
+            200,
+            what="finalize settlement",
+        )
+    return settlement
+
+
+async def pay(client, h: dict, *, supplier_id: str, settlement_id: str, method: str,
+              reference: str, outcome: str) -> dict:
+    """Take a finalized settlement through the payment lifecycle.
+
+    `outcome` is one of completed | processing | failed, so the demo can show
+    a payments screen that is not uniformly green.
+    """
+    payment = await expect(
+        await client.post(
+            "/v1/payments",
+            json={
+                "supplier_id": supplier_id,
+                "currency": "KES",
+                "method": method,
+                "allocations": [{"settlement_id": settlement_id}],
+                "idempotency_key": f"demo-{settlement_id}",
+            },
+            headers=h,
+        ),
+        201,
+        what="create payment",
+    )
+    pid = payment["id"]
+    for step in ("submit", "execute"):
+        await expect(
+            await client.post(f"/v1/payments/{pid}/{step}", json={}, headers=h),
+            200,
+            what=f"payment {step}",
+        )
+    if outcome == "completed":
+        return await expect(
+            await client.post(
+                f"/v1/payments/{pid}/complete", json={"reference": reference}, headers=h
+            ),
+            200,
+            what="payment complete",
+        )
+    if outcome == "failed":
+        return await expect(
+            await client.post(
+                f"/v1/payments/{pid}/fail",
+                json={"reason": "mobile money wallet not reachable"},
+                headers=h,
+            ),
+            200,
+            what="payment fail",
+        )
+    return payment  # left in `processing`
+
+
+# --- orchestration -----------------------------------------------------------
+
+# The timeline, relative to today (UTC). Chosen so the demo always shows a
+# settled past, money waiting to move, and activity from this morning.
+#
+#   D-21 .. D-15   period A — finalized and PAID, with receipts
+#   D-14 .. D-8    period B — finalized, awaiting payment / part paid
+#   D-7  .. D-1    open collections, nothing settled yet
+#   today          this morning's round, still in an open session
+HISTORY_DAYS = 21
+
+
+async def build_demo_org(client, admin: dict, org: dict) -> dict:
+    """The full dairy: users, centres, suppliers, rates, collections, money."""
+    today = utc_today()
+    summary: dict = {"organization": org["name"], "organization_id": org["id"]}
+
+    manager = await make_member(
+        client, admin, org["id"],
+        email="manager@lacteva-demo.example.com",
+        full_name="Wanjiku Mbugua", role_name="tenant-admin",
+    )
+    viewer = await make_member(
+        client, admin, org["id"],
+        email="viewer@lacteva-demo.example.com",
+        full_name="Otieno Odhiambo", role_name="tenant-viewer",
+    )
+    summary["users"] = [
+        {"email": u["email"], "name": u["full_name"], "role": u["role"]} for u in (manager, viewer)
+    ]
+    # Everything below is done AS the manager, so the audit trail names a
+    # person with the permissions to have done it.
+    h = manager["headers"]
+    admin_user_id = manager["id"]
+
+    ws = await expect(
+        await client.post(
+            "/v1/workspaces", json={"name": "Central Region", "slug": "central"}, headers=h
+        ),
+        201,
+        what="workspace",
+    )
+    branch = await expect(
+        await client.post(
+            "/v1/branches",
+            json={"workspace_id": ws["id"], "name": "Central Dairy Hub", "code": "CDH"},
+            headers=h,
+        ),
+        201,
+        what="branch",
+    )
+
+    centers = [
+        await make_center(client, h, branch["id"], name, code, admin_user_id)
+        for name, code in CENTERS
+    ]
+    summary["centers"] = [c["code"] for c in centers]
+
+    # Two rate cards: the one in force, and a superseded one that shows the
+    # customer their price history is kept, not overwritten.
+    await make_rate_card(
+        client, h,
+        code="RC-2025-LEGACY", name="2025 Season Rates",
+        effective_from=(today - timedelta(days=365)).isoformat(),
+        effective_until=(today - timedelta(days=HISTORY_DAYS + 1)).isoformat(),
+        center_ids=[c["id"] for c in centers],
+        bands=[(3.0, 4.0, 39.0), (4.0, 5.0, 42.5), (5.0, 6.0, 46.0)],
+        publish=True,
+    )
+    current = await make_rate_card(
+        client, h,
+        code="RC-2026-MAIN", name="2026 Main Season Rates",
+        effective_from=(today - timedelta(days=HISTORY_DAYS)).isoformat(),
+        effective_until=None,
+        center_ids=[c["id"] for c in centers],
+        bands=FAT_BANDS,
+        publish=True,
+    )
+    # A draft card as well: rate cards under review are a real state, and a
+    # demo that only ever shows `published` hides the approval workflow.
+    await make_rate_card(
+        client, h,
+        code="RC-2027-DRAFT", name="2027 Proposed Rates (draft)",
+        effective_from=(today + timedelta(days=90)).isoformat(),
+        effective_until=None,
+        center_ids=[c["id"] for c in centers],
+        bands=[(3.0, 4.0, 44.0), (4.0, 5.0, 47.5), (5.0, 6.0, 51.0)],
+        publish=False,
+    )
+    summary["rate_cards"] = ["RC-2025-LEGACY", "RC-2026-MAIN", "RC-2027-DRAFT"]
+
+    suppliers = []
+    for i, name in enumerate(SUPPLIER_NAMES):
+        center = centers[i % len(centers)]
+        suppliers.append(
+            {**await make_supplier(client, h, name, i, center["id"]), "_center": center}
+        )
+    summary["suppliers"] = len(suppliers)
+
+    # --- collections ---------------------------------------------------------
+    # One session per centre per day, closed before the next opens, because a
+    # centre may hold only one open session.
+    completed: dict[str, list[str]] = {}
+    rejected = 0
+    for day_offset in range(HISTORY_DAYS, -1, -1):
+        day = today - timedelta(days=day_offset)
+        for center in centers:
+            todays = [s for i, s in enumerate(suppliers) if s["_center"]["id"] == center["id"]]
+            # Not every supplier delivers every day — a dairy where all 24
+            # arrive daily reads as generated data.
+            delivering = [s for i, s in enumerate(todays) if (i + day_offset) % 3 != 0]
+            if not delivering:
+                continue
+            session = await expect(
+                await client.post(
+                    "/v1/collection-sessions",
+                    json={"center_id": center["id"], "label": f"{day.isoformat()} morning"},
+                    headers=h,
+                ),
+                201,
+                what="open session",
+            )
+            for n, supplier in enumerate(delivering):
+                idx = suppliers.index(supplier)
+                tid = await collect_one(
+                    client, h,
+                    session_id=session["id"], supplier=supplier, index=idx, when=day,
+                    container=f"CAN-{center['code']}-{n + 1:02d}",
+                )
+                # One rejection in the whole history, on a single day, so the
+                # rejection path is demonstrable without implying a quality crisis.
+                if day_offset == 5 and n == 0 and center is centers[0]:
+                    await reject(client, h, tid, "failed organoleptic check at intake")
+                    # A rejected collection is still COMPLETED as a transaction:
+                    # the milk was refused, the paperwork was not abandoned. The
+                    # session cannot close while anything is in flight.
+                    await expect(
+                        await client.post(f"/v1/milk-transactions/{tid}/complete", headers=h),
+                        200,
+                        what="complete rejected transaction",
+                    )
+                    rejected += 1
+                    continue
+                await accept_and_complete(client, h, tid)
+                completed.setdefault(supplier["id"], []).append(tid)
+            # Today's session stays OPEN — the demo should show work in progress.
+            if day_offset != 0:
+                await expect(
+                    await client.post(
+                        f"/v1/collection-sessions/{session['id']}/close", headers=h
+                    ),
+                    200,
+                    what="close session",
+                )
+    summary["transactions_completed"] = sum(len(v) for v in completed.values())
+    summary["transactions_rejected"] = rejected
+    return {"summary": summary, "headers": h, "centers": centers, "suppliers": suppliers,
+            "today": today, "current_card": current}
+
+
+async def build_money(client, built: dict) -> dict:
+    """Settlements, payments and receipts over the collected history.
+
+    Period A is settled and paid; period B is settled and awaiting money. Both
+    are driven per supplier, because BR-0009 keys the no-overlap rule on the
+    supplier alone.
+    """
+    h, today = built["headers"], built["today"]
+    suppliers = built["suppliers"]
+    a_from, a_to = today - timedelta(days=21), today - timedelta(days=15)
+    b_from, b_to = today - timedelta(days=14), today - timedelta(days=8)
+
+    counts = {"finalized": 0, "paid": 0, "awaiting_payment": 0, "failed": 0, "processing": 0}
+    paid_settlements = []
+    for i, supplier in enumerate(suppliers):
+        center = supplier["_center"]
+        a = await settle(
+            client, h, supplier_id=supplier["id"], center_id=center["id"],
+            period_from=a_from, period_to=a_to, finalize=True,
+        )
+        if a:
+            counts["finalized"] += 1
+            # Most payments succeed; a few show the states an operator must
+            # actually handle. Deterministic by index, not random.
+            outcome = "completed"
+            if i % 11 == 7:
+                outcome = "failed"
+            elif i % 11 == 4:
+                outcome = "processing"
+            await pay(
+                client, h, supplier_id=supplier["id"], settlement_id=a["id"],
+                method="MOBILE_MONEY" if i % 3 else "BANK_TRANSFER",
+                reference=f"MPESA-{a['settlement_number']}", outcome=outcome,
+            )
+            counts[{"completed": "paid", "failed": "failed", "processing": "processing"}[outcome]] += 1
+            if outcome == "completed":
+                paid_settlements.append(a["settlement_number"])
+
+        b = await settle(
+            client, h, supplier_id=supplier["id"], center_id=center["id"],
+            period_from=b_from, period_to=b_to, finalize=True,
+        )
+        if b:
+            counts["finalized"] += 1
+            counts["awaiting_payment"] += 1
+
+    built["summary"]["settlements"] = counts
+    built["summary"]["paid_settlement_numbers"] = paid_settlements[:5]
+    return built
+
+
+async def demonstrate_br_0027(client, built: dict) -> dict:
+    """A late collection, carried forward — BR-0027, shown rather than described.
+
+    A collection is recorded INTO period A after period A was finalized. Its own
+    period is closed forever, so it is stranded exactly as PILOT-001 found; the
+    fix carries it into a later open settlement, which is what a customer needs
+    to see actually working.
+    """
+    h, today = built["headers"], built["today"]
+    supplier = built["suppliers"][0]
+    center = supplier["_center"]
+    late_day = today - timedelta(days=18)  # inside the finalized period A
+
+    session = await expect(
+        await client.post(
+            "/v1/collection-sessions",
+            json={"center_id": center["id"], "label": "late slip entry"},
+            headers=h,
+        ),
+        201, 409, what="late session",
+    )
+    if "id" not in session:  # a session is already open at this centre — reuse it
+        page = await expect(
+            await client.get(
+                f"/v1/collection-sessions?center_id={center['id']}&status=open", headers=h
+            ),
+            200, what="find open session",
+        )
+        session = page["items"][0]
+
+    tid = await collect_one(
+        client, h, session_id=session["id"], supplier=supplier, index=0, when=late_day,
+        container="CAN-LATE-01",
+    )
+    await accept_and_complete(client, h, tid)
+
+    # Its own period is closed, so it lands in a settlement dated after it.
+    carry_from = today - timedelta(days=7)
+    carried = await settle(
+        client, h, supplier_id=supplier["id"], center_id=center["id"],
+        period_from=carry_from, period_to=carry_from, finalize=True,
+    )
+    if carried:
+        await pay(
+            client, h, supplier_id=supplier["id"], settlement_id=carried["id"],
+            method="MOBILE_MONEY", reference=f"MPESA-LATE-{carried['settlement_number']}",
+            outcome="completed",
+        )
+        built["summary"]["br_0027_carry_forward"] = {
+            "late_collection_date": late_day.isoformat(),
+            "carried_into": carried["settlement_number"],
+            "settlement_period": carry_from.isoformat(),
+            "net_amount": str(carried["net_amount"]),
+        }
+    return built
+
+
+async def build_isolation_org(client, admin: dict, org: dict) -> dict:
+    """A second, deliberately small organization.
+
+    Its whole job is to make tenant isolation demonstrable: sign in here and the
+    24 suppliers next door are not merely hidden from the list, they answer 404.
+    """
+    today = utc_today()
+    manager = await make_member(
+        client, admin, org["id"],
+        email="manager@lacteva-isolation.example.com",
+        full_name="Chelimo Kiplagat", role_name="tenant-admin",
+    )
+    h = manager["headers"]
+    admin_user_id = manager["id"]
+    ws = await expect(
+        await client.post(
+            "/v1/workspaces", json={"name": "Rift Region", "slug": "rift"}, headers=h
+        ), 201, what="isolation workspace",
+    )
+    branch = await expect(
+        await client.post(
+            "/v1/branches",
+            json={"workspace_id": ws["id"], "name": "Rift Valley Hub", "code": "RVH"},
+            headers=h,
+        ), 201, what="isolation branch",
+    )
+    center = await make_center(
+        client, h, branch["id"], "Eldoret Ridge Centre", "ER-C1", admin_user_id
+    )
+    await make_rate_card(
+        client, h, code="RC-RIFT-2026", name="Rift Valley Rates",
+        effective_from=(today - timedelta(days=30)).isoformat(), effective_until=None,
+        center_ids=[center["id"]], bands=FAT_BANDS, publish=True,
+    )
+    suppliers = [
+        await make_supplier(client, h, name, 100 + i, center["id"])
+        for i, name in enumerate(["Kiptoo Langat", "Nancy Jepkosgei", "Wilson Kibet"])
+    ]
+    session = await expect(
+        await client.post(
+            "/v1/collection-sessions",
+            json={"center_id": center["id"], "label": "morning"},
+            headers=h,
+        ), 201, what="isolation session",
+    )
+    for i, supplier in enumerate(suppliers):
+        tid = await collect_one(
+            client, h, session_id=session["id"], supplier=supplier, index=i, when=today,
+            container=f"CAN-ER-{i + 1:02d}",
+        )
+        await accept_and_complete(client, h, tid)
+    return {
+        "organization": org["name"], "organization_id": org["id"],
+        "users": [{"email": manager["email"], "name": manager["full_name"], "role": manager["role"]}],
+        "centers": ["ER-C1"], "suppliers": len(suppliers), "transactions_completed": len(suppliers),
+    }
+
+
+# --- verify / purge ----------------------------------------------------------
+
+
+async def demo_org_ids() -> list[str]:
+    from platform_core.core.rls import platform_factory
+    from platform_core.modules.organization.models import Organization
+    from sqlalchemy import select
+
+    async with platform_factory("demo seed: locate demo organizations")() as session:
+        rows = await session.scalars(
+            select(Organization.id).where(Organization.slug.in_([DEMO_ORG_SLUG, ISOLATION_ORG_SLUG]))
+        )
+        return [str(x) for x in rows.all()]
+
+
+async def purge() -> dict:
+    """Delete every row belonging to the demo organizations — and nothing else.
+
+    The table list comes from `core/rls.py`'s own declaration of what is
+    tenant-owned, so a table added later is covered without editing this script.
+    Deletion is ordered children-first via SQLAlchemy's sorted metadata.
+    """
+    from platform_core.core.db import Base
+    from platform_core.core.model_registry import import_all_models
+    from platform_core.core.rls import platform_factory, tenant_tables
+    from platform_core.modules.organization.models import Organization
+    from sqlalchemy import delete, text
+
+    import_all_models()
+    ids = await demo_org_ids()
+    if not ids:
+        return {"organizations_removed": 0, "rows_deleted": 0}
+
+    owned = set(tenant_tables())
+    removed = 0
+    async with platform_factory("demo seed: purge the demo organizations")() as session:
+        for table in reversed(Base.metadata.sorted_tables):
+            if table.name not in owned or "tenant_id" not in table.c:
+                continue
+            result = await session.execute(
+                delete(table).where(table.c.tenant_id.in_([__import__("uuid").UUID(i) for i in ids]))
+            )
+            removed += result.rowcount or 0
+        # The organization row itself is platform-global, not tenant-owned.
+        result = await session.execute(
+            delete(Organization).where(Organization.slug.in_([DEMO_ORG_SLUG, ISOLATION_ORG_SLUG]))
+        )
+        await session.commit()
+    _ = text  # imported for callers that want ad-hoc checks
+    return {"organizations_removed": len(ids), "rows_deleted": removed}
+
+
+async def verify() -> dict:
+    """Assert the demo dataset is present, complete and internally consistent."""
+    from platform_core.core.rls import platform_factory
+    from platform_core.modules.milk_collection.models import MilkCollectionTransaction
+    from platform_core.modules.organization.models import Organization
+    from platform_core.modules.payment.models import Payment
+    from platform_core.modules.receipt.models import Receipt
+    from platform_core.modules.settlement.models import Settlement
+    from platform_core.modules.supplier.models import Supplier
+    from sqlalchemy import func, select
+
+    ids = [__import__("uuid").UUID(i) for i in await demo_org_ids()]
+    if not ids:
+        raise SeedError("demo data is NOT present: no demo organizations found")
+
+    checks: dict = {}
+    problems: list[str] = []
+    async with platform_factory("demo seed: verify")() as session:
+        checks["organizations"] = len(
+            (await session.scalars(select(Organization.id).where(Organization.id.in_(ids)))).all()
+        )
+        for label, model in (
+            ("suppliers", Supplier), ("transactions", MilkCollectionTransaction),
+            ("settlements", Settlement), ("payments", Payment), ("receipts", Receipt),
+        ):
+            checks[label] = await session.scalar(
+                select(func.count()).select_from(model).where(model.tenant_id.in_(ids))
+            )
+        checks["completed_transactions"] = await session.scalar(
+            select(func.count()).select_from(MilkCollectionTransaction).where(
+                MilkCollectionTransaction.tenant_id.in_(ids),
+                MilkCollectionTransaction.state == "COMPLETED",
+            )
+        )
+        checks["finalized_settlements"] = await session.scalar(
+            select(func.count()).select_from(Settlement).where(
+                Settlement.tenant_id.in_(ids), Settlement.status == "finalized"
+            )
+        )
+        # BR-0011: every settlement's stored net must equal gross + adjustments.
+        rows = (await session.scalars(select(Settlement).where(Settlement.tenant_id.in_(ids)))).all()
+        for s in rows:
+            if Decimal(s.net_amount) != Decimal(s.gross_amount) + Decimal(s.adjustments_amount):
+                problems.append(f"{s.settlement_number}: net != gross + adjustments")
+        # No settlement may be finalized with nothing in it.
+        empty = [s.settlement_number for s in rows if s.status == "finalized" and not s.gross_amount]
+        problems.extend(f"{n}: finalized with zero gross" for n in empty)
+
+    for label, minimum in (
+        ("organizations", 2), ("suppliers", 20), ("completed_transactions", 50),
+        ("finalized_settlements", 5), ("payments", 5), ("receipts", 5),
+    ):
+        if (checks.get(label) or 0) < minimum:
+            problems.append(f"{label}: {checks.get(label)} < expected minimum {minimum}")
+
+    checks["problems"] = problems
+    checks["ok"] = not problems
+    return checks
+
+
+# --- entry point -------------------------------------------------------------
+
+
+async def seed() -> dict:
+    from httpx import ASGITransport, AsyncClient
+    from platform_core.main import create_app
+
+    await bootstrap()
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://demo-seed", timeout=60.0
+    ) as client:
+        admin = await platform_admin(client)
+
+        demo = await make_org(client, admin, DEMO_ORG, DEMO_ORG_SLUG)
+        isolation = await make_org(client, admin, ISOLATION_ORG, ISOLATION_ORG_SLUG)
+
+        built = await build_demo_org(client, admin, demo)
+        built = await build_money(client, built)
+        built = await demonstrate_br_0027(client, built)
+        # Receipts and notifications are consumer work, exactly as in production.
+        await run_consumers()
+
+        isolation_summary = await build_isolation_org(client, admin, isolation)
+        await run_consumers()
+
+    return {"demo": built["summary"], "isolation": isolation_summary}
+
+
+def main() -> int:
+    command = sys.argv[1] if len(sys.argv) > 1 else "seed"
+    import json
+
+    if command == "seed":
+        print(json.dumps(asyncio.run(seed()), indent=2))
+        return 0
+    if command == "purge":
+        print(json.dumps(asyncio.run(purge()), indent=2))
+        return 0
+    if command == "reset":
+        print(json.dumps(asyncio.run(purge()), indent=2))
+        print(json.dumps(asyncio.run(seed()), indent=2))
+        return 0
+    if command == "consumers":
+        # Useful on its own: after a restore, or when a demo was seeded while
+        # the deployed worker loop was not running.
+        print(json.dumps(asyncio.run(run_consumers()), indent=2))
+        return 0
+    if command == "verify":
+        result = asyncio.run(verify())
+        print(json.dumps(result, indent=2))
+        return 0 if result["ok"] else 1
+    print(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

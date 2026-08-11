@@ -6,6 +6,12 @@
  * so the render reached `Object.entries(undefined)` and threw "Cannot convert
  * undefined or null to object", taking the whole page down. A cast is a claim,
  * not a check.
+ *
+ * DEMO-001 rebuilt this page on the platform's own `/v1/reports/*` aggregates
+ * and restyled it. The GUARANTEES below are unchanged — do not crash on a
+ * problem document, ask for nothing tenant-scoped while signed out, show the
+ * readiness checks, and report an unreachable platform rather than trusting
+ * its body. Only the wording the assertions match on moved with the copy.
  */
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +42,7 @@ describe("home page", () => {
 
     // Rendering at all is the assertion: the old build threw here.
     render(<Home />);
-    expect(await screen.findByText(/sign in to continue/i)).toBeInTheDocument();
+    expect(await screen.findByText(/sign in to see today/i)).toBeInTheDocument();
   });
 
   it("asks for nothing tenant-scoped while signed out", async () => {
@@ -47,7 +53,7 @@ describe("home page", () => {
     );
 
     render(<Home />);
-    await screen.findByText(/sign in to continue/i);
+    await screen.findByText(/sign in to see today/i);
     await new Promise((r) => setTimeout(r, 50));
 
     const asked = fetchSpy.mock.calls.map(([u]) => String(u));
@@ -74,7 +80,7 @@ describe("home page", () => {
     render(<Home />);
     await waitFor(() => expect(screen.getByText("database")).toBeInTheDocument());
     expect(screen.getByText("redis")).toBeInTheDocument();
-    expect(screen.queryByText(/sign in to continue/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sign in to see today/i)).not.toBeInTheDocument();
   });
 
   it("reports an unhealthy readiness response instead of trusting its body", async () => {
@@ -92,6 +98,6 @@ describe("home page", () => {
     });
 
     render(<Home />);
-    await waitFor(() => expect(screen.getByText(/not reachable/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/unreachable/i)).toBeInTheDocument());
   });
 });
