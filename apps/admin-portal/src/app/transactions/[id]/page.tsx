@@ -196,7 +196,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
               icon={<Handshake aria-hidden className="size-4 text-muted-foreground" />}
               state={chain}
               empty="This collection has not been settled yet."
-              href={links?.settlement ? "/settlements" : undefined}
+              href={links?.settlement ? `/settlements/${links.settlement.id}` : undefined}
               rows={
                 links?.settlement
                   ? [
@@ -238,7 +238,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                   ? "The settlement has not been paid yet."
                   : "Payment follows settlement."
               }
-              href={links?.payment ? "/payments" : undefined}
+              href={links?.payment ? `/payments/${links.payment.id}` : undefined}
               rows={
                 links?.payment
                   ? [
@@ -269,7 +269,8 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                   ? "A receipt is generated once the payment completes."
                   : "A receipt follows payment."
               }
-              href={links?.receipt ? "/receipts" : undefined}
+              href={links?.receipt && links.payment ? `/payments/${links.payment.id}` : undefined}
+              linkLabel="open on payment"
               rows={
                 links?.receipt
                   ? [
@@ -381,6 +382,7 @@ function ChainCard({
   rows,
   empty,
   href,
+  linkLabel = "open",
 }: {
   title: string;
   icon: React.ReactNode;
@@ -388,6 +390,9 @@ function ChainCard({
   rows: [string, React.ReactNode][] | null;
   empty: string;
   href?: string;
+  // DEMO-006: these cards used to point at list pages because no detail page
+  // existed. They now open the exact record.
+  linkLabel?: string;
 }) {
   return (
     <Card>
@@ -398,7 +403,7 @@ function ChainCard({
         </CardTitle>
         {href ? (
           <Link className="text-xs underline-offset-4 hover:underline" href={href}>
-            view all
+            {linkLabel}
           </Link>
         ) : null}
       </CardHeader>

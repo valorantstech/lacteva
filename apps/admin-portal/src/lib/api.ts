@@ -671,6 +671,9 @@ export function listSettlements(params: {
   q?: string;
   status?: string;
   supplier_id?: string;
+  // DEMO-006: the platform already filters by centre; the portal had no way
+  // to ask.
+  center_id?: string;
   limit: number;
   offset: number;
 }): Promise<SettlementPageResult> {
@@ -678,6 +681,7 @@ export function listSettlements(params: {
   if (params.q) search.set("q", params.q);
   if (params.status) search.set("status", params.status);
   if (params.supplier_id) search.set("supplier_id", params.supplier_id);
+  if (params.center_id) search.set("center_id", params.center_id);
   search.set("limit", String(params.limit));
   search.set("offset", String(params.offset));
   return api<SettlementPageResult>(`/v1/settlements?${search.toString()}`);
@@ -693,6 +697,7 @@ export const createSettlement = (body: {
 
 export const getSettlementDetail = (id: string) =>
   api<SettlementDetail>(`/v1/settlements/${id}`);
+
 
 export const addSettlementCalculation = (id: string, calculationId: string) =>
   api<SettlementLine>(`/v1/settlements/${id}/calculations`, {
@@ -710,8 +715,20 @@ export const collectSettlementPeriod = (id: string) =>
   });
 
 /** action: calculate | finalize | cancel */
-export const settlementAction = (id: string, action: string) =>
-  api<Settlement>(`/v1/settlements/${id}/${action}`, { method: "POST", body: "{}" });
+/**
+ * The settlement lifecycle: `calculate` sums the lines, `finalize` freezes the
+ * result (BR-0010 — irreversible), `cancel` abandons an open one.
+ * DEMO-006 added the body so `cancel` can carry its reason.
+ */
+export const settlementAction = (
+  id: string,
+  action: "calculate" | "finalize" | "cancel",
+  body: Record<string, string> = {},
+) =>
+  api<Settlement>(`/v1/settlements/${id}/${action}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 // --- Reports (read-only summaries) ------------------------------------------
 

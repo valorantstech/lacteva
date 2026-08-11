@@ -1,612 +1,444 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { AlertTriangle, Banknote, CheckCircle2, Clock, XCircle } from "lucide-react";
 import {
   ApiError,
-  BalancePageResult,
+  type BalancePageResult,
   PAYMENT_METHODS,
-  Payment,
-  PaymentDetail,
-  PaymentPageResult,
-  SettlementBalance,
-  Supplier,
+  type Payment,
+  type PaymentPageResult,
+  type PaymentReport,
+  type SettlementBalance,
+  type Supplier,
   createPayment,
-  getPaymentDetail,
+  getPaymentReport,
   listOutstandingBalances,
   listPayments,
   listSuppliers,
-  paymentAction,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { type Column, DataTable } from "@/components/data-table";
+import { Money } from "@/components/money";
+import { PageHeader, StatTile } from "@/components/page-header";
+import { StatusBadge } from "@/components/status-badge";
 
-const PAGE_SIZE = 10;
-const STATUSES = ["", "draft", "pending", "processing", "completed", "failed", "cancelled"];
+/**
+ * Payments (DEMO-006).
+ *
+ * A payment is raised against FINALIZED settlements — never against a
+ * collection, never against a draft. So the way to start one here is the
+ * platform's own selector, `/v1/payments/balances`: finalized settlements with
+ * what is still owed on each. The portal does not compute what is owed; it asks.
+ *
+ * Filters are query parameters, the KPI row is `/v1/reports/payments`, and no
+ * amount on this page was produced by arithmetic in a browser.
+ */
 
-const statusVariant = (s: string) =>
-  s === "completed"
-    ? "default"
-    : s === "failed"
-      ? "destructive"
-      : s === "cancelled"
-        ? "outline"
-        : "secondary";
+const PAGE_SIZE = 15;
 
-const money = (v: string | number, currency: string) => `${String(v)} ${currency}`;
+/** The real payment lifecycle. */
+const STATUSES = [
+  "",
+  "draft",
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+
+const describe = (e: unknown) => {
+  if (e instanceof ApiError) return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+  return e instanceof Error ? e.message : "Request failed";
+};
+
+const stamp = (iso: string | null | undefined) =>
+  iso ? String(iso).slice(0, 16).replace("T", " ") : "—";
 
 export default function PaymentsPage() {
   const [page, setPage] = useState<PaymentPageResult | null>(null);
+  const [report, setReport] = useState<PaymentReport | null>(null);
   const [balances, setBalances] = useState<BalancePageResult | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState("");
-  const [method, setMethod] = useState("");
-  const [offset, setOffset] = useState(0);
-  const [detail, setDetail] = useState<PaymentDetail | null>(null);
-  const [payFor, setPayFor] = useState<SettlementBalance | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState<(typeof STATUSES)[number]>("");
+  const [method, setMethod] = useState("");
+  const [supplierId, setSupplierId] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [payFor, setPayFor] = useState<SettlementBalance | null>(null);
+
+  const filtered = Boolean(q || status || method || supplierId);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const [payments, owed] = await Promise.all([
-        listPayments({ q, status, method, limit: PAGE_SIZE, offset }),
-        listOutstandingBalances({ limit: 50, offset: 0 }),
-      ]);
-      setPage(payments);
-      setBalances(owed);
-      setError(null);
+      setPage(
+        await listPayments({
+          q: q || undefined,
+          status: status || undefined,
+          method: method || undefined,
+          supplier_id: supplierId || undefined,
+          limit: PAGE_SIZE,
+          offset,
+        }),
+      );
+      getPaymentReport({})
+        .then(setReport)
+        .catch(() => setReport(null));
+      listOutstandingBalances({ supplier_id: supplierId || undefined, limit: 50, offset: 0 })
+        .then(setBalances)
+        .catch(() => setBalances(null));
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load payments");
+      setError(describe(err));
+    } finally {
+      setLoading(false);
     }
-  }, [q, status, method, offset]);
+  }, [method, offset, q, status, supplierId]);
 
   useEffect(() => {
-    const t = setTimeout(() => void refresh(), 150);
+    const t = setTimeout(() => void load(), 150);
     return () => clearTimeout(t);
-  }, [refresh]);
+  }, [load]);
 
   useEffect(() => {
     listSuppliers({ limit: 100, offset: 0 })
-      .then((p) => setSuppliers(p.items))
+      .then((s) => setSuppliers(s.items ?? []))
       .catch(() => setSuppliers([]));
   }, []);
 
-  const supplierName = (id: string) =>
-    suppliers.find((s) => s.id === id)?.full_name ?? id.slice(0, 8);
-
-  async function openDetail(id: string) {
-    try {
-      setDetail(await getPaymentDetail(id));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load payment");
-    }
-  }
-
-  async function act(
-    payment: Payment,
-    action: "submit" | "execute" | "retry" | "complete" | "fail" | "cancel",
-    body: Record<string, string> = {},
-  ) {
-    try {
-      const updated = await paymentAction(payment.id, action, body);
-      setNote(`${payment.payment_number} is now ${updated.status}.`);
-      setError(null);
-      await refresh();
-      if (detail?.payment.id === payment.id) await openDetail(payment.id);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Action failed");
-    }
-  }
-
-  const totalPages = page ? Math.max(1, Math.ceil(page.total / PAGE_SIZE)) : 1;
-  const owedTotal = (balances?.items ?? []).reduce(
-    (sum, b) => sum + Number(b.outstanding),
-    0,
+  const supplierName = useMemo(
+    () => Object.fromEntries(suppliers.map((s) => [s.id, s.full_name])),
+    [suppliers],
   );
 
-  return (
-    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 p-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Payments</h1>
-        <p className="text-sm text-muted-foreground">
-          Money moved against finalized settlements — settlements are never modified
-        </p>
-      </header>
+  const columns: Column<Payment>[] = [
+    {
+      key: "number",
+      header: "Payment",
+      cell: (p) => (
+        <div className="flex flex-col">
+          <Link className="font-medium hover:underline" href={`/payments/${p.id}`}>
+            {p.payment_number}
+          </Link>
+          <span className="text-xs text-muted-foreground">
+            {stamp(p.created_at)} · {p.line_count}{" "}
+            {p.line_count === 1 ? "settlement" : "settlements"}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: "supplier",
+      header: "Supplier",
+      cell: (p) => (
+        <Link className="hover:underline" href={`/suppliers/${p.supplier_id}`}>
+          {supplierName[p.supplier_id] ?? `${p.supplier_id.slice(0, 8)}…`}
+        </Link>
+      ),
+    },
+    { key: "method", header: "Method", secondary: true, cell: (p) => p.method },
+    {
+      key: "reference",
+      header: "Reference",
+      secondary: true,
+      cell: (p) => <span className="font-mono text-xs">{p.reference || "—"}</span>,
+    },
+    {
+      key: "amount",
+      header: "Amount",
+      align: "end",
+      cell: (p) => <Money amount={p.amount} currency={p.currency} />,
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (p) => (
+        <div className="flex flex-col gap-0.5">
+          <StatusBadge status={p.status} />
+          {p.status === "failed" && p.failure_reason ? (
+            <span className="max-w-56 truncate text-xs text-destructive" title={p.failure_reason}>
+              {p.failure_reason}
+            </span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "end",
+      cell: (p) => (
+        <Link
+          href={`/payments/${p.id}`}
+          className="inline-flex h-8 items-center rounded-md border border-input px-3 text-sm hover:bg-muted"
+        >
+          Open
+        </Link>
+      ),
+    },
+  ];
 
-      <OutstandingPanel
-        balances={balances}
-        supplierName={supplierName}
-        owedTotal={owedTotal}
-        onPay={setPayFor}
+  const owed = (balances?.items ?? []).filter((b) => !b.fully_paid);
+
+  return (
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+      <PageHeader
+        title="Payments"
+        description="Money paid against finalized settlements. This platform records movement; it does not perform it."
       />
 
-      {payFor && (
-        <NewPaymentForm
-          balance={payFor}
-          supplierName={supplierName(payFor.supplier_id)}
-          onDone={async () => {
-            setPayFor(null);
-            await refresh();
-          }}
-          onCancel={() => setPayFor(null)}
+      <section aria-label="Payment summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile
+          label="Completed"
+          value={report ? report.completed_count : "—"}
+          hint={
+            report ? (
+              <>
+                <Money amount={report.completed_amount} currency="KES" /> paid
+              </>
+            ) : undefined
+          }
+          icon={<CheckCircle2 className="size-4" />}
         />
-      )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <Input
-          placeholder="Search payment number or reference…"
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setOffset(0);
-          }}
-          className="max-w-xs"
+        <StatTile
+          label="In flight"
+          value={report ? report.pending_count + report.processing_count : "—"}
+          hint={
+            report ? `${report.pending_count} pending · ${report.processing_count} processing` : undefined
+          }
+          icon={<Clock className="size-4" />}
         />
-        <select
-          className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setOffset(0);
-          }}
-        >
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s === "" ? "All statuses" : s}
-            </option>
-          ))}
-        </select>
-        <select
-          className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
-          value={method}
-          onChange={(e) => {
-            setMethod(e.target.value);
-            setOffset(0);
-          }}
-        >
-          <option value="">All methods</option>
-          {PAYMENT_METHODS.map((m) => (
-            <option key={m} value={m}>
-              {m.replace("_", " ").toLowerCase()}
-            </option>
-          ))}
-        </select>
-      </div>
+        <StatTile
+          label="Failed"
+          value={report ? report.failed_count : "—"}
+          hint={
+            report ? (
+              <>
+                <Money amount={report.failed_amount} currency="KES" /> to retry
+              </>
+            ) : undefined
+          }
+          icon={<XCircle className="size-4" />}
+        />
+        <StatTile
+          label="Outstanding"
+          value={report ? <Money amount={report.outstanding_amount} currency="KES" /> : "—"}
+          hint="finalized but unpaid"
+          icon={<Banknote className="size-4" />}
+        />
+      </section>
 
-      {note && <p className="text-sm text-muted-foreground">{note}</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
+      {/* --- Raise a payment ---------------------------------------------- */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Payment history</CardTitle>
+          <CardTitle>Settlements awaiting payment</CardTitle>
+          <CardDescription>
+            Finalized settlements with money still owed, as the platform computes it. Allocated
+            counts live payments including drafts, so a settlement can never be paid twice.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Number</TableHead>
-                <TableHead>Supplier</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Method</TableHead>
-                <TableHead>Settlements</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {page?.items.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-mono">{p.payment_number}</TableCell>
-                  <TableCell>{supplierName(p.supplier_id)}</TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {money(p.amount, p.currency)}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {p.method.replace("_", " ").toLowerCase()}
-                  </TableCell>
-                  <TableCell>{p.line_count}</TableCell>
-                  <TableCell>
-                    <Badge variant={statusVariant(p.status)}>{p.status}</Badge>
-                    {p.attempt_count > 1 && (
-                      <span className="ml-1 text-xs text-muted-foreground">
-                        ×{p.attempt_count}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="flex justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openDetail(p.id)}>
-                      Inspect
+          {owed.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nothing is outstanding — every finalized settlement is fully allocated.
+            </p>
+          ) : (
+            <ul className="flex flex-col divide-y">
+              {owed.slice(0, 8).map((b) => (
+                <li key={b.settlement_id} className="flex items-center justify-between gap-4 py-3">
+                  <div className="flex flex-col">
+                    <Link
+                      className="font-medium hover:underline"
+                      href={`/settlements/${b.settlement_id}`}
+                    >
+                      {b.settlement_number}
+                    </Link>
+                    <span className="text-xs text-muted-foreground">
+                      {supplierName[b.supplier_id] ?? `${b.supplier_id.slice(0, 8)}…`} · payable{" "}
+                      <Money amount={b.payable} currency={b.currency} />
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-medium">
+                      <Money amount={b.outstanding} currency={b.currency} />
+                    </span>
+                    <Button type="button" size="sm" onClick={() => setPayFor(b)}>
+                      Pay
                     </Button>
-                    <PaymentActions payment={p} onAct={act} />
-                  </TableCell>
-                </TableRow>
+                  </div>
+                </li>
               ))}
-              {page && page.items.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
-                    No payments match.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+            </ul>
+          )}
+          {owed.length > 8 ? (
+            <p className="pt-3 text-xs text-muted-foreground">
+              Showing 8 of {owed.length} outstanding settlements — filter by supplier to narrow.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
-      {detail && (
-        <PaymentDetailCard
-          detail={detail}
-          supplierName={supplierName(detail.payment.supplier_id)}
-          onAct={act}
-          onClose={() => setDetail(null)}
+      {payFor ? (
+        <CreatePaymentCard
+          balance={payFor}
+          onClose={() => setPayFor(null)}
+          onCreated={() => {
+            setPayFor(null);
+            setOffset(0);
+            void load();
+          }}
         />
-      )}
+      ) : null}
 
-      <footer className="flex items-center justify-between text-sm">
-        <span className="text-muted-foreground">
-          {page ? `${page.total} payment${page.total === 1 ? "" : "s"}` : "Loading…"}
-        </span>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={offset === 0}
-            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-          >
-            Previous
-          </Button>
-          <span>
-            {Math.floor(offset / PAGE_SIZE) + 1} / {totalPages}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!page || offset + PAGE_SIZE >= page.total}
-            onClick={() => setOffset(offset + PAGE_SIZE)}
-          >
-            Next
-          </Button>
-        </div>
-      </footer>
-    </main>
-  );
-}
-
-/** The settlement selector: what is still owed, and the button that pays it. */
-function OutstandingPanel({
-  balances,
-  supplierName,
-  owedTotal,
-  onPay,
-}: {
-  balances: BalancePageResult | null;
-  supplierName: (id: string) => string;
-  owedTotal: number;
-  onPay: (b: SettlementBalance) => void;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-3 text-base">
-          Outstanding balances
-          {balances && balances.total > 0 && (
-            <Badge variant="secondary">
-              {balances.total} settlement{balances.total === 1 ? "" : "s"} · {owedTotal.toFixed(2)}
-            </Badge>
-          )}
-        </CardTitle>
-        <CardDescription>
-          Finalized settlements with money still owed. A draft payment already reserves its
-          allocation, so nothing here can be paid twice.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Settlement</TableHead>
-              <TableHead>Supplier</TableHead>
-              <TableHead>Payable</TableHead>
-              <TableHead>Allocated</TableHead>
-              <TableHead>Paid</TableHead>
-              <TableHead>Outstanding</TableHead>
-              <TableHead className="text-right">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {balances?.items.map((b) => (
-              <TableRow key={b.settlement_id}>
-                <TableCell className="font-mono">{b.settlement_number}</TableCell>
-                <TableCell>{supplierName(b.supplier_id)}</TableCell>
-                <TableCell>{money(b.payable, b.currency)}</TableCell>
-                <TableCell className="text-muted-foreground">{String(b.allocated)}</TableCell>
-                <TableCell className="text-muted-foreground">{String(b.paid)}</TableCell>
-                <TableCell className="font-medium">{money(b.outstanding, b.currency)}</TableCell>
-                <TableCell className="text-right">
-                  <Button size="sm" onClick={() => onPay(b)}>
-                    Pay
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-            {balances && balances.items.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
-                  Nothing outstanding — every finalized settlement is paid or allocated.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PaymentActions({
-  payment,
-  onAct,
-}: {
-  payment: Payment;
-  onAct: (
-    p: Payment,
-    a: "submit" | "execute" | "retry" | "complete" | "fail" | "cancel",
-    body?: Record<string, string>,
-  ) => Promise<void>;
-}) {
-  const s = payment.status;
-  return (
-    <>
-      {s === "draft" && (
-        <Button size="sm" variant="outline" onClick={() => onAct(payment, "submit")}>
-          Submit
-        </Button>
-      )}
-      {s === "pending" && (
-        <Button size="sm" variant="outline" onClick={() => onAct(payment, "execute")}>
-          Execute
-        </Button>
-      )}
-      {s === "processing" && (
-        <>
-          <Button size="sm" onClick={() => onAct(payment, "complete")}>
-            Complete
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() =>
-              onAct(payment, "fail", { reason: "reported failed by the operator" })
-            }
-          >
-            Mark failed
-          </Button>
-        </>
-      )}
-      {s === "failed" && (
-        <Button size="sm" onClick={() => onAct(payment, "retry")}>
-          Retry
-        </Button>
-      )}
-      {(s === "draft" || s === "pending" || s === "failed") && (
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => onAct(payment, "cancel", { reason: "cancelled from the portal" })}
-        >
-          Cancel
-        </Button>
-      )}
-    </>
-  );
-}
-
-function PaymentDetailCard({
-  detail,
-  supplierName,
-  onAct,
-  onClose,
-}: {
-  detail: PaymentDetail;
-  supplierName: string;
-  onAct: (
-    p: Payment,
-    a: "submit" | "execute" | "retry" | "complete" | "fail" | "cancel",
-    body?: Record<string, string>,
-  ) => Promise<void>;
-  onClose: () => void;
-}) {
-  const p = detail.payment;
-  const [reference, setReference] = useState("");
-  const [reason, setReason] = useState("");
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-3">
-          {p.payment_number}
-          <Badge variant={statusVariant(p.status)}>{p.status}</Badge>
-          <Badge variant="outline">{p.method.replace("_", " ").toLowerCase()}</Badge>
-          {!detail.totals_match_lines && (
-            <Badge variant="destructive">amount does not match its allocations</Badge>
-          )}
-        </CardTitle>
-        <CardDescription>
-          {supplierName} · <span className="font-medium">{money(p.amount, p.currency)}</span>
-          {p.reference && ` · ref ${p.reference}`}
-          {p.completed_at && ` · completed ${p.completed_at.slice(0, 10)}`}
-          {p.failure_reason && ` · last failure: ${p.failure_reason}`}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5 text-sm">
-        <div>
-          <p className="mb-1 font-medium">Allocations</p>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Settlement</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {detail.lines.map((line) => (
-                <TableRow key={line.id}>
-                  <TableCell className="font-mono">{line.settlement_number}</TableCell>
-                  <TableCell className="text-right">
-                    {money(line.amount, p.currency)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div>
-          <p className="mb-1 font-medium">Attempts</p>
-          {detail.attempts.length === 0 ? (
-            <p className="text-muted-foreground">Not executed yet.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>#</TableHead>
-                  <TableHead>Provider</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Started</TableHead>
-                  <TableHead>Failure</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {detail.attempts.map((a) => (
-                  <TableRow key={a.id}>
-                    <TableCell>{a.attempt_number}</TableCell>
-                    <TableCell>{a.provider}</TableCell>
-                    <TableCell className="font-mono text-xs">{a.reference ?? "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusVariant(a.status)}>{a.status}</Badge>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                      {a.started_at.slice(0, 16).replace("T", " ")}
-                    </TableCell>
-                    <TableCell className="text-destructive">{a.failure_reason ?? ""}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </div>
-
-        {p.status !== "completed" && p.status !== "cancelled" && (
-          <div className="flex flex-wrap items-end gap-3 border-t border-border pt-4">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="p-ref">Reference</Label>
-              <Input
-                id="p-ref"
-                className="h-8 w-56"
-                placeholder="bank / cheque / M-Pesa code"
-                value={reference}
-                onChange={(e) => setReference(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="p-reason">Failure or cancel reason</Label>
-              <Input
-                id="p-reason"
-                className="h-8 w-64"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-              />
-            </div>
-            {p.status === "processing" && (
+      <Card>
+        <CardContent className="pt-6">
+          <DataTable
+            caption="Payments in this organization"
+            columns={columns}
+            rows={page?.items ?? []}
+            rowKey={(p) => p.id}
+            loading={loading}
+            error={error}
+            onRetry={() => void load()}
+            empty={{
+              title: filtered ? "No payment matches these filters" : "No payments yet",
+              description: filtered
+                ? "Try a different status or method, or clear the filters."
+                : "Finalize a settlement, then pay it from the list above.",
+            }}
+            toolbar={
               <>
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    onAct(p, "complete", reference ? { reference } : {})
-                  }
-                >
-                  Complete
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!reason.trim()}
-                  onClick={() => onAct(p, "fail", { reason: reason.trim() })}
-                >
-                  Mark failed
-                </Button>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="pm-q">Search</Label>
+                  <Input
+                    id="pm-q"
+                    className="h-9 w-52"
+                    placeholder="Number or reference"
+                    value={q}
+                    onChange={(e) => {
+                      setQ(e.target.value);
+                      setOffset(0);
+                    }}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="pm-status">Status</Label>
+                  <select
+                    id="pm-status"
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    value={status}
+                    onChange={(e) => {
+                      setStatus(e.target.value as (typeof STATUSES)[number]);
+                      setOffset(0);
+                    }}
+                  >
+                    {STATUSES.map((s) => (
+                      <option key={s || "all"} value={s}>
+                        {s || "All statuses"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="pm-method">Method</Label>
+                  <select
+                    id="pm-method"
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    value={method}
+                    onChange={(e) => {
+                      setMethod(e.target.value);
+                      setOffset(0);
+                    }}
+                  >
+                    <option value="">All methods</option>
+                    {PAYMENT_METHODS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="pm-supplier">Supplier</Label>
+                  <select
+                    id="pm-supplier"
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    value={supplierId}
+                    onChange={(e) => {
+                      setSupplierId(e.target.value);
+                      setOffset(0);
+                    }}
+                  >
+                    <option value="">All suppliers</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {filtered ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setQ("");
+                      setStatus("");
+                      setMethod("");
+                      setSupplierId("");
+                      setOffset(0);
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                ) : null}
               </>
-            )}
-            {p.status === "failed" && (
-              <Button
-                size="sm"
-                onClick={() => onAct(p, "retry", reference ? { reference } : {})}
-              >
-                Retry
-              </Button>
-            )}
-            {(p.status === "draft" || p.status === "pending" || p.status === "failed") && (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={!reason.trim()}
-                onClick={() => onAct(p, "cancel", { reason: reason.trim() })}
-              >
-                Cancel payment
-              </Button>
-            )}
-          </div>
-        )}
-
-        <div>
-          <Button size="sm" variant="ghost" onClick={onClose}>
-            Close
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+            }
+            page={{
+              offset,
+              limit: PAGE_SIZE,
+              total: page?.total ?? 0,
+              onChange: setOffset,
+              busy: loading,
+            }}
+          />
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
-function NewPaymentForm({
+/**
+ * Raising a payment against one finalized settlement.
+ *
+ * The amount defaults to the platform's own `outstanding` and is sent as the
+ * STRING it arrived as — the portal never rounds it, and never reconstructs it
+ * from payable minus paid.
+ */
+function CreatePaymentCard({
   balance,
-  supplierName,
-  onDone,
-  onCancel,
+  onClose,
+  onCreated,
 }: {
   balance: SettlementBalance;
-  supplierName: string;
-  onDone: () => Promise<void>;
-  onCancel: () => void;
+  onClose: () => void;
+  onCreated: () => void;
 }) {
-  const [method, setMethod] = useState<string>("BANK_TRANSFER");
+  const [method, setMethod] = useState<string>(PAYMENT_METHODS[0]);
   const [amount, setAmount] = useState(String(balance.outstanding));
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const partial = Number(amount) < Number(balance.outstanding);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -621,9 +453,9 @@ function NewPaymentForm({
         reference: reference || undefined,
         note: note || undefined,
       });
-      await onDone();
+      onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Could not create the payment");
+      setError(describe(err));
     } finally {
       setBusy(false);
     }
@@ -634,61 +466,71 @@ function NewPaymentForm({
       <CardHeader>
         <CardTitle>Pay {balance.settlement_number}</CardTitle>
         <CardDescription>
-          {supplierName} · outstanding {money(balance.outstanding, balance.currency)}. Pay less
-          than the outstanding amount to make a partial payment — the remainder stays payable.
+          Outstanding <Money amount={balance.outstanding} currency={balance.currency} />. The payment
+          is created as a draft — approving and executing it are separate, deliberate steps.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={submit} className="grid max-w-2xl grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="np-method">Method</Label>
-            <select
-              id="np-method"
-              className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
-              value={method}
-              onChange={(e) => setMethod(e.target.value)}
-            >
-              {PAYMENT_METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m.replace("_", " ").toLowerCase()}
-                </option>
-              ))}
-            </select>
+        <form className="flex flex-col gap-4" onSubmit={submit}>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="np-method">Method</Label>
+              <select
+                id="np-method"
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
+              >
+                {PAYMENT_METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="np-amount">Amount ({balance.currency})</Label>
+              <Input
+                id="np-amount"
+                required
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Defaults to the full outstanding balance. A smaller figure is a partial payment.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="np-reference">Reference</Label>
+              <Input
+                id="np-reference"
+                placeholder="optional"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="np-note">Note</Label>
+              <Input
+                id="np-note"
+                placeholder="optional"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </div>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="np-amount">Amount ({balance.currency})</Label>
-            <Input
-              id="np-amount"
-              required
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-            {partial && (
-              <span className="text-xs text-muted-foreground">
-                Partial — {(Number(balance.outstanding) - Number(amount)).toFixed(2)} stays
-                outstanding
-              </span>
-            )}
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="np-ref">Reference</Label>
-            <Input
-              id="np-ref"
-              placeholder="bank / cheque / M-Pesa code"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="np-note">Note</Label>
-            <Input id="np-note" value={note} onChange={(e) => setNote(e.target.value)} />
-          </div>
-          {error && <p className="col-span-2 text-sm text-destructive">{error}</p>}
-          <div className="col-span-2 flex gap-2">
+          {error ? (
+            <p role="alert" className="inline-flex items-start gap-2 text-sm text-destructive">
+              <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
+              The platform refused: {error}
+            </p>
+          ) : null}
+          <div className="flex gap-2">
             <Button type="submit" disabled={busy}>
-              {busy ? "Creating…" : "Create payment"}
+              {busy ? "Creating…" : "Create draft payment"}
             </Button>
-            <Button type="button" variant="ghost" onClick={onCancel}>
+            <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
           </div>

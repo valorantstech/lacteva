@@ -8,6 +8,71 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Rep
 
 ### Added
 
+- DEMO-006 "Settlement & Payment Operations" — the financial half of the
+  lifecycle, wired end to end: **completed collection → settlement → payment →
+  receipt**, with every hop clickable in both directions and no dead links.
+  Built entirely on the contracts that already existed — the settlement search
+  already filtered by supplier, centre, status and period; the payment search
+  by supplier, settlement, status and method; `/v1/payments/balances` already
+  answered "what is still owed" and `/v1/settlements/{id}/balance` answered it
+  for one settlement. Nothing new was invented on the backend; what was missing
+  was a portal honest enough to use them. **Two new detail pages.**
+  `/settlements/[id]` shows the header, the stored financial summary, the
+  collections that make it up (each linking to its delivery) and the lifecycle;
+  `/payments/[id]` shows the amount and its allocations, every attempt
+  including the failed ones, the real operations, and the receipt with a
+  download link. **No button is offered that the backend would reject.** Both
+  pages mirror the service guards exactly — settlement collect/calculate/cancel
+  only while open, finalize only from `calculated` with at least one line;
+  payment cancel deliberately absent while processing, because money may
+  already be in flight and the truthful sequence is fail-then-cancel. So a
+  finalized settlement and a completed payment show *no* lifecycle controls at
+  all: immutability rendered as an absence, not as a greyed-out button that
+  lies about being available. `tests/test_financial_operations_demo.py` proves
+  the mirror by making the platform refuse each one — five 409s on a finalized
+  settlement, six on a completed payment. **Finalizing asks first**, in words
+  that name what cannot be undone. **The failure path is the platform's own**:
+  `POST /fail` with the reason the operator typed, which the platform stores on
+  the payment and on the attempt, releasing the allocation so the settlement is
+  payable again; retry opens attempt N+1 and the previous one is kept exactly
+  as it ended (BR-0019). Nothing simulates a bank. **No arithmetic in React** —
+  gross, adjustments and net are three stored strings printed side by side, and
+  `totals_match_lines` is the platform's own answer to whether they still
+  agree, shown in red when it does not. **Filters are query parameters and KPIs
+  are aggregates**: the settlement list previously counted statuses by looping
+  over the ten rows it happened to be showing, a number wrong the moment a
+  second page existed; it now reads `/v1/reports/settlements`, and the payment
+  list reads `/v1/reports/payments` — the same aggregates the dashboard uses.
+  Settlement search gained a `center_id` parameter in the client, which the API
+  had always accepted. `settlement.finalize` is proven to be a permission
+  genuinely separate from `settlement.manage`, in both directions. Tenant
+  isolation is proven for settlements as it already was for payments: another
+  organization gets 404 on read and on every lifecycle action, never 403, so a
+  row's existence is never leaked.
+
+### Changed
+
+- The DEMO-004 collection chain cards linked to `/settlements`, `/payments` and
+  `/receipts` — the *list* pages — because no detail page existed to link to.
+  That was recorded as a known limitation; it is now fixed: each card opens the
+  exact record.
+- Demo seeder: `make_center` now fits an analyzer and a printer alongside the
+  scale, so demo centres report **READY** on all six readiness checks instead of
+  WARNING with two failing. Nothing was hard-coded and no rule was weakened —
+  the two failing checks wanted equipment that had never been registered, so it
+  was registered through the real `/v1/devices` API.
+- Demo seeder: a **period C** (D-7..D-1) leaves a few settlements CALCULATED but
+  not finalized. A demo where everything is already finalized can only show the
+  end of the lifecycle, because the platform correctly refuses Calculate and
+  Finalize on a frozen settlement. The rest of that window is deliberately left
+  unswept so a live `Collect period` finds real collections.
+- Demo seeder `verify` now reconciles rather than counts: settlement gross
+  against the sum of its lines, payment amount against the sum of its
+  allocations, and every receipt against the completed payment that produced
+  it.
+
+### Added
+
 - DEMO-005 "Guided Collection Capture" — the workflow DEMO-004 deliberately refused to fake, built the honest way. **The backend is the state machine**: the wizard has none of its own, and the step it shows is DERIVED from `transaction.state`, which the platform sets. Every button is one real call to one real endpoint, and the answer decides what happens next — a front-end state machine would be a second source of truth and the two would eventually disagree in front of a customer. Deriving the step also makes refresh trivially correct: the id is kept in `sessionStorage`, the transaction is re-read, and the wizard resumes where the PLATFORM says it is, not where the browser last thought it was; a collection the platform has already completed is dropped rather than resumed. The real seven steps are driven in order — session (a centre permits only one, so the wizard JOINS an open one rather than taking over another operator's shift) → create → identify → milk → weight → quality → accept → complete — with the platform's automatic `WEIGHT_CAPTURED → QUALITY_PENDING` hand-off respected rather than second-guessed. **Centre selection is readiness-gated**: the real `/readiness` endpoint is called, every check listed with the platform's own reason, and "Start collection" stays DISABLED until the platform says milk can be received — readiness is never inferred from a record existing. **Measurements are manual and say so**: both capture screens are labelled "Manual demo capture", the payloads carry `source: "manual"` (the domain's own name for an operator reading), a test asserts the weight body contains no `mock` anywhere, and PostgreSQL itself records `weight_source: manual, quality_source: manual` — the database says no device supplied these numbers. **Pricing is printed, not recomputed**, as in DEMO-004. **Acceptance requires explicit confirmation** naming the amount that becomes payable, and acceptance and completion are separate buttons because they are separate decisions in the domain. The success screen states plainly what has NOT happened: settlement, payment and receipt are listed as pending, and the live chain returns all-null immediately after completion — completion is not settlement, and settlement is not payment. **Five validation failures provoked live on the deployed platform**, each showing the business reason rather than a generic error: `transaction is COMPLETED and immutable`, `expected state MILK_RECEIVED, transaction is NEW`, `tare must be less than gross`, `fat out of range [0.0, 15.0]`, and `mock_analyzer is not permitted in this environment — capture a real reading`. After any refusal the wizard RE-READS the transaction, because a rejection may mean the platform moved on without us and guessing would be worse than asking; state-changing calls are never retried blindly. **Demonstration scenario, reproduced live and reconciled against PostgreSQL**: Kilima Hill, Amina Njoroge, 12.000 kg gross / 2.000 kg tare, fat 4.4 → band `[4.0, 5.0)` → **10.0 × 45.5000 = 455.00 KES**, nine real events, `COMPLETED`. **1,141 backend tests (+7), 121 portal tests (+10)**, typecheck, lint and build clean. **Two flaws in the new tests were fixed rather than worked around**: a mock matcher using `includes("/milk")` also matched `/milk-transactions/…/weight` and silently answered the wrong step; and date assertions using local `date.today()` against a platform that stamps UTC passed for hours and then failed the moment the local clock crossed midnight — the same trap PILOT-F03 recorded, met again, now fixed to `utcnow()` throughout. A third test asserted mock hardware is refused, which is wrong in a test environment where mocks are deliberately enabled; it was replaced, with the refusal proven by the pre-existing boundary suite and demonstrated live. **Deployed and verified as `demo005-f528dfe`. AWS resources created 0, resized 0, managed services 0, Terraform changes 0**; nothing deleted and no reseed — this work order added one demonstration collection and one probe, and the probe was CANCELLED through the domain's own operation rather than deleted. See [DEMO-005-FINAL.md](DEMO-005-FINAL.md).
 
 - DEMO-004 "Collections, Pricing & Transaction Workflow" — the collection screen a customer asks about after seeing 351 collections, and the one with the most ways to lie. **The pricing breakdown is PRINTED, never recomputed**: `10.0 × 45.5000` and `= 455.00 KES` are three separate strings the platform sent, placed side by side, and the portal never evaluates the expression — multiplying in React would be a second pricing engine, and a second engine is a second answer; if the two ever disagreed this page would SHOW the disagreement rather than hide it behind a browser's arithmetic. No `parseFloat`, no `Number()` on money, no `toFixed()` as a calculation. **The timeline is the real event log** — the platform's nine events (`TransactionCreated` → … → `TransactionCompleted`) — and the four money stages that follow are drawn as **pending until they have actually happened**: a collection that is priced but unsettled must not look like one that was paid. **One new backend endpoint**, `/v1/reports/collection/{id}/chain`, placed in **reporting** because that is the module the architecture allows to SELECT across boundaries — putting it in `milk_collection` would have meant that module querying three others' tables. It follows settlement_line → settlement → payment_line → payment → receipt as four keyed lookups, each filtered by tenant as well as by key, with every stage null until it happens. Also added **date filtering on the collection list, applied in SQL**: without it a portal wanting "last 7 days" would pull every collection a dairy has ever taken and narrow it in the browser — slow today and wrong at the page boundary once there is a year of history. **Collections list** rebuilt with server-side status/centre/supplier/date filtering, a KPI row from the same window so the figures above the table and the rows inside it answer the same question, a Clear-filters control that appears only when filtered, and empty states worded for the situation. **Rate-card detail** added showing the thing customers actually ask for — the BANDS, rendered as stored so `45.5000` keeps four decimals — plus coverage gaps, because a reading falling in a gap cannot be priced and the page should say so rather than leave it to be discovered at the gate. Lifecycle actions deliberately stay on the list page: duplicating them would be two places to keep correct and only one of them tested. **Financially reconciled end to end** on the live deployment and independently in PostgreSQL: transaction `8b303dd2…` — 10.0 kg at 45.5000 = **455.00 KES** (10.0 × 45.5000 = 455.00000, matching the backend exactly) → `STL-2026-000033` finalized, contributing 455.00 of a 1,820.00 net → `PAY-2026-000017` completed → `RCP-2026-000014`. Nothing faked, nothing created for the demonstration; it came from the deterministic seed. **1,134 backend tests (+6), 111 portal tests (+13), typecheck, lint and build clean.** A test caught a real bug — `humanise` produced Title Case where sentence case was intended — fixed in the page, not papered over. **Deployed and verified as `demo004-091af33`**: date filter (today 14, yesterday 19), centre/supplier/status filters, pricing breakdown, nine-event trail, rate-card bands, and **tenant isolation — another org gets 404 on the collection and all-null on its chain**. **AWS resources created 0, resized 0, managed services 0, Terraform changes 0**; no demo data created or deleted. **Honestly bounded:** no create-collection form, because the backend exposes collection creation as a six-step state machine tied to an open session at a ready centre, not a single POST — a single form pretending otherwise would misrepresent how the platform works, so the guided flow is recommended as DEMO-005. See [DEMO-004-FINAL.md](DEMO-004-FINAL.md).

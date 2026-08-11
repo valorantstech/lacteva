@@ -562,34 +562,43 @@ async def make_center(
         200,
         what=f"operator {code}",
     )
-    scale = await expect(
-        await client.post(
-            "/v1/devices",
-            json={
-                "category": "scale",
-                "serial_number": f"SCALE-{code}",
-                "name": f"{name} scale",
-            },
-            headers=h,
-        ),
-        201,
-        what=f"scale {code}",
-    )
-    await expect(
-        await client.post(
-            f"/v1/devices/{scale['id']}/assign", json={"center_id": cid}, headers=h
-        ),
-        200,
-        201,
-        what=f"assign scale {code}",
-    )
-    await expect(
-        await client.post(
-            f"/v1/devices/{scale['id']}/status", json={"status": "active"}, headers=h
-        ),
-        200,
-        what=f"activate scale {code}",
-    )
+    # DEMO-006: a scale is BLOCKING; an analyzer and a printer are WARNINGS.
+    # Fitting all three is what a real centre does, and it is the difference
+    # between a demo centre reporting READY and one reporting WARNING with two
+    # checks failing — which is what DEMO-005 had to report honestly.
+    for category, label in (
+        ("scale", "scale"),
+        ("milk_analyzer", "analyzer"),
+        ("printer", "printer"),
+    ):
+        device = await expect(
+            await client.post(
+                "/v1/devices",
+                json={
+                    "category": category,
+                    "serial_number": f"{category.upper()}-{code}",
+                    "name": f"{name} {label}",
+                },
+                headers=h,
+            ),
+            201,
+            what=f"{label} {code}",
+        )
+        await expect(
+            await client.post(
+                f"/v1/devices/{device['id']}/assign", json={"center_id": cid}, headers=h
+            ),
+            200,
+            201,
+            what=f"assign {label} {code}",
+        )
+        await expect(
+            await client.post(
+                f"/v1/devices/{device['id']}/status", json={"status": "active"}, headers=h
+            ),
+            200,
+            what=f"activate {label} {code}",
+        )
     return center
 
 
@@ -925,9 +934,22 @@ async def pay(
 #
 #   D-21 .. D-15   period A — finalized and PAID, with receipts
 #   D-14 .. D-8    period B — finalized, awaiting payment / part paid
-#   D-7  .. D-1    open collections, nothing settled yet
+#   D-7  .. D-1    period C — a FEW suppliers settled but NOT finalized; the
+#                  rest of the window left unswept
 #   today          this morning's round, still in an open session
+#
+# DEMO-006 added period C. A demo where every settlement is already finalized
+# can only ever show the end of the lifecycle: no Calculate, no Finalize, no
+# irreversibility warning, because the platform correctly refuses all three on
+# a frozen settlement. Period C leaves a handful of settlements CALCULATED so
+# the last step can be taken live, and deliberately leaves the rest of the
+# window unswept so `Collect period` has real collections to find.
 HISTORY_DAYS = 21
+
+# How many suppliers get an open (calculated, not finalized) settlement for
+# period C. Three is enough to demonstrate finalization without turning the
+# settlement list into a wall of drafts.
+OPEN_SETTLEMENTS = 3
 
 
 async def build_demo_org(client, admin: dict, org: dict) -> dict:
@@ -1121,6 +1143,7 @@ async def build_money(client, built: dict) -> dict:
     suppliers = built["suppliers"]
     a_from, a_to = today - timedelta(days=21), today - timedelta(days=15)
     b_from, b_to = today - timedelta(days=14), today - timedelta(days=8)
+    c_from, c_to = today - timedelta(days=7), today - timedelta(days=1)
 
     counts = {
         "finalized": 0,
@@ -1128,6 +1151,7 @@ async def build_money(client, built: dict) -> dict:
         "awaiting_payment": 0,
         "failed": 0,
         "processing": 0,
+        "open_calculated": 0,
     }
     paid_settlements = []
     for i, supplier in enumerate(suppliers):
@@ -1179,6 +1203,22 @@ async def build_money(client, built: dict) -> dict:
         if b:
             counts["finalized"] += 1
             counts["awaiting_payment"] += 1
+
+        # Period C for the first three suppliers only — calculated, deliberately
+        # not finalized. Everyone else's last week stays unsettled, which is
+        # what makes a live `Collect period` find anything.
+        if i < OPEN_SETTLEMENTS:
+            c = await settle(
+                client,
+                h,
+                supplier_id=supplier["id"],
+                center_id=center["id"],
+                period_from=c_from,
+                period_to=c_to,
+                finalize=False,
+            )
+            if c:
+                counts["open_calculated"] += 1
 
     built["summary"]["settlements"] = counts
     built["summary"]["paid_settlement_numbers"] = paid_settlements[:5]
@@ -1410,9 +1450,9 @@ async def verify() -> dict:
     from platform_core.core.rls import platform_factory
     from platform_core.modules.milk_collection.models import MilkCollectionTransaction
     from platform_core.modules.organization.models import Organization
-    from platform_core.modules.payment.models import Payment
+    from platform_core.modules.payment.models import Payment, PaymentLine
     from platform_core.modules.receipt.models import Receipt
-    from platform_core.modules.settlement.models import Settlement
+    from platform_core.modules.settlement.models import Settlement, SettlementLine
     from platform_core.modules.supplier.models import Supplier
     from sqlalchemy import func, select
 
@@ -1472,6 +1512,71 @@ async def verify() -> dict:
         ]
         problems.extend(f"{n}: finalized with zero gross" for n in empty)
 
+        # DEMO-006 reconciliation. Reading a total is not verifying it: each
+        # of these re-derives a stored figure from the rows underneath it, and
+        # a mismatch means the platform is displaying money it did not compute.
+        checks["open_settlements"] = sum(
+            1 for s in rows if s.status in ("draft", "calculated")
+        )
+        line_sums = dict(
+            (
+                await session.execute(
+                    select(
+                        SettlementLine.settlement_id,
+                        func.sum(SettlementLine.gross_amount),
+                    )
+                    .where(SettlementLine.tenant_id.in_(ids))
+                    .group_by(SettlementLine.settlement_id)
+                )
+            ).all()
+        )
+        for s in rows:
+            if s.status not in ("calculated", "finalized"):
+                continue
+            expected = Decimal(line_sums.get(s.id) or 0)
+            if Decimal(s.gross_amount) != expected:
+                problems.append(
+                    f"{s.settlement_number}: gross {s.gross_amount} != lines {expected}"
+                )
+
+        allocations = dict(
+            (
+                await session.execute(
+                    select(PaymentLine.payment_id, func.sum(PaymentLine.amount))
+                    .where(PaymentLine.tenant_id.in_(ids))
+                    .group_by(PaymentLine.payment_id)
+                )
+            ).all()
+        )
+        payments = (
+            await session.scalars(select(Payment).where(Payment.tenant_id.in_(ids)))
+        ).all()
+        by_payment = {p.id: p for p in payments}
+        for pay_row in payments:
+            expected = Decimal(allocations.get(pay_row.id) or 0)
+            if Decimal(pay_row.amount) != expected:
+                problems.append(
+                    f"{pay_row.payment_number}: amount {pay_row.amount} "
+                    f"!= allocations {expected}"
+                )
+
+        receipts = (
+            await session.scalars(select(Receipt).where(Receipt.tenant_id.in_(ids)))
+        ).all()
+        for r in receipts:
+            source = by_payment.get(r.payment_id)
+            if source is None:
+                problems.append(f"{r.receipt_number}: receipt for an unknown payment")
+                continue
+            if source.status != "completed":
+                problems.append(
+                    f"{r.receipt_number}: receipt for a {source.status} payment"
+                )
+            if Decimal(r.net_amount) != Decimal(source.amount):
+                problems.append(
+                    f"{r.receipt_number}: net {r.net_amount} != payment {source.amount}"
+                )
+
     for label, minimum in (
         ("organizations", 2),
         ("suppliers", 20),
@@ -1479,6 +1584,9 @@ async def verify() -> dict:
         ("finalized_settlements", 5),
         ("payments", 5),
         ("receipts", 5),
+        # DEMO-006: a demo with nothing left to finalize cannot show the
+        # lifecycle at all.
+        ("open_settlements", 1),
     ):
         if (checks.get(label) or 0) < minimum:
             problems.append(

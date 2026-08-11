@@ -325,9 +325,9 @@ export default function ReportsPage() {
           <CardHeader>
             <CardTitle>Settlements</CardTitle>
             <CardDescription>
-              <a className="text-primary hover:underline" href="/settlements">
+              <Link className="text-primary hover:underline" href="/settlements">
                 Open settlements →
-              </a>
+              </Link>
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm">

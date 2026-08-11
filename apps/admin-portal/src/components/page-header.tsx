@@ -67,7 +67,9 @@ export function StatTile({
 }: {
   label: string;
   value: ReactNode;
-  hint?: string;
+  // DEMO-006: a hint is often an exact money figure, which must be rendered by
+  // <Money> rather than interpolated into a string.
+  hint?: ReactNode;
   icon?: ReactNode;
 }) {
   return (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -155,7 +156,10 @@ export default function ReceiptsPage() {
                     {money(r.net_amount, r.currency)}
                   </TableCell>
                   <TableCell className="whitespace-nowrap font-mono text-xs">
-                    {r.payment_number}
+                    {/* DEMO-006: no dead ends — the receipt reaches its payment. */}
+                    <Link className="hover:underline" href={`/payments/${r.payment_id}`}>
+                      {r.payment_number}
+                    </Link>
                   </TableCell>
                   <TableCell>{r.line_count}</TableCell>
                   <TableCell>
@@ -281,7 +285,10 @@ function ReceiptDetailCard({
         <CardDescription>
           {r.supplier_name} ({r.supplier_code}) ·{" "}
           <span className="font-medium">{money(r.net_amount, r.currency)} paid</span> · payment{" "}
-          {r.payment_number} ({r.payment_method.replace("_", " ").toLowerCase()})
+          <Link className="underline underline-offset-4" href={`/payments/${r.payment_id}`}>
+            {r.payment_number}
+          </Link>{" "}
+          ({r.payment_method.replace("_", " ").toLowerCase()})
           {r.payment_reference && ` · ref ${r.payment_reference}`}
           {r.delivered_at && ` · delivered ${r.delivered_at.slice(0, 10)}`}
         </CardDescription>
@@ -302,7 +309,11 @@ function ReceiptDetailCard({
             <TableBody>
               {detail.lines.map((line) => (
                 <TableRow key={line.id}>
-                  <TableCell className="font-mono">{line.settlement_number}</TableCell>
+                  <TableCell className="font-mono">
+                    <Link className="hover:underline" href={`/settlements/${line.settlement_id}`}>
+                      {line.settlement_number}
+                    </Link>
+                  </TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">
                     {line.period_from} → {line.period_to}
                   </TableCell>
