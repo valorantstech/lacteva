@@ -339,7 +339,7 @@ lifecycle policy keeping the 15 most recent images per repository.
 
 ## 9. Defects found
 
-Twelve, every one found by executing rather than reading — and the last of them only by driving a real browser.
+Thirteen, every one found by executing rather than reading — and the last of them only by driving a real browser.
 
 ### The demo seeder could not finish
 
@@ -392,6 +392,16 @@ Twelve, every one found by executing rather than reading — and the last of the
    `/deliveries` ignored their query strings, so "54 deliveries made but not
    yet billed → review" landed on the unfiltered list — which reads, in front
    of a customer, as a filter that does not work.
+10. **Two pages printed ungrouped amounts.** Reports and Receipts had each
+    grown their own formatter, so `13860.00 KES` and `1176.00 KES` appeared
+    beside `13,860.00 KES` everywhere else. Seen on screen, not in a diff —
+    which is why the rule is now a test: `money.tsx` is the only place that
+    decides how an exact decimal is displayed, and a page that stringifies an
+    amount itself fails the foundation suite.
+11. **Four different timestamp formats.** Most pages sliced sixteen characters,
+    two sliced nineteen, and Operations used `toLocaleString`, which renders in
+    the viewer's locale — the same instant read `2026-08-12 09:30` on one
+    screen and `8/12/2026, 9:30:00 AM` on the next.
 12. **Signing in landed on a page with no navigation.** `AppShell` lives in
     the root layout and probes the session once, when it mounts. Signing in
     used `router.push`, a client-side navigation that does not remount it — so
@@ -403,14 +413,10 @@ Twelve, every one found by executing rather than reading — and the last of the
     Sign-out never had the problem because it can call `setSession` on the
     shell directly. The test now asserts a full navigation AND that
     `router.push` is not used.
-11. **Four different timestamp formats.** Most pages sliced sixteen characters,
-    two sliced nineteen, and Operations used `toLocaleString`, which renders in
-    the viewer's locale — the same instant read `2026-08-12 09:30` on one
-    screen and `8/12/2026, 9:30:00 AM` on the next.
 
 ### Pre-existing, and not caused by this work order
 
-11. **The disaster-recovery proofs had not run in CI for at least five
+13. **The disaster-recovery proofs had not run in CI for at least five
     commits.** Both jobs failed at `astral-sh/setup-uv`, before a single line
     of the proof executed: the action has no dependency file at the repository
     root to key its cache on, and without an explicit `cache-dependency-glob`
@@ -504,7 +510,7 @@ to "how do permissions work" than any explanation.
 
 ```
 backend      1,314 tests — 1,240 passed, 74 skipped (PostgreSQL-only), 0 failed
-portal         195 tests — 195 passed (15 files)
+portal         197 tests — 197 passed (15 files)
 ruff check + ruff format --check      clean (227 files)
 eslint src --max-warnings 0           clean
 tsc --noEmit                          clean
