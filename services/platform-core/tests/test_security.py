@@ -880,10 +880,17 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
     historical record and must not change meaning when the models later do.
 
     This test earns its keep — it is what failed when IDM-001 introduced the
-    first new tenant-owned table since SEC-002, and again when PROD-001 added
-    `document_sequence`.
+    first new tenant-owned table since SEC-002, again when PROD-001 added
+    `document_sequence`, and again when DEMO-009 added the eight sales tables.
+    That last one reached a deployment before it was caught, because the
+    incremental test selection that day did not include this file — the
+    deployment verifier stopped it instead. Both guards were needed; neither
+    was redundant.
     """
     from migrations.versions.a1c7f3b90e22_row_level_security import TENANT_TABLES
+    from migrations.versions.c8a4d2f10b73_demo_009_rls_for_the_sales_tables import (
+        SALES_TABLES as DEMO009_TABLES,
+    )
     from migrations.versions.e62a7e569a6a_prod_001_document_number_sequences import (
         POLICY_TABLES as PROD001_TABLES,
     )
@@ -892,7 +899,13 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
 
     from platform_core.core.rls import tenant_tables
 
-    covered = set(TENANT_TABLES) | set(NEW_TENANT_TABLES) | set(POLICY_TABLES) | set(PROD001_TABLES)
+    covered = (
+        set(TENANT_TABLES)
+        | set(NEW_TENANT_TABLES)
+        | set(POLICY_TABLES)
+        | set(PROD001_TABLES)
+        | set(DEMO009_TABLES)
+    )
     uncovered = set(tenant_tables()) - covered
     assert not uncovered, (
         f"tenant-owned tables with no RLS policy: {sorted(uncovered)} — "

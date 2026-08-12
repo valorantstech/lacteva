@@ -305,11 +305,19 @@ Four, three of them found by the platform's own guards rather than by review.
 1. **The new tenant-owned tables had no row-level security.** On this platform
    RLS is installed *by migrations*, not at startup, so a migration that adds a
    tenant-owned table and stops there leaves it protected by application filters
-   alone. **The deployment verifier caught it and failed the deploy** — exactly
-   what SEC-002 built it for. Fixed in `c8a4d2f10b73`; the PostgreSQL proof now
-   reports **61 policies present**. The exposure was latent rather than live:
-   the rolled-back image had no sales endpoints, so nothing could reach the
-   tables.
+   alone. Fixed in `c8a4d2f10b73`; the PostgreSQL proof now reports **61
+   policies present**. The exposure was latent rather than live: the rolled-back
+   image had no sales endpoints, so nothing could reach the tables.
+
+   **Two independent guards caught this, and both were needed.** The deployment
+   verifier failed the deploy and rolled it back — exactly what SEC-002 built it
+   for. And `test_every_tenant_owned_table_is_covered_by_a_policy`, the drift
+   guard that has already fired for IDM-001 and PROD-001, failed in the full
+   regression. It would have caught this *before* the deploy, but the
+   incremental test selection I ran that day did not include that file. The
+   lesson is not that incremental testing is wrong — it is that a schema change
+   belongs in the "affected modules" for the security suite, and the deployment
+   verifier is the backstop for exactly the times that judgement is wrong.
 2. **A cancelled invoice would have blocked its own billing period forever.**
    The unique constraint on (tenant, customer, period) counted cancelled rows,
    so an operator who cancelled a draft with the wrong dates could never
@@ -391,6 +399,9 @@ Two operational items to fold in, both found here:
 * **a disk-space guard on the build host.** Prune-on-deploy, or a check that
   fails the deploy before the disk does. It filled twice during this work order
   and a full disk takes the platform down;
+* **treat any migration as touching the security suite.** `test_security.py`
+  should be in the affected set for every schema change, not only for changes
+  that look security-shaped;
 * **bulk month-end billing**, since a hundred households at one call each is the
   first thing a real dairy will hit.
 
