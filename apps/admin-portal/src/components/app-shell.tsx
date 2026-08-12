@@ -47,6 +47,7 @@ import {
   ShieldCheck,
   Tags,
   Truck,
+  UserRound,
   Users,
   X,
 } from "lucide-react";
@@ -74,6 +75,14 @@ const OPERATIONS: Entry[] = [
     permission: "collection.transaction.read",
     icon: ClipboardList,
   },
+];
+
+// DEMO-009 — the customer side. Permission-gated like every other entry, so a
+// collection operator (who has no sales.* grant) never sees it.
+const SALES: Entry[] = [
+  { href: "/customers", label: "Customers", permission: "sales.customer.read", icon: UserRound },
+  { href: "/deliveries", label: "Deliveries", permission: "sales.delivery.read", icon: Truck },
+  { href: "/billing", label: "Billing", permission: "sales.invoice.read", icon: FileText },
 ];
 
 const PRICING: Entry[] = [
@@ -117,6 +126,7 @@ const PLATFORM: Entry[] = [
 
 const GROUPS: { title: string; entries: Entry[] }[] = [
   { title: "Operations", entries: OPERATIONS },
+  { title: "Sales", entries: SALES },
   { title: "Pricing", entries: PRICING },
   { title: "Finance", entries: FINANCE },
   { title: "Platform", entries: PLATFORM },

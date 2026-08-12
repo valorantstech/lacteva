@@ -1813,3 +1813,354 @@ export type BackupRun = {
 export const getBackupStatus = () => api<BackupStatus>("/v1/_ops/backups/status");
 
 export const listBackupRuns = (limit = 20) => api<BackupRun[]>(`/v1/_ops/backups?limit=${limit}`);
+
+// --- Sales: customers, deliveries, billing (DEMO-009) -----------------------
+//
+// The receivable side. Deliberately its own vocabulary: a customer is not a
+// supplier, and an invoice is not a settlement.
+
+export type Customer = {
+  id: string;
+  code: string;
+  name: string;
+  customer_type: string;
+  phone: string;
+  alternate_phone: string;
+  address: string;
+  notes: string;
+  status: string;
+  billing_mode: string;
+  billing_day: number;
+  currency: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DeliveryPlan = {
+  id: string;
+  customer_id: string;
+  product: string;
+  default_quantity: string | number;
+  quantity_unit: string;
+  unit_price: string | number;
+  currency: string;
+  effective_from: string;
+  active: boolean;
+};
+
+export type CustomerPageResult = {
+  items: Customer[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type CustomerDetail = { customer: Customer; plans: DeliveryPlan[] };
+
+export function listCustomers(params: {
+  q?: string;
+  status?: string;
+  customer_type?: string;
+  limit: number;
+  offset: number;
+}): Promise<CustomerPageResult> {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.status) search.set("status", params.status);
+  if (params.customer_type) search.set("customer_type", params.customer_type);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<CustomerPageResult>(`/v1/customers?${search.toString()}`);
+}
+
+export const getCustomer = (id: string) => api<CustomerDetail>(`/v1/customers/${id}`);
+
+export const createCustomer = (body: Record<string, unknown>) =>
+  api<Customer>("/v1/customers", { method: "POST", body: JSON.stringify(body) });
+
+export const updateCustomer = (id: string, body: Record<string, unknown>) =>
+  api<Customer>(`/v1/customers/${id}`, { method: "PUT", body: JSON.stringify(body) });
+
+export const setCustomerStatus = (id: string, status: string) =>
+  api<Customer>(`/v1/customers/${id}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+
+/** Agree (or re-agree) what a customer takes and at what rate. */
+export const setDeliveryPlan = (
+  id: string,
+  body: { product?: string; default_quantity: string; quantity_unit?: string; unit_price: string },
+) => api<DeliveryPlan>(`/v1/customers/${id}/plan`, { method: "POST", body: JSON.stringify(body) });
+
+export type Delivery = {
+  id: string;
+  customer_id: string;
+  delivery_date: string;
+  slot: string;
+  product: string;
+  quantity: string | number;
+  quantity_unit: string;
+  unit_price: string | number;
+  currency: string;
+  amount: string | number;
+  status: string;
+  notes: string;
+  invoice_id: string | null;
+  plan_id: string | null;
+  created_at: string;
+};
+
+export type DeliveryPageResult = {
+  items: Delivery[];
+  total: number;
+  limit: number;
+  offset: number;
+  /** Totals for the WHOLE filtered set, computed by the database. */
+  total_quantity: string | number;
+  total_amount: string | number;
+};
+
+export function listDeliveries(params: {
+  customer_id?: string;
+  date_from?: string;
+  date_to?: string;
+  status?: string;
+  invoiced?: boolean;
+  limit: number;
+  offset: number;
+}): Promise<DeliveryPageResult> {
+  const search = new URLSearchParams();
+  if (params.customer_id) search.set("customer_id", params.customer_id);
+  if (params.date_from) search.set("date_from", params.date_from);
+  if (params.date_to) search.set("date_to", params.date_to);
+  if (params.status) search.set("status", params.status);
+  if (params.invoiced !== undefined) search.set("invoiced", String(params.invoiced));
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<DeliveryPageResult>(`/v1/deliveries?${search.toString()}`);
+}
+
+export const recordDelivery = (body: {
+  customer_id: string;
+  delivery_date: string;
+  slot?: string;
+  quantity?: string;
+  status?: string;
+  notes?: string;
+}) => api<Delivery>("/v1/deliveries", { method: "POST", body: JSON.stringify(body) });
+
+export const amendDelivery = (
+  id: string,
+  body: { quantity?: string; status?: string; notes?: string },
+) => api<Delivery>(`/v1/deliveries/${id}/amend`, { method: "POST", body: JSON.stringify(body) });
+
+export type DeliveryDayRow = {
+  delivery_date: string;
+  deliveries: number;
+  customers: number;
+  quantity: string | number;
+  amount: string | number;
+};
+
+export type DeliveryReport = {
+  date_from: string;
+  date_to: string;
+  deliveries: number;
+  customers_served: number;
+  total_quantity: string | number;
+  total_amount: string | number;
+  skipped: number;
+  by_day: DeliveryDayRow[];
+};
+
+export function getDeliveryReport(params: {
+  date_from: string;
+  date_to: string;
+  customer_id?: string;
+}): Promise<DeliveryReport> {
+  const search = new URLSearchParams({ date_from: params.date_from, date_to: params.date_to });
+  if (params.customer_id) search.set("customer_id", params.customer_id);
+  return api<DeliveryReport>(`/v1/deliveries/report?${search.toString()}`);
+}
+
+export type Invoice = {
+  id: string;
+  customer_id: string;
+  invoice_number: string;
+  period_from: string;
+  period_to: string;
+  currency: string;
+  subtotal: string | number;
+  adjustments: string | number;
+  total: string | number;
+  previous_balance: string | number;
+  amount_due: string | number;
+  status: string;
+  line_count: number;
+  issued_at: string | null;
+  created_at: string;
+};
+
+export type InvoiceLine = {
+  id: string;
+  delivery_id: string;
+  delivery_date: string;
+  slot: string;
+  product: string;
+  quantity: string | number;
+  quantity_unit: string;
+  unit_price: string | number;
+  amount: string | number;
+};
+
+export type InvoicePageResult = {
+  items: Invoice[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type InvoiceDetail = {
+  invoice: Invoice;
+  lines: InvoiceLine[];
+  paid: string | number;
+  outstanding: string | number;
+  totals_match_lines: boolean;
+};
+
+export function listInvoices(params: {
+  customer_id?: string;
+  status?: string;
+  q?: string;
+  limit: number;
+  offset: number;
+}): Promise<InvoicePageResult> {
+  const search = new URLSearchParams();
+  if (params.customer_id) search.set("customer_id", params.customer_id);
+  if (params.status) search.set("status", params.status);
+  if (params.q) search.set("q", params.q);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<InvoicePageResult>(`/v1/invoices?${search.toString()}`);
+}
+
+export const getInvoice = (id: string) => api<InvoiceDetail>(`/v1/invoices/${id}`);
+
+export const generateInvoice = (body: {
+  customer_id: string;
+  period_from: string;
+  period_to: string;
+}) => api<Invoice>("/v1/invoices", { method: "POST", body: JSON.stringify(body) });
+
+export const issueInvoice = (id: string) =>
+  api<Invoice>(`/v1/invoices/${id}/issue`, { method: "POST", body: "{}" });
+
+export const cancelInvoice = (id: string, reason: string) =>
+  api<Invoice>(`/v1/invoices/${id}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+
+export type CustomerPayment = {
+  id: string;
+  customer_id: string;
+  payment_number: string;
+  amount: string | number;
+  currency: string;
+  method: string;
+  reference: string;
+  status: string;
+  notes: string;
+  received_at: string;
+  created_at: string;
+};
+
+export type CustomerPaymentPageResult = {
+  items: CustomerPayment[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type CustomerPaymentDetail = {
+  payment: CustomerPayment;
+  allocations: { invoice_id: string; invoice_number: string; amount: string | number }[];
+  receipt_number: string | null;
+};
+
+export const CUSTOMER_PAYMENT_METHODS = ["CASH", "MOBILE_MONEY", "BANK_TRANSFER", "CHEQUE"] as const;
+
+export function listCustomerPayments(params: {
+  customer_id?: string;
+  method?: string;
+  q?: string;
+  limit: number;
+  offset: number;
+}): Promise<CustomerPaymentPageResult> {
+  const search = new URLSearchParams();
+  if (params.customer_id) search.set("customer_id", params.customer_id);
+  if (params.method) search.set("method", params.method);
+  if (params.q) search.set("q", params.q);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<CustomerPaymentPageResult>(`/v1/customer-payments?${search.toString()}`);
+}
+
+export const getCustomerPayment = (id: string) =>
+  api<CustomerPaymentDetail>(`/v1/customer-payments/${id}`);
+
+export const recordCustomerPayment = (body: {
+  customer_id: string;
+  amount: string;
+  method: string;
+  reference?: string;
+  notes?: string;
+  invoice_ids?: string[];
+}) => api<CustomerPayment>("/v1/customer-payments", { method: "POST", body: JSON.stringify(body) });
+
+export type CustomerBalance = {
+  customer_id: string;
+  currency: string;
+  invoiced: string | number;
+  paid: string | number;
+  outstanding: string | number;
+  unbilled_amount: string | number;
+  unbilled_deliveries: number;
+  open_invoices: number;
+};
+
+export const getCustomerBalance = (id: string) =>
+  api<CustomerBalance>(`/v1/customers/${id}/balance`);
+
+export type CustomerReceipt = {
+  id: string;
+  receipt_number: string;
+  payment_id: string;
+  payment_number: string;
+  customer_id: string;
+  customer_name: string;
+  customer_code: string;
+  amount: string | number;
+  currency: string;
+  method: string;
+  reference: string;
+  applied_to: string;
+  generated_at: string;
+};
+
+export function listCustomerReceipts(params: {
+  customer_id?: string;
+  q?: string;
+  limit: number;
+  offset: number;
+}): Promise<{ items: CustomerReceipt[]; total: number; limit: number; offset: number }> {
+  const search = new URLSearchParams();
+  if (params.customer_id) search.set("customer_id", params.customer_id);
+  if (params.q) search.set("q", params.q);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<{ items: CustomerReceipt[]; total: number; limit: number; offset: number }>(
+    `/v1/customer-receipts?${search.toString()}`,
+  );
+}
