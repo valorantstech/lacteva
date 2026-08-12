@@ -26,4 +26,9 @@ class User(Base, IdMixin):
     full_name: Mapped[str] = mapped_column(String(200))
     locale: Mapped[str] = mapped_column(String(8), default="en")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: DEMO-008 §9 — when this account last authenticated successfully.
+    #: Written by `AuthService.login`; never by a client. An administrator
+    #: reviewing access needs to see a dormant account, and "never" is a
+    #: meaningful answer, so it is nullable rather than defaulted to creation.
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

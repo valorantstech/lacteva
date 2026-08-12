@@ -134,5 +134,130 @@ SYSTEM_ROLES: dict[str, list[str]] = {
 }
 
 
+# --- DEMO-008: the named operational roles -----------------------------------
+#
+# These are composed ENTIRELY from the keys registered above. No permission was
+# renamed to accommodate them: the registry spells capabilities
+# `<module>.<entity>.<action>` and every guard, every seeded grant and every
+# test in the tree already depends on those exact strings. Renaming
+# `collection.center.read` to `centre.view` would have been a cosmetic change
+# that broke DEMO-001 through DEMO-007 on the way past.
+#
+# What each role means is therefore expressed as a SET of existing permissions,
+# and is resolved from the database at request time like every other grant —
+# the role name is a label on a row, never a branch in the code.
+#
+# `tenant-admin` and `tenant-viewer` are kept unchanged. Every existing demo
+# user, invitation and test holds one of them, and this work order does not get
+# to invalidate them.
+
+_FINANCE_OFFICER = [
+    "reporting.read",
+    "settlement.read",
+    "settlement.manage",
+    "payment.read",
+    "payment.manage",
+    "payment.retry",
+    "receipt.read",
+    "receipt.download",
+    # Reading a settlement without being able to see the collections inside it
+    # is not a job anyone can do.
+    "collection.transaction.read",
+    "supplier.read",
+    "collection.center.read",
+]
+
+_AUDITOR_READS = [
+    "audit.read",
+    "reporting.read",
+    "organization.read",
+    "organization.structure.read",
+    "organization.member.read",
+    "identity.user.read",
+    "authz.role.read",
+    "collection.center.read",
+    "operations.device.read",
+    "operations.readiness.read",
+    "supplier.read",
+    "collection.transaction.read",
+    "pricing.ratecard.read",
+    "settlement.read",
+    "payment.read",
+    "receipt.read",
+    "notification.read",
+    "sync.read",
+]
+
+NAMED_ROLES: dict[str, list[str]] = {
+    # Platform staff. The wildcard is the same grant `platform-admin` holds;
+    # this is the name the DEMO-008 vocabulary uses for it.
+    "PLATFORM_SUPER_ADMIN": [WILDCARD],
+    # Everything inside one organization — the tenant's own administrator.
+    "ORGANIZATION_ADMIN": list(SYSTEM_ROLES["tenant-admin"]),
+    # Runs operations, but administers neither people nor prices. Deliberately
+    # WITHOUT settlement.finalize, payment.manage, identity.user.manage and
+    # pricing.ratecard.approve.
+    "ORGANIZATION_MANAGER": [
+        "organization.read",
+        "organization.structure.read",
+        "organization.member.read",
+        "collection.center.read",
+        "operations.device.read",
+        "operations.readiness.read",
+        "supplier.read",
+        "collection.session.manage",
+        "collection.transaction.read",
+        "collection.transaction.record",
+        "pricing.ratecard.read",
+        "settlement.read",
+        "payment.read",
+        "receipt.read",
+        "receipt.download",
+        "reporting.read",
+        "notification.read",
+        "sync.read",
+    ],
+    # One centre's operation. The centre restriction is NOT expressed here —
+    # a permission set cannot say "only centre A". It is enforced separately,
+    # against `operator_assignment`, by `require_center_access`.
+    "CENTRE_MANAGER": [
+        "collection.center.read",
+        "operations.device.read",
+        "operations.readiness.read",
+        "supplier.read",
+        "collection.session.manage",
+        "collection.transaction.read",
+        "collection.transaction.record",
+        "reporting.read",
+        "settlement.read",
+    ],
+    # The person at the intake bay. Records collections; administers nothing.
+    "COLLECTION_OPERATOR": [
+        "collection.center.read",
+        "operations.readiness.read",
+        "supplier.read",
+        "collection.session.manage",
+        "collection.transaction.record",
+        "collection.transaction.read",
+    ],
+    "FINANCE_OFFICER": list(_FINANCE_OFFICER),
+    # Everything the officer can do, plus the two irreversible ones.
+    "FINANCE_MANAGER": [
+        *_FINANCE_OFFICER,
+        "settlement.finalize",
+        "payment.cancel",
+        "receipt.manage",
+    ],
+    # Reads everything, changes nothing. Asserted by test rather than by
+    # inspection: no key in this list ends in manage/record/finalize/retry.
+    "AUDITOR": list(_AUDITOR_READS),
+}
+
+
+# Everything `ensure_system_roles` seeds. One dict, so a role cannot exist in
+# the vocabulary and be absent from the database.
+ALL_SYSTEM_ROLES: dict[str, list[str]] = {**SYSTEM_ROLES, **NAMED_ROLES}
+
+
 def is_registered(key: str) -> bool:
     return key == WILDCARD or key in PERMISSIONS

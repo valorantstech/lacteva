@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Annotated
 
 import jwt as pyjwt
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -274,7 +274,25 @@ async def get_current_principal(
     if not user.is_active:
         AUTH_FAILURES.labels("user_inactive").inc()
         raise UnauthorizedError()
+
+    # DEMO-008: membership is checked on EVERY request, not only at login.
+    #
+    # `AuthService.login` already refused a suspended member, and `refresh`
+    # already refused a deactivated user — but neither re-checked membership
+    # afterwards. Suspending someone therefore did nothing until their access
+    # token expired, and their refresh token kept minting new ones: the
+    # suspension was a note in a table rather than a revocation.
+    #
+    # This is the same guarantee `user.is_active` above already has, applied
+    # to the other half of the relationship. A missing membership row still
+    # counts as active — platform principals have none, and so do users
+    # created before memberships were backfilled; that rule lives in
+    # `MembershipService.is_active_member` and is deliberately not duplicated
+    # here.
     if token_tenant is not None:
+        if not await MembershipService(session).is_active_member(user.id, token_tenant):
+            AUTH_FAILURES.labels("membership_inactive").inc()
+            raise UnauthorizedError()
         # Tenant-scoped tokens are authoritative — the header cannot override.
         # The binding already happened above, before the first read; this
         # keeps the context variable and the binding in agreement.
@@ -288,6 +306,57 @@ async def get_current_principal(
 
 
 CurrentPrincipal = Annotated[Principal, Depends(get_current_principal)]
+
+
+def require_center_access(param: str = "center_id"):
+    """Route guard: the principal may act at the centre named by `param`.
+
+    DEMO-008 §7. Organization-wide principals pass unchanged; a centre-scoped
+    one is refused any centre outside its grant.
+
+    The refusal is **403, not 404** — and that is a deliberate departure from
+    the cross-tenant rule. Another organization's centre must not be shown to
+    exist, because its existence is itself private. A centre in your OWN
+    organization is not a secret from you: you can see it on the centres list,
+    your colleagues work there, and pretending it does not exist would send an
+    operator hunting for a typo instead of telling them the truth, which is
+    that they are not assigned to it.
+    """
+
+    async def guard(
+        request: Request,
+        principal: CurrentPrincipal,
+        engine: Annotated[PermissionEngine, Depends(get_permission_engine)],
+        session: Session,
+    ) -> Principal:
+        raw = request.path_params.get(param) or request.query_params.get(param)
+        if raw is None:
+            return principal
+        try:
+            center_id = uuid.UUID(str(raw))
+        except ValueError:
+            return principal  # malformed — the route's own validation answers
+        scope = await engine.center_scope(principal.id, principal.tenant_id)
+        if scope is None or center_id in scope:
+            return principal
+
+        from platform_core.core.security_audit import PERMISSION_DENIED, record_security_event
+
+        await record_security_event(
+            session,
+            action=PERMISSION_DENIED,
+            subject=f"center:{center_id}",
+            actor_id=principal.id,
+            detail={
+                "reason": "center_out_of_scope",
+                "tenant_id": str(principal.tenant_id) if principal.tenant_id else None,
+            },
+        )
+        await session.commit()
+        AUTHZ_DENIALS.labels("center.scope").inc()
+        raise ForbiddenError("this centre is outside your assigned scope")
+
+    return guard
 
 
 def require_permission(permission: str):

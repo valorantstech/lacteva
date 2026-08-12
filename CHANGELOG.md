@@ -8,6 +8,73 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Rep
 
 ### Added
 
+- DEMO-008 "Authentication, RBAC & Permission Architecture" — the foundation
+  work order, and the first finding was that most of the foundation was already
+  here. Authorization has been database-driven since the platform was built:
+  `role`, `role_permission` and `user_role` tables, a `PermissionEngine` that
+  resolves effective permissions per request, `require_permission()` on every
+  protected route (recording a security event on denial), a 44-key permission
+  registry that refuses an unregistered key, idempotent system-role seeding at
+  startup, and navigation already driven by permissions rather than role names.
+  There was no hard-coded admin/manager authorization mechanism to replace. The
+  five things that were genuinely missing are what this work order built.
+- **The eight named roles**, seeded idempotently: `PLATFORM_SUPER_ADMIN`,
+  `ORGANIZATION_ADMIN`, `ORGANIZATION_MANAGER`, `CENTRE_MANAGER`,
+  `COLLECTION_OPERATOR`, `FINANCE_OFFICER`, `FINANCE_MANAGER`, `AUDITOR` —
+  each composed **entirely from the existing permission keys**. No permission
+  was renamed: every guard, every seeded grant and every test in the tree
+  depends on the exact strings `<module>.<entity>.<action>`, and renaming
+  `collection.center.read` to `centre.view` would have been a cosmetic change
+  that broke DEMO-001 through DEMO-007 on the way past. `tenant-admin` and
+  `tenant-viewer` are kept unchanged because every existing demo user holds one.
+- **Centre-scoped authorization** — `user_role.center_id`, nullable, where NULL
+  means organization-wide and is what every grant written before this migration
+  means. The scope lives on the GRANT rather than the role, so the same role can
+  be held at different centres without a second role being invented. It fills
+  the `resource` hint the permission engine reserved from the start
+  (`TODO(M2): attribute-based conditions (e.g. own-center-only)`), and it is
+  deliberately not a general condition language — a centre id is the only scope
+  this business has. Enforced by `require_center_access` on the centre-bearing
+  routes, in the handler where the centre arrives in a body, and as a WHERE
+  clause on the centre and transaction lists so a scoped user *sees* only their
+  own. The refusal is **403, not 404**: another organization's centre must not
+  be shown to exist, but a centre in your own organization is not a secret from
+  you, and pretending otherwise sends an operator hunting for a typo.
+- `GET /v1/authz/roles` — the roles that exist, with their permissions and how
+  many people hold each. There was no way to READ the roles at all, only to
+  create them, which is why the portal hard-coded a list.
+- `POST /v1/members/{user_id}/status` — suspend or reinstate a membership. The
+  status column existed from the beginning and nothing could write it.
+- `/v1/auth/me` now returns organization, membership, roles (with their centre
+  scope) and the resolved centre scope alongside the permissions, and
+  `user_account.last_login_at` records when an account last authenticated.
+
+### Fixed
+
+- **A suspended member kept working.** `Membership.status` was checked at LOGIN
+  and never again, so suspending someone did nothing until their access token
+  expired — and their refresh token, which checks `user.is_active` but not
+  membership, kept minting new ones. Membership is now re-checked on every
+  request, in `get_current_principal`, beside the `user.is_active` check that
+  already had that guarantee. A suspension takes effect on the member's very
+  next request.
+- The Roles page hard-coded `["tenant-admin", "tenant-operator",
+  "tenant-viewer"]` — and `tenant-operator` has never existed on this platform,
+  so the page offered an administrator a role that could not be granted and the
+  grant failed at the API. It now reads the real roles.
+
+### Changed
+
+- `GET /v1/members` carries each member's roles and centre scope, from the same
+  `user_role` rows the permission engine reads, so the administration screen and
+  the enforcement cannot disagree about who holds what.
+- The Users page shows role, centre scope by name, last sign-in ("never" when
+  there has not been one) and offers membership suspension distinctly from
+  account deactivation — the first says "not part of this organization right
+  now", the second says "may not sign in at all".
+
+### Added
+
 - DEMO-007 "Transaction Operations & Full Demo Flow" — the operational half of
   the product, and the first work order verified by **driving the deployed UI in
   a real browser** rather than by reading its HTML. **The transactions list

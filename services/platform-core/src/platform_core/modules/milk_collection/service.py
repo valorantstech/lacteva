@@ -722,6 +722,7 @@ class MilkCollectionService:
         state: str | None = None,
         date_from: date | None = None,
         date_to: date | None = None,
+        center_scope: set[uuid.UUID] | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> TransactionPage:
@@ -730,6 +731,14 @@ class MilkCollectionService:
         stmt = select(MilkCollectionTransaction).where(
             MilkCollectionTransaction.tenant_id == tenant_id
         )
+        # DEMO-008: a centre-scoped principal sees only their own centres'
+        # collections. `None` is organization-wide and is what every principal
+        # was before centre scope existed, so this narrows nobody who was not
+        # deliberately narrowed. Applied in SQL, next to the tenant filter,
+        # because a scope enforced anywhere else is a scope that some other
+        # caller will forget.
+        if center_scope is not None:
+            stmt = stmt.where(MilkCollectionTransaction.center_id.in_(center_scope))
         # DEMO-004: a date window, applied in SQL. Without it a portal wanting
         # "last 7 days" has to pull every collection the tenant has ever taken
         # and narrow it in the browser — which is both slow and, once a real

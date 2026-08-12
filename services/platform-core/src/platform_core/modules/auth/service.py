@@ -100,6 +100,10 @@ class AuthService:
             user.id, user.tenant_id
         ):
             raise InvalidCredentialsError()
+        # DEMO-008 §9: recorded here, on the one path that proves the
+        # credential was accepted. A refresh does not update it — a token
+        # renewing itself is not the person coming back.
+        user.last_login_at = utcnow()
         auth_session = AuthSession(
             user_id=user.id,
             tenant_id=user.tenant_id,

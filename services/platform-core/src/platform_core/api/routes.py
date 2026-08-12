@@ -1,14 +1,20 @@
 """API routers for all platform modules (OpenAPI-tagged, /v1 prefix)."""
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 
 from platform_core.api import deps
-from platform_core.api.deps import CurrentPrincipal, Principal, require_permission
+from platform_core.api.deps import (
+    CurrentPrincipal,
+    Principal,
+    require_center_access,
+    require_permission,
+)
 from platform_core.api.idempotent_route import IdempotentRoute, idempotency_guard
 from platform_core.core import alerts, health, rate_limit, security_audit
 from platform_core.core.backup.service import (
@@ -16,7 +22,8 @@ from platform_core.core.backup.service import (
     BackupStatusView,
     ClassificationView,
 )
-from platform_core.core.errors import AppError
+from platform_core.core.db import as_utc
+from platform_core.core.errors import AppError, ForbiddenError
 from platform_core.core.http_security import client_ip
 from platform_core.core.keys import get_key_registry
 from platform_core.core.security_audit import record_security_event
@@ -378,9 +385,45 @@ async def confirm_password_reset(
     )
 
 
+class MeOrganization(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+
+
+class MeMembership(BaseModel):
+    status: str
+    joined_at: datetime
+
+
+class MeRole(BaseModel):
+    name: str
+    description: str
+    #: The centre this particular grant is limited to, or null for the whole
+    #: organization. The same role can be held at different scopes.
+    center_id: uuid.UUID | None
+
+
 class MeView(BaseModel):
+    """The authorization context the portal renders from (DEMO-008 §13).
+
+    It carries what the caller needs to decide what to SHOW, and nothing that
+    would help anybody log in as them: no password hash, no session id, no
+    token, no refresh material. `UserView` has never included the hash and
+    still does not.
+
+    Everything here is derived from the database at request time — the same
+    resolution `require_permission` uses — so the portal cannot come to believe
+    in a permission the backend would refuse.
+    """
+
     user: UserView
     tenant_id: uuid.UUID | None
+    organization: MeOrganization | None
+    membership: MeMembership | None
+    roles: list[MeRole]
+    #: Centres this principal may act at; null means the whole organization.
+    center_scope: list[uuid.UUID] | None
     permissions: list[str]
 
 
@@ -388,11 +431,51 @@ class MeView(BaseModel):
 async def me(
     principal: CurrentPrincipal,
     engine: Annotated[PermissionEngine, Depends(deps.get_permission_engine)],
+    session: deps.Session,
 ) -> MeView:
+    from platform_core.modules.authz.models import Role, UserRole
+    from platform_core.modules.organization.models import Membership, Organization
+
     perms = await engine.effective_permissions(principal.id, principal.tenant_id)
+
+    organization = None
+    membership = None
+    if principal.tenant_id is not None:
+        org = await session.get(Organization, principal.tenant_id)
+        if org is not None:
+            organization = MeOrganization(id=org.id, name=org.name, slug=org.slug)
+        row = await session.scalar(
+            select(Membership).where(
+                Membership.tenant_id == principal.tenant_id,
+                Membership.user_id == principal.id,
+            )
+        )
+        if row is not None:
+            membership = MeMembership(status=row.status, joined_at=as_utc(row.joined_at))
+
+    granted = (
+        await session.execute(
+            select(Role, UserRole.center_id)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(
+                UserRole.user_id == principal.id,
+                (UserRole.tenant_id == principal.tenant_id) | (UserRole.tenant_id.is_(None)),
+            )
+            .order_by(Role.name)
+        )
+    ).all()
+    scope = await engine.center_scope(principal.id, principal.tenant_id)
+
     return MeView(
         user=UserView.model_validate(principal.user),
         tenant_id=principal.tenant_id,
+        organization=organization,
+        membership=membership,
+        roles=[
+            MeRole(name=role.name, description=role.description, center_id=center_id)
+            for role, center_id in granted
+        ],
+        center_scope=sorted(scope) if scope is not None else None,
         permissions=sorted(perms),
     )
 
@@ -519,16 +602,78 @@ async def list_branches(
 member_router = APIRouter(tags=["members"], route_class=IdempotentRoute)
 
 
+class MemberStatusRequest(BaseModel):
+    """An end state, not a verb — the same convention `UserActiveRequest`
+    uses, so suspending an already-suspended member is not a 409."""
+
+    status: str
+
+
+@member_router.post("/members/{user_id}/status")
+async def set_member_status(
+    user_id: uuid.UUID,
+    body: MemberStatusRequest,
+    service: Annotated[MembershipService, Depends(deps.get_membership_service)],
+    audit: Annotated[deps.AuditService, Depends(deps.get_audit_service)],
+    session: deps.Session,
+    principal: Annotated[Principal, Depends(require_permission("organization.member.manage"))],
+) -> dict:
+    """Suspend or reinstate a member (DEMO-008 §2, §14).
+
+    A suspension takes effect on the member's NEXT request, not when their
+    token expires — `get_current_principal` re-checks membership on every call.
+    """
+    membership = await service.set_status(user_id, body.status, actor_id=principal.id)
+    await audit.record(
+        action="organization.member.status_changed",
+        resource_type="membership",
+        resource_id=membership.id,
+        actor_id=principal.id,
+        detail={"user_id": str(user_id), "status": membership.status},
+    )
+    await session.commit()
+    return {"user_id": str(user_id), "status": membership.status}
+
+
 @member_router.get("/members")
 async def list_members(
     service: Annotated[MembershipService, Depends(deps.get_membership_service)],
-    _: Annotated[Principal, Depends(require_permission("organization.member.read"))],
+    session: deps.Session,
+    principal: Annotated[Principal, Depends(require_permission("organization.member.read"))],
 ) -> list[dict]:
+    """The organization's people, with what each of them may do.
+
+    DEMO-008 §9: the roles come from the same `user_role` rows the permission
+    engine reads, so the administration screen and the enforcement cannot
+    disagree about who holds what. Two grouped queries for the whole list, not
+    one per member.
+    """
+    from platform_core.modules.authz.models import Role, UserRole
+
+    members = await service.list_members()
+    user_ids = [m.user_id for m in members]
+    by_user: dict[uuid.UUID, list[dict]] = {}
+    if user_ids:
+        for user_id, name, center_id in (
+            await session.execute(
+                select(UserRole.user_id, Role.name, UserRole.center_id)
+                .join(Role, Role.id == UserRole.role_id)
+                .where(
+                    UserRole.user_id.in_(user_ids),
+                    (UserRole.tenant_id == principal.tenant_id) | (UserRole.tenant_id.is_(None)),
+                )
+                .order_by(Role.name)
+            )
+        ).all():
+            by_user.setdefault(user_id, []).append(
+                {"name": name, "center_id": str(center_id) if center_id else None}
+            )
     return [
         {
             "user_id": str(m.user_id),
             "status": m.status,
             "joined_at": m.joined_at.isoformat(),
+            "roles": by_user.get(m.user_id, []),
         }
         for m in await service.list_members()
     ]
@@ -612,7 +757,8 @@ async def create_center(cmd: CreateCenterCommand, service: CenterSvc, p: CenterM
 @center_router.get("", response_model=CenterPage)
 async def list_centers(
     service: CenterSvc,
-    _: CenterRead,
+    p: CenterRead,
+    engine: Annotated[PermissionEngine, Depends(deps.get_permission_engine)],
     q: str | None = None,
     status: str | None = None,
     branch_id: uuid.UUID | None = None,
@@ -620,11 +766,20 @@ async def list_centers(
     offset: int = Query(0, ge=0),
 ) -> CenterPage:
     return await service.list_page(
-        q=q, status=status, branch_id=branch_id, limit=limit, offset=offset
+        q=q,
+        status=status,
+        branch_id=branch_id,
+        center_scope=await engine.center_scope(p.id, p.tenant_id),
+        limit=limit,
+        offset=offset,
     )
 
 
-@center_router.get("/{center_id}", response_model=CenterDetailView)
+@center_router.get(
+    "/{center_id}",
+    response_model=CenterDetailView,
+    dependencies=[Depends(require_center_access())],
+)
 async def get_center_detail(
     center_id: uuid.UUID, service: CenterSvc, _: CenterRead
 ) -> CenterDetailView:
@@ -766,7 +921,11 @@ class AssignOperatorRequest(BaseModel):
     role_label: str = "operator"
 
 
-@ops_router.post("/collection-centers/{center_id}/operators", status_code=201)
+@ops_router.post(
+    "/collection-centers/{center_id}/operators",
+    status_code=201,
+    dependencies=[Depends(require_center_access())],
+)
 async def assign_operator(
     center_id: uuid.UUID, body: AssignOperatorRequest, service: OpsSvc, p: DeviceManage
 ) -> dict:
@@ -774,7 +933,11 @@ async def assign_operator(
     return {"user_id": str(a.user_id), "role_label": a.role_label}
 
 
-@ops_router.get("/collection-centers/{center_id}/operators", response_model=list[OperatorView])
+@ops_router.get(
+    "/collection-centers/{center_id}/operators",
+    response_model=list[OperatorView],
+    dependencies=[Depends(require_center_access())],
+)
 async def list_operators(center_id: uuid.UUID, service: OpsSvc, _: DeviceRead) -> Any:
     return await service.list_operators(center_id)
 
@@ -791,7 +954,11 @@ async def list_readiness_rules(_: ReadinessRead) -> dict[str, dict]:
     return READINESS_RULES
 
 
-@ops_router.get("/collection-centers/{center_id}/readiness", response_model=ReadinessResult)
+@ops_router.get(
+    "/collection-centers/{center_id}/readiness",
+    response_model=ReadinessResult,
+    dependencies=[Depends(require_center_access())],
+)
 async def evaluate_center_readiness(
     center_id: uuid.UUID, service: OpsSvc, _: ReadinessRead
 ) -> ReadinessResult:
@@ -982,8 +1149,22 @@ class OpenSessionRequest(BaseModel):
 
 @milk_router.post("/collection-sessions", response_model=SessionView, status_code=201)
 async def open_collection_session(
-    body: OpenSessionRequest, service: MilkSvc, p: SessionManage
+    body: OpenSessionRequest,
+    service: MilkSvc,
+    p: SessionManage,
+    engine: Annotated[PermissionEngine, Depends(deps.get_permission_engine)],
 ) -> Any:
+    """Open a session at a centre.
+
+    The centre arrives in the BODY here, not the path, so the scope is checked
+    in the handler rather than by `require_center_access`. Opening a session is
+    the moment a person starts working at a centre — letting a centre-scoped
+    operator open one somewhere else would make every collection recorded in
+    that session out of scope too.
+    """
+    scope = await engine.center_scope(p.id, p.tenant_id)
+    if scope is not None and body.center_id not in scope:
+        raise ForbiddenError("this centre is outside your assigned scope")
     return await service.open_session(body.center_id, body.label, actor_id=p.id)
 
 
@@ -1083,7 +1264,8 @@ async def cancel_transaction(
 @milk_router.get("/milk-transactions", response_model=TransactionPage)
 async def list_milk_transactions(
     service: MilkSvc,
-    _: TxRead,
+    p: TxRead,
+    engine: Annotated[PermissionEngine, Depends(deps.get_permission_engine)],
     session_id: uuid.UUID | None = None,
     center_id: uuid.UUID | None = None,
     supplier_id: uuid.UUID | None = None,
@@ -1100,6 +1282,7 @@ async def list_milk_transactions(
         state=state,
         date_from=date_from,
         date_to=date_to,
+        center_scope=await engine.center_scope(p.id, p.tenant_id),
         limit=limit,
         offset=offset,
     )
@@ -2422,6 +2605,84 @@ class CreateRoleRequest(BaseModel):
     permission_keys: list[str]
 
 
+class RoleView(BaseModel):
+    """A role as it actually exists, for the administration screen.
+
+    DEMO-008 §10: there was no way to READ the roles, which is why the portal
+    hard-coded a list of three names — one of which (`tenant-operator`) the
+    backend had never had, so the page offered a role that could not be
+    granted. A screen can only stop inventing roles once it can ask for them.
+    """
+
+    id: uuid.UUID
+    name: str
+    description: str
+    #: NULL for a system role shared by every organization; set for a role
+    #: this organization defined for itself.
+    tenant_id: uuid.UUID | None
+    system: bool
+    permissions: list[str]
+    #: How many grants reference it — an administrator must not remove the
+    #: last role that lets anyone in.
+    assignments: int
+
+
+@authz_router.get("/roles", response_model=list[RoleView])
+async def list_roles(
+    session: deps.Session,
+    principal: Annotated[Principal, Depends(require_permission("authz.role.read"))],
+) -> list[RoleView]:
+    """Roles visible to the caller: the system roles, plus their own tenant's.
+
+    Another organization's custom roles are not listed — the same tenant rule
+    every other collection follows.
+    """
+    from platform_core.modules.authz.models import Role, RolePermission, UserRole
+
+    roles = (
+        await session.scalars(
+            select(Role)
+            .where((Role.tenant_id.is_(None)) | (Role.tenant_id == principal.tenant_id))
+            .order_by(Role.tenant_id.is_(None).desc(), Role.name)
+        )
+    ).all()
+    ids = [r.id for r in roles]
+    grants: dict[uuid.UUID, list[str]] = {}
+    counts: dict[uuid.UUID, int] = {}
+    if ids:
+        for role_id, key in (
+            await session.execute(
+                select(RolePermission.role_id, RolePermission.permission_key).where(
+                    RolePermission.role_id.in_(ids)
+                )
+            )
+        ).all():
+            grants.setdefault(role_id, []).append(key)
+        for role_id, count in (
+            await session.execute(
+                select(UserRole.role_id, func.count())
+                .where(
+                    UserRole.role_id.in_(ids),
+                    (UserRole.tenant_id == principal.tenant_id) | (UserRole.tenant_id.is_(None)),
+                )
+                .group_by(UserRole.role_id)
+            )
+        ).all():
+            counts[role_id] = count
+    return [
+        RoleView(
+            id=role.id,
+            name=role.name,
+            description=role.description,
+            tenant_id=role.tenant_id,
+            system=role.tenant_id is None,
+            permissions=sorted(grants.get(role.id, [])),
+            assignments=counts.get(role.id, 0),
+        )
+        for role in roles
+    ]
+
+
 @authz_router.post("/roles", status_code=201)
 async def create_role(
     body: CreateRoleRequest,
@@ -2437,6 +2698,9 @@ async def create_role(
 class AssignRoleRequest(BaseModel):
     user_id: uuid.UUID
     role_name: str
+    #: DEMO-008 — limit this grant to one collection centre. Omit for
+    #: organization-wide, which is what every grant meant before.
+    center_id: uuid.UUID | None = None
 
 
 @authz_router.post("/assignments", status_code=201)
@@ -2449,6 +2713,7 @@ async def assign_role(
         user_id=body.user_id,
         role_name=body.role_name,
         tenant_id=principal.tenant_id,
+        center_id=body.center_id,
         actor_id=principal.id,
     )
     return {"id": str(assignment.id)}

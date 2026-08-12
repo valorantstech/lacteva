@@ -1543,11 +1543,31 @@ export type User = {
   full_name: string;
   locale: string;
   is_active: boolean;
+  /** DEMO-008 §9 — null means the account has never signed in. */
+  last_login_at?: string | null;
+  created_at?: string;
 };
 
+export type MeOrganization = { id: string; name: string; slug: string };
+export type MeMembership = { status: string; joined_at: string };
+export type MeRole = { name: string; description: string; center_id: string | null };
+
+/**
+ * The authorization context (DEMO-008 §13).
+ *
+ * The portal renders from this and from nothing else — there is no role string
+ * compiled into the bundle. Hiding a control the backend would refuse is a
+ * courtesy to the operator, not a security boundary: every one of these
+ * permissions is re-checked server-side on the request the control would send.
+ */
 export type Me = {
   user: User;
   tenant_id: string | null;
+  organization: MeOrganization | null;
+  membership: MeMembership | null;
+  roles: MeRole[];
+  /** Centres this principal may act at; null means the whole organization. */
+  center_scope: string[] | null;
   permissions: string[];
 };
 
@@ -1617,10 +1637,15 @@ export async function getSession(): Promise<Session> {
   return (await res.json()) as Session;
 }
 
+export type MemberRole = { name: string; center_id: string | null };
+
 export type Member = {
   user_id: string;
   status: string;
   joined_at: string;
+  /** DEMO-008 §9 — the grants this person holds, from the same rows the
+   *  permission engine reads. */
+  roles?: MemberRole[];
 };
 
 export const listMembers = () => api<Member[]>("/v1/members");
@@ -1662,10 +1687,35 @@ export const createRole = (name: string, permissionKeys: string[]) =>
     body: JSON.stringify({ name, permission_keys: permissionKeys }),
   });
 
-export const assignRole = (userId: string, roleName: string) =>
+export type Role = {
+  id: string;
+  name: string;
+  description: string;
+  tenant_id: string | null;
+  system: boolean;
+  permissions: string[];
+  assignments: number;
+};
+
+/** The roles that actually exist. DEMO-008 — the page used to hard-code three
+ *  names, one of which the backend had never had. */
+export const listRoles = () => api<Role[]>("/v1/authz/roles");
+
+export const assignRole = (userId: string, roleName: string, centerId?: string | null) =>
   api<{ id: string }>("/v1/authz/assignments", {
     method: "POST",
-    body: JSON.stringify({ user_id: userId, role_name: roleName }),
+    body: JSON.stringify({
+      user_id: userId,
+      role_name: roleName,
+      ...(centerId ? { center_id: centerId } : {}),
+    }),
+  });
+
+/** Suspend or reinstate a member. Takes effect on their next request. */
+export const setMemberStatus = (userId: string, status: "active" | "suspended") =>
+  api<{ user_id: string; status: string }>(`/v1/members/${userId}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
   });
 
 /** SEC-003 / F-02. Query parameters, not a body — see the route's comment. */

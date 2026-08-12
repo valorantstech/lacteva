@@ -44,3 +44,19 @@ class UserRole(Base, IdMixin):
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     role_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
+    #: DEMO-008 — optional CENTRE scope on the grant.
+    #:
+    #: NULL means organization-wide, which is what every grant made before this
+    #: column existed means, so adding it changed nobody's access. A non-null
+    #: value narrows this grant to one collection centre: it is how a centre
+    #: manager differs from an organization manager holding the same
+    #: permissions.
+    #:
+    #: The scope lives on the GRANT rather than on the role, because the same
+    #: role is worth granting at different scopes — a person can run centre A
+    #: and, later, centre B, without a second role being invented for them.
+    #:
+    #: Deliberately NOT reusing `operator_assignment`: that table records that
+    #: somebody works at a centre (and the readiness engine reads it as such),
+    #: which is a different statement from "may only act at this centre".
+    center_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)

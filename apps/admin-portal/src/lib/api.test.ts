@@ -200,10 +200,17 @@ describe("unauthorized access", () => {
 });
 
 describe("permission and tenant helpers (PERM-001 / TENANT-001)", () => {
+  // DEMO-008 widened the session with the authorization context. The helpers
+  // under test still care only about `permissions`; the rest is the shape the
+  // backend now sends.
   const base = {
     authenticated: true as const,
     user: { id: "u1", email: "a@b.example", full_name: "A", locale: "en", is_active: true },
     acting_tenant_id: null,
+    organization: null,
+    membership: null,
+    roles: [],
+    center_scope: null,
   };
 
   it("answers false for a session that is not signed in", async () => {

@@ -8,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.errors import ConflictError, NotFoundError
 from platform_core.modules.authz.models import Role, RolePermission, UserRole
-from platform_core.modules.authz.permissions import SYSTEM_ROLES, WILDCARD, is_registered
+from platform_core.modules.authz.permissions import (
+    ALL_SYSTEM_ROLES,
+    WILDCARD,
+    is_registered,
+)
 
 if TYPE_CHECKING:
     from platform_core.modules.audit.service import AuditService
@@ -49,6 +53,42 @@ class PermissionEngine:
         perms = await self.effective_permissions(user_id, tenant_id)
         return WILDCARD in perms or permission in perms
 
+    async def center_scope(
+        self, user_id: uuid.UUID, tenant_id: uuid.UUID | None
+    ) -> set[uuid.UUID] | None:
+        """Which collection centres may this principal act at?
+
+        `None` means "every centre in the organization" and is the answer for
+        anyone holding at least one grant that carries no centre — which is
+        every grant that existed before DEMO-008 added the column, so nothing
+        that worked before is narrowed by this.
+
+        A set means the principal is CENTRE-SCOPED: every one of their grants
+        names a centre, and those are the only centres they may touch. The
+        empty set cannot occur — a principal with no grants at all has no
+        permissions either and is refused long before scope is consulted.
+
+        This is the `resource` hint the engine reserved from the start, filled
+        in for the one attribute the domain actually needs. It is deliberately
+        not a general condition language: a centre id is the only scope this
+        business has, and inventing an engine to express it would be a larger
+        thing to get wrong.
+        """
+        rows = (
+            await self._session.execute(
+                select(UserRole.center_id).where(
+                    UserRole.user_id == user_id,
+                    (UserRole.tenant_id == tenant_id) | (UserRole.tenant_id.is_(None)),
+                )
+            )
+        ).all()
+        if not rows:
+            return None
+        scopes = {row[0] for row in rows}
+        if None in scopes:
+            return None
+        return {scope for scope in scopes if scope is not None}
+
 
 class AuthzService:
     def __init__(self, session: AsyncSession, audit: "AuditService | None" = None):
@@ -78,7 +118,7 @@ class AuthzService:
         Creates missing roles and adds newly registered permissions to
         existing ones, so registry growth reaches running deployments.
         """
-        for name, perms in SYSTEM_ROLES.items():
+        for name, perms in ALL_SYSTEM_ROLES.items():
             role = await self._session.scalar(
                 select(Role).where(Role.tenant_id.is_(None), Role.name == name)
             )
@@ -120,8 +160,18 @@ class AuthzService:
         user_id: uuid.UUID,
         role_name: str,
         tenant_id: uuid.UUID | None,
+        center_id: uuid.UUID | None = None,
         actor_id: uuid.UUID | None = None,
     ) -> UserRole:
+        """Grant a role, optionally limited to one collection centre.
+
+        DEMO-008: `center_id=None` is organization-wide and is what every
+        grant made before this parameter existed means. Re-granting the same
+        role at a DIFFERENT centre updates the existing row rather than
+        creating a second one, because the unique constraint is
+        (user, role, tenant) — widening it would let one person accumulate
+        silent, forgotten scopes.
+        """
         role = await self._resolve_role(role_name, tenant_id)
         existing = await self._session.scalar(
             select(UserRole).where(
@@ -131,8 +181,13 @@ class AuthzService:
             )
         )
         if existing:
+            if existing.center_id != center_id:
+                existing.center_id = center_id
+                await self._record("authz.role.rescoped", existing, actor_id)
             return existing
-        assignment = UserRole(user_id=user_id, role_id=role.id, tenant_id=tenant_id)
+        assignment = UserRole(
+            user_id=user_id, role_id=role.id, tenant_id=tenant_id, center_id=center_id
+        )
         self._session.add(assignment)
         await self._session.flush()
         await self._record("authz.role.granted", assignment, actor_id)

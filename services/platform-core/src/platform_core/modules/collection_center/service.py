@@ -222,12 +222,18 @@ class CollectionCenterService:
         q: str | None = None,
         status: str | None = None,
         branch_id: uuid.UUID | None = None,
+        center_scope: set[uuid.UUID] | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> CenterPage:
         tenant_id = require_current_tenant()
         limit = max(1, min(limit, 100))
         stmt = select(CollectionCenter).where(CollectionCenter.tenant_id == tenant_id)
+        # DEMO-008: a centre-scoped principal lists only their own centres.
+        # `None` means organization-wide — the answer for every principal that
+        # existed before centre scope did.
+        if center_scope is not None:
+            stmt = stmt.where(CollectionCenter.id.in_(center_scope))
         if q:
             like = f"%{q.lower()}%"
             stmt = stmt.where(

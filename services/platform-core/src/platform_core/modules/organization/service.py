@@ -253,6 +253,33 @@ class MembershipService:
         self._session.add(membership)
         return membership
 
+    MEMBERSHIP_STATUSES = ("active", "suspended", "invited")
+
+    async def set_status(
+        self, user_id: uuid.UUID, status: str, *, actor_id: uuid.UUID | None = None
+    ) -> Membership:
+        """Suspend or reinstate a member of the current organization.
+
+        DEMO-008: the status column existed from the beginning and nothing
+        could write it — suspension was a database operation, which meant in
+        practice that it never happened. It is an end state rather than a
+        verb, so suspending twice is not an error.
+        """
+        if status not in self.MEMBERSHIP_STATUSES:
+            raise ConflictError(f"status must be one of {', '.join(self.MEMBERSHIP_STATUSES)}")
+        tenant_id = get_current_tenant()
+        if tenant_id is None:
+            raise ForbiddenError("tenant context required")
+        membership = await self._session.scalar(
+            select(Membership).where(
+                Membership.tenant_id == tenant_id, Membership.user_id == user_id
+            )
+        )
+        if membership is None:
+            raise NotFoundError("membership not found")
+        membership.status = status
+        return membership
+
     async def list_members(self) -> list[Membership]:
         tenant_id = get_current_tenant()
         if tenant_id is None:
