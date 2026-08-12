@@ -37,12 +37,10 @@ MODE="check"
 [ "${1:-}" = "--force" ] && MODE="force"
 [ "${1:-}" = "--report" ] && MODE="report"
 
-log() {
-  local line
-  line="$(date -u +%FT%TZ)  $*"
-  printf '%s\n' "${line}"
-  [ -w "$(dirname "${LOG}")" ] 2>/dev/null && printf '%s\n' "${line}" >> "${LOG}" || true
-}
+# STDOUT ONLY. The systemd unit already redirects stdout to ${LOG}
+# (`StandardOutput=append:`), so writing there as well printed every line
+# twice — which is how the first scheduled run appeared in the log.
+log() { printf '%s  %s\n' "$(date -u +%FT%TZ)" "$*"; }
 
 usage() { df --output=pcent / | tail -1 | tr -dc '0-9'; }
 
@@ -56,7 +54,7 @@ reclaim_if_needed() {
     return
   fi
   log "  ${step}: running at ${before}%"
-  eval "${cmd}" >> "${LOG}" 2>&1 || log "  ${step}: FAILED (continuing — the next step may still help)"
+  eval "${cmd}" >/dev/null 2>&1 || log "  ${step}: FAILED (continuing — the next step may still help)"
   after="$(usage)"
   log "  ${step}: ${before}% → ${after}%"
 }
