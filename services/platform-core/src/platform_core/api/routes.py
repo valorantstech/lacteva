@@ -33,6 +33,18 @@ from platform_core.modules.audit.service import AuditPage
 from platform_core.modules.auth.service import AuthService, LoginCommand, TokenPair
 from platform_core.modules.authz.permissions import PERMISSIONS
 from platform_core.modules.authz.service import AuthzService, PermissionEngine
+from platform_core.modules.billing.service import (
+    BillingService,
+    CustomerBalanceView,
+    CustomerPaymentDetailView,
+    CustomerPaymentPage,
+    CustomerPaymentView,
+    GenerateInvoiceCommand,
+    InvoiceDetailView,
+    InvoicePage,
+    InvoiceView,
+    RecordCustomerPaymentCommand,
+)
 from platform_core.modules.collection_center.service import (
     CalendarEntryInput,
     CalendarEntryView,
@@ -46,6 +58,24 @@ from platform_core.modules.collection_center.service import (
     UpdateCenterCommand,
 )
 from platform_core.modules.configuration.service import ConfigurationService
+from platform_core.modules.customer.service import (
+    CreateCustomerCommand,
+    CustomerDetailView,
+    CustomerPage,
+    CustomerService,
+    CustomerView,
+    DeliveryPlanInput,
+    DeliveryPlanView,
+    UpdateCustomerCommand,
+)
+from platform_core.modules.delivery.service import (
+    AmendDeliveryCommand,
+    DeliveryPage,
+    DeliveryReport,
+    DeliveryService,
+    DeliveryView,
+    RecordDeliveryCommand,
+)
 from platform_core.modules.event_relay.consumers import (
     ConsumerRunner,
     ConsumersHealth,
@@ -2914,6 +2944,252 @@ async def offboard_tenant(
     }
 
 
+# --- Sales: customers, deliveries, billing (DEMO-009 / CAP-0006 CMA) --------
+#
+# A separate vocabulary from procurement, deliberately. `sales.*` permissions
+# guard these routes so that the right to record a milk DELIVERY is not the
+# same grant as the right to record a milk COLLECTION.
+
+customer_router = APIRouter(
+    prefix="/customers", tags=["sales-customer"], route_class=IdempotentRoute
+)
+CustomerRead = Annotated[Principal, Depends(require_permission("sales.customer.read"))]
+CustomerManage = Annotated[Principal, Depends(require_permission("sales.customer.manage"))]
+CustomerSvc = Annotated[CustomerService, Depends(deps.get_customer_service)]
+
+
+@customer_router.post("", response_model=CustomerView, status_code=201)
+async def create_customer(
+    cmd: CreateCustomerCommand, service: CustomerSvc, p: CustomerManage
+) -> Any:
+    return await service.create(cmd, actor_id=p.id)
+
+
+@customer_router.get("", response_model=CustomerPage)
+async def search_customers(
+    service: CustomerSvc,
+    _: CustomerRead,
+    q: str | None = None,
+    status: str | None = None,
+    customer_type: str | None = None,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> CustomerPage:
+    """Customers, filtered by the database — name, code or phone."""
+    return await service.search(
+        q=q, status=status, customer_type=customer_type, limit=limit, offset=offset
+    )
+
+
+@customer_router.get("/{customer_id}", response_model=CustomerDetailView)
+async def get_customer(customer_id: uuid.UUID, service: CustomerSvc, _: CustomerRead) -> Any:
+    return await service.detail(customer_id)
+
+
+@customer_router.put("/{customer_id}", response_model=CustomerView)
+async def update_customer(
+    customer_id: uuid.UUID, cmd: UpdateCustomerCommand, service: CustomerSvc, p: CustomerManage
+) -> Any:
+    return await service.update(customer_id, cmd, actor_id=p.id)
+
+
+class CustomerStatusRequest(BaseModel):
+    status: str
+
+
+@customer_router.post("/{customer_id}/status", response_model=CustomerView)
+async def set_customer_status(
+    customer_id: uuid.UUID,
+    body: CustomerStatusRequest,
+    service: CustomerSvc,
+    p: CustomerManage,
+) -> Any:
+    return await service.set_status(customer_id, body.status, actor_id=p.id)
+
+
+@customer_router.post("/{customer_id}/plan", response_model=DeliveryPlanView, status_code=201)
+async def set_delivery_plan(
+    customer_id: uuid.UUID, body: DeliveryPlanInput, service: CustomerSvc, p: CustomerManage
+) -> Any:
+    """Agree what this customer takes and at what rate.
+
+    Supersedes the previous plan rather than editing it, so a delivery priced
+    last week remains explainable.
+    """
+    return await service.set_plan(customer_id, body, actor_id=p.id)
+
+
+delivery_router = APIRouter(tags=["sales-delivery"], route_class=IdempotentRoute)
+DeliveryRead = Annotated[Principal, Depends(require_permission("sales.delivery.read"))]
+DeliveryRecord = Annotated[Principal, Depends(require_permission("sales.delivery.record"))]
+DeliverySvc = Annotated[DeliveryService, Depends(deps.get_delivery_service)]
+
+
+@delivery_router.post("/deliveries", response_model=DeliveryView, status_code=201)
+async def record_delivery(
+    cmd: RecordDeliveryCommand, service: DeliverySvc, p: DeliveryRecord
+) -> Any:
+    """Record one delivery.
+
+    The rate comes from the customer's active plan and the amount is computed
+    by the domain — neither is accepted from the client.
+    """
+    return await service.record(cmd, actor_id=p.id)
+
+
+@delivery_router.get("/deliveries", response_model=DeliveryPage)
+async def search_deliveries(
+    service: DeliverySvc,
+    _: DeliveryRead,
+    customer_id: uuid.UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    status: str | None = None,
+    invoiced: bool | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> DeliveryPage:
+    """Delivery history. The totals cover the whole filtered set, not the page."""
+    return await service.search(
+        customer_id=customer_id,
+        date_from=date_from,
+        date_to=date_to,
+        status=status,
+        invoiced=invoiced,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@delivery_router.get("/deliveries/report", response_model=DeliveryReport)
+async def delivery_report(
+    service: DeliverySvc,
+    _: DeliveryRead,
+    date_from: date,
+    date_to: date,
+    customer_id: uuid.UUID | None = None,
+) -> DeliveryReport:
+    """ "What was delivered, and what is it worth?" — aggregated in SQL."""
+    return await service.report(date_from=date_from, date_to=date_to, customer_id=customer_id)
+
+
+@delivery_router.get("/deliveries/{delivery_id}", response_model=DeliveryView)
+async def get_delivery(delivery_id: uuid.UUID, service: DeliverySvc, _: DeliveryRead) -> Any:
+    return await service.get(delivery_id)
+
+
+@delivery_router.post("/deliveries/{delivery_id}/amend", response_model=DeliveryView)
+async def amend_delivery(
+    delivery_id: uuid.UUID, cmd: AmendDeliveryCommand, service: DeliverySvc, p: DeliveryRecord
+) -> Any:
+    return await service.amend(delivery_id, cmd, actor_id=p.id)
+
+
+billing_router = APIRouter(tags=["sales-billing"], route_class=IdempotentRoute)
+InvoiceRead = Annotated[Principal, Depends(require_permission("sales.invoice.read"))]
+InvoiceManage = Annotated[Principal, Depends(require_permission("sales.invoice.manage"))]
+InvoiceIssue = Annotated[Principal, Depends(require_permission("sales.invoice.issue"))]
+CustomerPaymentRead = Annotated[Principal, Depends(require_permission("sales.payment.read"))]
+CustomerPaymentRecord = Annotated[Principal, Depends(require_permission("sales.payment.record"))]
+CustomerReceiptRead = Annotated[Principal, Depends(require_permission("sales.receipt.read"))]
+BillingSvc = Annotated[BillingService, Depends(deps.get_billing_service)]
+
+
+@billing_router.post("/invoices", response_model=InvoiceView, status_code=201)
+async def generate_invoice(
+    cmd: GenerateInvoiceCommand, service: BillingSvc, p: InvoiceManage
+) -> Any:
+    """Build a draft statement from the period's unbilled deliveries."""
+    return await service.generate_invoice(cmd, actor_id=p.id)
+
+
+@billing_router.get("/invoices", response_model=InvoicePage)
+async def search_invoices(
+    service: BillingSvc,
+    _: InvoiceRead,
+    customer_id: uuid.UUID | None = None,
+    status: str | None = None,
+    q: str | None = None,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> InvoicePage:
+    return await service.search_invoices(
+        customer_id=customer_id, status=status, q=q, limit=limit, offset=offset
+    )
+
+
+@billing_router.get("/invoices/{invoice_id}", response_model=InvoiceDetailView)
+async def get_invoice(invoice_id: uuid.UUID, service: BillingSvc, _: InvoiceRead) -> Any:
+    return await service.invoice_detail(invoice_id)
+
+
+@billing_router.post("/invoices/{invoice_id}/issue", response_model=InvoiceView)
+async def issue_invoice(invoice_id: uuid.UUID, service: BillingSvc, p: InvoiceIssue) -> Any:
+    """Hand it to the customer. Irreversible — it becomes immutable and payable."""
+    return await service.issue_invoice(invoice_id, actor_id=p.id)
+
+
+class CancelInvoiceRequest(BaseModel):
+    reason: str = Field(default="", max_length=300)
+
+
+@billing_router.post("/invoices/{invoice_id}/cancel", response_model=InvoiceView)
+async def cancel_invoice(
+    invoice_id: uuid.UUID, body: CancelInvoiceRequest, service: BillingSvc, p: InvoiceManage
+) -> Any:
+    return await service.cancel_invoice(invoice_id, body.reason, actor_id=p.id)
+
+
+@billing_router.post("/customer-payments", response_model=CustomerPaymentView, status_code=201)
+async def record_customer_payment(
+    cmd: RecordCustomerPaymentCommand, service: BillingSvc, p: CustomerPaymentRecord
+) -> Any:
+    """Money RECEIVED from a customer — the opposite direction to /v1/payments."""
+    return await service.record_payment(cmd, actor_id=p.id)
+
+
+@billing_router.get("/customer-payments", response_model=CustomerPaymentPage)
+async def search_customer_payments(
+    service: BillingSvc,
+    _: CustomerPaymentRead,
+    customer_id: uuid.UUID | None = None,
+    method: str | None = None,
+    q: str | None = None,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> CustomerPaymentPage:
+    return await service.search_payments(
+        customer_id=customer_id, method=method, q=q, limit=limit, offset=offset
+    )
+
+
+@billing_router.get("/customer-payments/{payment_id}", response_model=CustomerPaymentDetailView)
+async def get_customer_payment(
+    payment_id: uuid.UUID, service: BillingSvc, _: CustomerPaymentRead
+) -> Any:
+    return await service.payment_detail(payment_id)
+
+
+@billing_router.get("/customers/{customer_id}/balance", response_model=CustomerBalanceView)
+async def customer_balance(
+    customer_id: uuid.UUID, service: BillingSvc, _: CustomerPaymentRead
+) -> Any:
+    """What this customer owes, including the bill still forming."""
+    return await service.balance(customer_id)
+
+
+@billing_router.get("/customer-receipts")
+async def search_customer_receipts(
+    service: BillingSvc,
+    _: CustomerReceiptRead,
+    customer_id: uuid.UUID | None = None,
+    q: str | None = None,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    return await service.search_receipts(customer_id=customer_id, q=q, limit=limit, offset=offset)
+
+
 for sub in (
     wellknown,
     security_router,
@@ -2942,5 +3218,8 @@ for sub in (
     config_router,
     audit_router,
     tenant_data_router,
+    customer_router,
+    delivery_router,
+    billing_router,
 ):
     router.include_router(sub)

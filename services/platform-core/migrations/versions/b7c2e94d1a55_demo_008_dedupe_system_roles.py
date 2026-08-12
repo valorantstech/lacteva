@@ -51,15 +51,19 @@ depends_on = None
 def upgrade() -> None:
     bind = op.get_bind()
 
-    duplicated = bind.execute(
-        sa.text(
-            """
+    duplicated = (
+        bind.execute(
+            sa.text(
+                """
             SELECT name FROM role
             WHERE tenant_id IS NULL
             GROUP BY name HAVING count(*) > 1
             """
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     for name in duplicated:
         rows = bind.execute(

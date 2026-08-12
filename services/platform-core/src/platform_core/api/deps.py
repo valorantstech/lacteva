@@ -26,8 +26,11 @@ from platform_core.modules.audit.service import AuditService
 from platform_core.modules.auth.models import AuthSession
 from platform_core.modules.auth.service import AuthService
 from platform_core.modules.authz.service import AuthzService, PermissionEngine
+from platform_core.modules.billing.service import BillingService
 from platform_core.modules.collection_center.service import CollectionCenterService
 from platform_core.modules.configuration.service import ConfigurationService
+from platform_core.modules.customer.service import CustomerService
+from platform_core.modules.delivery.service import DeliveryService
 from platform_core.modules.event_relay.consumers import ConsumerRunner
 from platform_core.modules.event_relay.projections import ProjectionRebuilder
 from platform_core.modules.event_relay.service import OutboxEventBus, RelayService
@@ -189,6 +192,18 @@ def get_payment_service(session: Session, bus: Bus, audit: Audit) -> PaymentServ
 
 def get_receipt_service(session: Session, bus: Bus, audit: Audit) -> ReceiptService:
     return ReceiptService(session, bus, audit)
+
+
+def get_customer_service(session: Session, audit: Audit) -> CustomerService:
+    return CustomerService(session, audit)
+
+
+def get_delivery_service(session: Session, bus: Bus, audit: Audit) -> DeliveryService:
+    return DeliveryService(session, bus, audit)
+
+
+def get_billing_service(session: Session, bus: Bus, audit: Audit) -> BillingService:
+    return BillingService(session, bus, audit)
 
 
 def get_settlement_service(session: Session, bus: Bus, audit: Audit) -> SettlementService:

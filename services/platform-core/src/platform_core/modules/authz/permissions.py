@@ -52,6 +52,23 @@ PERMISSIONS: dict[str, str] = {
     "receipt.manage": "Mark receipts delivered and archive them",
     "receipt.download": "Render and download receipt artifacts",
     "sync.read": "Read the offline sync monitor (queue status, conflicts, statistics)",
+    # --- DEMO-009: the SALES side (CAP-0006 CMA — SLS Sales, DST Distribution)
+    #
+    # Deliberately its own vocabulary. A customer is not a supplier and a
+    # receivable is not a payable, so `sales.*` keys sit beside the
+    # procurement ones rather than being folded into them: granting somebody
+    # the right to record a milk DELIVERY must not also grant the right to
+    # record a milk COLLECTION.
+    "sales.customer.read": "Read customers, their accounts and delivery plans",
+    "sales.customer.manage": "Register and administer customers and their delivery plans",
+    "sales.delivery.read": "Read milk deliveries and delivery reports",
+    "sales.delivery.record": "Record, amend and cancel daily milk deliveries",
+    "sales.invoice.read": "Read customer invoices and statements",
+    "sales.invoice.manage": "Generate customer invoices for a billing period",
+    "sales.invoice.issue": "Issue an invoice (makes it immutable and payable)",
+    "sales.payment.read": "Read customer payments and outstanding balances",
+    "sales.payment.record": "Record money received from a customer",
+    "sales.receipt.read": "Read and download customer receipts",
     "platform.security.manage": (
         "Inspect signing keys and security configuration — platform staff only"
     ),
@@ -110,6 +127,18 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "reporting.read",
         "notification.read",
         "notification.manage",
+        # DEMO-009: the sales side. The tenant's own administrator runs the
+        # whole business, not half of it.
+        "sales.customer.read",
+        "sales.customer.manage",
+        "sales.delivery.read",
+        "sales.delivery.record",
+        "sales.invoice.read",
+        "sales.invoice.manage",
+        "sales.invoice.issue",
+        "sales.payment.read",
+        "sales.payment.record",
+        "sales.receipt.read",
     ],
     "tenant-viewer": [
         "identity.user.read",
@@ -130,6 +159,11 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "sync.read",
         "reporting.read",
         "notification.read",
+        "sales.customer.read",
+        "sales.delivery.read",
+        "sales.invoice.read",
+        "sales.payment.read",
+        "sales.receipt.read",
     ],
 }
 
@@ -165,6 +199,23 @@ _FINANCE_OFFICER = [
     "collection.transaction.read",
     "supplier.read",
     "collection.center.read",
+    # DEMO-009: money in as well as money out. An officer prepares bills and
+    # records receipts; issuing an invoice is the manager's (below).
+    "sales.customer.read",
+    "sales.delivery.read",
+    "sales.invoice.read",
+    "sales.invoice.manage",
+    "sales.payment.read",
+    "sales.payment.record",
+    "sales.receipt.read",
+]
+
+_SALES_READS = [
+    "sales.customer.read",
+    "sales.delivery.read",
+    "sales.invoice.read",
+    "sales.payment.read",
+    "sales.receipt.read",
 ]
 
 _AUDITOR_READS = [
@@ -186,6 +237,7 @@ _AUDITOR_READS = [
     "receipt.read",
     "notification.read",
     "sync.read",
+    *_SALES_READS,
 ]
 
 NAMED_ROLES: dict[str, list[str]] = {
@@ -216,6 +268,14 @@ NAMED_ROLES: dict[str, list[str]] = {
         "reporting.read",
         "notification.read",
         "sync.read",
+        # Sees the sales side and runs the round; does not issue bills or
+        # take money.
+        "sales.customer.read",
+        "sales.delivery.read",
+        "sales.delivery.record",
+        "sales.invoice.read",
+        "sales.payment.read",
+        "sales.receipt.read",
     ],
     # One centre's operation. The centre restriction is NOT expressed here —
     # a permission set cannot say "only centre A". It is enforced separately,
@@ -247,6 +307,24 @@ NAMED_ROLES: dict[str, list[str]] = {
         "settlement.finalize",
         "payment.cancel",
         "receipt.manage",
+        # Issuing a bill is the receivable mirror of finalizing a settlement:
+        # irreversible, and therefore the manager's.
+        "sales.invoice.issue",
+    ],
+    # DEMO-009: the person who runs the milk round and the customer book.
+    # Records deliveries and takes money at the door; does not issue bills,
+    # and touches nothing on the procurement side.
+    "SALES_OFFICER": [
+        "sales.customer.read",
+        "sales.customer.manage",
+        "sales.delivery.read",
+        "sales.delivery.record",
+        "sales.invoice.read",
+        "sales.invoice.manage",
+        "sales.payment.read",
+        "sales.payment.record",
+        "sales.receipt.read",
+        "reporting.read",
     ],
     # Reads everything, changes nothing. Asserted by test rather than by
     # inspection: no key in this list ends in manage/record/finalize/retry.
