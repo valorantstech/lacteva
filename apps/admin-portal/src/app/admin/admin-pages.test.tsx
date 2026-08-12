@@ -8,6 +8,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useEffect } from "react";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -222,6 +223,40 @@ describe("navigation (NAV-001)", () => {
       permissions: ALL,
     },
   };
+
+  it("mounts the page ONCE while the session probe is still answering", async () => {
+    /**
+     * PERF regression (DEMO-007). The shell used to early-return a different
+     * tree while `checked` was false, so `{children}` sat in one position
+     * before the probe answered and another after — React unmounted and
+     * remounted the page, and every screen issued every one of its requests
+     * twice, about 200ms apart, on every load. Measured in a real browser on
+     * the deployed portal before this was fixed.
+     *
+     * A child that counts its own mounts is the cheapest way to keep that
+     * from coming back.
+     */
+    const { AppShell } = await import("@/components/app-shell");
+    let mounts = 0;
+    function Counter() {
+      useEffect(() => {
+        mounts += 1;
+      }, []);
+      return <p>page content</p>;
+    }
+
+    routeFetch(SIGNED_IN);
+    render(
+      <AppShell>
+        <Counter />
+      </AppShell>,
+    );
+
+    // Wait for the probe to answer and the signed-in chrome to appear.
+    expect(await screen.findByRole("link", { name: "Settlements" })).toBeInTheDocument();
+    expect(screen.getByText("page content")).toBeInTheDocument();
+    expect(mounts).toBe(1);
+  });
 
   it("shows no destinations to a signed-out visitor — every one of them needs a session", async () => {
     const { AppShell } = await import("@/components/app-shell");

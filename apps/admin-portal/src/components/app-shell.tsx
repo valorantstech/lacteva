@@ -162,29 +162,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     entries: g.entries.filter((e) => visibleTo(session, e)),
   })).filter((g) => g.entries.length > 0);
 
-  if (!signedIn) {
-    // Signed out — or the answer is not known yet. No rail, no destinations,
-    // no promises. The sign-in link waits for `checked`: offering it before
-    // the probe answers would flash "Sign in" at someone who already is.
-    return (
-      <div className="flex min-h-full flex-col">
-        <header className="flex items-center border-b border-border px-6 py-3">
-          <Link href="/" className="font-semibold tracking-tight">
-            Lacteva
-          </Link>
-          {checked ? (
-            <a
-              className="ml-auto text-sm text-muted-foreground hover:text-foreground"
-              href="/login"
-            >
-              Sign in
-            </a>
-          ) : null}
-        </header>
-        <main className="flex-1">{children}</main>
-      </div>
-    );
-  }
+  // Signed out — or the answer is not known yet. No rail, no destinations, no
+  // promises. The sign-in link waits for `checked`: offering it before the
+  // probe answers would flash "Sign in" at someone who already is.
+  //
+  // PERF (DEMO-007): this used to be an EARLY RETURN of a different tree, and
+  // that was expensive in a way nothing on screen revealed. The session probe
+  // is asynchronous, so every page rendered once inside the signed-out tree
+  // and then again inside the signed-in one — and because `{children}` sat at
+  // a different position in each, React unmounted and remounted the page.
+  // Every screen therefore issued every one of its requests TWICE, about
+  // 200ms apart, on every single load. The structure below keeps `<main>` in
+  // one place and varies only the chrome around it, so the page mounts once.
+  const signedOutHeader = (
+    <header className="flex h-14 shrink-0 items-center border-b border-border px-6">
+      <Link href="/" className="font-semibold tracking-tight">
+        Lacteva
+      </Link>
+      {checked ? (
+        <a className="ml-auto text-sm text-muted-foreground hover:text-foreground" href="/login">
+          Sign in
+        </a>
+      ) : null}
+    </header>
+  );
 
   const nav = (
     <nav aria-label="Main" className="flex flex-col gap-6 px-3 py-4">
@@ -228,6 +229,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-full">
       {/* Desktop rail */}
+      {signedIn ? (
       <aside className="hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar lg:block">
         <div className="flex h-14 items-center border-b border-sidebar-border px-6">
           <Link href="/" className="font-semibold tracking-tight">
@@ -236,9 +238,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <div className="sticky top-0 max-h-[calc(100vh-3.5rem)] overflow-y-auto">{nav}</div>
       </aside>
+      ) : null}
 
       {/* Mobile drawer */}
-      {mobileOpen ? (
+      {signedIn && mobileOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
           <button
             type="button"
@@ -265,6 +268,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {signedIn ? (
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 lg:px-6">
           <Button
             type="button"
@@ -306,8 +310,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Button>
           </div>
         </header>
+        ) : (
+          signedOutHeader
+        )}
 
-        {needsTenant ? (
+        {signedIn && needsTenant ? (
           <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/40 px-4 py-2.5 lg:px-6">
             <span className="text-sm text-muted-foreground">
               Platform session — choose an organization to work inside:
@@ -346,7 +353,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         ) : null}
 
-        <main className="min-w-0 flex-1 bg-muted/20">{children}</main>
+        {/* One position, both states — see the note above `signedOutHeader`. */}
+        <main className={signedIn ? "min-w-0 flex-1 bg-muted/20" : "min-w-0 flex-1"}>
+          {children}
+        </main>
       </div>
     </div>
   );

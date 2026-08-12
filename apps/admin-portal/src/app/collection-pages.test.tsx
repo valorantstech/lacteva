@@ -159,7 +159,9 @@ describe("collections list", () => {
     render(<TransactionsPage />);
     expect(await screen.findByText("2026-08-10")).toBeInTheDocument();
     expect(screen.getByText("450.00")).toBeInTheDocument();
-    expect(screen.getByText("45.0000")).toBeInTheDocument();
+    // DEMO-007 moved the rate under the value it produced. It is still the
+    // platform's exact four-decimal string, ungrouped.
+    expect(screen.getByText("@ 45.0000")).toBeInTheDocument();
     // KPI row comes from the reporting aggregate, not from counting rows.
     expect(screen.getByText("351")).toBeInTheDocument();
     expect(screen.getByText("353,234.00")).toBeInTheDocument();

@@ -228,43 +228,36 @@ export default function TransactionsPage() {
       ),
     },
     {
+      // Quantity and quality belong together: the quality is WHY that quantity
+      // earned the rate it did, and eleven separate columns clipped the last
+      // one off a 1440px screen — which is the width the demonstration runs at.
       key: "quantity",
       header: "Quantity",
       align: "end",
-      cell: (tx) => <Quantity value={tx.net_weight} unit={tx.weight_unit ?? "kg"} />,
-    },
-    {
-      key: "quality",
-      header: "Quality",
-      align: "end",
-      secondary: true,
-      cell: (tx) =>
-        tx.fat != null || tx.snf != null ? (
-          <span className="tabular-nums text-sm">
+      cell: (tx) => (
+        <div className="flex flex-col items-end">
+          <Quantity value={tx.net_weight} unit={tx.weight_unit ?? "kg"} />
+          <span className="text-xs tabular-nums text-muted-foreground">
             {tx.fat != null ? `${tx.fat}% fat` : "—"}
             {tx.snf != null ? ` · ${tx.snf}% snf` : ""}
           </span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
+        </div>
+      ),
     },
     {
-      key: "rate",
-      header: "Rate",
-      align: "end",
-      secondary: true,
-      cell: (tx) =>
-        tx.unit_price != null ? (
-          <span className="tabular-nums">{String(tx.unit_price)}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
+      // Likewise the rate is the operand that produced the value. Both are
+      // printed exactly as the platform sent them.
       key: "value",
       header: "Value",
       align: "end",
-      cell: (tx) => <Money amount={tx.gross_amount} currency={tx.currency} />,
+      cell: (tx) => (
+        <div className="flex flex-col items-end">
+          <Money amount={tx.gross_amount} currency={tx.currency} />
+          <span className="text-xs tabular-nums text-muted-foreground">
+            {tx.unit_price != null ? `@ ${String(tx.unit_price)}` : "not priced"}
+          </span>
+        </div>
+      ),
     },
     { key: "state", header: "Status", cell: (tx) => <StatusBadge status={tx.state} /> },
     {
@@ -310,8 +303,8 @@ export default function TransactionsPage() {
         if (!s?.last_event_type) return <span className="text-muted-foreground">—</span>;
         return (
           <div className="flex flex-col">
-            <span className="text-sm">{humanise(s.last_event_type)}</span>
-            <span className="text-xs text-muted-foreground">{stamp(s.last_event_at)}</span>
+            <span className="text-sm tabular-nums">{stamp(s.last_event_at)}</span>
+            <span className="text-xs text-muted-foreground">{humanise(s.last_event_type)}</span>
           </div>
         );
       },
