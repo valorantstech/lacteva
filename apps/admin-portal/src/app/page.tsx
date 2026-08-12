@@ -13,6 +13,7 @@ import {
   Truck,
 } from "lucide-react";
 import {
+  ApiError,
   type AuditRecord,
   type CenterSummaryRow,
   type CollectionTrend,
@@ -59,6 +60,11 @@ import { StatusBadge } from "@/components/status-badge";
 
 type Load<T> =
   | { state: "loading" }
+  // DEMO-008: `forbidden` is not a failure. A collection operator has no
+  // `reporting.read`, so every aggregate on this page 403s for them — and
+  // rendering that as a wall of red errors tells them something broke when
+  // the truth is that reporting is not part of their job.
+  | { state: "forbidden" }
   | { state: "error"; message: string }
   | { state: "ready"; data: T };
 
@@ -109,7 +115,11 @@ export default function Home() {
     const fail =
       <T,>(set: (v: Load<T>) => void) =>
       (e: unknown) =>
-        set({ state: "error", message: describe(e) });
+        set(
+          e instanceof ApiError && e.status === 403
+            ? { state: "forbidden" }
+            : { state: "error", message: describe(e) },
+        );
 
     // `allSettled`: one rejection must not cancel the others.
     await Promise.allSettled([
@@ -177,7 +187,18 @@ export default function Home() {
 
       <DateRangePicker value={range} onChange={setRange} busy={busy} />
 
-      {dashboard.state === "error" ? (
+      {dashboard.state === "forbidden" ? (
+        <Card>
+          <CardContent className="flex flex-col gap-2 pt-6">
+            <p className="font-medium">Reporting is not part of your access.</p>
+            <p className="text-sm text-muted-foreground">
+              The figures on this page come from the platform&apos;s reporting module, which your
+              role does not include. Everything you do have access to is in the navigation on the
+              left — nothing here is broken.
+            </p>
+          </CardContent>
+        </Card>
+      ) : dashboard.state === "error" ? (
         <ErrorState
           message={`The summary could not be loaded — ${dashboard.message}. The sections below load separately and may still be available.`}
           action={
@@ -308,6 +329,11 @@ export default function Home() {
         <CardContent>
           {trend.state === "loading" ? (
             <LoadingState label="Loading the trend…" />
+          ) : trend.state === "forbidden" ? (
+            <EmptyState
+              title="Not part of your access"
+              description="Your role does not include reporting. Nothing here is broken."
+            />
           ) : trend.state === "error" ? (
             <ErrorState message={`The trend is unavailable — ${trend.message}.`} />
           ) : (
@@ -451,6 +477,11 @@ export default function Home() {
           <CardContent>
             {centers.state === "loading" ? (
               <TableSkeleton rows={4} columns={3} />
+            ) : centers.state === "forbidden" ? (
+              <EmptyState
+                title="Not part of your access"
+                description="Your role does not include reporting. Nothing here is broken."
+              />
             ) : centers.state === "error" ? (
               <ErrorState message={`Centre performance is unavailable — ${centers.message}.`} />
             ) : (
@@ -481,6 +512,11 @@ export default function Home() {
           <CardContent>
             {suppliers.state === "loading" ? (
               <TableSkeleton rows={4} columns={3} />
+            ) : suppliers.state === "forbidden" ? (
+              <EmptyState
+                title="Not part of your access"
+                description="Your role does not include reporting. Nothing here is broken."
+              />
             ) : suppliers.state === "error" ? (
               <ErrorState message={`Supplier performance is unavailable — ${suppliers.message}.`} />
             ) : (
@@ -512,6 +548,11 @@ export default function Home() {
         <CardContent>
           {activity.state === "loading" ? (
             <TableSkeleton rows={5} columns={3} />
+          ) : activity.state === "forbidden" ? (
+            <EmptyState
+              title="Not part of your access"
+              description="Your role does not include reporting. Nothing here is broken."
+            />
           ) : activity.state === "error" ? (
             <ErrorState message={`Recent activity is unavailable — ${activity.message}.`} />
           ) : (activity.data ?? []).length === 0 ? (

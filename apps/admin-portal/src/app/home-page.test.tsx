@@ -235,6 +235,34 @@ describe("dashboard", () => {
     expect(screen.getByText(/settlement finalized/)).toBeInTheDocument();
   });
 
+  it("says 'not part of your access' rather than showing an error, on a 403", async () => {
+    /**
+     * DEMO-008. A collection operator has no `reporting.read`, so every
+     * aggregate on this page 403s for them. Rendering that as a wall of red
+     * errors tells them something broke, when the truth is that reporting is
+     * not part of their job — and an operator who believes the platform is
+     * broken raises a support ticket instead of getting on with their work.
+     */
+    routeAll({
+      "/v1/reports/": () =>
+        json({ title: "forbidden", detail: "You do not have permission to perform this action." }, 403),
+    });
+    render(<Home />);
+
+    expect(await screen.findByText("Reporting is not part of your access.")).toBeInTheDocument();
+    // The same reassurance appears on each section that could not load.
+    expect(screen.getAllByText(/nothing here is broken/i).length).toBeGreaterThan(0);
+    // ...and NOT the failure wording.
+    expect(screen.queryByText(/could not be loaded/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
+
+  it("still reports a genuine failure as a failure", async () => {
+    routeAll({ "/v1/reports/dashboard": () => json({ title: "boom", detail: "boom" }, 500) });
+    render(<Home />);
+    expect(await screen.findByText(/could not be loaded/i)).toBeInTheDocument();
+  });
+
   it("formats money with grouping and keeps the platform's decimals", async () => {
     routeAll();
     render(<Home />);
