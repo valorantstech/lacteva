@@ -21,6 +21,13 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# The build runs on the same small instance that serves the platform, and it
+# failed with `spawn ENOMEM` once the app grew past ~30 routes: Next.js fans
+# static generation out to one worker per CPU, and each worker is a full Node
+# heap. Capping the heap and the worker count keeps the build inside the
+# memory the box actually has — which is cheaper, and more honest, than
+# resizing the instance to accommodate a build that does not need the room.
+ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime
