@@ -4,6 +4,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.errors import ConflictError, NotFoundError
@@ -125,7 +126,22 @@ class AuthzService:
             if role is None:
                 role = Role(tenant_id=None, name=name, description=f"System role {name}")
                 self._session.add(role)
-                await self._session.flush()
+                try:
+                    await self._session.flush()
+                except IntegrityError:
+                    # DEMO-008: another worker inserted it between our SELECT
+                    # and our INSERT. Select-then-insert is not idempotent
+                    # under concurrency, and every startup runs this — which is
+                    # how three copies of `tenant-admin` came to exist before a
+                    # partial unique index made the collision detectable at
+                    # all. Losing the race is the correct outcome; adopt the
+                    # winner's row and carry on.
+                    await self._session.rollback()
+                    role = await self._session.scalar(
+                        select(Role).where(Role.tenant_id.is_(None), Role.name == name)
+                    )
+                    if role is None:  # pragma: no cover - defensive
+                        raise
             existing = set(
                 (
                     await self._session.scalars(

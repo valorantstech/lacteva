@@ -7,7 +7,7 @@ current tenant (+ platform-level assignments).
 
 import uuid
 
-from sqlalchemy import String, UniqueConstraint, Uuid
+from sqlalchemy import Index, String, UniqueConstraint, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.core.db import Base, IdMixin
@@ -15,7 +15,21 @@ from platform_core.core.db import Base, IdMixin
 
 class Role(Base, IdMixin):
     __tablename__ = "role"
-    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_role_tenant_name"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_role_tenant_name"),
+        # DEMO-008: the composite constraint above enforces nothing for SYSTEM
+        # roles. Every one of them has `tenant_id IS NULL`, and in SQL NULL is
+        # not equal to NULL — so the database happily accepted three copies of
+        # `tenant-admin`, one per racing startup. A PARTIAL unique index is the
+        # only thing that actually makes the name unique among system roles.
+        Index(
+            "uq_role_system_name",
+            "name",
+            unique=True,
+            postgresql_where=text("tenant_id IS NULL"),
+            sqlite_where=text("tenant_id IS NULL"),
+        ),
+    )
 
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
     name: Mapped[str] = mapped_column(String(80))

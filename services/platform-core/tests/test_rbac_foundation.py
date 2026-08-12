@@ -613,3 +613,24 @@ async def test_a_role_grant_is_audited(client):
     assert "authz.role.granted" in actions, actions
     assert "authz.role.revoked" in actions, actions
     assert trail["total"] >= 2
+
+
+async def test_a_system_role_name_cannot_be_duplicated(client):
+    """The defect this work order found on the deployed platform.
+
+    `UNIQUE (tenant_id, name)` enforces nothing for system roles, because their
+    `tenant_id` is NULL and NULL is not equal to NULL — so three racing
+    startups produced three copies of `tenant-admin`. The partial unique index
+    added in b7c2e94d1a55 is what actually refuses the second one, and this is
+    it refusing.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from platform_core.core.rls import platform_factory
+    from platform_core.modules.authz.models import Role
+
+    async with platform_factory("test: duplicate a system role")() as session:
+        session.add(Role(tenant_id=None, name="tenant-admin", description="a second copy"))
+        with pytest.raises(IntegrityError):
+            await session.flush()
+        await session.rollback()
