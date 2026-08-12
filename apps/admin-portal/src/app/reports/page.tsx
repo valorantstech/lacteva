@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Money, formatAmount } from "@/components/money";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -110,7 +111,11 @@ export default function ReportsPage() {
 
   const payable = daily
     ? Object.entries(daily.payable_by_currency)
-        .map(([currency, amount]) => `${amount} ${currency}`)
+        // DEMO-010: through the shared formatter, so this page groups its
+        // digits like every other one. It read `13860.00 KES` beside
+        // `13,860.00 KES` elsewhere, which during a demonstration looks like
+        // two different systems rather than one.
+        .map(([currency, amount]) => `${formatAmount(amount)} ${currency}`)
         .join(" · ") || "0"
     : "…";
 
@@ -243,7 +248,7 @@ export default function ReportsPage() {
                   <TableCell className="text-right">{row.accepted}</TableCell>
                   <TableCell className="text-right">{row.total_net_weight_kg}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">
-                    {String(row.payable_amount)} {row.currency ?? ""}
+                    <Money amount={row.payable_amount} currency={row.currency} />
                   </TableCell>
                   <TableCell className="text-right">{row.weighted_avg_fat ?? "—"}</TableCell>
                 </TableRow>
@@ -303,7 +308,7 @@ export default function ReportsPage() {
                   <TableCell className="text-right">{row.accepted}</TableCell>
                   <TableCell className="text-right">{row.total_net_weight_kg}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">
-                    {String(row.payable_amount)} {row.currency ?? ""}
+                    <Money amount={row.payable_amount} currency={row.currency} />
                   </TableCell>
                   <TableCell className="text-right">{row.weighted_avg_fat ?? "—"}</TableCell>
                 </TableRow>
@@ -337,13 +342,13 @@ export default function ReportsPage() {
                   <div key={row.status} className="flex justify-between">
                     <Badge variant="outline">{row.status}</Badge>
                     <span>
-                      {row.count} · {String(row.net_amount)}
+                      {row.count} · <Money amount={row.net_amount} />
                     </span>
                   </div>
                 ))}
                 <div className="flex justify-between border-t border-border pt-2 font-medium">
                   <span>Finalized total</span>
-                  <span>{String(settlements.finalized_net_total)}</span>
+                  <Money amount={settlements.finalized_net_total} emphasis />
                 </div>
                 <p className="text-muted-foreground">
                   {settlements.total_settlements} settlement(s), {settlements.total_lines}{" "}
@@ -385,7 +390,7 @@ export default function ReportsPage() {
                   <span>Gross priced</span>
                   <span>
                     {Object.entries(pricing.gross_by_currency)
-                      .map(([currency, amount]) => `${amount} ${currency}`)
+                      .map(([currency, amount]) => `${formatAmount(amount)} ${currency}`)
                       .join(" · ") || "0"}
                   </span>
                 </div>
