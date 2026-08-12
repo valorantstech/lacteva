@@ -23,7 +23,7 @@ quietly broken and were only findable by doing** — a seeder that could not
 finish, a deployment that rolled itself back without taking a backup, and a
 login screen that asked a farmer for a UUID.
 
-**Deployed:** `main-2875658` at <https://dev.phoenixsoft.in>
+**Deployed:** `main-a7d03fe` at <https://dev.phoenixsoft.in>
 **AWS cost impact:** none recurring. No resource was created or resized.
 
 ---
