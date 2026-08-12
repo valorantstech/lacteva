@@ -94,10 +94,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The first run failed here with nothing to go on. `sts:AssumeRoleWithWebIdentity`
+      # is refused when the token's `sub` does not match the role's trust
+      # policy, and the only way to know what `sub` GitHub actually minted is
+      # to look at it. `sub` and `aud` are not secrets — they are the
+      # repository, the ref and a fixed audience — so printing them is safe,
+      # and it turns a silent refusal into a one-line answer. The token itself
+      # is never echoed.
+      - name: What this runner will present to AWS
+        run: |
+          payload="$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" \
+            | python3 -c 'import base64,json,sys
+t=json.load(sys.stdin)["value"].split(".")[1]
+print(base64.urlsafe_b64decode(t + "=" * (-len(t) % 4)).decode())')"
+          python3 - <<PY
+          import json
+          c = json.loads('''$payload''')
+          print("sub:", c.get("sub"))
+          print("aud:", c.get("aud"))
+          print("repository:", c.get("repository"))
+          print("ref:", c.get("ref"))
+          PY
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::590182060076:role/lacteva-github-actions-ecr
+          aws-region: ap-south-1
+          audience: sts.amazonaws.com
           role-session-name: images-${{ github.run_id }}
 
       - id: login
