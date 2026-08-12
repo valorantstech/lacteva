@@ -34,7 +34,26 @@ LOG="${DEPLOY_LOG:-/var/log/lacteva/deploy.log}"
 # on a platform serving every request. The one safety net that makes an
 # unrecoverable migration recoverable was quietly not there, and the deploy
 # said so in a line that reads like a decision rather than a failure.
-COMPOSE_FILE="$(cd "$(dirname "$0")/../.." && pwd)/docker-compose.production.yml"
+# It is ABSOLUTE, and it points at the RELEASE — never at the tree this script
+# happens to have been run from.
+#
+# Both halves matter, and getting the second one wrong is how the running
+# stack came to bind-mount its nginx configuration out of a scratch staging
+# directory: compose resolves relative bind mounts against the compose file's
+# own directory, so pointing it at the checkout means an `rsync --delete` into
+# that checkout silently rewrites what production is serving. Copying each
+# release into its own directory exists precisely to stop that.
+#
+# Until step 3, the subject is the CURRENTLY RUNNING stack, so the current
+# release's compose file is the right one. After step 3 it is the new release.
+# The script's own tree is the fallback for a first deployment, when there is
+# no current release to speak of.
+SOURCE_TREE="$(cd "$(dirname "$0")/../.." && pwd)"
+if [ -f "${CURRENT}/docker-compose.production.yml" ]; then
+  COMPOSE_FILE="$(readlink -f "${CURRENT}")/docker-compose.production.yml"
+else
+  COMPOSE_FILE="${SOURCE_TREE}/docker-compose.production.yml"
+fi
 AUTO_ROLLBACK=1
 
 log()  { printf '%s  %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "${LOG}"; }
@@ -182,10 +201,14 @@ mkdir -p "${RELEASE}"
 # The repository at this tag IS the release: compose files, nginx config,
 # deploy scripts. Copying rather than symlinking the checkout means a
 # `git checkout` on the host cannot change what a deployed release contains.
-rsync -a --delete --exclude '.git' "$(cd "$(dirname "$0")/../.." && pwd)/" "${RELEASE}/"
+rsync -a --delete --exclude '.git' "${SOURCE_TREE}/" "${RELEASE}/"
 echo "${PREVIOUS}" > "${RELEASE}/.deployed-tag"   # what to go BACK to
 ln -sfn "${RELEASE}" "${CURRENT}"
 cd "${CURRENT}"
+# From here the subject is the NEW release, and every container recreated
+# below binds its configuration out of this directory rather than out of
+# whatever tree this script was invoked from.
+COMPOSE_FILE="${RELEASE}/docker-compose.production.yml"
 
 # --- 4. migrate ------------------------------------------------------------
 # Its own step, before the API starts. Compose enforces this too

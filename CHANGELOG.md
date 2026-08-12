@@ -83,6 +83,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Rep
   `http://localhost`, followed nginx's 301 to `https://localhost`, and failed
   on the certificate hostname; both declared a working deployment broken.
   `LACTEVA_PUBLIC_URL` now points them at what a browser types.
+- **A deploy did not reach an already-open browser.** Next serves prerendered
+  pages with `Cache-Control: s-maxage=31536000` and nothing a browser is
+  required to honour, so a browser could keep serving the PREVIOUS release's
+  shell — which references the previous release's chunks — for as long as it
+  liked. A fix demonstrably live on the server was still not what the person
+  in front of it saw. nginx now sends `no-cache` for the document (store it,
+  but revalidate; the ETag makes that a 304), while `/_next/static/` keeps its
+  immutable year, because those filenames are content-hashed.
+- **The running stack bind-mounted its nginx configuration out of a scratch
+  directory.** Introduced earlier in this same work order: making
+  `COMPOSE_FILE` absolute relative to the SCRIPT fixed the silent backup skip
+  and tied compose's relative bind mounts to whatever tree the script was run
+  from — so an `rsync --delete` into that tree rewrote what production served.
+  Copying each release into its own directory exists precisely to prevent
+  that. `COMPOSE_FILE` now names the current release before staging and the
+  new release after it.
 - **Container log retention was a standing claim on a third of the disk.**
   50 MB × 5 files × thirteen services is 3.25 GB on a 38 GB volume that twice
   filled. Now 20 MB × 3 — promtail ships every line to Loki as it is written,
