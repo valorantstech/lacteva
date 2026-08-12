@@ -40,6 +40,25 @@ class InvalidCredentialsError(UnauthorizedError):
     message_key = "error.invalid_credentials"
 
 
+class AmbiguousTenantError(UnauthorizedError):
+    """The password opened accounts in more than one organization (DEMO-010).
+
+    Raised ONLY after the password has verified, which is what makes naming
+    the organizations safe: the caller could have discovered them by trying
+    each in turn. An address that fails to authenticate gets
+    `invalid_credentials` and learns nothing.
+    """
+
+    code = "ambiguous_tenant"
+    message_key = "error.ambiguous_tenant"
+
+    def __init__(self, tenant_ids):
+        self.tenant_ids = [str(t) for t in tenant_ids]
+        super().__init__(
+            "This sign-in works for more than one organization. Choose which one to sign in to."
+        )
+
+
 class ForbiddenError(AppError):
     status_code = 403
     code = "forbidden"

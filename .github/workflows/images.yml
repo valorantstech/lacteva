@@ -65,7 +65,11 @@ jobs:
           if [ -n "${{ inputs.tag }}" ]; then
             tag="${{ inputs.tag }}"
           else
-            tag="$(echo "${GITHUB_REF_NAME}" | tr -c 'a-zA-Z0-9._-' '-')-$(git rev-parse --short HEAD)"
+            # Bash substitution, not `tr`: `tr -c` also replaces the trailing
+            # newline, so `main` became `main-` and the first tag published
+            # was `main--b07d12b`. Harmless, and wrong every time.
+            branch="${GITHUB_REF_NAME//[^a-zA-Z0-9._-]/-}"
+            tag="${branch}-$(git rev-parse --short HEAD)"
           fi
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "publishing as ${tag}" >> "$GITHUB_STEP_SUMMARY"

@@ -144,12 +144,37 @@ async def test_invitation_is_single_use_and_tenant_isolated(client):
     assert (await client.post("/v1/invitations/accept", json=body)).status_code == 201
     assert (await client.post("/v1/invitations/accept", json=body)).status_code == 400
 
-    # Tenant user exists only in their tenant: platform-level login fails.
+    # DEMO-010 changed what happens when the tenant is NOT named, and this is
+    # the assertion that changed with it.
+    #
+    # It used to be a 401: `get_by_email` matched on `tenant_id`, so an account
+    # inside an organization was invisible unless the caller supplied that
+    # organization's UUID — which is exactly what the portal's login form
+    # asked a dairy owner to paste, first thing.
+    #
+    # Now the tenant is resolved from the credentials. The isolation this test
+    # exists to defend is unchanged and is asserted more strongly than before:
+    # the token that comes back is scoped to THIS tenant, not a platform
+    # session, so the login is convenient without being broader.
     r = await client.post(
         "/v1/auth/token",
         json={"email": "once@kilima.example", "password": "once-password-11"},
     )
+    assert r.status_code == 200, r.text
+    resolved = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    me = (await client.get("/v1/auth/me", headers=resolved)).json()
+    assert me["tenant_id"] == org["id"]  # their own organization, not none
+
+    # A wrong password is still refused, and says nothing about which
+    # organizations the address belongs to.
+    r = await client.post(
+        "/v1/auth/token",
+        json={"email": "once@kilima.example", "password": "not-the-password"},
+    )
     assert r.status_code == 401
+    assert "kilima" not in r.text.lower()
+
+    # Naming the tenant explicitly still works, and lands in the same place.
     r = await client.post(
         "/v1/auth/token",
         json={
@@ -159,6 +184,8 @@ async def test_invitation_is_single_use_and_tenant_isolated(client):
         },
     )
     assert r.status_code == 200
+    named = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    assert (await client.get("/v1/auth/me", headers=named)).json()["tenant_id"] == org["id"]
 
 
 async def test_suspended_member_cannot_login(client):

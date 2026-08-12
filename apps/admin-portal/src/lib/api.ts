@@ -28,6 +28,12 @@ export class ApiError extends Error {
     public detail: string,
     /** Structured problem-detail payload (e.g. pricing resolution stage info). */
     public extra?: unknown,
+    /**
+     * The problem document's `title` — the platform's machine-readable code
+     * (DEMO-010). `detail` is prose for a person and is translated; a caller
+     * that needs to BEHAVE differently for one failure has to match on this.
+     */
+    public title?: string,
   ) {
     super(detail);
   }
@@ -84,14 +90,16 @@ export async function api<T>(
   if (!res.ok) {
     let detail = res.statusText;
     let extra: unknown;
+    let title: string | undefined;
     try {
       const body = (await res.json()) as { detail?: string; title?: string; extra?: unknown };
       detail = body.detail ?? body.title ?? detail;
       extra = body.extra;
+      title = body.title;
     } catch {
       // non-JSON error body — keep statusText
     }
-    throw new ApiError(res.status, detail, extra);
+    throw new ApiError(res.status, detail, extra, title);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -139,13 +147,15 @@ export async function login(email: string, password: string, tenantId?: string) 
   });
   if (!res.ok) {
     let detail = res.statusText;
+    let title: string | undefined;
     try {
       const problem = (await res.json()) as { detail?: string; title?: string };
       detail = problem.detail ?? problem.title ?? detail;
+      title = problem.title;
     } catch {
       // non-JSON error body — keep statusText
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, undefined, title);
   }
 }
 

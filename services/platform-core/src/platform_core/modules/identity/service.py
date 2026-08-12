@@ -65,6 +65,44 @@ class IdentityService:
             select(User).where(User.tenant_id == tenant_id, User.email == email.lower())
         )
 
+    #: How many accounts one address may have before login stops trying them.
+    #: A bound, not a business rule: each candidate costs a password hash
+    #: verification, and an unbounded list is a way to make one request
+    #: expensive.
+    LOGIN_CANDIDATE_LIMIT = 5
+
+    async def candidates_for_login(self, email: str) -> list[User]:
+        """Every account this address could sign in as, across organizations.
+
+        DEMO-010. The login form asked a dairy owner to paste their
+        organization's UUID, because `get_by_email` matches on `tenant_id` and
+        a tenant-scoped account is invisible without it. Nobody knows their
+        tenant UUID; it was the first thing on the first screen of the demo.
+
+        This is a DELIBERATE, NARROW cross-tenant read — the only one in the
+        authentication path — and it grants nothing on its own. It returns
+        candidates; `AuthService.login` still has to verify a password against
+        one of them, and a caller who names no organization and knows no
+        password learns exactly what they learned before: `invalid_credentials`.
+
+        Ordered platform account first, so an address that is both a platform
+        administrator and a tenant member keeps its previous behaviour.
+        """
+        from platform_core.core.rls import bind_platform_context
+
+        await bind_platform_context(
+            self._session, reason="login: find which organizations this address belongs to"
+        )
+        rows = (
+            await self._session.scalars(
+                select(User)
+                .where(User.email == email.lower(), User.is_active.is_(True))
+                .order_by(User.tenant_id.is_not(None), User.created_at)
+                .limit(self.LOGIN_CANDIDATE_LIMIT)
+            )
+        ).all()
+        return list(rows)
+
     async def get_in_tenant(self, user_id: uuid.UUID, tenant_id: uuid.UUID | None) -> User:
         """Read a user that the caller's tenant is allowed to see.
 

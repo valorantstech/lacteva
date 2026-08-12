@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.config import get_settings
 from platform_core.core.db import as_utc, utcnow
-from platform_core.core.errors import InvalidCredentialsError, InvalidTokenError
+from platform_core.core.errors import (
+    AmbiguousTenantError,
+    InvalidCredentialsError,
+    InvalidTokenError,
+)
 from platform_core.core.security import create_token, hash_password, verify_password
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
@@ -88,14 +92,16 @@ class AuthService:
 
         if cmd.tenant_id is not None:
             await rebind_tenant(self._session, cmd.tenant_id)
-        user = await self._identity.get_by_email(cmd.email, cmd.tenant_id)
-        if (
-            user is None
-            or not user.is_active
-            or not verify_password(cmd.password, user.password_hash)
-        ):
-            # Identical failure for unknown user vs wrong password (no oracle).
-            raise InvalidCredentialsError()
+            user = await self._identity.get_by_email(cmd.email, cmd.tenant_id)
+            if (
+                user is None
+                or not user.is_active
+                or not verify_password(cmd.password, user.password_hash)
+            ):
+                # Identical failure for unknown user vs wrong password (no oracle).
+                raise InvalidCredentialsError()
+        else:
+            user = await self._resolve_without_a_named_tenant(cmd)
         if user.tenant_id is not None and not await self._membership.is_active_member(
             user.id, user.tenant_id
         ):
@@ -121,6 +127,50 @@ class AuthService:
             detail={"session_id": str(auth_session.id)},
         )
         return pair
+
+    async def _resolve_without_a_named_tenant(self, cmd: LoginCommand):
+        """Work out WHICH account is signing in, from the credentials alone.
+
+        DEMO-010. Before this, omitting `tenant_id` looked only for an account
+        with no tenant at all, so every ordinary member of an organization had
+        to supply their organization's UUID — which is what the portal's login
+        form asked for, in a text box, as the first thing anyone saw.
+
+        The password is verified against each candidate, and the ANSWER is
+        derived from how many verified:
+
+        * none — `invalid_credentials`, byte for byte the same response an
+          unknown address gets. Nothing is revealed by asking.
+        * one — sign in as that account. This is every real case.
+        * more than one — the same password really does open accounts in
+          several organizations, and only then is the caller told so and asked
+          to name one. They have already proven the password, so listing the
+          organizations reveals nothing they could not have discovered by
+          trying each in turn.
+
+        The cost is at most `LOGIN_CANDIDATE_LIMIT` password verifications for
+        an address that has several accounts, which is the point of the limit.
+        """
+        from platform_core.core.rls import rebind_tenant
+
+        candidates = await self._identity.candidates_for_login(cmd.email)
+        verified = [
+            user
+            for user in candidates
+            if user.is_active and verify_password(cmd.password, user.password_hash)
+        ]
+        if not verified:
+            raise InvalidCredentialsError()
+        if len(verified) > 1:
+            raise AmbiguousTenantError(
+                [t for t in (u.tenant_id for u in verified) if t is not None]
+            )
+        user = verified[0]
+        # The session was bound to nothing (no tenant was named), so bind it to
+        # the tenant we have just established — for the same reason SEC-002
+        # gives above, and before the membership check reads a tenant-owned row.
+        await rebind_tenant(self._session, user.tenant_id)
+        return user
 
     async def refresh(self, refresh_token: str) -> TokenPair:
         token_hash = _hash_secret(refresh_token)

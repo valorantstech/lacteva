@@ -30,7 +30,10 @@ describe("login page", () => {
     await fillIn(user);
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/centers"));
+    // DEMO-010: the dashboard, not the centres list. Signing in and landing
+    // on a sub-page is the wrong first impression of a product whose front
+    // page now reports both sides of the dairy.
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
     expect(fetchSpy.mock.calls[0][0]).toBe("/api/auth/login");
   });
 
@@ -84,5 +87,77 @@ describe("login page", () => {
     await waitFor(() => expect(push).toHaveBeenCalled());
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
+  });
+});
+
+// --- DEMO-010: the organization UUID is gone from the first screen -----------
+
+describe("signing in without knowing a tenant UUID", () => {
+  it("does not ask for an organization at all", async () => {
+    render(<LoginPage />);
+    expect(screen.queryByLabelText(/organization/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/tenant/i)).not.toBeInTheDocument();
+  });
+
+  it("sends only the credentials", async () => {
+    const calls: RequestInit[] = [];
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      void input;
+      if (init) calls.push(init);
+      return new Response(null, { status: 204 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<LoginPage />);
+
+    await userEvent.type(screen.getByLabelText("Email"), "owner@kilima.example");
+    await userEvent.type(screen.getByLabelText("Password"), "correct-horse");
+    await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    const body = JSON.parse(String(calls[0]?.body));
+    expect(body).toEqual({ email: "owner@kilima.example", password: "correct-horse" });
+    expect(body).not.toHaveProperty("tenant_id");
+  });
+
+  it("asks which organization ONLY when the platform says the sign-in is ambiguous", async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            title: "ambiguous_tenant",
+            detail: "This sign-in works for more than one organization.",
+          }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<LoginPage />);
+
+    await userEvent.type(screen.getByLabelText("Email"), "both@dairy.example");
+    await userEvent.type(screen.getByLabelText("Password"), "shared-password");
+    await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    expect(await screen.findByLabelText("Organization")).toBeInTheDocument();
+    // Both the platform's message and the field's own hint say it; one is enough.
+    expect(screen.getAllByText(/more than one organization/i).length).toBeGreaterThan(0);
+  });
+
+  it("keeps an ordinary failure ordinary — no organization field appears", async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ title: "invalid_credentials", detail: "Email or password is incorrect." }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<LoginPage />);
+
+    await userEvent.type(screen.getByLabelText("Email"), "owner@kilima.example");
+    await userEvent.type(screen.getByLabelText("Password"), "wrong");
+    await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    expect(await screen.findByText(/incorrect/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Organization")).not.toBeInTheDocument();
   });
 });

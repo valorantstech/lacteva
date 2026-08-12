@@ -18,6 +18,9 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.unauthorized": "Authentication is required.",
         "error.forbidden": "You do not have permission to perform this action.",
         "error.invalid_credentials": "Email or password is incorrect.",
+        "error.ambiguous_tenant": (
+            "This sign-in works for more than one organization. Choose which one to sign in to."
+        ),
         "error.validation": "The request is invalid.",
         "error.invalid_token": "This link is invalid or has expired.",
         "error.rate_limited": "Too many requests. Please wait and try again.",
@@ -41,6 +44,9 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.unauthorized": "Uthibitisho unahitajika.",
         "error.forbidden": "Huna ruhusa ya kufanya kitendo hiki.",
         "error.invalid_credentials": "Barua pepe au nenosiri si sahihi.",
+        "error.ambiguous_tenant": (
+            "Kuingia huku kunafanya kazi kwa zaidi ya shirika moja. Chagua shirika la kuingia."
+        ),
         "error.rate_limited": "Maombi mengi mno. Tafadhali subiri kisha ujaribu tena.",
         "error.idempotency_key_invalid": "Kichwa cha Idempotency-Key ni tupu au kirefu mno.",
         "error.idempotency_key_reused": "Idempotency-Key hii ilitumika kwa ombi tofauti.",
@@ -54,6 +60,9 @@ CATALOGS: dict[str, dict[str, str]] = {
         "error.unauthorized": "प्रमाणीकरण आवश्यक है।",
         "error.forbidden": "आपको यह कार्य करने की अनुमति नहीं है।",
         "error.invalid_credentials": "ईमेल या पासवर्ड गलत है।",
+        "error.ambiguous_tenant": (
+            "यह साइन-इन एक से अधिक संगठनों के लिए काम करता है। चुनें कि किसमें साइन इन करना है।"
+        ),
         "error.rate_limited": "बहुत अधिक अनुरोध। कृपया प्रतीक्षा करें और पुनः प्रयास करें।",
         "error.idempotency_key_invalid": "Idempotency-Key हेडर खाली है या बहुत लंबा है।",
         "error.idempotency_key_reused": "यह Idempotency-Key किसी अन्य अनुरोध हेतु प्रयुक्त हुई।",
