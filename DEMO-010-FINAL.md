@@ -23,7 +23,7 @@ quietly broken and were only findable by doing** — a seeder that could not
 finish, a deployment that rolled itself back without taking a backup, and a
 login screen that asked a farmer for a UUID.
 
-**Deployed:** `main-5bad1c6` at <https://dev.phoenixsoft.in>
+**Deployed:** `main-2875658` at <https://dev.phoenixsoft.in>
 **AWS cost impact:** none recurring. No resource was created or resized.
 
 ---
@@ -339,7 +339,7 @@ lifecycle policy keeping the 15 most recent images per repository.
 
 ## 9. Defects found
 
-Eleven, every one found by executing rather than reading.
+Twelve, every one found by executing rather than reading — and the last of them only by driving a real browser.
 
 ### The demo seeder could not finish
 
@@ -392,7 +392,18 @@ Eleven, every one found by executing rather than reading.
    `/deliveries` ignored their query strings, so "54 deliveries made but not
    yet billed → review" landed on the unfiltered list — which reads, in front
    of a customer, as a filter that does not work.
-10. **Four different timestamp formats.** Most pages sliced sixteen characters,
+12. **Signing in landed on a page with no navigation.** `AppShell` lives in
+    the root layout and probes the session once, when it mounts. Signing in
+    used `router.push`, a client-side navigation that does not remount it — so
+    the shell kept the signed-out chrome it had established on the login page,
+    and the dashboard rendered with no sidebar and "Sign in" still in the
+    corner. Every figure on the page was correct; there was simply no way to
+    go anywhere. **Found in a real browser, which is the only place it was
+    visible** — a test that renders the login page alone never sees the shell.
+    Sign-out never had the problem because it can call `setSession` on the
+    shell directly. The test now asserts a full navigation AND that
+    `router.push` is not used.
+11. **Four different timestamp formats.** Most pages sliced sixteen characters,
     two sliced nineteen, and Operations used `toLocaleString`, which renders in
     the viewer's locale — the same instant read `2026-08-12 09:30` on one
     screen and `8/12/2026, 9:30:00 AM` on the next.
@@ -453,18 +464,41 @@ procurement  12.0 kg at 4.6% fat → 45.5000 → 546.00
 
 All five "needs attention" links arrive at a filtered page.
 
-### Real Chrome — not done, and not claimed
+### Real Chrome
 
-**The Chrome extension was not connected for the duration of this work order**
-(`list_connected_browsers` returned empty; repeated attempts failed). DEMO-009's
-24/24 browser verification was performed earlier in the same day, so this is an
-environment change rather than a product change.
+The extension reconnected part-way through and the journey was driven in a real
+browser as a signed-in user. **It immediately found a defect the HTTP walk
+could not see, and could not have** (§9.12).
 
-What §11 above proves is that every page in the journey serves, and that every
-figure a screen will render is correct and mutually consistent, through the
-browser's own session path. What it does **not** prove is layout, styling,
-client-side rendering or interaction. Those claims are not made here. This is
-the first item of §14.
+Verified on screen, signed in as the demo manager unless stated:
+
+| | |
+| --- | --- |
+| Login | email and password only — no organization field anywhere on the page |
+| Dashboard | both sections labelled; all twelve tiles; receivable 211,961.00 KES |
+| Needs attention | five items across both sides, each linking to a filtered page |
+| Who owes money (card) | **total owed 211,961.00 beside six rows adding to 209,132** — the headline is the platform's total across all seven, on screen |
+| `/receivables` | 7 customers worst-first, "never paid" where true, Record payment |
+| Customer | plan 52.0000 KES/L; "the amount is computed by the platform from that rate — it is never typed here"; 60 deliveries, morning **and evening**, totals covering all of them |
+| Bill | INV-2026-000005, 54 lines, "the stored subtotal still equals the 54 lines below — verified by the platform", issued and immutable |
+| `/deliveries?invoiced=false` | arrives with **Billed = "Not yet billed"** already selected |
+| `/billing?status=draft` | arrives filtered, with a useful empty state |
+| Settlements | 52 · 3 open · 49 finalized · 223,912.50 finalized value |
+| Quantity by rate | the three fat bands, 42.00 / 45.50 / 49.00 |
+| Sign out → sign in | works, and the chrome follows |
+
+**Roles, shown rather than described.** Signing in as `sales@` gives a
+navigation of Dashboard, the four Sales entries and Reports — no Suppliers, no
+Pricing, no Settlements, no Platform. Signing in as `operator@` gives
+Operations only, and the dashboard says
+
+> Reporting is not part of your access. The figures on this page come from the
+> platform's reporting module, which your role does not include. Everything you
+> do have access to is in the navigation on the left — nothing here is broken.
+
+with em-dashes where the figures would be, rather than a wall of red errors.
+That is DEMO-008's `forbidden` state doing its job, and it is a better answer
+to "how do permissions work" than any explanation.
 
 ### Tests
 
@@ -528,8 +562,11 @@ Installed on the host (apt, no cost): `amazon-ecr-credential-helper`.
 
 ## 14. Known limitations
 
-1. **No rendering-engine verification.** §11 states exactly what was and was
-   not checked. Re-run the browser pass when the extension reconnects.
+1. **The browser pass covered the journey, not every screen.** Sixteen pages
+   were fetched and the demo journey was driven end to end, but the admin
+   screens (users, roles, audit, configuration, operations) were checked for
+   response rather than looked at. Screenshot capture also timed out twice
+   mid-session and recovered.
 2. **No automated backups on this host.** `lacteva-backup-nightly.timer`,
    `-verify` and `-weekly` exist in `infra/systemd/` and are **not installed**
    on the deployment. Backups happen only as a side effect of `deploy.sh`. This
