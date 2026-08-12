@@ -22,12 +22,18 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 # The build runs on the same small instance that serves the platform, and it
-# failed with `spawn ENOMEM` once the app grew past ~30 routes: Next.js fans
-# static generation out to one worker per CPU, and each worker is a full Node
-# heap. Capping the heap and the worker count keeps the build inside the
-# memory the box actually has — which is cheaper, and more honest, than
-# resizing the instance to accommodate a build that does not need the room.
-ENV NODE_OPTIONS=--max-old-space-size=1536
+# failed with `spawn ENOMEM` once the app grew past ~30 routes.
+#
+# The cause is not heap exhaustion — it is `fork()` being REFUSED. The host
+# runs `vm.overcommit_memory=2` (strict accounting), under which forking a
+# worker requires commit charge equal to the parent's reservation. A parent
+# holding a 1536MB heap therefore cannot spawn one even with ~2GB free, and
+# raising the cap makes it worse rather than better.
+#
+# So the cap is deliberately SMALL, and `experimental.cpus` in next.config.ts
+# keeps the number of workers down. Both are cheaper, and more honest, than
+# resizing the instance for a build that does not need the room.
+ENV NODE_OPTIONS=--max-old-space-size=768
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime

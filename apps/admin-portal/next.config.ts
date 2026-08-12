@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
    * Next.js fans static generation out to one worker per CPU, and each worker
    * is a full Node heap. On the small instance that both builds and serves
    * this platform that produced `spawn ENOMEM` once the app passed ~30 routes.
-   * Two workers is slower and finishes; fifteen is faster and does not.
+   * One worker is slower and finishes; fifteen is faster and does not.
    *
    * `webpackMemoryOptimizations` is the reduction the framework's own memory
    * guide recommends — slightly longer compiles for a lower peak.
@@ -33,7 +33,7 @@ const nextConfig: NextConfig = {
    * the room.
    */
   experimental: {
-    cpus: 2,
+    cpus: 1,
     webpackMemoryOptimizations: true,
   },
 };
