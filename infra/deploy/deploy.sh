@@ -21,7 +21,20 @@ RELEASES="${RELEASES_DIR:-/opt/lacteva/releases}"
 CURRENT="${CURRENT_LINK:-/opt/lacteva/current}"
 ENV_FILE="${ENV_FILE:-/etc/lacteva/.env.production}"
 LOG="${DEPLOY_LOG:-/var/log/lacteva/deploy.log}"
-COMPOSE_FILE="docker-compose.production.yml"
+# DEMO-010: ABSOLUTE, resolved from where this script lives.
+#
+# It was a bare filename, so every `compose` call before step 3 depended on
+# the caller's working directory — and step 3 is where `cd "${CURRENT}"`
+# happens. Running `sudo /opt/lacteva/staging/infra/deploy/deploy.sh` from a
+# home directory therefore made step 2's `compose ps` fail, which the check
+# read as "no API is running" and reported as
+#
+#     no running API (first deployment) — skipping pre-deployment backup
+#
+# on a platform serving every request. The one safety net that makes an
+# unrecoverable migration recoverable was quietly not there, and the deploy
+# said so in a line that reads like a decision rather than a failure.
+COMPOSE_FILE="$(cd "$(dirname "$0")/../.." && pwd)/docker-compose.production.yml"
 AUTO_ROLLBACK=1
 
 log()  { printf '%s  %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "${LOG}"; }
@@ -102,6 +115,29 @@ done
 mkdir -p "$(dirname "${LOG}")"
 [ -f "${ENV_FILE}" ] || die "no environment file at ${ENV_FILE} (see INFRASTRUCTURE.md §Provisioning)"
 
+# DEMO-010: where to verify AGAINST.
+#
+# Both the verifier and the smoke test defaulted to `http://localhost`. nginx
+# answers that with a 301 to HTTPS, the redirect is followed to
+# `https://localhost`, and the certificate is for the real hostname — so TLS
+# verification fails and BOTH declare a perfectly healthy deployment broken.
+# The rollback then fails the same way, and the script reports an incident on
+# a platform that is serving every request correctly. That happened here.
+#
+# The fix is to state the public URL once, in the environment file that every
+# other deployment setting already lives in, instead of expecting whoever runs
+# a deploy to know two undocumented variables. AWS-001 fixed the redirect and
+# left the hostname; this is the other half.
+PUBLIC_URL="$(grep -E '^LACTEVA_PUBLIC_URL=' "${ENV_FILE}" | cut -d= -f2- || true)"
+if [ -n "${PUBLIC_URL}" ]; then
+  API_URL="${API_URL:-${PUBLIC_URL}}"
+  SMOKE_URL="${SMOKE_URL:-${PUBLIC_URL}}"
+  export API_URL SMOKE_URL
+  log "verifying against ${PUBLIC_URL}"
+else
+  log "LACTEVA_PUBLIC_URL is not set — verifying against http://localhost, which fails on any host with a real certificate"
+fi
+
 if [ "${ROLLBACK_ONLY}" = "1" ]; then
   PREV="$(previous_tag)"
   [ -n "${PREV}" ] || die "no previous release recorded — nothing to roll back to"
@@ -125,7 +161,12 @@ docker pull "${IMAGE}:${TAG}" || die "image ${IMAGE}:${TAG} could not be pulled 
 # The last cheap moment. If the migration in step 4 turns out to be a contract
 # migration that cannot be rolled back, this is what recovery uses.
 step "2/6  pre-deployment backup"
-if compose ps --status running --services 2>/dev/null | grep -qx api; then
+# Three outcomes, not two. "compose could not run at all" is a FAILURE, and
+# used to be indistinguishable from "there is no API yet" — see COMPOSE_FILE.
+if ! RUNNING="$(compose ps --status running --services 2>&1)"; then
+  die "could not ask docker what is running (${RUNNING%%$'\n'*}) — refusing to deploy blind"
+fi
+if printf '%s\n' "${RUNNING}" | grep -qx api; then
   STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
   compose exec -T api python -m platform_core.core.backup.cli backup "/backup/logical/predeploy-${STAMP}" \
     || die "pre-deployment backup failed — refusing to deploy without a way back"

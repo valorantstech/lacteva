@@ -43,11 +43,17 @@ cd ../.. && LACTEVA_DATABASE_URL=sqlite+aiosqlite:///./demo.db \
 The seeder runs inside the API container, which already has the application,
 its dependencies and the database URL:
 
+The image contains the application, not the repository — `/app` holds `src`,
+`migrations` and `alembic.ini` and nothing else — so the seeder has to be
+copied in. It was documented as `/app/infra/demo/seed_demo.py`, which has
+never existed.
+
 ```bash
 ssh lacteva-dev
-cd /opt/lacteva/releases/<release>
-sudo docker compose -f docker-compose.production.yml --env-file /etc/lacteva/.env.production \
-  exec -T api python /app/infra/demo/seed_demo.py seed
+cd /opt/lacteva/current
+COMPOSE="sudo docker compose -f docker-compose.production.yml --env-file /etc/lacteva/.env.production"
+sudo docker cp infra/demo/seed_demo.py "$(${COMPOSE} ps -q api)":/tmp/seed_demo.py
+${COMPOSE} exec -T api python /tmp/seed_demo.py seed      # or purge / reset / verify
 ```
 
 `seed` takes several minutes: it walks roughly 350 collections through the full
