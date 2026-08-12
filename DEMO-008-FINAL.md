@@ -352,7 +352,8 @@ when organization-wide; last-login recorded; every named role exists after
 bootstrap; seeding twice does not duplicate; a role grant is audited; and a
 second system role with the same name is refused by the database.
 
-**Portal — `src/app/admin/rbac-pages.test.tsx`, 10 tests**: the roles page
+**Portal — `src/app/admin/rbac-pages.test.tsx`, 10 tests, plus 2 on the
+dashboard's unauthorized state**: the roles page
 lists what the platform has (and not `tenant-operator`), distinguishes platform
 from organization roles, shows holders and permissions, grants with and without
 a centre scope; the users page shows role and scope by name, last sign-in and
@@ -363,9 +364,9 @@ a centre scope; the users page shows role and scope by name, last sign-in and
 ## 15. Test results
 
 ```
-backend      1,264 tests — 1,190 passed, 74 skipped (PostgreSQL-only), 0 failed
-PostgreSQL      74 tests — run against a real engine (pgserver), see below
-portal         160 tests — 160 passed (13 files)
+backend      1,265 tests — 1,191 passed, 74 skipped (PostgreSQL-only), 0 failed
+PostgreSQL      74 tests — 74 passed against a real engine; POSTGRESQL PROOF PASSED
+portal         162 tests — 162 passed (13 files)
 ruff check + ruff format --check      clean (210 files)
 eslint src --max-warnings 0           clean
 tsc --noEmit                          clean
@@ -509,6 +510,29 @@ repositories every previous release has used.
    login that never happened.
 6. The **live role verification runs headless**. Real Chrome against the real
    deployment, but not a human's rendering path.
+7. **The dashboard is still the landing page for every role**, including those
+   without `reporting.read`. It now says so calmly rather than showing errors
+   (§22), but a role-appropriate landing page would be better than a mostly
+   empty one.
+
+---
+
+## 22. Found and fixed during live verification
+
+Signing in as each role surfaced something no test had: a **collection
+operator's dashboard was a wall of red failure panels**. Their navigation was
+correctly restricted to four destinations, and then their landing page reported
+that the summary "could not be loaded", the trend was "unavailable", and so on
+— because every aggregate on it 403s for a role without `reporting.read`.
+
+Honest about the status code, wrong about the situation. Nothing was broken;
+reporting is not part of that job. An operator who believes the platform is
+broken raises a support ticket instead of getting on with their work.
+
+The loader now distinguishes *forbidden* from *failed*. A 403 renders as
+"Reporting is not part of your access… nothing here is broken"; a genuine 500
+still renders as a failure with a retry. Both are tested, and the corrected
+screen was confirmed live.
 
 ---
 
