@@ -1,0 +1,14 @@
+[Unit]
+Description=Lacteva disk guard
+
+[Timer]
+# Every six hours. The disk does not fill in minutes — it fills over a few
+# deploys — so this is about never being surprised, not about reacting fast.
+# 01:45 is deliberately BEFORE the 02:15 backup: a backup that fails for want
+# of space is how a bad night becomes an unrecoverable one.
+OnCalendar=*-*-* 01,07,13,19:45:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

@@ -20,11 +20,17 @@
 name: lacteva-production
 
 # Every service logs the same way, so a log driver is configured once.
+#
+# DEMO-010 lowered the ceiling. 50m × 5 files across thirteen services is a
+# 3.25GB entitlement on a 38GB disk that twice reached 100% — a quiet, standing
+# claim on a third of the headroom. 20m × 3 is 780MB across the whole stack,
+# and loses nothing that matters: promtail ships every line to Loki as it is
+# written, so these files are a short local buffer, not the log archive.
 x-logging: &logging
   driver: json-file
   options:
-    max-size: "50m"
-    max-file: "5"
+    max-size: "20m"
+    max-file: "3"
 
 # The API and the migration job are the same image with the same configuration
 # — they differ only in what they run. Anchoring it means they cannot drift,

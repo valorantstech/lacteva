@@ -54,6 +54,41 @@ export function PageHeader({
 }
 
 /**
+ * A divider between two groups of figures (DEMO-010).
+ *
+ * The dashboard now shows procurement and sales on one page, and money flows
+ * the OPPOSITE WAY through each. Without a heading, "value" above "value" is
+ * genuinely ambiguous — one is what the dairy owes, the other what it is owed
+ * — and a dairy owner reading it wrongly is a worse outcome than a page that
+ * shows less. So the split is explicit and the direction is spelled out.
+ */
+export function SectionHeading({
+  title,
+  detail,
+  href,
+  hrefLabel,
+}: {
+  title: string;
+  detail?: string;
+  href?: string;
+  hrefLabel?: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 className="text-sm font-semibold uppercase tracking-wide">{title}</h2>
+        {detail ? <p className="text-sm text-muted-foreground">{detail}</p> : null}
+      </div>
+      {href ? (
+        <a className="text-sm underline-offset-4 hover:underline" href={href}>
+          {hrefLabel ?? "View"}
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * A single figure with its label — the dashboard's unit of currency.
  *
  * `value` is a ReactNode so a caller can pass `<Money>` and keep exact

@@ -847,12 +847,70 @@ export type AttentionItem = {
   href: string | null;
 };
 
+// DEMO-010 — the sales side of the same block. Amounts are strings for the
+// same reason they are everywhere else in this file: they are `Decimal` on the
+// platform and must not become a JavaScript binary float on the way in.
+export type InvoiceStatusRow = {
+  status: string;
+  count: number;
+  total: string;
+};
+
+export type SalesSummary = {
+  date_from: string;
+  date_to: string;
+  currency: string | null;
+  deliveries_in_period: number;
+  delivered_quantity_in_period: string;
+  quantity_unit: string;
+  sales_value_in_period: string;
+  customers_served_in_period: number;
+  active_customers: number;
+  total_customers: number;
+  /** Balances, as at now — deliberately NOT narrowed by the date range. */
+  invoiced: string;
+  received: string;
+  receivable: string;
+  by_status: InvoiceStatusRow[];
+  open_invoices: number;
+  customers_owing: number;
+  unbilled_deliveries: number;
+  unbilled_amount: string;
+  receipts_issued: number;
+};
+
+export type ReceivableRow = {
+  customer_id: string;
+  code: string;
+  name: string;
+  phone: string;
+  status: string;
+  currency: string;
+  invoiced: string;
+  paid: string;
+  outstanding: string;
+  open_invoices: number;
+  last_payment_at: string | null;
+  oldest_unpaid_from: string | null;
+};
+
+export type ReceivablesPage = {
+  items: ReceivableRow[];
+  total: number;
+  limit: number;
+  offset: number;
+  /** Across every match, not the page. Never sum `items` in a component. */
+  total_outstanding: string;
+  currency: string | null;
+};
+
 export type DashboardReport = {
   date_from: string;
   date_to: string;
   collection: DailyCollectionSummary;
   settlements: SettlementReport;
   payments: PaymentReport;
+  sales: SalesSummary;
   rate_bands: RateBandRow[];
   active_suppliers: number;
   active_centers: number;
@@ -891,6 +949,12 @@ export const getPaymentReport = (params: Record<string, string | undefined>) =>
 
 export const getCollectionTrend = (params: Record<string, string | undefined>) =>
   api<CollectionTrend>(`/v1/reports/collection/trend?${reportQuery(params)}`);
+
+export const getSalesSummary = (params: Record<string, string | undefined>) =>
+  api<SalesSummary>(`/v1/reports/sales/summary?${reportQuery(params)}`);
+
+export const getReceivables = (params: Record<string, string | undefined>) =>
+  api<ReceivablesPage>(`/v1/reports/receivables?${reportQuery(params)}`);
 
 // --- Milk transactions ------------------------------------------------------
 

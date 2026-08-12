@@ -199,7 +199,9 @@ from platform_core.modules.reporting.service import (
     PaymentSummary,
     PricingSummary,
     RateBandRow,
+    ReceivablesPage,
     ReportingService,
+    SalesSummary,
     SettlementSummary,
     SummaryPage,
 )
@@ -2322,8 +2324,43 @@ async def report_dashboard(
     date_to: date | None = None,
 ) -> DashboardSummary:
     """One round trip for the KPI block: collection, settlements, payments,
-    rate distribution, active counts and what needs attention."""
+    sales, rate distribution, active counts and what needs attention."""
     return await service.dashboard(date_from=date_from, date_to=date_to)
+
+
+# DEMO-010 — the sales side of the same block. Both are `reporting.read`,
+# because a report is a report; what a role may SEE is decided by the
+# permission registry, never by which module the numbers came from.
+
+
+@report_router.get("/sales/summary", response_model=SalesSummary)
+async def report_sales_summary(
+    service: ReportSvc,
+    _: ReportRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> SalesSummary:
+    """Milk delivered and what it was worth, plus the receivable balance:
+    invoiced, received, still owed, and what is delivered but unbilled."""
+    return await service.sales_summary(date_from=date_from, date_to=date_to)
+
+
+@report_router.get("/receivables", response_model=ReceivablesPage)
+async def report_receivables(
+    service: ReportSvc,
+    _: ReportRead,
+    q: str | None = None,
+    owing_only: bool = True,
+    limit: int = 20,
+    offset: int = 0,
+) -> ReceivablesPage:
+    """Who owes money, worst first.
+
+    Paginated and ordered in SQL, with `total_outstanding` computed across
+    every match rather than the page — a page total would understate the debt
+    of any dairy with more households than fit on one screen.
+    """
+    return await service.receivables(q=q, owing_only=owing_only, limit=limit, offset=offset)
 
 
 @report_router.get("/collection/{transaction_id}/chain", response_model=CollectionChain)

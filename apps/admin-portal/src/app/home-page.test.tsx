@@ -86,6 +86,57 @@ const DASHBOARD = {
   active_centers: 5,
   inactive_centers: 0,
   attention: [],
+  // DEMO-010 — the sales half of the same payload.
+  sales: {
+    date_from: "2026-08-05",
+    date_to: "2026-08-11",
+    currency: "KES",
+    deliveries_in_period: 96,
+    delivered_quantity_in_period: "184.000",
+    quantity_unit: "L",
+    sales_value_in_period: "11040.00",
+    customers_served_in_period: 14,
+    active_customers: 15,
+    total_customers: 16,
+    invoiced: "48000.00",
+    received: "31500.00",
+    receivable: "16500.00",
+    by_status: [
+      { status: "issued", count: 6, total: "24000.00" },
+      { status: "paid", count: 8, total: "24000.00" },
+    ],
+    open_invoices: 6,
+    customers_owing: 6,
+    unbilled_deliveries: 22,
+    unbilled_amount: "2640.00",
+    receipts_issued: 9,
+  },
+};
+
+const RECEIVABLES = {
+  items: [
+    {
+      customer_id: "cu1",
+      code: "CUS-0007",
+      name: "Mama Njeri Household",
+      phone: "+254700111222",
+      status: "active",
+      currency: "KES",
+      invoiced: "3600.00",
+      paid: "1200.00",
+      outstanding: "2400.00",
+      open_invoices: 1,
+      last_payment_at: "2026-08-02T08:00:00+00:00",
+      oldest_unpaid_from: "2026-07-01",
+    },
+  ],
+  total: 6,
+  limit: 6,
+  offset: 0,
+  // Deliberately LARGER than the one row above: the card must print the
+  // platform's total across every debtor, never a sum of what it rendered.
+  total_outstanding: "16500.00",
+  currency: "KES",
 };
 
 const TREND = {
@@ -180,6 +231,7 @@ function routeAll(overrides: Record<string, () => Response> = {}) {
     if (url.includes("/reports/collection/trend")) return json(TREND);
     if (url.includes("/reports/collection/by-center")) return json(CENTERS);
     if (url.includes("/reports/collection/by-supplier")) return json(SUPPLIERS);
+    if (url.includes("/reports/receivables")) return json(RECEIVABLES);
     if (url.includes("/v1/audit")) return json(AUDIT);
     return json({ title: "not_found" }, 404);
   });
@@ -369,11 +421,51 @@ describe("dashboard", () => {
     const windows = spy.mock.calls
       .map(([u]) => String(u))
       .filter((u) => u.includes("/reports/"))
+      // DEMO-010: receivables is deliberately NOT windowed — a debt is a debt
+      // whatever range is on screen — so it is asserted separately below
+      // rather than folded into the sameness check.
+      .filter((u) => !u.includes("/reports/receivables"))
       .map((u) => {
         const params = new URL(u, "http://x").searchParams;
         return `${params.get("date_from")}..${params.get("date_to")}`;
       });
     expect(windows.length).toBeGreaterThan(1);
     expect(new Set(windows).size).toBe(1);
+  });
+
+  it("asks for receivables without a date range, because a balance has none", async () => {
+    const spy = routeAll();
+    render(<Home />);
+    await screen.findByText("42");
+
+    const [url] = spy.mock.calls.map(([u]) => String(u)).filter((u) => u.includes("/receivables"));
+    expect(url).toBeDefined();
+    const params = new URL(url, "http://x").searchParams;
+    expect(params.get("date_from")).toBeNull();
+    expect(params.get("date_to")).toBeNull();
+  });
+
+  it("shows both sides of the dairy, and never sums the rows it rendered", async () => {
+    routeAll();
+    render(<Home />);
+    await screen.findByText("42");
+
+    // Both halves are labelled, so no figure has to be guessed at.
+    expect(await screen.findByRole("heading", { name: "Procurement" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Sales" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Sales summary" })).toBeInTheDocument();
+
+    // The sales figures are the platform's, rendered as sent. The unit sits in
+    // its own span, so the figure is asserted with the trailing zeros that
+    // state its scale.
+    expect(await screen.findByText("96")).toBeInTheDocument();
+    expect(screen.getByText("184.000")).toBeInTheDocument();
+
+    // The headline debt is `total_outstanding` (16,500) — NOT the 2,400 of the
+    // single row on screen. This is the assertion that catches a page total
+    // being passed off as the whole book.
+    expect(screen.getAllByText("16,500.00").length).toBeGreaterThan(0);
+    expect(screen.getByText("Mama Njeri Household")).toBeInTheDocument();
+    expect(screen.getByText(/See all 6 customers who owe/)).toBeInTheDocument();
   });
 });

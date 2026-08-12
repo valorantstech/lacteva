@@ -26,7 +26,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import as_utc, utcnow
 from platform_core.core.tenancy import require_current_tenant
+from platform_core.modules.billing.models import (
+    PAYABLE_INVOICE_STATUSES,
+    CustomerInvoice,
+    CustomerPayment,
+    CustomerReceipt,
+)
 from platform_core.modules.collection_center.models import CollectionCenter
+from platform_core.modules.customer.models import Customer
+from platform_core.modules.delivery.models import BILLABLE_STATUSES, MilkDelivery
 from platform_core.modules.milk_collection.models import MilkCollectionTransaction as Tx
 from platform_core.modules.milk_collection.models import TransactionEvent
 from platform_core.modules.payment.models import Payment, PaymentLine
@@ -75,6 +83,20 @@ def _kg(total) -> float:
     if total is None:
         return 0.0
     return float(Decimal(total).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
+
+
+def _money(total) -> Decimal:
+    """An exact sum, rounded once to money scale — and never through float.
+
+    The sales figures stay `Decimal` the whole way to the browser (BR-0005),
+    unlike weights, which the API has always returned as `float`.
+    """
+    return Decimal(total or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _litres(total) -> Decimal:
+    """A delivered volume, at the scale the delivery column stores."""
+    return Decimal(total or 0).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
 
 
 # --- DTOs ------------------------------------------------------------------
@@ -305,6 +327,85 @@ class AttentionItem(BaseModel):
     href: str | None = None
 
 
+class InvoiceStatusRow(BaseModel):
+    status: str
+    count: int
+    total: Decimal
+
+
+class SalesSummary(BaseModel):
+    """The receivable half of the business (DEMO-010).
+
+    Two kinds of figure live here and the names say which is which, because
+    confusing them is the easy mistake:
+
+    * `*_in_period` is what happened between `date_from` and `date_to` —
+      how much milk went out, what it was worth.
+    * `receivable`, `invoiced` and `received` are BALANCES. They are as-at-now
+      and ignore the period entirely, because "what do customers owe us" is
+      not a question about a date range, and answering it for one would show a
+      manager a smaller number than the debt they actually have to collect.
+
+    `receivable` uses the same definition as `BillingService.balance()` —
+    issued and paid invoices, less every recorded payment — so a manager
+    adding up the customer pages gets the dashboard's number exactly.
+    """
+
+    date_from: date
+    date_to: date
+    currency: str | None
+
+    deliveries_in_period: int
+    delivered_quantity_in_period: Decimal
+    quantity_unit: str
+    sales_value_in_period: Decimal
+    customers_served_in_period: int
+
+    active_customers: int
+    total_customers: int
+
+    invoiced: Decimal  #: issued + paid invoices, all time
+    received: Decimal  #: recorded customer payments, all time
+    receivable: Decimal  #: invoiced less received; what is still owed
+    by_status: list[InvoiceStatusRow]
+    open_invoices: int  #: issued and not yet fully settled
+    customers_owing: int
+
+    unbilled_deliveries: int  #: delivered, billable, not yet on any bill
+    unbilled_amount: Decimal
+    receipts_issued: int
+
+
+class ReceivableRow(BaseModel):
+    customer_id: uuid.UUID
+    code: str
+    name: str
+    phone: str
+    status: str
+    currency: str
+    invoiced: Decimal
+    paid: Decimal
+    outstanding: Decimal
+    open_invoices: int
+    last_payment_at: datetime | None
+    oldest_unpaid_from: date | None  #: start of the oldest issued, unsettled period
+
+
+class ReceivablesPage(BaseModel):
+    """Who owes money, worst first — the dairy owner's first question.
+
+    Ordered by `outstanding` descending in SQL, so page one is the collection
+    round for the morning and nothing needs sorting in a browser.
+    """
+
+    items: list[ReceivableRow]
+    total: int  #: customers matching the filter, not rows on this page
+    limit: int
+    offset: int
+    total_outstanding: Decimal  #: across every match, not just this page
+    currency: str | None
+
+
 class DashboardSummary(BaseModel):
     """One round trip for the whole KPI block.
 
@@ -318,6 +419,7 @@ class DashboardSummary(BaseModel):
     collection: DailyCollectionSummary
     settlements: SettlementSummary
     payments: PaymentSummary
+    sales: SalesSummary
     rate_bands: list[RateBandRow]
     active_suppliers: int
     active_centers: int
@@ -1042,6 +1144,321 @@ class ReportingService:
             if unit_price is not None
         ]
 
+    # --- the sales side (DEMO-010) ------------------------------------------
+
+    async def sales_summary(
+        self, *, date_from: date | None = None, date_to: date | None = None
+    ) -> SalesSummary:
+        """The whole receivable side in six grouped queries.
+
+        Not one query per customer, and nothing summed in the browser: a dairy
+        with three hundred households would otherwise ship three hundred rows
+        to a dashboard so React could add them up, which is both slow and — for
+        money — wrong, since JavaScript numbers are binary floats.
+
+        Every sum casts to unconstrained `NUMERIC` inside the aggregate for the
+        same reason the collection reports do (DB-002): the total is rounded
+        once, at the end, not per row.
+        """
+        tenant_id = require_current_tenant()
+        date_to = date_to or utcnow().date()
+        date_from = date_from or date_to
+
+        # 1. What went out in the period. `BILLABLE_STATUSES` is the delivery
+        #    module's own definition of "this actually reached the customer";
+        #    a cancelled or missed delivery is worth nothing and must not
+        #    inflate a sales figure.
+        period = (
+            await self._session.execute(
+                select(
+                    func.count(),
+                    func.coalesce(func.sum(cast(MilkDelivery.quantity, Numeric)), _EXACT_ZERO),
+                    func.coalesce(func.sum(cast(MilkDelivery.amount, Numeric)), _EXACT_ZERO),
+                    func.count(distinct(MilkDelivery.customer_id)),
+                    func.max(MilkDelivery.currency),
+                    func.max(MilkDelivery.quantity_unit),
+                ).where(
+                    MilkDelivery.tenant_id == tenant_id,
+                    MilkDelivery.delivery_date >= date_from,
+                    MilkDelivery.delivery_date <= date_to,
+                    MilkDelivery.status.in_(BILLABLE_STATUSES),
+                )
+            )
+        ).one()
+
+        # 2. Bills by status — counts AND totals, so "twelve issued" can be
+        #    read next to what those twelve are worth.
+        status_rows = (
+            await self._session.execute(
+                select(
+                    CustomerInvoice.status,
+                    func.count(),
+                    func.coalesce(func.sum(cast(CustomerInvoice.total, Numeric)), _EXACT_ZERO),
+                )
+                .where(CustomerInvoice.tenant_id == tenant_id)
+                .group_by(CustomerInvoice.status)
+                .order_by(CustomerInvoice.status)
+            )
+        ).all()
+
+        # 3 and 4. The balance. Same definition as BillingService.balance(),
+        #    applied to every customer at once instead of one at a time.
+        invoiced = await self._session.scalar(
+            select(
+                func.coalesce(func.sum(cast(CustomerInvoice.total, Numeric)), _EXACT_ZERO)
+            ).where(
+                CustomerInvoice.tenant_id == tenant_id,
+                CustomerInvoice.status.in_(PAYABLE_INVOICE_STATUSES),
+            )
+        )
+        received = await self._session.scalar(
+            select(
+                func.coalesce(func.sum(cast(CustomerPayment.amount, Numeric)), _EXACT_ZERO)
+            ).where(
+                CustomerPayment.tenant_id == tenant_id,
+                CustomerPayment.status == "recorded",
+            )
+        )
+
+        # 5. How many households are behind, which is the question a dairy
+        #    owner actually asks. Owed and paid are grouped per customer and
+        #    compared in SQL — the browser never sees the per-customer rows.
+        billed = (
+            select(
+                CustomerInvoice.customer_id.label("customer_id"),
+                func.coalesce(func.sum(cast(CustomerInvoice.total, Numeric)), _EXACT_ZERO).label(
+                    "owed"
+                ),
+            )
+            .where(
+                CustomerInvoice.tenant_id == tenant_id,
+                CustomerInvoice.status.in_(PAYABLE_INVOICE_STATUSES),
+            )
+            .group_by(CustomerInvoice.customer_id)
+            .subquery()
+        )
+        settled = (
+            select(
+                CustomerPayment.customer_id.label("customer_id"),
+                func.coalesce(func.sum(cast(CustomerPayment.amount, Numeric)), _EXACT_ZERO).label(
+                    "paid"
+                ),
+            )
+            .where(
+                CustomerPayment.tenant_id == tenant_id,
+                CustomerPayment.status == "recorded",
+            )
+            .group_by(CustomerPayment.customer_id)
+            .subquery()
+        )
+        customers_owing = (
+            await self._session.scalar(
+                select(func.count()).select_from(
+                    select(billed.c.customer_id)
+                    .outerjoin(settled, settled.c.customer_id == billed.c.customer_id)
+                    .where(billed.c.owed > func.coalesce(settled.c.paid, _EXACT_ZERO))
+                    .subquery()
+                )
+            )
+        ) or 0
+
+        # 6. Delivered but not yet billed — the work waiting to become money,
+        #    and the number that tells a manager it is time to run billing.
+        unbilled = (
+            await self._session.execute(
+                select(
+                    func.count(),
+                    func.coalesce(func.sum(cast(MilkDelivery.amount, Numeric)), _EXACT_ZERO),
+                ).where(
+                    MilkDelivery.tenant_id == tenant_id,
+                    MilkDelivery.status.in_(BILLABLE_STATUSES),
+                    MilkDelivery.invoice_id.is_(None),
+                )
+            )
+        ).one()
+
+        customer_states = (
+            await self._session.execute(
+                select(Customer.status, func.count())
+                .where(Customer.tenant_id == tenant_id)
+                .group_by(Customer.status)
+            )
+        ).all()
+        receipts_issued = (
+            await self._session.scalar(
+                select(func.count())
+                .select_from(CustomerReceipt)
+                .where(CustomerReceipt.tenant_id == tenant_id)
+            )
+        ) or 0
+
+        by_status = [
+            InvoiceStatusRow(status=status, count=count, total=_money(total))
+            for status, count, total in status_rows
+        ]
+        return SalesSummary(
+            date_from=date_from,
+            date_to=date_to,
+            currency=period[4],
+            deliveries_in_period=period[0] or 0,
+            delivered_quantity_in_period=_litres(period[1]),
+            quantity_unit=period[5] or "L",
+            sales_value_in_period=_money(period[2]),
+            customers_served_in_period=period[3] or 0,
+            active_customers=sum(c for s, c in customer_states if s == "active"),
+            total_customers=sum(c for _, c in customer_states),
+            invoiced=_money(invoiced),
+            received=_money(received),
+            receivable=_money(Decimal(invoiced or 0) - Decimal(received or 0)),
+            by_status=by_status,
+            open_invoices=sum(r.count for r in by_status if r.status == "issued"),
+            customers_owing=customers_owing,
+            unbilled_deliveries=unbilled[0] or 0,
+            unbilled_amount=_money(unbilled[1]),
+            receipts_issued=receipts_issued,
+        )
+
+    async def receivables(
+        self,
+        *,
+        q: str | None = None,
+        owing_only: bool = True,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> ReceivablesPage:
+        """Who owes money, worst first, entirely in SQL.
+
+        The obvious wrong implementation is to list customers and call
+        `BillingService.balance()` for each — correct, and N+1 queries against
+        the database for every page. This joins two grouped aggregates onto
+        the customer table instead: three queries whatever the page size, and
+        the same arithmetic, because both aggregates use the same status
+        predicates `balance()` does.
+
+        `total_outstanding` is deliberately computed across every match rather
+        than summed from `items`. A page of twenty rows summed in the browser
+        would silently understate the debt of a dairy with a hundred
+        households — and it is the number the owner reads first.
+        """
+        tenant_id = require_current_tenant()
+        limit = max(1, min(limit, 100))
+        offset = max(0, offset)
+
+        billed = (
+            select(
+                CustomerInvoice.customer_id.label("customer_id"),
+                func.coalesce(func.sum(cast(CustomerInvoice.total, Numeric)), _EXACT_ZERO).label(
+                    "invoiced"
+                ),
+                func.sum(case((CustomerInvoice.status == "issued", 1), else_=0)).label("open"),
+                func.min(
+                    case((CustomerInvoice.status == "issued", CustomerInvoice.period_from))
+                ).label("oldest"),
+            )
+            .where(
+                CustomerInvoice.tenant_id == tenant_id,
+                CustomerInvoice.status.in_(PAYABLE_INVOICE_STATUSES),
+            )
+            .group_by(CustomerInvoice.customer_id)
+            .subquery()
+        )
+        settled = (
+            select(
+                CustomerPayment.customer_id.label("customer_id"),
+                func.coalesce(func.sum(cast(CustomerPayment.amount, Numeric)), _EXACT_ZERO).label(
+                    "paid"
+                ),
+                func.max(CustomerPayment.received_at).label("last_payment_at"),
+            )
+            .where(
+                CustomerPayment.tenant_id == tenant_id,
+                CustomerPayment.status == "recorded",
+            )
+            .group_by(CustomerPayment.customer_id)
+            .subquery()
+        )
+
+        invoiced_col = func.coalesce(billed.c.invoiced, _EXACT_ZERO)
+        paid_col = func.coalesce(settled.c.paid, _EXACT_ZERO)
+        outstanding_col = invoiced_col - paid_col
+
+        conditions = [Customer.tenant_id == tenant_id]
+        if q:
+            like = f"%{q.strip()}%"
+            conditions.append(Customer.name.ilike(like) | Customer.code.ilike(like))
+        if owing_only:
+            # Strictly greater than zero: a customer who has paid in full, and
+            # one who has overpaid, are both settled and neither belongs on a
+            # collection round.
+            conditions.append(outstanding_col > 0)
+
+        base = (
+            select(
+                Customer.id,
+                Customer.code,
+                Customer.name,
+                Customer.phone,
+                Customer.status,
+                Customer.currency,
+                invoiced_col.label("invoiced"),
+                paid_col.label("paid"),
+                outstanding_col.label("outstanding"),
+                func.coalesce(billed.c.open, 0).label("open_invoices"),
+                settled.c.last_payment_at,
+                billed.c.oldest,
+            )
+            .select_from(Customer)
+            .outerjoin(billed, billed.c.customer_id == Customer.id)
+            .outerjoin(settled, settled.c.customer_id == Customer.id)
+            .where(*conditions)
+        )
+
+        # ONE subquery object, used twice. Calling `.subquery()` twice would
+        # build two distinct derived tables and join them — a cartesian
+        # product that reports the square of the customer count and a wildly
+        # inflated total.
+        matched = base.subquery()
+        totals = (
+            await self._session.execute(
+                select(
+                    func.count(),
+                    func.coalesce(func.sum(matched.c.outstanding), _EXACT_ZERO),
+                ).select_from(matched)
+            )
+        ).one()
+
+        rows = (
+            await self._session.execute(
+                base.order_by(outstanding_col.desc(), Customer.name).limit(limit).offset(offset)
+            )
+        ).all()
+
+        items = [
+            ReceivableRow(
+                customer_id=r[0],
+                code=r[1],
+                name=r[2],
+                phone=r[3],
+                status=r[4],
+                currency=r[5],
+                invoiced=_money(r[6]),
+                paid=_money(r[7]),
+                outstanding=_money(r[8]),
+                open_invoices=r[9] or 0,
+                last_payment_at=as_utc(r[10]) if r[10] else None,
+                oldest_unpaid_from=r[11],
+            )
+            for r in rows
+        ]
+        return ReceivablesPage(
+            items=items,
+            total=totals[0] or 0,
+            limit=limit,
+            offset=offset,
+            total_outstanding=_money(totals[1]),
+            currency=items[0].currency if items else None,
+        )
+
     # --- the dashboard block (DEMO-002) -------------------------------------
 
     async def dashboard(
@@ -1061,6 +1478,7 @@ class ReportingService:
         collection = await self.daily_summary(date_from=date_from, date_to=date_to)
         settlements = await self.settlement_summary()
         payments = await self.payment_summary()
+        sales = await self.sales_summary(date_from=date_from, date_to=date_to)
         rate_bands = await self.rate_distribution(date_from=date_from, date_to=date_to)
 
         active_suppliers = (
@@ -1135,6 +1553,39 @@ class ReportingService:
                     href="/centers",
                 )
             )
+        # The sales side gets the same treatment: real backend states, real
+        # counts, omitted entirely when zero.
+        if sales.customers_owing:
+            attention.append(
+                AttentionItem(
+                    key="customers_owing",
+                    label="customers with an outstanding balance",
+                    count=sales.customers_owing,
+                    severity="warning",
+                    href="/receivables",
+                )
+            )
+        if sales.unbilled_deliveries:
+            attention.append(
+                AttentionItem(
+                    key="unbilled_deliveries",
+                    label="deliveries made but not yet billed",
+                    count=sales.unbilled_deliveries,
+                    severity="warning",
+                    href="/deliveries?invoiced=false",
+                )
+            )
+        draft_bills = sum(r.count for r in sales.by_status if r.status == "draft")
+        if draft_bills:
+            attention.append(
+                AttentionItem(
+                    key="draft_bills",
+                    label="customer bills drafted and not yet issued",
+                    count=draft_bills,
+                    severity="warning",
+                    href="/billing?status=draft",
+                )
+            )
 
         return DashboardSummary(
             date_from=date_from,
@@ -1142,6 +1593,7 @@ class ReportingService:
             collection=collection,
             settlements=settlements,
             payments=payments,
+            sales=sales,
             rate_bands=rate_bands,
             active_suppliers=active_suppliers,
             active_centers=active_centers,

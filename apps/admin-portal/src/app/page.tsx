@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
@@ -8,9 +9,13 @@ import {
   Building2,
   CheckCircle2,
   Droplets,
+  FileText,
   Handshake,
+  PackageCheck,
   Percent,
   Truck,
+  UserRound,
+  Wallet,
 } from "lucide-react";
 import {
   ApiError,
@@ -18,12 +23,14 @@ import {
   type CenterSummaryRow,
   type CollectionTrend,
   type DashboardReport,
+  type ReceivablesPage,
   type ReportPage,
   type Session,
   type SupplierSummaryRow,
   getCenterReport,
   getCollectionTrend,
   getDashboardReport,
+  getReceivables,
   getSession,
   getSupplierReport,
   listAudit,
@@ -33,7 +40,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { type DateRange, DateRangePicker, resolveRange } from "@/components/date-range";
 import { BarBreakdown, TrendChart } from "@/components/trend-chart";
 import { Money, Quantity } from "@/components/money";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader, SectionHeading, StatTile } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState, TableSkeleton } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 
@@ -90,6 +97,7 @@ export default function Home() {
   const [centers, setCenters] = useState<Load<ReportPage<CenterSummaryRow>>>(LOADING);
   const [suppliers, setSuppliers] = useState<Load<ReportPage<SupplierSummaryRow>>>(LOADING);
   const [activity, setActivity] = useState<Load<AuditRecord[]>>(LOADING);
+  const [owing, setOwing] = useState<Load<ReceivablesPage>>(LOADING);
   const [busy, setBusy] = useState(false);
 
   const signedIn = session?.authenticated === true;
@@ -130,6 +138,9 @@ export default function Home() {
       listAudit({ limit: 12, offset: 0 })
         .then((r) => r.items)
         .then(ok(setActivity), fail(setActivity)),
+      // Six rows and a total computed over ALL debtors — the card shows a
+      // shortlist, never a sum of the shortlist.
+      getReceivables({ limit: "6" }).then(ok(setOwing), fail(setOwing)),
     ]);
     setBusy(false);
   }, []);
@@ -170,6 +181,7 @@ export default function Home() {
   const report = dashboard.state === "ready" ? dashboard.data : null;
   const collection = report?.collection;
   const payments = report?.payments;
+  const sales = report?.sales;
   const currencies = Object.entries(collection?.payable_by_currency ?? {});
   const primary = currencies[0];
 
@@ -177,7 +189,7 @@ export default function Home() {
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
         title="Dashboard"
-        description="Collection, settlement and payment across this organization — every figure computed by the platform."
+        description="Both sides of the dairy — milk bought from suppliers and milk sold to customers. Every figure is computed by the platform."
         actions={
           <Button type="button" variant="outline" disabled={busy} onClick={() => void load(range)}>
             {busy ? "Refreshing…" : "Refresh"}
@@ -208,6 +220,16 @@ export default function Home() {
           }
         />
       ) : null}
+
+      {/* DEMO-010: the two halves of a dairy, labelled and separated.
+          A manager reading this page should never have to work out which
+          direction a number's money is going — procurement is what the dairy
+          PAYS, sales is what it is OWED, and putting them in one undivided
+          grid was the fastest way to make an owner mistrust the whole page. */}
+      <SectionHeading
+        title="Procurement"
+        detail="Milk bought from suppliers, and what the dairy owes for it"
+      />
 
       <section aria-label="Collection summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatTile
@@ -257,6 +279,79 @@ export default function Home() {
           value={report ? report.active_centers : "—"}
           hint={report?.inactive_centers ? `${report.inactive_centers} not active` : "all active"}
           icon={<Building2 className="size-4" />}
+        />
+      </section>
+
+      <SectionHeading
+        title="Sales"
+        detail="Milk delivered to customers, and what they owe the dairy"
+        href="/receivables"
+        hrefLabel="Who owes money"
+      />
+
+      <section aria-label="Sales summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <StatTile
+          label="Deliveries"
+          value={sales ? sales.deliveries_in_period : "—"}
+          hint={sales ? `${sales.customers_served_in_period} customers served` : undefined}
+          icon={<PackageCheck className="size-4" />}
+        />
+        <StatTile
+          label="Milk delivered"
+          value={
+            sales ? (
+              <Quantity
+                value={sales.delivered_quantity_in_period}
+                unit={sales.quantity_unit ?? "L"}
+              />
+            ) : (
+              "—"
+            )
+          }
+          hint="over the selected range"
+          icon={<Droplets className="size-4" />}
+        />
+        <StatTile
+          label="Sales value"
+          value={
+            sales ? (
+              <Money amount={sales.sales_value_in_period} currency={sales.currency ?? "KES"} />
+            ) : (
+              "—"
+            )
+          }
+          hint="milk delivered in this range"
+          icon={<Banknote className="size-4" />}
+        />
+        <StatTile
+          label="Customer receivable"
+          value={
+            sales ? <Money amount={sales.receivable} currency={sales.currency ?? "KES"} /> : "—"
+          }
+          // Said plainly, because it is the one tile on this page that is NOT
+          // narrowed by the date range — a debt is a debt whatever window you
+          // are looking through, and a manager who thinks otherwise will
+          // under-collect.
+          hint={sales ? `${sales.customers_owing} customers owing · all time` : undefined}
+          icon={<Wallet className="size-4" />}
+        />
+        <StatTile
+          label="Bills outstanding"
+          value={sales ? sales.open_invoices : "—"}
+          hint={sales ? `${sales.receipts_issued} receipts issued` : undefined}
+          icon={<FileText className="size-4" />}
+        />
+        <StatTile
+          label="Delivered, not billed"
+          value={sales ? sales.unbilled_deliveries : "—"}
+          hint={
+            sales ? (
+              <>
+                worth <Money amount={sales.unbilled_amount} currency={sales.currency ?? "KES"} />
+              </>
+            ) : undefined
+          }
+          icon={<UserRound className="size-4" />}
         />
       </section>
 
@@ -467,6 +562,93 @@ export default function Home() {
           </CardContent>
         </Card>
       </div>
+
+      {/* The question a dairy owner asks first, answered on the front page.
+          The list is the six largest debts; `total_outstanding` beside it is
+          computed by the platform across EVERY debtor, so the headline figure
+          does not quietly become "the six on screen". */}
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Wallet aria-hidden className="size-4 text-muted-foreground" />
+              Who owes money
+            </CardTitle>
+            <CardDescription>
+              Largest balances first, across every customer in this organization.
+            </CardDescription>
+          </div>
+          {owing.state === "ready" && owing.data.total > 0 ? (
+            <div className="text-right">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Total owed</p>
+              <p className="text-lg font-semibold">
+                <Money
+                  amount={owing.data.total_outstanding}
+                  currency={owing.data.currency ?? "KES"}
+                />
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {owing.data.total} {owing.data.total === 1 ? "customer" : "customers"}
+              </p>
+            </div>
+          ) : null}
+        </CardHeader>
+        <CardContent>
+          {owing.state === "loading" ? (
+            <TableSkeleton rows={4} columns={3} />
+          ) : owing.state === "forbidden" ? (
+            <EmptyState
+              title="Not part of your access"
+              description="Your role does not include reporting. Nothing here is broken."
+            />
+          ) : owing.state === "error" ? (
+            <ErrorState message={`Receivables are unavailable — ${owing.message}.`} />
+          ) : (owing.data.items ?? []).length === 0 ? (
+            <EmptyState
+              title="Every customer is settled"
+              description="No customer has an outstanding balance right now."
+            />
+          ) : (
+            <>
+              <ul className="flex flex-col divide-y divide-border">
+                {(owing.data.items ?? []).map((row) => (
+                  <li
+                    key={row.customer_id}
+                    className="flex items-center justify-between gap-3 py-2"
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <Link
+                        className="truncate text-sm font-medium hover:underline"
+                        href={`/customers/${row.customer_id}`}
+                      >
+                        {row.name}
+                      </Link>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {row.code}
+                        {row.oldest_unpaid_from ? ` · unpaid since ${row.oldest_unpaid_from}` : ""}
+                        {row.open_invoices
+                          ? ` · ${row.open_invoices} open ${
+                              row.open_invoices === 1 ? "bill" : "bills"
+                            }`
+                          : ""}
+                      </span>
+                    </div>
+                    <Money amount={row.outstanding} currency={row.currency} emphasis />
+                  </li>
+                ))}
+              </ul>
+              {owing.data.total > (owing.data.items ?? []).length ? (
+                <Link
+                  className="mt-3 inline-block text-sm underline-offset-4 hover:underline"
+                  href="/receivables"
+                >
+                  See all {owing.data.total} customers who owe
+                </Link>
+              ) : null}
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>

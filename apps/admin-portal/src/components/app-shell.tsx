@@ -49,6 +49,7 @@ import {
   Truck,
   UserRound,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import {
@@ -83,6 +84,10 @@ const SALES: Entry[] = [
   { href: "/customers", label: "Customers", permission: "sales.customer.read", icon: UserRound },
   { href: "/deliveries", label: "Deliveries", permission: "sales.delivery.read", icon: Truck },
   { href: "/billing", label: "Billing", permission: "sales.invoice.read", icon: FileText },
+  // DEMO-010. `reporting.read`, not a sales permission — it is a report, and
+  // an auditor with reporting access should reach it without being granted
+  // anything on the sales module itself.
+  { href: "/receivables", label: "Who owes money", permission: "reporting.read", icon: Wallet },
 ];
 
 const PRICING: Entry[] = [

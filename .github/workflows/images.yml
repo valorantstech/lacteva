@@ -1,0 +1,144 @@
+# Build the deployable images somewhere other than the machine that serves them.
+#
+# DEMO-009 built both images ON the production host and hit `spawn ENOMEM`: the
+# host runs `vm.overcommit_memory=2`, so forking a Next.js build worker needs
+# commit charge equal to the parent's reservation and is refused while the
+# platform is also resident. The disk reached 100% twice from build cache in
+# the same week. Both are symptoms of one mistake — a 2 vCPU / 4 GB instance
+# was doing a compiler's job and a server's job at the same time.
+#
+#   git → GitHub Actions → docker build → ECR → the EC2 pulls
+#
+# The EC2 now only ever pulls. Cost of the change: nothing recurring. The
+# runners are GitHub's, the two ECR repositories already existed, ECR→EC2
+# transfer inside ap-south-1 is free, and the IAM role and OIDC provider that
+# replace long-lived keys are free. See DEMO-010-FINAL.md §"AWS cost impact".
+#
+# No AWS secret is stored in GitHub. The runner exchanges its OIDC token for a
+# session on `lacteva-github-actions-ecr`, whose trust policy admits only this
+# repository's branches and tags (never a pull request, which must not be able
+# to publish an image) and whose permissions reach only these two repositories.
+
+name: Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/platform-core/**"
+      - "apps/admin-portal/**"
+      - ".github/workflows/images.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to publish (default: <branch>-<short sha>)"
+        required: false
+        type: string
+
+# Deploys are pinned to an immutable tag, so two runs racing to publish the
+# same tag would be the one way to make a tag mean two different things.
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # the OIDC token; this is what replaces stored AWS keys
+
+env:
+  AWS_REGION: ap-south-1
+  ROLE_ARN: arn:aws:iam::590182060076:role/lacteva-github-actions-ecr
+  REGISTRY: 590182060076.dkr.ecr.ap-south-1.amazonaws.com
+
+jobs:
+  tag:
+    name: Resolve the tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: resolve
+        # The same shape the release tags already use (`demo009-dae3b28`), so a
+        # tag in ECR can always be traced back to one commit.
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="$(echo "${GITHUB_REF_NAME}" | tr -c 'a-zA-Z0-9._-' '-')-$(git rev-parse --short HEAD)"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "publishing as ${tag}" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: ${{ matrix.name }}
+    needs: tag
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # one image failing should not hide the other's result
+      matrix:
+        include:
+          - name: platform-core
+            context: services/platform-core
+            repository: lacteva/platform-core
+            build-args: ""
+          - name: admin-portal
+            context: apps/admin-portal
+            repository: lacteva/admin-portal
+            # The 768 MB cap exists because the HOST could not fork a bigger
+            # worker. A GitHub runner has 16 GB and no strict overcommit, so
+            # the build is given room here rather than inheriting a constraint
+            # from a machine it no longer runs on.
+            build-args: |
+              NODE_HEAP_MB=4096
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: images-${{ github.run_id }}
+
+      - id: login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ matrix.repository }}:${{ needs.tag.outputs.tag }}
+          build-args: ${{ matrix.build-args }}
+          provenance: false # ECR shows an untagged attestation manifest otherwise
+          # Layer cache lives with GitHub, not on the host, and is capped by
+          # GitHub rather than by our disk.
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Record what was published
+        run: |
+          {
+            echo "### ${{ matrix.repository }}"
+            echo '```'
+            echo "${{ env.REGISTRY }}/${{ matrix.repository }}:${{ needs.tag.outputs.tag }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deployable:
+    name: Both images published
+    needs: [tag, build]
+    runs-on: ubuntu-latest
+    steps:
+      # A deploy needs BOTH images at the same tag. Saying so in one place
+      # stops someone deploying a tag where only one of them exists.
+      - run: |
+          {
+            echo "## Deployable"
+            echo "On the host:"
+            echo '```'
+            echo "sudo /opt/lacteva/current/infra/deploy/deploy.sh ${{ needs.tag.outputs.tag }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

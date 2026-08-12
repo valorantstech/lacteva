@@ -21,19 +21,23 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-# The build runs on the same small instance that serves the platform, and it
-# failed with `spawn ENOMEM` once the app grew past ~30 routes.
+# DEMO-009: building on the same small instance that serves the platform failed
+# with `spawn ENOMEM` once the app grew past ~30 routes.
 #
-# The cause is not heap exhaustion — it is `fork()` being REFUSED. The host
+# The cause was not heap exhaustion — it was `fork()` being REFUSED. That host
 # runs `vm.overcommit_memory=2` (strict accounting), under which forking a
 # worker requires commit charge equal to the parent's reservation. A parent
 # holding a 1536MB heap therefore cannot spawn one even with ~2GB free, and
-# raising the cap makes it worse rather than better.
+# raising the cap made it worse rather than better. So the default here is
+# deliberately SMALL, and `experimental.cpus` in next.config.ts keeps the
+# number of workers down.
 #
-# So the cap is deliberately SMALL, and `experimental.cpus` in next.config.ts
-# keeps the number of workers down. Both are cheaper, and more honest, than
-# resizing the instance for a build that does not need the room.
-ENV NODE_OPTIONS=--max-old-space-size=768
+# DEMO-010 moved the build to GitHub Actions (.github/workflows/images.yml),
+# which has 16GB and no strict overcommit — so it passes 4096 and the build is
+# no longer squeezed. The small DEFAULT stays because it is what makes an
+# emergency build ON the host still possible.
+ARG NODE_HEAP_MB=768
+ENV NODE_OPTIONS=--max-old-space-size=${NODE_HEAP_MB}
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime

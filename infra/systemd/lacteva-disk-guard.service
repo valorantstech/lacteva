@@ -1,0 +1,18 @@
+# Reclaim disk before a full disk stops PostgreSQL (DEMO-010).
+#
+# The disk reached 100% twice during DEMO-009 from build cache and superseded
+# image layers. This is the standing guard against that; it does nothing at
+# all while the disk is comfortable.
+
+[Unit]
+Description=Lacteva disk guard
+Documentation=file:///opt/lacteva/current/infra/deploy/disk-guard.sh
+
+[Service]
+Type=oneshot
+ExecStart=/opt/lacteva/current/infra/deploy/disk-guard.sh
+# Reclaiming is I/O, and the platform is serving. A slow cleanup is fine.
+Nice=15
+IOSchedulingClass=idle
+StandardOutput=append:/var/log/lacteva/disk-guard.log
+StandardError=append:/var/log/lacteva/disk-guard.log
