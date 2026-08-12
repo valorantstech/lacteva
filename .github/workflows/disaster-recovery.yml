@@ -65,6 +65,14 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          # DEMO-010: without this the action fails outright — it has no
+          # dependency file at the repository root to key the cache on, and
+          # this is a workspace whose Python project lives one level down.
+          # Both recovery jobs had been failing at SETUP for at least five
+          # commits, which meant the disaster-recovery and point-in-time
+          # proofs had not run in CI at all. A proof that cannot start is not
+          # a proof. `postgres.yml` already had the glob and passes.
+          cache-dependency-glob: services/platform-core/pyproject.toml
 
       - name: Install
         working-directory: services/platform-core
@@ -97,6 +105,14 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          # DEMO-010: without this the action fails outright — it has no
+          # dependency file at the repository root to key the cache on, and
+          # this is a workspace whose Python project lives one level down.
+          # Both recovery jobs had been failing at SETUP for at least five
+          # commits, which meant the disaster-recovery and point-in-time
+          # proofs had not run in CI at all. A proof that cannot start is not
+          # a proof. `postgres.yml` already had the glob and passes.
+          cache-dependency-glob: services/platform-core/pyproject.toml
 
       - name: Install
         working-directory: services/platform-core
