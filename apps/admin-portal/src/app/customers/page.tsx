@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Plus, Store, Users } from "lucide-react";
 import {
   ApiError,
@@ -42,11 +43,29 @@ const describe = (e: unknown) => {
   return e instanceof Error ? e.message : "Request failed";
 };
 
+/**
+ * The page reads its filters from the URL on first load, so `/customers?q=Mama`
+ * is a link somebody can send. It was not, and a deep link silently showed the
+ * unfiltered list — which looks like a filter that does not work.
+ */
 export default function CustomersPage() {
+  return (
+    <Suspense fallback={<div className="p-8" />}>
+      <CustomersView />
+    </Suspense>
+  );
+}
+
+function CustomersView() {
+  const searchParams = useSearchParams();
   const [page, setPage] = useState<CustomerPageResult | null>(null);
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState<(typeof STATUSES)[number]>("");
-  const [customerType, setCustomerType] = useState<(typeof TYPES)[number]>("");
+  const [q, setQ] = useState(() => searchParams.get("q") ?? "");
+  const [status, setStatus] = useState<(typeof STATUSES)[number]>(
+    () => (searchParams.get("status") as (typeof STATUSES)[number]) ?? "",
+  );
+  const [customerType, setCustomerType] = useState<(typeof TYPES)[number]>(
+    () => (searchParams.get("type") as (typeof TYPES)[number]) ?? "",
+  );
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
