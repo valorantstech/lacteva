@@ -27,6 +27,7 @@ import {
   receiptDownloadUrl,
   settlementAction,
 } from "@/lib/api";
+import { formatStamp } from "@/components/datetime";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -72,8 +73,8 @@ const describe = (e: unknown) => {
   return e instanceof Error ? e.message : "Request failed";
 };
 
-const stamp = (iso: string | null | undefined) =>
-  iso ? String(iso).slice(0, 19).replace("T", " ") : "—";
+/** One definition, shared with every other screen. */
+const stamp = formatStamp;
 
 /** Exactly the settlement service's own guards — nothing more permissive. */
 function allowed(s: Settlement) {

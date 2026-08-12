@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { formatStamp } from "@/components/datetime";
 import { AdminPage } from "@/components/admin-page";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -55,10 +56,10 @@ export default function OperationsPage() {
           {status === null ? "checking…" : status.healthy ? "protected" : "NOT PROTECTED"}
         </Badge>
         <span className="text-sm text-muted-foreground">
-          Last backup: {status?.last_backup_at ? new Date(status.last_backup_at).toLocaleString() : "never"}
+          Last backup: {status?.last_backup_at ? formatStamp(status.last_backup_at) : "never"}
         </span>
         <span className="text-sm text-muted-foreground">
-          Last verified: {status?.last_verified_at ? new Date(status.last_verified_at).toLocaleString() : "never"}
+          Last verified: {status?.last_verified_at ? formatStamp(status.last_verified_at) : "never"}
         </span>
       </section>
 
@@ -81,7 +82,7 @@ export default function OperationsPage() {
             runs.map((run) => (
               <TableRow key={run.id}>
                 <TableCell className="whitespace-nowrap text-xs">
-                  {new Date(run.started_at).toLocaleString()}
+                  {formatStamp(run.started_at)}
                 </TableCell>
                 <TableCell>{run.kind}</TableCell>
                 <TableCell>
@@ -90,7 +91,7 @@ export default function OperationsPage() {
                   </Badge>
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-xs">
-                  {run.finished_at ? new Date(run.finished_at).toLocaleString() : "—"}
+                  {formatStamp(run.finished_at)}
                 </TableCell>
                 <TableCell className="max-w-xs truncate text-xs text-destructive">
                   {run.error ?? "—"}

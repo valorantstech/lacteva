@@ -23,6 +23,7 @@ import {
   listSuppliers,
   openCollectionSession,
 } from "@/lib/api";
+import { Stamp } from "@/components/datetime";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -862,7 +863,7 @@ function DoneStep({
           <Row label="Value">
             <Money amount={tx.gross_amount} currency={tx.currency} emphasis />
           </Row>
-          <Row label="Completed">{String(tx.completed_at ?? tx.created_at).slice(0, 19).replace("T", " ")}</Row>
+          <Row label="Completed"><Stamp value={tx.completed_at ?? tx.created_at} /></Row>
         </dl>
 
         {/* Completion is NOT payment. Saying so plainly is the point. */}

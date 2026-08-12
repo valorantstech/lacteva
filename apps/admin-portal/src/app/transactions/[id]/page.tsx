@@ -27,6 +27,7 @@ import {
   getSupplierDetail,
   listPeople,
 } from "@/lib/api";
+import { formatStamp } from "@/components/datetime";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Money, Quantity, sameAmount } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
@@ -60,8 +61,8 @@ const LOADING = { state: "loading" } as const;
 const describe = (e: unknown) =>
   e instanceof ApiError ? e.detail : e instanceof Error ? e.message : "the request failed";
 
-const stamp = (iso: string | null | undefined) =>
-  iso ? String(iso).slice(0, 19).replace("T", " ") : "—";
+/** One definition, shared with every other screen. */
+const stamp = formatStamp;
 
 /**
  * A one-line summary of an event's recorded data.
