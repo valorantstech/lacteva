@@ -271,12 +271,28 @@ statement and its reconciliation verdict; a reconciliation **failure** shown
 rather than hidden; no lifecycle control on an issued bill; and the
 irreversibility confirmation.
 
+**Full suite results:**
+
+```
+backend      1,290 tests — 1,216 passed, 74 skipped (PostgreSQL-only), 0 failed
+PostgreSQL      74 tests — 74 passed against a real engine; 61 policies present
+portal         177 tests — 177 passed (14 files)
+ruff check + ruff format --check      clean (224 files)
+eslint src --max-warnings 0           clean
+tsc --noEmit                          clean
+npm run build                         clean
+validate_docs.py                      172 files, all checks passed
+alembic up → down → up                clean, both revisions
+```
+
+No existing test was weakened or deleted.
+
 ---
 
 ## 12. Live verification
 
-Deployed to **https://dev.phoenixsoft.in** as `demo009-edf6382`, then driven in
-**real Chrome**: 23 of 24 checks passed on the first corrected run.
+Deployed to **https://dev.phoenixsoft.in** as `demo009-dae3b28`, then driven in
+**real Chrome**: **24 of 24 checks passed**.
 
 Verified on screen: the customer list with codes; the account summary
 (outstanding / invoiced / paid / not-yet-billed); the delivery form stating
@@ -291,10 +307,10 @@ receipt CRC-2026-000001; the per-day report; the statement's *"still equals the
 `/suppliers`, `/centers` all still render. Responsive at 1440×900, 834×1112 and
 390×844 with no horizontal overflow.
 
-The one remaining failure was my own test assertion, not the product: it opened
-the first customer alphabetically (Achieng Household), who is *deliberately* one
-of the two with no bill. Opening a billed customer directly showed everything
-expected.
+An earlier run reported 23/24, and the one failure was my own assertion rather
+than the product: it opened the first customer alphabetically (Achieng
+Household), who is *deliberately* one of the two left unbilled. Pointing it at a
+billed customer showed everything expected.
 
 ---
 
@@ -372,13 +388,24 @@ PostgreSQL, Redis and RabbitMQ remain in Docker Compose on the existing EC2.
 
 **Two host issues were resolved at zero cost**, and both are worth recording:
 
-* **The portal build ran out of memory** (`spawn ENOMEM`) once the app passed
-  ~30 routes. Next.js fans static generation out to one worker per CPU and each
-  worker is a full Node heap; the host also runs `vm.overcommit_memory=2`
-  (strict accounting), under which forking from a large heap is refused. Fixed
-  with `experimental.cpus: 2` and `webpackMemoryOptimizations` — **cheaper and
-  more honest than resizing the instance for a build that does not need the
-  room.**
+* **The portal build could not fork** (`spawn ENOMEM`) once the app passed ~30
+  routes. The first diagnosis — heap exhaustion — was wrong, and worth
+  recording: the host runs `vm.overcommit_memory=2` with `overcommit_ratio=90`,
+  a **deliberate** hardening documented in `/etc/sysctl.d/60-lacteva.conf` as
+  *"the database must never be the process the OOM killer chooses"*. Under
+  strict accounting, `fork()` needs commit charge equal to the parent's
+  reservation, so a larger Node heap makes it **less** likely to succeed, not
+  more.
+
+  That setting protects PostgreSQL, so it was not weakened. Instead:
+  `experimental.cpus: 1`, `webpackMemoryOptimizations`, a 768 MB heap cap, and
+  the observability containers paused for the duration of the build and
+  restarted immediately afterwards. Zero cost, and the instance was not
+  resized.
+
+  **This is not a durable answer.** The honest conclusion is that this host is
+  too small to build the image while also serving the platform, and builds
+  belong somewhere else — see the recommendation below.
 * **The disk reached 100%.** Accumulated Docker images and build cache; 11 GB
   reclaimed, now at 76%. This will recur — see the recommendation below.
 
@@ -402,6 +429,11 @@ Two operational items to fold in, both found here:
 * **treat any migration as touching the security suite.** `test_security.py`
   should be in the affected set for every schema change, not only for changes
   that look security-shaped;
+* **move image builds off the serving host.** Building competes for commit
+  charge with PostgreSQL and the API on a 3.8 GB box under strict overcommit,
+  and it now needs the observability stack paused to succeed. A build runner —
+  or simply building on a workstation and pushing to the existing ECR — costs
+  nothing extra and removes a recurring, fragile step from every deploy;
 * **bulk month-end billing**, since a hundred households at one call each is the
   first thing a real dairy will hit.
 
@@ -411,4 +443,4 @@ Two operational items to fold in, both found here:
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 1.0 | 2026-08-12 | Platform Engineering | DEMO-009: the receivable half of the business — customer, delivery and billing as three new bounded contexts under CAP-0006, deliberately not a reuse of the procurement tables because the direction of money is the whole distinction; delivery priced by the customer's agreed plan and computed once in `Decimal` by the domain; a daily report aggregated in SQL; a monthly bill generated from deliveries that reconciles exactly with them and is immutable once issued; customer payments with allocations and a receipt generated by a consumer from the payment event; ten `sales.*` permissions and a `SALES_OFFICER` role composed from the existing registry; 40 new tests; ten PostgreSQL reconciliation checks all clean; verified in a real browser. Four defects fixed, three of them caught by the platform's own guards — including missing RLS on the new tenant-owned tables, which failed the deploy exactly as intended. Deployed as `demo009-edf6382`. |
+| 1.0 | 2026-08-12 | Platform Engineering | DEMO-009: the receivable half of the business — customer, delivery and billing as three new bounded contexts under CAP-0006, deliberately not a reuse of the procurement tables because the direction of money is the whole distinction; delivery priced by the customer's agreed plan and computed once in `Decimal` by the domain; a daily report aggregated in SQL; a monthly bill generated from deliveries that reconciles exactly with them and is immutable once issued; customer payments with allocations and a receipt generated by a consumer from the payment event; ten `sales.*` permissions and a `SALES_OFFICER` role composed from the existing registry; 40 new tests; ten PostgreSQL reconciliation checks all clean; verified in a real browser. Four defects fixed, three of them caught by the platform's own guards — including missing RLS on the new tenant-owned tables, which failed the deploy exactly as intended. Deployed as `demo009-dae3b28`. |
