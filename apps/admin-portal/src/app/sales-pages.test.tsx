@@ -17,15 +17,19 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+/** The URL the page is being deep-linked to; reset before each test. */
+let searchParams = new URLSearchParams();
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
   usePathname: () => "/customers",
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchParams,
 }));
 
 import CustomerDetailPage from "@/app/customers/[id]/page";
 import CustomersPage from "@/app/customers/page";
 import DeliveriesPage from "@/app/deliveries/page";
+import BillingPage from "@/app/billing/page";
 import InvoiceDetailPage from "@/app/invoices/[id]/page";
 
 const json = (body: unknown, status = 200) =>
@@ -431,5 +435,60 @@ describe("the monthly bill", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Issue bill" }));
     expect(screen.getByText(/is permanent/)).toBeInTheDocument();
     expect(screen.getByText(/cannot be edited or cancelled/)).toBeInTheDocument();
+  });
+});
+
+
+// --- deep links (DEMO-010) ---------------------------------------------------
+//
+// The dashboard's "needs attention" list promises a filtered destination:
+// "22 deliveries made but not yet billed → review". If the page ignores the
+// query string it shows everything, which in front of a customer reads as a
+// filter that does not work. These assert the promise is kept — and, just as
+// importantly, that the narrowing happens in the DATABASE rather than by
+// fetching everything and hiding rows.
+
+describe("deep links from the dashboard", () => {
+  beforeEach(() => {
+    searchParams = new URLSearchParams();
+  });
+
+  it("lands on deliveries that are not yet billed, and asks the server for them", async () => {
+    searchParams = new URLSearchParams("invoiced=false");
+    const spy = routeAll();
+    render(<DeliveriesPage />);
+
+    await waitFor(() => {
+      const asked = spy.mock.calls
+        .map(([u]) => String(u))
+        .filter((u) => u.includes("/v1/deliveries?") && u.includes("invoiced=false"));
+      expect(asked.length).toBeGreaterThan(0);
+    });
+    expect(await screen.findByLabelText("Billed")).toHaveValue("false");
+  });
+
+  it("lands on drafted bills, and asks the server for them", async () => {
+    searchParams = new URLSearchParams("status=draft");
+    const spy = routeAll();
+    render(<BillingPage />);
+
+    await waitFor(() => {
+      const asked = spy.mock.calls
+        .map(([u]) => String(u))
+        .filter((u) => u.includes("/v1/invoices?") && u.includes("status=draft"));
+      expect(asked.length).toBeGreaterThan(0);
+    });
+    expect(await screen.findByLabelText("Status")).toHaveValue("draft");
+  });
+
+  it("shows every delivery when the URL asks for nothing in particular", async () => {
+    const spy = routeAll();
+    render(<DeliveriesPage />);
+
+    await waitFor(() => {
+      const asked = spy.mock.calls.map(([u]) => String(u)).filter((u) => u.includes("/v1/deliveries?"));
+      expect(asked.length).toBeGreaterThan(0);
+      expect(asked.every((u) => !u.includes("invoiced="))).toBe(true);
+    });
   });
 });

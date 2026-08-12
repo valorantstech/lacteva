@@ -71,23 +71,42 @@ ISOLATION_ORG_SLUG = "lacteva-isolation-demo"
 # The mix is chosen to show the states a dairy actually has on its books:
 # somebody fully paid up, somebody carrying a balance, and somebody whose milk
 # is delivered but not yet billed.
+# Sixteen customers, because DEMO-010 shows this to real dairy owners and six
+# households is not a dairy — it is a fixture. The mix is what a peri-urban
+# Kenyan dairy's book actually looks like: a majority of small households, a
+# handful of shops and hotels, a school, and one distributor who takes more
+# milk than everyone else combined and pays the lowest rate for doing so.
+#
+# The settlement state is written on each row rather than derived from an
+# index, so the demo ledger can be read here and matched against the screen:
+#
+#   paid      bill issued and paid in full; a receipt exists
+#   partial   bill issued, part paid; carries a balance
+#   unpaid    bill issued, nothing paid; the oldest debt on the round
+#   unbilled  delivered, no bill raised yet — work waiting to become money
+#
+# `evening` marks the customers who take a second delivery each day. It exists
+# so the daily delivery report has two slots to group, which is what a real
+# hotel or distributor does and what the slot column is for.
 CUSTOMERS = [
-    # (name, type, phone, address, litres/day, rate)
-    ("Mama Njeri Household", "household", "+254701000101", "12 Kilima Road", "2.000", "62.00"),
-    ("Kilima Tea House", "shop", "+254701000102", "Market Street", "8.000", "58.00"),
-    ("Ngong View Hotel", "hotel", "+254701000103", "Ngong Road", "20.000", "55.00"),
-    ("St. Mary's School", "institution", "+254701000104", "Limuru Road", "35.000", "54.00"),
-    ("Wanjala Distributors", "distributor", "+254701000105", "Industrial Area", "60.000", "52.00"),
-    ("Achieng Household", "household", "+254701000106", "8 Naivasha Lane", "1.500", "62.00"),
+    # (name, type, phone, address, litres/day, rate, state, evening)
+    ("Mama Njeri Household", "household", "+254701000101", "12 Kilima Road", "2.000", "62.00", "partial", False),
+    ("Kilima Tea House", "shop", "+254701000102", "Market Street", "8.000", "58.00", "paid", False),
+    ("Ngong View Hotel", "hotel", "+254701000103", "Ngong Road", "20.000", "55.00", "partial", True),
+    ("St. Mary's School", "institution", "+254701000104", "Limuru Road", "35.000", "54.00", "paid", False),
+    ("Wanjala Distributors", "distributor", "+254701000105", "Industrial Area", "60.000", "52.00", "unpaid", True),
+    ("Achieng Household", "household", "+254701000106", "8 Naivasha Lane", "1.500", "62.00", "paid", False),
+    ("Wairimu Household", "household", "+254701000107", "24 Kiambu Road", "3.000", "62.00", "unpaid", False),
+    ("Otieno Household", "household", "+254701000108", "5 Lakeside Close", "2.000", "62.00", "paid", False),
+    ("Chebet Household", "household", "+254701000109", "17 Highland Drive", "2.500", "62.00", "partial", False),
+    ("Green Cup Cafe", "shop", "+254701000110", "Station Road", "12.000", "58.00", "paid", False),
+    ("Limuru Ridge Bakery", "shop", "+254701000111", "3 Ridge Lane", "15.000", "57.00", "unpaid", False),
+    ("Riverside Guest House", "hotel", "+254701000112", "Riverside Drive", "18.000", "55.00", "paid", True),
+    ("Kiambu Mission Hospital", "institution", "+254701000113", "Hospital Road", "40.000", "54.00", "partial", False),
+    ("Naivasha Grocers", "distributor", "+254701000114", "Market Square", "45.000", "53.00", "paid", False),
+    ("Kamau Household", "household", "+254701000115", "9 Valley View", "2.000", "62.00", "unbilled", False),
+    ("Mutindi Household", "household", "+254701000116", "31 Church Street", "1.500", "62.00", "unbilled", False),
 ]
-
-#: How the demo customers settle up, by index. The point is a believable
-#: ledger, not six identical rows.
-#:   paid      — bill issued and paid in full; a receipt exists
-#:   partial   — bill issued, half paid; carries an outstanding balance
-#:   unpaid    — bill issued, nothing paid
-#:   unbilled  — delivered, no bill raised yet
-CUSTOMER_SETTLEMENT_PATTERN = ["paid", "partial", "unpaid", "paid", "unbilled", "unbilled"]
 
 #: Days of delivery history. Enough for a monthly bill to be a real month.
 DELIVERY_DAYS = 30
@@ -413,9 +432,50 @@ async def grant_platform_admin(email: str) -> None:
             await session.commit()
 
 
+ADMIN_EMAIL = "demo-admin@lacteva.example.com"
+
+
+async def refresh_member(client, headers: dict, email: str, org_id: str) -> dict:
+    """The same re-authentication for a tenant member. See `refresh_admin`."""
+    fresh = await expect(
+        await client.post(
+            "/v1/auth/token",
+            json={"email": email, "password": PASSWORD, "tenant_id": org_id},
+        ),
+        200,
+        what=f"re-login {email}",
+    )
+    headers["Authorization"] = f"Bearer {fresh['access_token']}"
+    return headers
+
+
+async def refresh_admin(client, admin: dict) -> dict:
+    """Sign the platform admin in again, IN PLACE.
+
+    DEMO-010 found this the only way it can be found: the dataset grew to
+    sixteen customers and ~570 deliveries, the seed passed fifteen minutes, and
+    the admin's access token expired part-way through — so building the second
+    organization failed with a bare 401 after twenty minutes of correct work.
+    Nothing was wrong except that a long job was holding a short-lived
+    credential, which is exactly what a token lifetime is for.
+
+    Mutating the dict rather than returning a new one keeps every caller
+    holding the same object, so there is no way to keep using the stale one.
+    """
+    fresh = await expect(
+        await client.post(
+            "/v1/auth/token", json={"email": ADMIN_EMAIL, "password": PASSWORD}
+        ),
+        200,
+        what="admin re-login",
+    )
+    admin["Authorization"] = f"Bearer {fresh['access_token']}"
+    return admin
+
+
 async def platform_admin(client) -> dict:
     """A platform administrator, reused across runs if it already exists."""
-    email = "demo-admin@lacteva.example.com"
+    email = ADMIN_EMAIL
     r = await client.post(
         "/v1/auth/register",
         json={"email": email, "password": PASSWORD, "full_name": "Demo Platform Admin"},
@@ -1005,9 +1065,39 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
         full_name="Otieno Odhiambo",
         role_name="tenant-viewer",
     )
+    # DEMO-010 §6: "how do different users see different things" is one of the
+    # fourteen questions this demo has to answer, and it cannot be answered
+    # with two accounts that are effectively all-or-nothing. These three are
+    # the named roles from DEMO-008's registry, seeded as real members with
+    # real grants, so the difference can be SHOWN by signing in — not
+    # described. Nothing about them is special-cased anywhere: they are rows.
+    operations = await make_member(
+        client,
+        admin,
+        org["id"],
+        email="operations@lacteva-demo.example.com",
+        full_name="Kipchoge Rutto",
+        role_name="ORGANIZATION_MANAGER",
+    )
+    operator = await make_member(
+        client,
+        admin,
+        org["id"],
+        email="operator@lacteva-demo.example.com",
+        full_name="Naliaka Simiyu",
+        role_name="COLLECTION_OPERATOR",
+    )
+    sales = await make_member(
+        client,
+        admin,
+        org["id"],
+        email="sales@lacteva-demo.example.com",
+        full_name="Zawadi Mwakio",
+        role_name="SALES_OFFICER",
+    )
     summary["users"] = [
         {"email": u["email"], "name": u["full_name"], "role": u["role"]}
-        for u in (manager, viewer)
+        for u in (manager, viewer, operations, operator, sales)
     ]
     # Everything below is done AS the manager, so the audit trail names a
     # person with the permissions to have done it.
@@ -1278,7 +1368,9 @@ async def build_sales(client, built: dict) -> dict:
     }
     records = []
 
-    for index, (name, kind, phone, address, litres, rate) in enumerate(CUSTOMERS):
+    for index, (name, kind, phone, address, litres, rate, pattern, evening) in enumerate(
+        CUSTOMERS
+    ):
         customer = await expect(
             await client.post(
                 "/v1/customers",
@@ -1304,24 +1396,39 @@ async def build_sales(client, built: dict) -> dict:
         summary["customers"] += 1
 
         # A month of deliveries. A few days are skipped, deterministically, so
-        # the report has something other than a straight line to show.
+        # the report has something other than a straight line to show — and so
+        # that "milk delivered" and "days in the month" are visibly not the
+        # same number, which is the thing a dairy owner checks first.
+        slots = ["morning", "evening"] if evening else ["morning"]
         for day_offset in range(DELIVERY_DAYS, 0, -1):
             day = today - timedelta(days=day_offset)
             skipped = (day_offset + index) % 11 == 0
-            body = {
-                "customer_id": customer["id"],
-                "delivery_date": day.isoformat(),
-                "slot": "morning",
-                "status": "skipped" if skipped else "delivered",
-            }
-            # Households vary a little day to day; institutions do not.
-            if not skipped and kind == "household" and day_offset % 5 == 0:
-                body["quantity"] = str(Decimal(litres) + Decimal("0.500"))
-            r = await client.post("/v1/deliveries", json=body, headers=h)
-            if r.status_code == 201:
+            for slot in slots:
+                body = {
+                    "customer_id": customer["id"],
+                    "delivery_date": day.isoformat(),
+                    "slot": slot,
+                    "status": "skipped" if skipped else "delivered",
+                }
+                # Households vary a little day to day; institutions do not.
+                if not skipped and kind == "household" and day_offset % 5 == 0:
+                    body["quantity"] = str(Decimal(litres) + Decimal("0.500"))
+                # An evening round is smaller than a morning one.
+                elif not skipped and slot == "evening":
+                    body["quantity"] = str(
+                        (Decimal(litres) / 2).quantize(Decimal("0.001"))
+                    )
+                # Strict. This used to be `if r.status_code == 201`, which
+                # meant a run where every delivery was refused still reported
+                # success with a smaller number — the seeder's job is to prove
+                # the dataset, so a refusal has to stop it.
+                await expect(
+                    await client.post("/v1/deliveries", json=body, headers=h),
+                    201,
+                    what=f"delivery {name} {day} {slot}",
+                )
                 summary["deliveries"] += 1
 
-        pattern = CUSTOMER_SETTLEMENT_PATTERN[index % len(CUSTOMER_SETTLEMENT_PATTERN)]
         if pattern == "unbilled":
             summary["unbilled"] += 1
             records.append({"customer": name, "state": "delivered, not yet billed"})
@@ -1399,7 +1506,15 @@ async def demonstrate_br_0027(client, built: dict) -> dict:
     to see actually working.
     """
     h, today = built["headers"], built["today"]
-    supplier = built["suppliers"][0]
+    # DEMO-010: NOT supplier 0. The first `OPEN_SETTLEMENTS` suppliers are left
+    # with an open, calculated period C covering `today-7 .. today-1`, and the
+    # carry-forward settlement below is dated `today-7` — so on supplier 0 it
+    # collided with that open period and the platform correctly refused it
+    # ("period overlaps settlement ... for this supplier"), aborting the entire
+    # seed. Found by running the seeder, not by reading it. Picking the first
+    # supplier PAST that window keeps the demonstration identical — periods A
+    # and B are finalized either way — and removes the collision.
+    supplier = built["suppliers"][OPEN_SETTLEMENTS]
     center = supplier["_center"]
     late_day = today - timedelta(days=18)  # inside the finalized period A
 
@@ -1856,10 +1971,21 @@ async def seed() -> dict:
     built = await build_demo_org(client, admin, demo)
     built = await build_money(client, built)
     built = await demonstrate_br_0027(client, built)
+    # Same reason as below: the sales phase is the last and longest thing the
+    # manager does, and it starts a long way from their login.
+    await refresh_member(
+        client,
+        built["headers"],
+        "manager@lacteva-demo.example.com",
+        built["summary"]["organization_id"],
+    )
     built = await build_sales(client, built)
     # Receipts and notifications are consumer work, exactly as in production.
     await run_consumers()
 
+    # The demo tenant took the better part of twenty minutes to build. The
+    # admin token that created the organizations is older than that.
+    await refresh_admin(client, admin)
     isolation_summary = await build_isolation_org(client, admin, isolation)
     await run_consumers()
 

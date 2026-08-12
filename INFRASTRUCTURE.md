@@ -171,10 +171,12 @@ The rule for all of them: **add the new one, confirm it works, remove the old on
 
 | Task | Cadence | Notes |
 | --- | --- | --- |
+| Build images | On push, on GitHub | `.github/workflows/images.yml` → ECR. **Never on this host** — see DEPLOYMENT.md §3 |
 | Security patches | Automatic | `unattended-upgrades`, security origin only |
 | **Reboot for a kernel update** | Monthly, scheduled | Deliberately manual. `systemctl reboot`; systemd brings the stack back |
 | Verify backups | Weekly, automatic | `lacteva-backup-verify.timer` — restores into a scratch database and runs deep integrity |
-| Check disk | Weekly | The backup log prints usage every night. The volume filling is failure #1 in §5 |
+| Reclaim disk | Every 6 hours, automatic | `lacteva-disk-guard.timer` → `infra/deploy/disk-guard.sh`. Does nothing below 75%; above it, reclaims build cache, dangling images, stopped containers and old release directories, stopping at 60%. Exits non-zero — a real alert — if it is still above 90% after everything safe was tried |
+| Check disk | Weekly | The guard above does the reclaiming; this is the human look at whether the *data* is what is growing. The volume filling is failure #1 in §5 |
 | Review the security posture | Quarterly | [SECURITY-CHECKLIST](docs/03-architecture/05-security/SECURITY-CHECKLIST.md) |
 | Rotate the signing key | Quarterly, or on suspicion | §6 |
 

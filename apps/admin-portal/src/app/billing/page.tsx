@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { FileText, Lock, Receipt as ReceiptIcon, Wallet } from "lucide-react";
 import {
   ApiError,
@@ -43,15 +44,32 @@ const describe = (e: unknown) => {
 const stamp = (iso: string | null | undefined) =>
   iso ? String(iso).slice(0, 16).replace("T", " ") : "—";
 
+/**
+ * DEMO-010: the page reads its filters from the URL, so the dashboard's
+ * "three bills drafted and not yet issued → review" arrives at exactly those
+ * three. It did not, and the link landed on the unfiltered list — which reads
+ * as a filter that does not work, in front of a customer.
+ */
 export default function BillingPage() {
+  return (
+    <Suspense fallback={<div className="p-8" />}>
+      <BillingView />
+    </Suspense>
+  );
+}
+
+function BillingView() {
+  const searchParams = useSearchParams();
   const [page, setPage] = useState<InvoicePageResult | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [payments, setPayments] = useState<CustomerPayment[]>([]);
   const [receipts, setReceipts] = useState<CustomerReceipt[]>([]);
 
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState<(typeof STATUSES)[number]>("");
-  const [customerId, setCustomerId] = useState("");
+  const [q, setQ] = useState(() => searchParams.get("q") ?? "");
+  const [status, setStatus] = useState<(typeof STATUSES)[number]>(
+    () => (searchParams.get("status") as (typeof STATUSES)[number]) ?? "",
+  );
+  const [customerId, setCustomerId] = useState(() => searchParams.get("customer_id") ?? "");
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -8,6 +8,62 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Rep
 
 ### Added
 
+- DEMO-010 "Customer Demo Readiness" — the two halves of the dairy, made one
+  coherent product rather than two workflows that happen to share a database.
+  The dashboard now reports **procurement and sales side by side, labelled**,
+  because money flows the opposite way through each and an unlabelled grid of
+  "value" above "value" is genuinely ambiguous to the person it is for.
+- **`reporting.sales_summary()`** — milk delivered, what it was worth,
+  customers served, and the receivable balance, in six grouped queries. It
+  reuses `BillingService.balance()`'s status predicates rather than inventing a
+  second definition, so the dashboard's debt and the sum of the customer pages
+  are one number. Period figures are named `*_in_period`; balances are
+  as-at-now and deliberately ignore the date range, because narrowing a debt to
+  a window shows a manager less than they are owed.
+- **`reporting.receivables()` and a `/receivables` page** — who owes money,
+  worst first, joined and ordered inside the database. `total_outstanding` is
+  computed across every match rather than summed from the page: a page total is
+  a real, correctly formatted, entirely plausible number that under-reports the
+  debt of any dairy with more households than fit on one screen.
+- **Sixteen demo customers, five named-role demo accounts, and an evening
+  delivery round.** Six households is a fixture, not a dairy. The settlement
+  state — paid, part paid, unpaid, delivered-not-billed — is written on each
+  roster row rather than derived from an index, so the seeded ledger can be read
+  in the source and matched against the screen. `ORGANIZATION_MANAGER`,
+  `COLLECTION_OPERATOR` and `SALES_OFFICER` are seeded as real members, so "how
+  do different users see different things" can be shown by signing in.
+- **Image builds moved off the serving host** (`.github/workflows/images.yml`).
+  git → GitHub Actions → ECR → the EC2 pulls. No AWS key is stored in GitHub:
+  the runner exchanges an OIDC token for a least-privilege role that reaches
+  only the two Lacteva ECR repositories, and only from this repository's
+  branches and tags — never a pull request. No recurring cost.
+- **A disk guard** (`infra/deploy/disk-guard.sh`, every six hours). The disk
+  reached 100% twice during DEMO-009 from build cache and superseded layers.
+  It does nothing below 75%, then reclaims in order of least regret — build
+  cache, dangling images, stopped containers, old release directories — and
+  stops at 60% rather than churning the cache to nothing. It never touches the
+  previous release's image, because that is what `--rollback` needs at 3am.
+  First run on the host: 86% → 54%.
+
+### Fixed
+
+- **The demo seeder could not complete.** `demonstrate_br_0027` settled
+  `today-7 … today-7` for supplier 0, who is also one of the three suppliers
+  deliberately left with an open calculated settlement covering
+  `today-7 … today-1`. The platform correctly refused the overlap and the whole
+  seed aborted. Found by running it. It now uses the first supplier past that
+  window, which keeps the demonstration identical.
+- **The dashboard's "needs attention" links did not arrive filtered.**
+  `/billing` and `/deliveries` ignored their query strings, so "22 deliveries
+  made but not yet billed → review" landed on the unfiltered list — which reads,
+  in front of a customer, as a filter that does not work. Both now read the URL,
+  as `/customers` already did, and `/deliveries` gained the billed/unbilled
+  filter the link needs.
+- **Container log retention was a standing claim on a third of the disk.**
+  50 MB × 5 files × thirteen services is 3.25 GB on a 38 GB volume that twice
+  filled. Now 20 MB × 3 — promtail ships every line to Loki as it is written,
+  so these files are a short local buffer, not the archive.
+
 - DEMO-009 "Customer Management & Sales" — the receivable half of the business,
   and the workflow waiting dairy customers asked for by name: **customer →
   delivery → daily report → monthly bill → payment → receipt**. Built as three

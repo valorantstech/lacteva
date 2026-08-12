@@ -172,11 +172,49 @@ startup rather than documenting it here.
 
 ## 3. Deploying
 
-```bash
-export TAG=$(git rev-parse --short HEAD)
-docker build -t lacteva/platform-core:$TAG services/platform-core
-docker build -t lacteva/admin-portal:$TAG apps/admin-portal
+### Where the images are built (DEMO-010)
 
+**Not on the machine that serves the platform.** `.github/workflows/images.yml`
+builds both images on a GitHub runner and pushes them to ECR; the host only
+ever pulls.
+
+That is not a preference. Building on the host failed with `spawn ENOMEM`
+during DEMO-009 — the host runs `vm.overcommit_memory=2`, so forking a Next.js
+build worker requires commit charge equal to the parent's reservation and is
+refused while the platform is also resident. The same week, build cache took
+the disk to 100% twice. A 2 vCPU / 4 GB instance was doing a compiler's job and
+a server's job at once.
+
+    git → GitHub Actions → docker build → ECR → the EC2 pulls
+
+No AWS key is stored in GitHub: the runner exchanges its OIDC token for a
+session on `lacteva-github-actions-ecr`, whose trust policy admits only this
+repository's branches and tags — never a pull request, which must not be able
+to publish an image — and whose permissions reach only the two Lacteva ECR
+repositories. Nothing about this recurs in cost: GitHub's runners, an ECR
+repository that already existed, free intra-region pulls, and IAM.
+
+A push to `main` that touches either tree publishes `main-<short sha>`. To
+publish a named release tag, run the workflow manually with a `tag` input.
+**Both images must exist at the same tag before deploying** — the workflow's
+final job says so explicitly, because a tag where only one of them exists is a
+half-deployable release.
+
+Building on the host is still possible and is the documented emergency path
+(the portal Dockerfile's `NODE_HEAP_MB` default stays small precisely so that
+it works there), but it is no longer how releases are made.
+
+### On the host
+
+```bash
+# The tag was published by CI; the host pulls it.
+sudo /opt/lacteva/current/infra/deploy/deploy.sh main-<short sha>
+```
+
+`deploy.sh` pulls, migrates, deploys, verifies, smoke-tests, and rolls back
+automatically if any of that fails. The equivalent by hand:
+
+```bash
 sed -i "s/^LACTEVA_IMAGE_TAG=.*/LACTEVA_IMAGE_TAG=$TAG/" .env.production
 
 docker compose -f docker-compose.production.yml --env-file .env.production up -d
@@ -210,6 +248,9 @@ image built without it shipped `http://localhost:8000` to production browsers.
 Nothing secret is baked into the image, and no build argument is required.
 
 ```bash
+# CI does this; on the host it is the emergency path only. NODE_HEAP_MB
+# defaults to 768 so that the constrained host can still complete a build;
+# the workflow passes 4096 because a runner has the room.
 docker build -t lacteva/admin-portal:$TAG apps/admin-portal
 ```
 

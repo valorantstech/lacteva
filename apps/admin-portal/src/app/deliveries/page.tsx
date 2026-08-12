@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Banknote, Droplets, Truck, Users } from "lucide-react";
 import {
   ApiError,
@@ -43,19 +44,41 @@ const describe = (e: unknown) => {
   return e instanceof Error ? e.message : "Could not load deliveries";
 };
 
+/**
+ * DEMO-010: the page reads its filters from the URL, so the dashboard's
+ * "22 deliveries made but not yet billed → review" arrives showing exactly
+ * those twenty-two. It did not, and the link landed on the unfiltered list.
+ */
 export default function DeliveriesPage() {
+  return (
+    <Suspense fallback={<div className="p-8" />}>
+      <DeliveriesView />
+    </Suspense>
+  );
+}
+
+function DeliveriesView() {
+  const searchParams = useSearchParams();
   const [page, setPage] = useState<DeliveryPageResult | null>(null);
   const [report, setReport] = useState<DeliveryReport | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
 
   const [range, setRange] = useState<DateRange>(() => resolveRange("7d"));
-  const [customerId, setCustomerId] = useState("");
-  const [status, setStatus] = useState<(typeof STATUSES)[number]>("");
+  const [customerId, setCustomerId] = useState(() => searchParams.get("customer_id") ?? "");
+  const [status, setStatus] = useState<(typeof STATUSES)[number]>(
+    () => (searchParams.get("status") as (typeof STATUSES)[number]) ?? "",
+  );
+  // "" = every delivery, "true" = already on a bill, "false" = not yet billed.
+  // A tri-state because "unbilled" and "no opinion" are different questions.
+  const [billed, setBilled] = useState<"" | "true" | "false">(() => {
+    const raw = searchParams.get("invoiced");
+    return raw === "true" || raw === "false" ? raw : "";
+  });
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const filtered = Boolean(customerId || status);
+  const filtered = Boolean(customerId || status || billed);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,6 +90,7 @@ export default function DeliveriesPage() {
           date_from: range.from,
           date_to: range.to,
           status: status || undefined,
+          invoiced: billed === "" ? undefined : billed === "true",
           limit: PAGE_SIZE,
           offset,
         }),
@@ -85,7 +109,7 @@ export default function DeliveriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [customerId, offset, range.from, range.to, status]);
+  }, [billed, customerId, offset, range.from, range.to, status]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);
@@ -289,6 +313,22 @@ export default function DeliveriesPage() {
                     ))}
                   </select>
                 </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="dl-billed">Billed</Label>
+                  <select
+                    id="dl-billed"
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    value={billed}
+                    onChange={(e) => {
+                      setBilled(e.target.value as "" | "true" | "false");
+                      setOffset(0);
+                    }}
+                  >
+                    <option value="">Billed or not</option>
+                    <option value="false">Not yet billed</option>
+                    <option value="true">Already billed</option>
+                  </select>
+                </div>
                 {filtered ? (
                   <Button
                     type="button"
@@ -296,6 +336,7 @@ export default function DeliveriesPage() {
                     onClick={() => {
                       setCustomerId("");
                       setStatus("");
+                      setBilled("");
                       setOffset(0);
                     }}
                   >
