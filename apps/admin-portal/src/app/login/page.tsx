@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +28,6 @@ import { ApiError, login } from "@/lib/api";
  * appears when it is needed and not before.
  */
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [tenantId, setTenantId] = useState("");
@@ -43,7 +41,18 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(email, password, tenantId || undefined);
-      router.push("/");
+      // A FULL navigation, not `router.push` (DEMO-010).
+      //
+      // `AppShell` lives in the root layout and probes the session once, when
+      // it mounts. A client-side push does not remount it, so it kept the
+      // signed-out chrome it had established on this very page — and signing
+      // in landed on a dashboard with NO NAVIGATION AT ALL until the user
+      // happened to reload. Found in the browser; invisible to a test that
+      // renders this page alone.
+      //
+      // Sign-out does not need this because it can call `setSession` on the
+      // shell directly; a separate page cannot.
+      window.location.assign("/");
     } catch (err) {
       if (err instanceof ApiError && err.title === "ambiguous_tenant") {
         setNeedsTenant(true);

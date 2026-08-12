@@ -6,12 +6,20 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const push = vi.fn();
+const assign = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }));
+
+// jsdom's `window.location` is not assignable; replace the method itself.
+Object.defineProperty(window, "location", {
+  configurable: true,
+  value: { ...window.location, assign },
+});
 
 import LoginPage from "@/app/login/page";
 
 beforeEach(() => {
   push.mockClear();
+  assign.mockClear();
   vi.unstubAllGlobals();
 });
 
@@ -30,10 +38,13 @@ describe("login page", () => {
     await fillIn(user);
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
-    // DEMO-010: the dashboard, not the centres list. Signing in and landing
-    // on a sub-page is the wrong first impression of a product whose front
-    // page now reports both sides of the dairy.
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    // DEMO-010: the dashboard, not the centres list — and a FULL navigation,
+    // because the app shell probes the session once when it mounts and a
+    // client-side push leaves it showing signed-out chrome on a signed-in
+    // page. That is not a detail: it meant signing in landed on a dashboard
+    // with no navigation until the user reloaded.
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
+    expect(push).not.toHaveBeenCalled();
     expect(fetchSpy.mock.calls[0][0]).toBe("/api/auth/login");
   });
 
@@ -84,7 +95,7 @@ describe("login page", () => {
     await fillIn(user);
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
-    await waitFor(() => expect(push).toHaveBeenCalled());
+    await waitFor(() => expect(assign).toHaveBeenCalled());
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
   });
