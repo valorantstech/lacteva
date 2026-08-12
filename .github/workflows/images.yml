@@ -94,13 +94,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The first run failed here with nothing to go on. `sts:AssumeRoleWithWebIdentity`
-      # is refused when the token's `sub` does not match the role's trust
-      # policy, and the only way to know what `sub` GitHub actually minted is
-      # to look at it. `sub` and `aud` are not secrets — they are the
-      # repository, the ref and a fixed audience — so printing them is safe,
-      # and it turns a silent refusal into a one-line answer. The token itself
-      # is never echoed.
+      # Kept because it names the identity this job presents, which is the
+      # thing that goes wrong. `sub` and `aud` are not secrets — they are the
+      # repository, the ref and a fixed audience.
+      #
+      # It was NOT what solved the first failure, and that is worth recording:
+      # job logs need admin rights on the repository, so a step that prints
+      # the answer into a log is useless to anyone who cannot read the log.
+      # **CloudTrail answered it.** A refused `AssumeRoleWithWebIdentity` is
+      # logged with the offered subject in `userIdentity.principalId`:
+      #
+      #   aws cloudtrail lookup-events \
+      #     --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRoleWithWebIdentity
+      #
+      # which showed the org has GitHub's immutable identifiers turned on, so
+      # the subject carries numeric owner and repository IDs:
+      #
+      #   repo:valorantstech@164855793/lacteva@1319582534:ref:refs/heads/main
+      #
+      # not the documented `repo:owner/name:ref:...`. The trust policy matches
+      # that form exactly rather than being loosened to `repo:owner/name:*` —
+      # the IDs are the STRONGER identifier, because a repository deleted and
+      # recreated under the same name gets a new one and cannot inherit this
+      # role's access.
       - name: What this runner will present to AWS
         run: |
           curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
