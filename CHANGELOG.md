@@ -32,6 +32,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Rep
   in the source and matched against the screen. `ORGANIZATION_MANAGER`,
   `COLLECTION_OPERATOR` and `SALES_OFFICER` are seeded as real members, so "how
   do different users see different things" can be shown by signing in.
+- **Signing in needs an email and a password, not an organization UUID.** The
+  first screen of the customer demonstration asked a dairy owner to paste
+  "Organization ID (tenant)" into a text box, because a login was resolved by
+  (email, tenant). The tenant now comes from the credentials: the password is
+  verified against each candidate account, one match signs in, none is the
+  same `invalid_credentials` an unknown address gets, and several — the only
+  case where anything is revealed — asks which organization, after the
+  password has already proven itself. The cross-tenant read this needs is the
+  only one in the authentication path, is logged, and is bounded at five
+  candidates. Ten tests cover what did NOT loosen.
 - **Image builds moved off the serving host** (`.github/workflows/images.yml`).
   git → GitHub Actions → ECR → the EC2 pulls. No AWS key is stored in GitHub:
   the runner exchanges an OIDC token for a least-privilege role that reaches
@@ -59,6 +69,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Rep
   in front of a customer, as a filter that does not work. Both now read the URL,
   as `/customers` already did, and `/deliveries` gained the billed/unbilled
   filter the link needs.
+- **The disaster-recovery proofs had not run in CI for at least five commits.**
+  Both jobs failed at `astral-sh/setup-uv`, before a line of the proof
+  executed: no dependency file at the repository root to key the cache on, and
+  without an explicit `cache-dependency-glob` the action errors rather than
+  skipping the cache. Pre-existing; `postgres.yml` already passed the glob,
+  which is what made the difference findable.
+- **A healthy deployment rolled itself back, without taking a backup.**
+  `COMPOSE_FILE` was a bare filename, so `compose ps` failed when the script
+  was run by absolute path and the pre-deployment backup announced itself as
+  skipped — "no running API (first deployment)" — on a platform serving every
+  request. Separately, the verifier and smoke test defaulted to
+  `http://localhost`, followed nginx's 301 to `https://localhost`, and failed
+  on the certificate hostname; both declared a working deployment broken.
+  `LACTEVA_PUBLIC_URL` now points them at what a browser types.
 - **Container log retention was a standing claim on a third of the disk.**
   50 MB × 5 files × thirteen services is 3.25 GB on a 38 GB volume that twice
   filled. Now 20 MB × 3 — promtail ships every line to Loki as it is written,

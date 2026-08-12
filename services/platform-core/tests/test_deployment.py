@@ -595,10 +595,26 @@ def test_every_lacteva_variable_in_the_example_is_a_real_setting():
         "LACTEVA_APP_USER",
         "LACTEVA_APP_PASSWORD",
     }
+    # Read by the DEPLOYMENT SCRIPTS rather than by the application or by
+    # compose. The distinction matters for the same reason the test exists: a
+    # variable nobody reads looks configured. Each of these must be named by
+    # something under infra/, which is asserted below rather than trusted.
+    deploy_only = {
+        "LACTEVA_PUBLIC_URL",  # deploy.sh: where verification and the smoke test point
+    }
+    for name in deploy_only:
+        assert any(
+            name in path.read_text()
+            for path in (REPO / "infra").rglob("*")
+            if path.is_file() and path.suffix in {".sh", ".py"}
+        ), f"{name} is declared deploy-only but nothing under infra/ reads it"
     unknown = sorted(
         key
         for key in _example_env()
-        if key.startswith("LACTEVA_") and key not in known and key not in compose_only
+        if key.startswith("LACTEVA_")
+        and key not in known
+        and key not in compose_only
+        and key not in deploy_only
     )
     assert unknown == [], f"example sets LACTEVA_ variables that are not settings: {unknown}"
 
