@@ -8,6 +8,8 @@
  * somebody "simplifies" it with `parseFloat(...).toFixed(2)`.
  */
 
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -160,5 +162,45 @@ describe("states", () => {
     render(<EmptyState title="Nothing today" description="Open a session to begin." />);
     expect(screen.getByText("Nothing today")).toBeInTheDocument();
     expect(screen.getByText("Open a session to begin.")).toBeInTheDocument();
+  });
+});
+
+// --- one definition of how money looks (DEMO-010) ----------------------------
+//
+// Two screens were found in a browser printing `13860.00 KES` and
+// `1176.00 KES` while every other screen printed `13,860.00 KES`. Both had
+// grown their own formatter. During a demonstration that reads as two
+// different systems, and no reviewer catches it by reading a diff.
+//
+// So the rule is asserted rather than remembered: `money.tsx` is the only
+// place that decides how an exact decimal is displayed.
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return sourceFiles(path);
+    return name.endsWith(".tsx") && !name.includes(".test.") ? [path] : [];
+  });
+}
+
+describe("money is formatted in exactly one place", () => {
+  it("no page defines its own amount formatter", () => {
+    const offenders = sourceFiles("src/app")
+      .filter((path) => {
+        const source = readFileSync(path, "utf8");
+        // A local helper is fine if it delegates; it is not fine if it
+        // stringifies the amount itself.
+        return /^const (money|amount|fmt\w*)\s*=[^\n]*\$\{String\(/m.test(source);
+      })
+      .map((path) => path.replace("src/app/", ""));
+    expect(offenders).toEqual([]);
+  });
+
+  it("groups thousands, and keeps the platform's decimals exactly", () => {
+    expect(formatAmount("13860.00")).toBe("13,860.00");
+    expect(formatAmount("1176.50")).toBe("1,176.50");
+    expect(formatAmount("353234.00")).toBe("353,234.00");
+    // Trailing zeros are significant — they state the scale.
+    expect(formatAmount("40.000")).toBe("40.000");
   });
 });

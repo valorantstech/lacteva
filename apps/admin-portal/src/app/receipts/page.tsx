@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { formatAmount } from "@/components/money";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,7 +40,9 @@ const FORMATS = ["json", "html", "pdf"] as const;
 const statusVariant = (s: string) =>
   s === "delivered" ? "default" : s === "archived" ? "outline" : "secondary";
 
-const money = (v: string | number, currency: string) => `${String(v)} ${currency}`;
+// DEMO-010: through the shared formatter, so a receipt reads `1,176.00 KES`
+// like every other amount on the platform. It used to print the raw string.
+const money = (v: string | number, currency: string) => `${formatAmount(v)} ${currency}`;
 
 export default function ReceiptsPage() {
   const [page, setPage] = useState<ReceiptPageResult | null>(null);
