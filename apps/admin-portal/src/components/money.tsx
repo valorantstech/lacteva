@@ -24,6 +24,39 @@ function groupDigits(digits: string): string {
   return negative ? `-${grouped}` : grouped;
 }
 
+/**
+ * Do two exact-decimal strings denote the same amount?
+ *
+ * DEMO-002 shipped a reconciliation that reported false mismatches because it
+ * compared "353234.00" with "353234.0" as STRINGS. The amounts were identical;
+ * the comparison was wrong. Parsing both to `Number` would fix that case and
+ * introduce a worse one, so this normalises in string space instead: strip a
+ * redundant sign, leading zeros and trailing fractional zeros, then compare.
+ *
+ * It answers "are these equal", never "what is the difference" — subtraction
+ * is the backend's job, and no screen here needs it.
+ */
+export function sameAmount(
+  a: string | number | null | undefined,
+  b: string | number | null | undefined,
+): boolean {
+  const normalise = (value: string | number | null | undefined): string | null => {
+    if (value === null || value === undefined || value === "") return null;
+    const text = String(value).trim();
+    if (!/^-?\d+(\.\d+)?$/.test(text)) return null;
+    const negative = text.startsWith("-");
+    const bare = negative ? text.slice(1) : text;
+    let [whole, fraction = ""] = bare.split(".");
+    whole = whole.replace(/^0+(?=\d)/, "");
+    fraction = fraction.replace(/0+$/, "");
+    const zero = whole === "0" && fraction === "";
+    return `${zero || !negative ? "" : "-"}${whole}${fraction ? `.${fraction}` : ""}`;
+  };
+  const left = normalise(a);
+  const right = normalise(b);
+  return left !== null && right !== null && left === right;
+}
+
 export function formatAmount(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "—";
   const text = String(value);

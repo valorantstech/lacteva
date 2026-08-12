@@ -149,17 +149,24 @@ const SUPPLIERS = {
   offset: 0,
 };
 
-const AUDIT = [
-  {
-    id: "a1",
-    action: "settlement.finalized",
-    resource_type: "settlement",
-    resource_id: "x",
-    actor_id: "u1",
-    created_at: "2026-08-11T09:30:00+00:00",
-    detail: {},
-  },
-];
+// DEMO-007 made /v1/audit a page like every other list on the platform.
+const AUDIT = {
+  items: [
+    {
+      id: "a1",
+      action: "settlement.finalized",
+      resource_type: "settlement",
+      resource_id: "x",
+      actor_id: "u1",
+      request_id: null,
+      created_at: "2026-08-11T09:30:00+00:00",
+      detail: {},
+    },
+  ],
+  total: 1,
+  limit: 12,
+  offset: 0,
+};
 
 /** Route every request the dashboard makes; `overrides` replaces one of them. */
 function routeAll(overrides: Record<string, () => Response> = {}) {

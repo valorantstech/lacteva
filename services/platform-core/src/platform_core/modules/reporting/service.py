@@ -28,6 +28,7 @@ from platform_core.core.db import as_utc, utcnow
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.collection_center.models import CollectionCenter
 from platform_core.modules.milk_collection.models import MilkCollectionTransaction as Tx
+from platform_core.modules.milk_collection.models import TransactionEvent
 from platform_core.modules.payment.models import Payment, PaymentLine
 from platform_core.modules.pricing.models import PricingMatrix, PricingMatrixRow, RateCard
 from platform_core.modules.receipt.models import Receipt
@@ -197,6 +198,40 @@ class CollectionChain(BaseModel):
     settlement: ChainSettlement | None
     payment: ChainPayment | None
     receipt: ChainReceipt | None
+
+
+class OperationalStatus(BaseModel):
+    """Where one collection has reached, financially and in its own event log.
+
+    DEMO-007: the operational transaction list needs, per row, the settlement
+    it belongs to, the payment that discharged it, the receipt that followed,
+    and when anything last happened to it. `collection_chain` answers exactly
+    that — for ONE transaction. Calling it per row is an N+1, and a list of
+    fifty rows would be fifty round trips.
+
+    So this is the same question asked in bulk: a page of transaction ids in,
+    a status per id out, in a FIXED number of queries regardless of page size
+    (four, plus one for the event log). The portal makes one extra call per
+    page and never joins anything itself.
+    """
+
+    transaction_id: uuid.UUID
+    last_event_type: str | None
+    last_event_at: datetime | None
+    settlement_id: uuid.UUID | None
+    settlement_number: str | None
+    settlement_status: str | None
+    settled_amount: Decimal | None
+    payment_id: uuid.UUID | None
+    payment_number: str | None
+    payment_status: str | None
+    receipt_id: uuid.UUID | None
+    receipt_number: str | None
+    receipt_status: str | None
+
+
+class OperationalStatusPage(BaseModel):
+    items: list[OperationalStatus]
 
 
 class PaymentStatusRow(BaseModel):
@@ -689,6 +724,124 @@ class ReportingService:
         )
 
     # --- payment summary (DEMO-002) -----------------------------------------
+
+    async def operational_status(self, transaction_ids: list[uuid.UUID]) -> OperationalStatusPage:
+        """Bulk `collection_chain`, for a page of transactions.
+
+        Five grouped queries, whatever the page size — the last event per
+        transaction, the settlement line and settlement, the payment line and
+        payment, and the receipt. Every one is filtered by tenant as well as
+        by key, so an id belonging to another organization simply finds
+        nothing; it is never an error, and never someone else's money.
+
+        Cancelled settlements and payments are excluded exactly as
+        `collection_chain` excludes them: a cancelled settlement did not
+        settle anything, and saying otherwise on a list would be the same lie
+        told faster.
+        """
+        tenant_id = require_current_tenant()
+        ids = list(dict.fromkeys(transaction_ids))
+        if not ids:
+            return OperationalStatusPage(items=[])
+
+        # 1. the latest event per transaction — the "last activity" column.
+        newest = (
+            select(
+                TransactionEvent.transaction_id.label("tx_id"),
+                func.max(TransactionEvent.sequence).label("seq"),
+            )
+            .where(
+                TransactionEvent.tenant_id == tenant_id,
+                TransactionEvent.transaction_id.in_(ids),
+            )
+            .group_by(TransactionEvent.transaction_id)
+            .subquery()
+        )
+        last_events = {
+            row.transaction_id: row
+            for row in (
+                await self._session.execute(
+                    select(TransactionEvent).join(
+                        newest,
+                        (TransactionEvent.transaction_id == newest.c.tx_id)
+                        & (TransactionEvent.sequence == newest.c.seq),
+                    )
+                )
+            ).scalars()
+        }
+
+        # 2. settlement line -> settlement, for every id at once.
+        settled: dict[uuid.UUID, tuple] = {}
+        for line, settlement in (
+            await self._session.execute(
+                select(SettlementLine, Settlement)
+                .join(Settlement, Settlement.id == SettlementLine.settlement_id)
+                .where(
+                    SettlementLine.tenant_id == tenant_id,
+                    SettlementLine.transaction_id.in_(ids),
+                    Settlement.status != "cancelled",
+                )
+            )
+        ).all():
+            settled.setdefault(line.transaction_id, (line, settlement))
+
+        # 3. payment line -> payment, keyed by the settlements we just found.
+        settlement_ids = [s.id for _line, s in settled.values()]
+        paid: dict[uuid.UUID, Payment] = {}
+        if settlement_ids:
+            for payment_line, payment in (
+                await self._session.execute(
+                    select(PaymentLine, Payment)
+                    .join(Payment, Payment.id == PaymentLine.payment_id)
+                    .where(
+                        PaymentLine.tenant_id == tenant_id,
+                        PaymentLine.settlement_id.in_(settlement_ids),
+                        Payment.status != "cancelled",
+                    )
+                    .order_by(Payment.created_at.desc())
+                )
+            ).all():
+                paid.setdefault(payment_line.settlement_id, payment)
+
+        # 4. receipts, keyed by payment.
+        payment_ids = [p.id for p in paid.values()]
+        receipts: dict[uuid.UUID, Receipt] = {}
+        if payment_ids:
+            for receipt in (
+                await self._session.scalars(
+                    select(Receipt).where(
+                        Receipt.tenant_id == tenant_id,
+                        Receipt.payment_id.in_(payment_ids),
+                    )
+                )
+            ).all():
+                receipts.setdefault(receipt.payment_id, receipt)
+
+        items = []
+        for tx_id in ids:
+            event = last_events.get(tx_id)
+            pair = settled.get(tx_id)
+            line, settlement = pair if pair else (None, None)
+            payment = paid.get(settlement.id) if settlement is not None else None
+            receipt = receipts.get(payment.id) if payment is not None else None
+            items.append(
+                OperationalStatus(
+                    transaction_id=tx_id,
+                    last_event_type=event.event_type if event else None,
+                    last_event_at=as_utc(event.created_at) if event else None,
+                    settlement_id=settlement.id if settlement else None,
+                    settlement_number=settlement.settlement_number if settlement else None,
+                    settlement_status=settlement.status if settlement else None,
+                    settled_amount=Decimal(line.gross_amount) if line else None,
+                    payment_id=payment.id if payment else None,
+                    payment_number=payment.payment_number if payment else None,
+                    payment_status=payment.status if payment else None,
+                    receipt_id=receipt.id if receipt else None,
+                    receipt_number=receipt.receipt_number if receipt else None,
+                    receipt_status=receipt.status if receipt else None,
+                )
+            )
+        return OperationalStatusPage(items=items)
 
     async def payment_summary(
         self,

@@ -22,6 +22,7 @@ from platform_core.core.keys import get_key_registry
 from platform_core.core.security_audit import record_security_event
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.tenant_lifecycle import TenantLifecycleService
+from platform_core.modules.audit.service import AuditPage
 from platform_core.modules.auth.service import AuthService, LoginCommand, TokenPair
 from platform_core.modules.authz.permissions import PERMISSIONS
 from platform_core.modules.authz.service import AuthzService, PermissionEngine
@@ -157,6 +158,7 @@ from platform_core.modules.reporting.service import (
     CollectionTrend,
     DailyCollectionSummary,
     DashboardSummary,
+    OperationalStatusPage,
     PaymentSummary,
     PricingSummary,
     RateBandRow,
@@ -2125,6 +2127,36 @@ async def report_collection_chain(
     return await service.collection_chain(transaction_id)
 
 
+@report_router.get("/collection/operational-status", response_model=OperationalStatusPage)
+async def report_operational_status(
+    service: ReportSvc,
+    _: ReportRead,
+    transaction_ids: Annotated[
+        list[uuid.UUID],
+        Query(
+            min_length=1,
+            max_length=100,
+            description=(
+                "Repeated transaction id — one page's worth. Bounded at 100 so "
+                "the query stays a fixed cost."
+            ),
+        ),
+    ],
+) -> OperationalStatusPage:
+    """Settlement, payment, receipt and last activity for a PAGE of collections.
+
+    DEMO-007: the operational transaction list needs these four facts per row.
+    `/collection/{id}/chain` answers them one row at a time, which on a
+    fifty-row page is fifty round trips — so this asks the same question in
+    bulk and answers it in a fixed number of queries.
+
+    Ids that do not exist, or belong to another organization, come back with
+    every field null rather than as an error: absence is the honest answer,
+    and a 404 here would confirm which ids exist.
+    """
+    return await service.operational_status(transaction_ids)
+
+
 @report_router.get("/payments", response_model=PaymentSummary)
 async def report_payments(
     service: ReportSvc,
@@ -2479,25 +2511,45 @@ async def set_config(
 audit_router = APIRouter(prefix="/audit", tags=["audit"], route_class=IdempotentRoute)
 
 
-@audit_router.get("")
+@audit_router.get("", response_model=AuditPage)
 async def list_audit(
     service: Annotated[deps.AuditService, Depends(deps.get_audit_service)],
     _: Annotated[Principal, Depends(require_permission("audit.read"))],
-    limit: int = Query(100, ge=1, le=500),
-) -> list[dict]:
-    records = await service.list_records(limit=limit)
-    return [
-        {
-            "id": str(r.id),
-            "action": r.action,
-            "resource_type": r.resource_type,
-            "resource_id": r.resource_id,
-            "actor_id": str(r.actor_id) if r.actor_id else None,
-            "created_at": r.created_at.isoformat(),
-            "detail": r.detail,
-        }
-        for r in records
-    ]
+    q: str | None = None,
+    action: str | None = None,
+    resource_type: str | None = None,
+    actor_id: uuid.UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> AuditPage:
+    """Who did what, to which resource, when — filtered and paged.
+
+    DEMO-007 replaced the unfiltered "newest 100" read: a screen that can only
+    show the most recent hundred entries cannot answer an operational question,
+    and filtering the rest in a browser would be wrong as soon as the hundred
+    and first record existed.
+    """
+    return await service.search(
+        q=q,
+        action=action,
+        resource_type=resource_type,
+        actor_id=actor_id,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@audit_router.get("/actions", response_model=list[str])
+async def list_audit_actions(
+    service: Annotated[deps.AuditService, Depends(deps.get_audit_service)],
+    _: Annotated[Principal, Depends(require_permission("audit.read"))],
+) -> list[str]:
+    """The action vocabulary present in this tenant's own history."""
+    return await service.actions()
 
 
 # --- tenant lifecycle (PROD-001) --------------------------------------------

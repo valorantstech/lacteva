@@ -161,16 +161,28 @@ class TransactionView(BaseModel):
     operator_id: uuid.UUID
     state: str
     milk_type: str | None
+    milk_type_custom: str | None
     container_type: str | None
     container_identifier: str | None
+    arrival_temperature_c: float | None
+    arrived_at: datetime | None
     weight_unit: str | None
     gross_weight: float | None
     tare_weight: float | None
     net_weight: float | None
+    # DEMO-007: the capture SOURCE was stored from the first day of MVP-001 and
+    # never surfaced. It is the difference between "10 kg" and "10 kg, entered
+    # by hand" — the one fact that stops a reading being mistaken for a
+    # certified instrument's. Withholding it made the API less honest than the
+    # database underneath it.
+    weight_source: str | None
     fat: float | None
     snf: float | None
     clr: float | None
     density: float | None
+    quality_temperature_c: float | None
+    quality_remarks: str | None
+    quality_source: str | None
     pricing_status: str | None
     unit_price: Decimal | None
     gross_amount: Decimal | None
@@ -178,6 +190,11 @@ class TransactionView(BaseModel):
     calculation_id: uuid.UUID | None
     pricing_detail: str | None
     rejected_reason: str | None
+    # Who decided, and when. The event log has always carried it; a client
+    # that only reads the transaction could not see it.
+    decided_by: uuid.UUID | None
+    decided_at: datetime | None
+    cancelled_reason: str | None
     created_at: datetime
     completed_at: datetime | None
 

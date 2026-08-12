@@ -145,7 +145,7 @@ async def test_full_procurement_journey(client, bus):
 
     # Audit trail persisted for every stage of the journey.
     records = (await client.get("/v1/audit?limit=200", headers=headers)).json()
-    actions = {r["action"] for r in records}
+    actions = {r["action"] for r in records["items"]}
     for expected in (
         "collection.session.opened",
         "collection.transaction.TransactionCreated",

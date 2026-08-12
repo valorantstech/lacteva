@@ -266,7 +266,7 @@ async def test_list_filters_and_audit_trail(client):
 
     # Full audit trail: every engine step is in the tenant audit log.
     audit = (await client.get("/v1/audit?limit=200", headers=headers)).json()
-    actions = [a["action"] for a in audit]
+    actions = [a["action"] for a in audit["items"]]
     for expected in (
         "collection.transaction.TransactionCreated",
         "collection.transaction.WeightCaptured",

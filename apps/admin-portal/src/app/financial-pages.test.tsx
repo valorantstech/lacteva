@@ -311,7 +311,7 @@ describe("settlement detail", () => {
     expect(await screen.findByText("STL-2026-000004")).toBeInTheDocument();
     // Gross and net are both 3,600.00 here — two separate stored strings, and
     // the page prints both rather than deriving one from the other.
-    const summary = screen.getByText("Financial summary").closest("[data-slot=card]")!;
+    const summary = screen.getByText("Financial summary").closest("[data-slot=card]") as HTMLElement;
     expect(within(summary).getAllByText("3,600.00")).toHaveLength(2);
     expect(within(summary).getByText("0.00")).toBeInTheDocument();
     // Two lines of 1,800.00 — printed, never summed here.

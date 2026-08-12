@@ -117,7 +117,9 @@ export default function Home() {
       getCollectionTrend(params).then(ok(setTrend), fail(setTrend)),
       getCenterReport({ ...params, limit: "8" }).then(ok(setCenters), fail(setCenters)),
       getSupplierReport({ ...params, limit: "8" }).then(ok(setSuppliers), fail(setSuppliers)),
-      listAudit(12).then(ok(setActivity), fail(setActivity)),
+      listAudit({ limit: 12, offset: 0 })
+        .then((r) => r.items)
+        .then(ok(setActivity), fail(setActivity)),
     ]);
     setBusy(false);
   }, []);

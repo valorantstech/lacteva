@@ -902,18 +902,29 @@ export type MilkTransaction = {
   operator_id: string;
   state: string;
   milk_type: string | null;
+  milk_type_custom: string | null;
   // DEMO-004: the platform has always returned these; the portal type simply
   // did not name them, so the detail page could not show a gross/tare split.
   container_type: string | null;
   container_identifier: string | null;
+  arrival_temperature_c: number | null;
+  arrived_at: string | null;
   weight_unit: string | null;
   gross_weight: number | null;
   tare_weight: number | null;
   net_weight: number | null;
+  // DEMO-007: how the reading was obtained. "manual" is the domain's own name
+  // for an operator entering it; the alternative is an instrument. Showing a
+  // number without its source is how a hand-typed weight comes to look
+  // certified.
+  weight_source: string | null;
   fat: number | null;
   snf: number | null;
   clr: number | null;
   density: number | null;
+  quality_temperature_c: number | null;
+  quality_remarks: string | null;
+  quality_source: string | null;
   pricing_status: string | null;
   unit_price: string | number | null;
   gross_amount: string | number | null;
@@ -921,9 +932,46 @@ export type MilkTransaction = {
   calculation_id: string | null;
   pricing_detail: string | null;
   rejected_reason: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  cancelled_reason: string | null;
   created_at: string;
   completed_at: string | null;
 };
+
+/**
+ * DEMO-007: where a page of collections has reached, financially.
+ *
+ * One call per page, never per row. `/v1/reports/collection/{id}/chain`
+ * answers this for a single collection; asking it fifty times to draw one
+ * table is the N+1 this endpoint exists to avoid.
+ */
+export type OperationalStatus = {
+  transaction_id: string;
+  last_event_type: string | null;
+  last_event_at: string | null;
+  settlement_id: string | null;
+  settlement_number: string | null;
+  settlement_status: string | null;
+  settled_amount: string | number | null;
+  payment_id: string | null;
+  payment_number: string | null;
+  payment_status: string | null;
+  receipt_id: string | null;
+  receipt_number: string | null;
+  receipt_status: string | null;
+};
+
+export function getOperationalStatus(transactionIds: string[]): Promise<{
+  items: OperationalStatus[];
+}> {
+  if (transactionIds.length === 0) return Promise.resolve({ items: [] });
+  const search = new URLSearchParams();
+  for (const id of transactionIds) search.append("transaction_ids", id);
+  return api<{ items: OperationalStatus[] }>(
+    `/v1/reports/collection/operational-status?${search.toString()}`,
+  );
+}
 
 export type MilkTransactionPage = {
   items: MilkTransaction[];
@@ -936,6 +984,8 @@ export type TransactionEvent = {
   sequence: number;
   event_type: string;
   data: Record<string, unknown>;
+  /** DEMO-007: the platform has always recorded who; the type omitted it. */
+  actor_id: string | null;
   created_at: string;
 };
 
@@ -1641,11 +1691,47 @@ export type AuditRecord = {
   resource_type: string;
   resource_id: string | null;
   actor_id: string | null;
+  request_id: string | null;
   created_at: string;
   detail: Record<string, unknown> | null;
 };
 
-export const listAudit = (limit = 100) => api<AuditRecord[]>(`/v1/audit?limit=${limit}`);
+export type AuditPageResult = {
+  items: AuditRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+/**
+ * DEMO-007: `/v1/audit` was the one list on this platform that was not a page.
+ * It returned the newest hundred records and nothing else, so the screen could
+ * not answer "what did this operator do to that settlement" — and filtering
+ * the rest in the browser would have been wrong from the 101st record on.
+ */
+export function listAudit(params: {
+  q?: string;
+  action?: string;
+  resource_type?: string;
+  actor_id?: string;
+  date_from?: string;
+  date_to?: string;
+  limit: number;
+  offset: number;
+}): Promise<AuditPageResult> {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.action) search.set("action", params.action);
+  if (params.resource_type) search.set("resource_type", params.resource_type);
+  if (params.actor_id) search.set("actor_id", params.actor_id);
+  if (params.date_from) search.set("date_from", params.date_from);
+  if (params.date_to) search.set("date_to", params.date_to);
+  search.set("limit", String(params.limit));
+  search.set("offset", String(params.offset));
+  return api<AuditPageResult>(`/v1/audit?${search.toString()}`);
+}
+
+export const listAuditActions = () => api<string[]>("/v1/audit/actions");
 
 export const getConfig = (key: string) =>
   api<{ key: string; value: unknown }>(`/v1/config/${encodeURIComponent(key)}`);

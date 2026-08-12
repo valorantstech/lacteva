@@ -11,7 +11,7 @@ async def test_platform_admin_wildcard_grants_access(client):
     _, headers = await register_and_login(client, admin=True)
     r = await client.get("/v1/audit", headers=headers)
     assert r.status_code == 200
-    actions = [rec["action"] for rec in r.json()]
+    actions = [rec["action"] for rec in r.json()["items"]]
     # Registration and login were audited.
     assert "identity.user.registered" in actions
     assert "auth.login.succeeded" in actions

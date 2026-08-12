@@ -134,47 +134,73 @@ describe("organization / tenant context", () => {
 });
 
 describe("audit", () => {
-  it("shows grants and revocations together — the pair an access review reads", async () => {
-    routeFetch({
-      "/v1/audit": [
-        {
-          id: "a1",
-          action: "authz.role.granted",
-          resource_type: "user_role",
-          resource_id: "r1",
-          actor_id: "u9",
-          created_at: "2026-08-09T10:00:00Z",
-          detail: { user_id: "u1" },
-        },
-        {
-          id: "a2",
-          action: "authz.role.revoked",
-          resource_type: "user_role",
-          resource_id: "r1",
-          actor_id: "u9",
-          created_at: "2026-08-09T11:00:00Z",
-          detail: null,
-        },
-      ],
-    });
-    render(<AuditPage />);
-    expect(await screen.findByText("authz.role.granted")).toBeInTheDocument();
-    expect(screen.getByText("authz.role.revoked")).toBeInTheDocument();
+  const page = (items: unknown[]) => ({ items, total: items.length, limit: 25, offset: 0 });
+  const record = (over: Record<string, unknown>) => ({
+    id: "a1",
+    action: "authz.role.granted",
+    resource_type: "user_role",
+    resource_id: "r1",
+    actor_id: "u9",
+    request_id: null,
+    created_at: "2026-08-09T10:00:00Z",
+    detail: {},
+    ...over,
   });
 
-  it("filters by action", async () => {
+  it("shows grants and revocations together — the pair an access review reads", async () => {
     routeFetch({
-      "/v1/audit": [
-        { id: "a1", action: "authz.role.granted", resource_type: "user_role", resource_id: null, actor_id: null, created_at: "2026-08-09T10:00:00Z", detail: null },
-        { id: "a2", action: "payment.completed", resource_type: "payment", resource_id: null, actor_id: null, created_at: "2026-08-09T10:00:00Z", detail: null },
-      ],
+      "/v1/audit/actions": ["authz.role.granted", "authz.role.revoked"],
+      "/v1/members": [],
+      "/v1/audit": page([
+        record({ id: "a1", action: "authz.role.granted", detail: { user_id: "u1" } }),
+        record({ id: "a2", action: "authz.role.revoked", created_at: "2026-08-09T11:00:00Z" }),
+      ]),
+    });
+    render(<AuditPage />);
+    // The action reads as English now; the pair is still what matters.
+    expect(await screen.findByText("Role granted")).toBeInTheDocument();
+    expect(screen.getByText("Role revoked")).toBeInTheDocument();
+    // ...and the module path is kept as secondary information.
+    expect(screen.getAllByText("authz · role").length).toBe(2);
+  });
+
+  it("sends the filter to the SERVER rather than filtering what it already has", async () => {
+    const spy = routeFetch({
+      "/v1/audit/actions": ["authz.role.granted", "payment.completed"],
+      "/v1/members": [],
+      "/v1/audit": page([record({})]),
     });
     const user = userEvent.setup();
     render(<AuditPage />);
-    await screen.findByText("authz.role.granted");
-    await user.type(screen.getByLabelText(/filter/i), "payment");
-    await waitFor(() => expect(screen.queryByText("authz.role.granted")).not.toBeInTheDocument());
-    expect(screen.getByText("payment.completed")).toBeInTheDocument();
+    await screen.findByText("Role granted");
+
+    await user.type(screen.getByLabelText("Search"), "payment");
+
+    // The point of DEMO-007's rebuild: the database narrows the trail, so the
+    // answer is not limited to the rows already in the browser.
+    await waitFor(() => {
+      const asked = spy.mock.calls.map((c) => String(c[0]));
+      expect(asked.some((u) => u.includes("/v1/audit?") && u.includes("q=payment"))).toBe(true);
+    });
+  });
+
+  it("links a record to the entity it changed, and never to a route that does not exist", async () => {
+    routeFetch({
+      "/v1/audit/actions": [],
+      "/v1/members": [],
+      "/v1/audit": page([
+        record({ id: "a1", action: "settlement.finalized", resource_type: "settlement", resource_id: "st-1" }),
+        record({ id: "a2", action: "config.updated", resource_type: "configuration_entry", resource_id: "c-1" }),
+      ]),
+    });
+    render(<AuditPage />);
+    expect(await screen.findByRole("link", { name: "Settlement" })).toHaveAttribute(
+      "href",
+      "/settlements/st-1",
+    );
+    // No page exists for a configuration entry, so it is text, not a dead link.
+    expect(screen.queryByRole("link", { name: "Configuration entry" })).not.toBeInTheDocument();
+    expect(screen.getByText("Configuration entry")).toBeInTheDocument();
   });
 });
 

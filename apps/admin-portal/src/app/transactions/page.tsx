@@ -9,8 +9,10 @@ import {
   type DailyCollectionSummary,
   type MilkTransaction,
   type MilkTransactionPage,
+  type OperationalStatus,
   type Supplier,
   getDailyReport,
+  getOperationalStatus,
   listCenters,
   listMilkTransactions,
   listSuppliers,
@@ -25,13 +27,27 @@ import { PageHeader, StatTile } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 
 /**
- * Collections (DEMO-004).
+ * Transactions — the operational view (DEMO-004, rebuilt in DEMO-007).
  *
- * Every filter is a QUERY PARAMETER — state, centre, supplier and the date
- * window are all applied by the database. The KPI row is the reporting
- * module's `daily` aggregate over the same window, so the numbers above the
- * table and the rows inside it are answering the same question, computed once,
- * in the same place.
+ * This is the screen an operations manager lives in, so it answers the
+ * question they actually ask: not "what was collected" but "where has each
+ * collection got to". That means the financial columns — settled, paid — sit
+ * on the same row as the milk.
+ *
+ * Two rules make that affordable and honest:
+ *
+ * 1. EVERY FILTER IS A QUERY PARAMETER. State, centre, supplier and the date
+ *    window are applied by the database over the whole table. The KPI row is
+ *    the reporting module's `daily` aggregate over the same window, so the
+ *    numbers above the table and the rows inside it answer the same question,
+ *    computed once, in one place.
+ *
+ * 2. THE FINANCIAL COLUMNS COST ONE CALL, NOT ONE PER ROW. `/chain` answers
+ *    "was this settled and paid?" for a single collection; asking it per row
+ *    would be a fifty-request table. `getOperationalStatus()` asks it for the
+ *    whole page at once, and the platform answers in a fixed number of
+ *    queries. The status is fetched AFTER the page renders, so a slow
+ *    financial join never delays the milk.
  *
  * Nothing here multiplies a quantity by a rate. The amount on each row is the
  * amount the pricing engine wrote.
@@ -45,7 +61,10 @@ const STATES = [
   "NEW",
   "SUPPLIER_IDENTIFIED",
   "MILK_RECEIVED",
+  "WEIGHT_CAPTURED",
   "QUALITY_PENDING",
+  "QUALITY_CAPTURED",
+  "PRICING_PENDING",
   "PRICED",
   "ACCEPTED",
   "REJECTED",
@@ -53,9 +72,44 @@ const STATES = [
   "CANCELLED",
 ] as const;
 
+/**
+ * Settlement and payment status are shown as COLUMNS but not offered as
+ * FILTERS, and that is deliberate.
+ *
+ * Those two facts live in other modules, so the collection list cannot filter
+ * on them; the only way to offer the control would be to filter the fifteen
+ * rows already in the browser. A "Settlement: finalized" control that quietly
+ * means "…among the rows you happen to be looking at" is precisely the
+ * dishonesty the server-side filters above exist to avoid, and it would be
+ * worse here than nowhere, because the pagination total beneath it would still
+ * read 360. Filtering by settlement status belongs on the settlements screen,
+ * which can do it properly.
+ *
+ * The columns themselves never invent a status and never show a settled or
+ * paid badge merely because a row exists — an absence is rendered as an
+ * absence.
+ */
+
+const describe = (e: unknown) => {
+  if (e instanceof ApiError) return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+  return e instanceof Error ? e.message : "Could not load collections";
+};
+
+/** `WeightCaptured` → `Weight captured` — sentence case, not Title Case. */
+const humanise = (event: string) =>
+  event
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_.]/g, " ")
+    .toLowerCase()
+    .replace(/^./, (c) => c.toUpperCase());
+
+const stamp = (iso: string | null | undefined) =>
+  iso ? String(iso).slice(0, 16).replace("T", " ") : "—";
+
 export default function TransactionsPage() {
   const [page, setPage] = useState<MilkTransactionPage | null>(null);
   const [summary, setSummary] = useState<DailyCollectionSummary | null>(null);
+  const [status, setStatus] = useState<Record<string, OperationalStatus>>({});
   const [centers, setCenters] = useState<Center[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
@@ -82,7 +136,18 @@ export default function TransactionsPage() {
       offset,
     };
     try {
-      setPage(await listMilkTransactions(params));
+      const result = await listMilkTransactions(params);
+      setPage(result);
+
+      // ONE call for the whole page's financial position. Deliberately not
+      // awaited with the page: the table is useful before the money arrives.
+      const ids = (result.items ?? []).map((t) => t.id);
+      getOperationalStatus(ids)
+        .then((r) =>
+          setStatus(Object.fromEntries((r.items ?? []).map((s) => [s.transaction_id, s]))),
+        )
+        .catch(() => setStatus({}));
+
       // The KPI row is a separate aggregate over the same window; a reporting
       // hiccup must not blank the table.
       getDailyReport({
@@ -94,7 +159,7 @@ export default function TransactionsPage() {
         .then(setSummary)
         .catch(() => setSummary(null));
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Could not load collections");
+      setError(describe(err));
     } finally {
       setLoading(false);
     }
@@ -169,6 +234,21 @@ export default function TransactionsPage() {
       cell: (tx) => <Quantity value={tx.net_weight} unit={tx.weight_unit ?? "kg"} />,
     },
     {
+      key: "quality",
+      header: "Quality",
+      align: "end",
+      secondary: true,
+      cell: (tx) =>
+        tx.fat != null || tx.snf != null ? (
+          <span className="tabular-nums text-sm">
+            {tx.fat != null ? `${tx.fat}% fat` : "—"}
+            {tx.snf != null ? ` · ${tx.snf}% snf` : ""}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
       key: "rate",
       header: "Rate",
       align: "end",
@@ -188,6 +268,55 @@ export default function TransactionsPage() {
     },
     { key: "state", header: "Status", cell: (tx) => <StatusBadge status={tx.state} /> },
     {
+      key: "settlement",
+      header: "Settlement",
+      cell: (tx) => {
+        const s = status[tx.id];
+        if (!s?.settlement_id)
+          return <span className="text-xs text-muted-foreground">not settled</span>;
+        return (
+          <div className="flex flex-col items-start gap-0.5">
+            <Link className="text-sm hover:underline" href={`/settlements/${s.settlement_id}`}>
+              {s.settlement_number}
+            </Link>
+            <StatusBadge status={s.settlement_status} />
+          </div>
+        );
+      },
+    },
+    {
+      key: "payment",
+      header: "Payment",
+      cell: (tx) => {
+        const s = status[tx.id];
+        if (!s?.payment_id)
+          return <span className="text-xs text-muted-foreground">not paid</span>;
+        return (
+          <div className="flex flex-col items-start gap-0.5">
+            <Link className="text-sm hover:underline" href={`/payments/${s.payment_id}`}>
+              {s.payment_number}
+            </Link>
+            <StatusBadge status={s.payment_status} />
+          </div>
+        );
+      },
+    },
+    {
+      key: "activity",
+      header: "Last activity",
+      secondary: true,
+      cell: (tx) => {
+        const s = status[tx.id];
+        if (!s?.last_event_type) return <span className="text-muted-foreground">—</span>;
+        return (
+          <div className="flex flex-col">
+            <span className="text-sm">{humanise(s.last_event_type)}</span>
+            <span className="text-xs text-muted-foreground">{stamp(s.last_event_at)}</span>
+          </div>
+        );
+      },
+    },
+    {
       key: "actions",
       header: <span className="sr-only">Actions</span>,
       align: "end",
@@ -203,10 +332,10 @@ export default function TransactionsPage() {
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Collections"
-        description="Every delivery of milk, priced by the rate card in force at the moment it was received."
+        title="Transactions"
+        description="Every delivery of milk, priced by the rate card in force at the moment it was received — and where its money has got to."
         actions={
           <Link
             href="/transactions/new"
@@ -267,7 +396,9 @@ export default function TransactionsPage() {
             error={error}
             onRetry={() => void load()}
             empty={{
-              title: filtered ? "No collection matches these filters" : "No collections in this period",
+              title: filtered
+                ? "No collection matches these filters"
+                : "No collections in this period",
               description: filtered
                 ? "Try a wider date range, or clear the filters."
                 : "Open a session at a centre and record a delivery to begin.",

@@ -8,6 +8,59 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Rep
 
 ### Added
 
+- DEMO-007 "Transaction Operations & Full Demo Flow" — the operational half of
+  the product, and the first work order verified by **driving the deployed UI in
+  a real browser** rather than by reading its HTML. **The transactions list
+  became an operational view**: alongside the milk it now carries, per row, the
+  settlement the collection belongs to, the payment that discharged it, and when
+  anything last happened to it. Those three facts live in three other modules,
+  and `/collection/{id}/chain` answers them one row at a time — fifty rows would
+  have been fifty round trips. So the reporting module (the declared
+  cross-module exception) gained **`GET /v1/reports/collection/operational-status`**,
+  which answers the same question for a whole page in a fixed number of queries;
+  a test asserts that four times the rows costs exactly the same number of SQL
+  statements as one. Settlement and payment are shown as **columns but not
+  offered as filters**, because the platform cannot filter on them and a control
+  that silently searched only the visible fifteen rows would be worse than no
+  control at all — with the pagination total beneath it still reading 360.
+  **The transaction detail page** gained a money trail — collection value →
+  settlement contribution → payment allocation → receipt — which **compares**
+  the platform's figures and never computes them: `sameAmount()` normalises two
+  exact-decimal strings so that "450.00" and "450.0" are recognised as the same
+  money, and a genuine disagreement is displayed in red rather than smoothed
+  over. It also names the centre and the supplier instead of printing
+  identifiers, attributes every timeline event to whoever the platform recorded,
+  and shows **how each reading was obtained**.
+- `TransactionView` now exposes `weight_source`, `quality_source`,
+  `quality_remarks`, `quality_temperature_c`, `arrival_temperature_c`,
+  `arrived_at`, `decided_by`, `decided_at`, `cancelled_reason` and
+  `milk_type_custom` — fields the model has stored since MVP-001 and the API
+  withheld. The capture source is the one that matters: DEMO-005 built the
+  guided wizard on the rule that the UI must never imply a device supplied a
+  value it did not, and until now that claim could not be checked from outside
+  the platform. A hand-entered weight is labelled as one.
+
+### Changed
+
+- **`/v1/audit` is now a page with filters** — `q`, `action`, `resource_type`,
+  `actor_id`, `date_from`, `date_to`, `limit`, `offset`, plus `total` — closing
+  the `TODO(M2)` the audit service had carried. It was the only list on the
+  platform that was not a page: it returned the newest hundred records, and the
+  screen filtered them in the browser, so "what did this operator do to that
+  settlement" quietly meant "…among the last hundred events". A new
+  `/v1/audit/actions` returns the action vocabulary actually present in the
+  tenant's history, so the filter cannot drift from what the modules record.
+  The response shape changed from a bare array to `{items,total,limit,offset}`;
+  the five call sites in the test suite were updated without altering a single
+  behavioural assertion.
+- The audit screen reads as English: `authz.role.granted` renders as "Role
+  granted" and `collection.transaction.WeightCaptured` as "Weight captured" —
+  the module path, the actor's resolved name and the raw identifiers all stay,
+  smaller, because an auditor eventually needs them. Each record links to the
+  entity it changed, and only where a page actually exists.
+
+### Added
+
 - DEMO-006 "Settlement & Payment Operations" — the financial half of the
   lifecycle, wired end to end: **completed collection → settlement → payment →
   receipt**, with every hop clickable in both directions and no dead links.
