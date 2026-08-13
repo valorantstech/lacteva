@@ -421,6 +421,4 @@ async def test_summed_quantities_come_back_at_the_scale_they_are_stored(client):
         assert day["quantity"] == str(Decimal(day["quantity"]).quantize(Decimal("0.001")))
 
     page = (await client.get("/v1/deliveries?limit=5", headers=admin)).json()
-    assert page["total_quantity"] == str(
-        Decimal(page["total_quantity"]).quantize(Decimal("0.001"))
-    )
+    assert page["total_quantity"] == str(Decimal(page["total_quantity"]).quantize(Decimal("0.001")))

@@ -246,7 +246,7 @@ Every claim below was executed, not read.
 
 | What | How | Result |
 | --- | --- | --- |
-| Backend suite | `pytest tests/ -q` | **1,254 passed**, 0 failed |
+| Backend suite | `pytest tests/ -q` | **1,347 passed**, 0 failed |
 | Mobile suite | `flutter test` | **94 passed** (was 56) |
 | Mobile analyzer | `dart analyze` | no issues |
 | Lint | `ruff check` + `ruff format --check` | clean |
@@ -325,6 +325,20 @@ recurring cost added.**
   DEMO-012 only changed how one reaches it.
 - **No sign-out in the app.** `revokePush` exists and is called by nothing yet,
   because there is no sign-out button to call it from.
+- **"Today" is UTC everywhere, and nothing owns that decision.** The app asks
+  the platform for today's round using the UTC date, which is what the rest of
+  the platform does. For the demo dairy (UTC+3) a 5 a.m. round falls on the
+  same UTC day and nothing is wrong. For a dairy at UTC+5:30 it does not: a
+  5 a.m. local round is 23:30 UTC the day before, and the round would be filed
+  under yesterday.
+
+  Surfaced by a test of mine that computed the date in LOCAL time and so
+  passed for eighteen and a half hours a day and failed for the other five and
+  a half. The test was wrong and is fixed. The underlying question is a
+  PLATFORM decision — the portal, the daily report and the billing period all
+  depend on the same answer — and a client that picked its own would be
+  exactly the divergence this milestone exists to avoid. Recorded rather than
+  decided.
 
 ## 12. Recommended next
 
@@ -335,6 +349,9 @@ recurring cost added.**
    customers — the platform is ready for either and currently does neither.
 4. An Android emulator image in CI, so §16 can be answered by a real Android
    runtime rather than by a browser.
+5. A per-tenant timezone, so "today" means the dairy's today. Today it means
+   UTC's, which is right for East Africa and wrong for India by one day on
+   every morning round.
 
 ## Change Log
 

@@ -21,12 +21,19 @@ import 'package:lacteva_mobile/src/offline/queue.dart';
 import 'package:lacteva_mobile/src/offline/store.dart';
 import 'package:lacteva_mobile/src/session.dart';
 
-String _today() {
-  final n = DateTime.now();
-  return '${n.year.toString().padLeft(4, '0')}-'
-      '${n.month.toString().padLeft(2, '0')}-'
-      '${n.day.toString().padLeft(2, '0')}';
-}
+/// The app's own notion of today, and deliberately the same one: **UTC**.
+///
+/// This helper originally used LOCAL time and the test passed for most of a
+/// day, then failed after local midnight — this machine is UTC+5:30, so the
+/// two dates disagree for five and a half hours out of every twenty-four. A
+/// test that computes a date differently from the code under test is a test
+/// that reports the timezone rather than the behaviour.
+///
+/// Whether UTC is the right basis for "today" on a dairy round is a real and
+/// separate question — a 5 a.m. round in India falls on the previous UTC day
+/// — but it is a PLATFORM decision, not one for a client to make alone. See
+/// DEMO-012-FINAL.md §11.
+String _today() => DateTime.now().toUtc().toIso8601String().substring(0, 10);
 
 /// A platform that answers, counts what it was asked, and can withhold a
 /// grant — which is how the app's behaviour under partial permission is
