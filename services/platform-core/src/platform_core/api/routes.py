@@ -457,6 +457,13 @@ class MeView(BaseModel):
     #: Centres this principal may act at; null means the whole organization.
     center_scope: list[uuid.UUID] | None
     permissions: list[str]
+    #: DEMO-012 — the customer this login speaks for, or null for staff.
+    #:
+    #: A client needs it to decide WHICH EXPERIENCE to open; it is not a
+    #: security control here. The platform narrows every sales query to this
+    #: customer server-side (`core/tenancy.enforce_customer_scope`), so a
+    #: client that ignored this field would still be shown nothing else.
+    customer_id: uuid.UUID | None = None
 
 
 @auth.get("/me", response_model=MeView)
@@ -509,6 +516,7 @@ async def me(
         ],
         center_scope=sorted(scope) if scope is not None else None,
         permissions=sorted(perms),
+        customer_id=principal.customer_id,
     )
 
 

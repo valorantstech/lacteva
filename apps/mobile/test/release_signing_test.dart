@@ -42,7 +42,8 @@ void main() {
     expect(
       release.contains('signingConfigs.getByName("debug")'),
       isFalse,
-      reason: 'a release build signed with the public Android debug key is not '
+      reason:
+          'a release build signed with the public Android debug key is not '
           'distributable and cannot be upgraded',
     );
     expect(release.contains('signingConfigs.getByName("release")'), isTrue);
@@ -66,14 +67,16 @@ void main() {
     expect(
       real.existsSync(),
       isFalse,
-      reason: 'android/key.properties is gitignored and must never be committed',
+      reason:
+          'android/key.properties is gitignored and must never be committed',
     );
   });
 
   test('the example carries no real credential', () {
     final example = _find('android/key.properties.example').readAsStringSync();
     for (final line in example.split('\n')) {
-      if (line.startsWith('storePassword=') || line.startsWith('keyPassword=')) {
+      if (line.startsWith('storePassword=') ||
+          line.startsWith('keyPassword=')) {
         expect(
           line.contains('CHANGEME'),
           isTrue,

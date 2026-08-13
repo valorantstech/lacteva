@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'center_summary.dart';
 import 'collection_wizard.dart';
+import 'home.dart';
 import 'notifications.dart';
 import 'offline/offline_client.dart';
 import 'offline/sync_screen.dart';
@@ -17,7 +18,11 @@ import 'suppliers.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.client});
 
-  final ApiClient client;
+  /// DEMO-012: the OFFLINE client specifically. Sign-in leads to the delivery
+  /// round, which captures into the durable queue — so the type that carries
+  /// that queue has to reach it. Widening this to `ApiClient` would compile
+  /// and then drop a rider's round on the first tunnel.
+  final OfflineApiClient client;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -27,7 +32,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  final _tenant = TextEditingController();
   String? _error;
   bool _busy = false;
 
@@ -38,16 +42,18 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
-      await widget.client.login(
-        _email.text.trim(),
-        _password.text,
-        tenantId: _tenant.text.trim(),
-      );
+      // DEMO-010 made the platform resolve the organization from the
+      // credentials, so a dairy worker no longer types a UUID to sign in.
+      // The field is gone; the parameter stays for the rare account that
+      // exists in two organizations.
+      await widget.client.login(_email.text.trim(), _password.text);
       if (!mounted) return;
+      // DEMO-012: the PLATFORM decides where this lands, not this screen.
+      // It used to push the collection-centre list at everybody — including
+      // a household, who then met a wall of 403s on a screen about somebody
+      // else's milk.
       await Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => CentersListScreen(client: widget.client),
-        ),
+        MaterialPageRoute(builder: (_) => HomeRouter(client: widget.client)),
       );
     } on ApiException catch (e) {
       setState(() => _error = e.detail);
@@ -87,14 +93,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     obscureText: true,
                     validator: (v) =>
                         (v == null || v.isEmpty) ? 'Enter your password' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _tenant,
-                    decoration: const InputDecoration(
-                      labelText: 'Organization ID',
-                      helperText: 'Optional — leave empty for platform login',
-                    ),
                   ),
                   const SizedBox(height: 20),
                   if (_error != null)

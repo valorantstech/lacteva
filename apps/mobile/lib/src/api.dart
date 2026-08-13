@@ -31,9 +31,32 @@ class ApiClient {
     if (_token != null) 'Authorization': 'Bearer $_token',
   };
 
-  Future<dynamic> _send(String method, String path, {Object? body}) async {
+  /// A write that may be REPLAYED (DEMO-012 §9).
+  ///
+  /// The key travels in `Idempotency-Key`, which the platform's
+  /// `IdempotentRoute` recognises: a delivery that was recorded before the
+  /// phone lost the reply is matched to the same operation rather than
+  /// written twice. The key is generated once, when the operation is
+  /// captured, and reused on every retry — a fresh key per attempt would
+  /// defeat the whole mechanism.
+  Future<dynamic> sendIdempotent(
+    String method,
+    String path, {
+    required String idempotencyKey,
+    Object? body,
+  }) => _send(method, path, body: body, idempotencyKey: idempotencyKey);
+
+  Future<dynamic> _send(
+    String method,
+    String path, {
+    Object? body,
+    String? idempotencyKey,
+  }) async {
     final uri = Uri.parse('$apiUrl$path');
     final request = http.Request(method, uri)..headers.addAll(_headers);
+    if (idempotencyKey != null) {
+      request.headers['Idempotency-Key'] = idempotencyKey;
+    }
     if (body != null) request.body = jsonEncode(body);
     final streamed = await _http.send(request);
     final response = await http.Response.fromStream(streamed);
@@ -636,6 +659,170 @@ class ApiClient {
             as Map<String, dynamic>;
     return ResolutionResultView.fromJson(result);
   }
+
+  // --- DEMO-012: who am I, and the sales side -------------------------------
+  //
+  // Every one of these reuses an endpoint the web portal already calls. The
+  // mobile app introduces no business rule of its own: it asks the same
+  // questions of the same platform and renders the answers.
+
+  /// The authorization context. The ONE source of role/permission truth.
+  Future<Map<String, dynamic>> me() async =>
+      await _send('GET', '/v1/auth/me') as Map<String, dynamic>;
+
+  /// Customers, narrowed by the platform to this principal's scope.
+  Future<Map<String, dynamic>> listCustomers({
+    String? q,
+    String? status,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final query = <String, String>{
+      if (q != null && q.isNotEmpty) 'q': q,
+      if (status != null && status.isNotEmpty) 'status': status,
+      'limit': '$limit',
+      'offset': '$offset',
+    };
+    final qs = Uri(queryParameters: query).query;
+    return await _send('GET', '/v1/customers?$qs') as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> customerDetail(String id) async =>
+      await _send('GET', '/v1/customers/$id') as Map<String, dynamic>;
+
+  Future<Map<String, dynamic>> customerBalance(String id) async =>
+      await _send('GET', '/v1/customers/$id/balance') as Map<String, dynamic>;
+
+  Future<Map<String, dynamic>> listDeliveries({
+    String? customerId,
+    String? dateFrom,
+    String? dateTo,
+    String? status,
+    bool? invoiced,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final query = <String, String>{
+      if (customerId != null && customerId.isNotEmpty)
+        'customer_id': customerId,
+      if (dateFrom != null && dateFrom.isNotEmpty) 'date_from': dateFrom,
+      if (dateTo != null && dateTo.isNotEmpty) 'date_to': dateTo,
+      if (status != null && status.isNotEmpty) 'status': status,
+      if (invoiced != null) 'invoiced': '$invoiced',
+      'limit': '$limit',
+      'offset': '$offset',
+    };
+    final qs = Uri(queryParameters: query).query;
+    return await _send('GET', '/v1/deliveries?$qs') as Map<String, dynamic>;
+  }
+
+  /// The daily delivery report — DEMO-012 §7.
+  ///
+  /// Aggregated by the DATABASE. The app renders `deliveries`,
+  /// `total_quantity`, `total_amount`, `customers_served`, `skipped` and the
+  /// per-day breakdown exactly as they arrive. It must never total the rows
+  /// it happens to have fetched: that would be a page total wearing a
+  /// report's name, and it would disagree with the portal.
+  Future<Map<String, dynamic>> deliveryReport({
+    required String dateFrom,
+    required String dateTo,
+    String? customerId,
+  }) async {
+    final query = <String, String>{
+      'date_from': dateFrom,
+      'date_to': dateTo,
+      if (customerId != null && customerId.isNotEmpty)
+        'customer_id': customerId,
+    };
+    final qs = Uri(queryParameters: query).query;
+    return await _send('GET', '/v1/deliveries/report?$qs')
+        as Map<String, dynamic>;
+  }
+
+  /// Record a delivery.
+  ///
+  /// THE APP SENDS A QUANTITY AND NOTHING ELSE ABOUT MONEY. The rate lives on
+  /// the customer's delivery plan and the amount is computed by the platform
+  /// (`quantity x unit_price`, once, in Decimal). Sending a price from a phone
+  /// would be a second pricing engine, and a phone is the worst possible place
+  /// for one.
+  Future<Map<String, dynamic>> recordDelivery({
+    required String customerId,
+    required String deliveryDate,
+    required String slot,
+    required String status,
+    String? quantity,
+    String? notes,
+  }) async {
+    return await _send(
+          'POST',
+          '/v1/deliveries',
+          body: {
+            'customer_id': customerId,
+            'delivery_date': deliveryDate,
+            'slot': slot,
+            'status': status,
+            if (quantity != null && quantity.isNotEmpty) 'quantity': quantity,
+            if (notes != null && notes.isNotEmpty) 'notes': notes,
+          },
+        )
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> listInvoices({
+    String? customerId,
+    String? status,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final query = <String, String>{
+      if (customerId != null && customerId.isNotEmpty)
+        'customer_id': customerId,
+      if (status != null && status.isNotEmpty) 'status': status,
+      'limit': '$limit',
+      'offset': '$offset',
+    };
+    final qs = Uri(queryParameters: query).query;
+    return await _send('GET', '/v1/invoices?$qs') as Map<String, dynamic>;
+  }
+
+  /// One monthly bill, with its lines and the platform's own reconciliation
+  /// verdict (`totals_match_lines`). The app shows that verdict; it does not
+  /// re-add the lines to form its own opinion.
+  Future<Map<String, dynamic>> invoiceDetail(String id) async =>
+      await _send('GET', '/v1/invoices/$id') as Map<String, dynamic>;
+
+  Future<Map<String, dynamic>> listCustomerPayments({
+    String? customerId,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final query = <String, String>{
+      if (customerId != null && customerId.isNotEmpty)
+        'customer_id': customerId,
+      'limit': '$limit',
+      'offset': '$offset',
+    };
+    final qs = Uri(queryParameters: query).query;
+    return await _send('GET', '/v1/customer-payments?$qs')
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> listCustomerReceipts({
+    String? customerId,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final query = <String, String>{
+      if (customerId != null && customerId.isNotEmpty)
+        'customer_id': customerId,
+      'limit': '$limit',
+      'offset': '$offset',
+    };
+    final qs = Uri(queryParameters: query).query;
+    return await _send('GET', '/v1/customer-receipts?$qs')
+        as Map<String, dynamic>;
+  }
 }
 
 class CenterSummary {
@@ -961,7 +1148,6 @@ class MatrixPageResult {
 
 double _toDouble(Object? value) =>
     value is num ? value.toDouble() : double.parse(value.toString());
-
 
 class MatrixRowView {
   MatrixRowView({

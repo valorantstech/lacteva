@@ -29,50 +29,57 @@ class _Fake extends ApiClient {}
 Future<void> _pumpWizard(WidgetTester tester, int step) async {
   await tester.pumpWidget(
     MaterialApp(
-      home: CollectionWizardScreen(client: _Fake(), sessionId: 's1', initialStep: step),
+      home: CollectionWizardScreen(
+        client: _Fake(),
+        sessionId: 's1',
+        initialStep: step,
+      ),
     ),
   );
   await tester.pump();
 }
 
 void main() {
-  testWidgets('the weight step offers a mock scale only when the build allows it', (
-    tester,
-  ) async {
-    await _pumpWizard(tester, 2);
-    if (kMockHardwareEnabled) {
-      expect(
-        find.text('Use mock scale'),
-        findsOneWidget,
-        reason: 'debug builds keep the developer tooling',
-      );
-    } else {
-      expect(
-        find.text('Use mock scale'),
-        findsNothing,
-        reason: 'a release build must not offer to fabricate a weight',
-      );
-    }
-    // The real capture control is present either way — the gate must never
-    // remove the thing an operator actually uses.
-    expect(find.text('Capture weight'), findsOneWidget);
-  });
+  testWidgets(
+    'the weight step offers a mock scale only when the build allows it',
+    (tester) async {
+      await _pumpWizard(tester, 2);
+      if (kMockHardwareEnabled) {
+        expect(
+          find.text('Use mock scale'),
+          findsOneWidget,
+          reason: 'debug builds keep the developer tooling',
+        );
+      } else {
+        expect(
+          find.text('Use mock scale'),
+          findsNothing,
+          reason: 'a release build must not offer to fabricate a weight',
+        );
+      }
+      // The real capture control is present either way — the gate must never
+      // remove the thing an operator actually uses.
+      expect(find.text('Capture weight'), findsOneWidget);
+    },
+  );
 
-  testWidgets('the quality step offers a mock analyzer only when the build allows it', (
-    tester,
-  ) async {
-    await _pumpWizard(tester, 3);
-    if (kMockHardwareEnabled) {
-      expect(find.text('Use mock analyzer'), findsOneWidget);
-    } else {
-      expect(
-        find.text('Use mock analyzer'),
-        findsNothing,
-        reason: 'a release build must not offer to fabricate a quality reading',
-      );
-    }
-    expect(find.text('Capture quality'), findsOneWidget);
-  });
+  testWidgets(
+    'the quality step offers a mock analyzer only when the build allows it',
+    (tester) async {
+      await _pumpWizard(tester, 3);
+      if (kMockHardwareEnabled) {
+        expect(find.text('Use mock analyzer'), findsOneWidget);
+      } else {
+        expect(
+          find.text('Use mock analyzer'),
+          findsNothing,
+          reason:
+              'a release build must not offer to fabricate a quality reading',
+        );
+      }
+      expect(find.text('Capture quality'), findsOneWidget);
+    },
+  );
 
   test('a release build can never have the mocks enabled', () {
     // Vacuous under `flutter test` (always debug) and deliberately kept: it

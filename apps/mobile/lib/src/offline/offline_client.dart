@@ -197,11 +197,151 @@ class OfflineApiClient extends ApiClient {
 
   /// Try to drain the queue. Safe to call often — it no-ops while a run is in
   /// flight and when nothing is due.
+  // --- DEMO-012: deliveries -------------------------------------------------
+  //
+  // A delivery is captured differently from a collection, on purpose.
+  //
+  // A collection is a multi-step state machine — open a session, identify a
+  // supplier, weigh, test, accept — so it goes through the batch protocol at
+  // `/v1/sync/collection`, which understands local ids and can stitch the
+  // steps together on arrival. A delivery is ONE idempotent POST. Pushing it
+  // through the batch protocol would mean teaching that endpoint a second
+  // vocabulary for no benefit.
+  //
+  // Instead each queued delivery carries the idempotency key it was captured
+  // with, and replay sends the SAME key. `delivery_router` is an
+  // `IdempotentRoute`, so a delivery that was actually recorded before the
+  // phone lost the reply is recognised as the same operation rather than
+  // written twice. That is the whole answer to "prevent duplicate
+  // submissions" (§9): it is the platform's guarantee, not a local guess.
+
+  /// How many captured operations are still on this device.
+  int get pendingCount => snapshot().outstanding;
+
+  /// Record a delivery, online or not.
+  ///
+  /// Returns the platform's response when it went through, or a local echo
+  /// marked `_queued` when it did not. The caller shows the difference; it
+  /// never pretends the queued one is confirmed.
+  Future<Map<String, dynamic>> recordDeliveryOffline({
+    required String customerId,
+    required String deliveryDate,
+    required String slot,
+    required String status,
+    String? quantity,
+    String? notes,
+  }) async {
+    if (isOnline) {
+      try {
+        return await recordDelivery(
+          customerId: customerId,
+          deliveryDate: deliveryDate,
+          slot: slot,
+          status: status,
+          quantity: quantity,
+          notes: notes,
+        );
+      } on ApiException {
+        // The platform ANSWERED — a refusal is a real answer and must reach
+        // the rider, not be hidden in a queue that will replay it forever.
+        rethrow;
+      } catch (_) {
+        _believedOnline = false;
+      }
+    }
+    await queue.load();
+    await queue.enqueue(
+      operationId: _operationId(),
+      kind: 'record_delivery',
+      clientReference: _localId('delivery'),
+      payload: {
+        'customer_id': customerId,
+        'delivery_date': deliveryDate,
+        'slot': slot,
+        'status': status,
+        if (quantity != null && quantity.isNotEmpty) 'quantity': quantity,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+      },
+    );
+    return {
+      'customer_id': customerId,
+      'delivery_date': deliveryDate,
+      'slot': slot,
+      'status': status,
+      // NO amount. The phone does not know what this is worth and must not
+      // guess: the rate lives on the plan and the arithmetic is the
+      // platform's. An optimistic figure here would be a number a customer
+      // could be shown and later contradicted.
+      '_queued': true,
+    };
+  }
+
+  /// Replay queued deliveries, each with the key it was captured with.
+  ///
+  /// Returns (sent, failed). A refusal that is the platform's considered
+  /// answer — 4xx — is not retried forever: it is marked failed so a person
+  /// sees it, because replaying a rejected delivery nightly is how a queue
+  /// becomes a haunted house.
+  Future<(int, int)> _drainDeliveries() async {
+    await queue.load();
+    final mine = queue
+        .due()
+        .where((op) => op.kind == 'record_delivery')
+        .toList(growable: false);
+    if (mine.isEmpty) return (0, 0);
+    var sent = 0;
+    var failed = 0;
+    for (final op in mine) {
+      try {
+        await sendIdempotent(
+          'POST',
+          '/v1/deliveries',
+          idempotencyKey: op.operationId,
+          body: op.payload,
+        );
+        queue.applyResult(op, {
+          'operation_id': op.operationId,
+          'status': 'applied',
+        });
+        sent++;
+      } on ApiException catch (e) {
+        if (e.status >= 400 && e.status < 500 && e.status != 409) {
+          queue.applyResult(op, {
+            'operation_id': op.operationId,
+            'status': 'conflict',
+            'detail': e.detail,
+          });
+        } else {
+          queue.markBatchFailed([op], e.detail);
+        }
+        failed++;
+      } catch (e) {
+        queue.markBatchFailed([op], 'offline');
+        failed++;
+      }
+    }
+    await queue.save();
+    return (sent, failed);
+  }
+
   Future<SyncRunResult> syncNow() async {
     await queue.load();
+    final (deliverySent, deliveryFailed) = await _drainDeliveries();
     final result = await engine.sync();
-    if (result.error == null) _believedOnline = true;
-    return result;
+    if (result.error == null && deliveryFailed == 0) _believedOnline = true;
+    // Deliveries fold into the same tally the collection engine reports, so
+    // one screen can say "12 sent, 1 queued" without knowing which protocol
+    // carried which operation.
+    return SyncRunResult(
+      applied: result.applied + deliverySent,
+      duplicates: result.duplicates,
+      conflicts: result.conflicts,
+      failed: result.failed + deliveryFailed,
+      batches: result.batches,
+      cancelled: result.cancelled,
+      error: result.error,
+      skipped: result.skipped,
+    );
   }
 
   SyncSnapshot snapshot() =>

@@ -46,8 +46,10 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
   final _snf = TextEditingController();
   final _clr = TextEditingController();
 
-  Future<void> _run(Future<Map<String, dynamic>> Function() action,
-      {int? nextStep}) async {
+  Future<void> _run(
+    Future<Map<String, dynamic>> Function() action, {
+    int? nextStep,
+  }) async {
     setState(() {
       _busy = true;
       _error = null;
@@ -70,8 +72,10 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
 
   Future<void> _identify() async {
     await _run(() async {
-      final tx = await widget.client
-          .txStep('/v1/milk-transactions', body: {'session_id': widget.sessionId});
+      final tx = await widget.client.txStep(
+        '/v1/milk-transactions',
+        body: {'session_id': widget.sessionId},
+      );
       return widget.client.txStep(
         '/v1/milk-transactions/${tx['id']}/identify',
         body: {'method': 'code', 'value': _supplierCode.text.trim()},
@@ -80,40 +84,51 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
   }
 
   Future<void> _milk() => _run(
-        () => widget.client.txStep('/v1/milk-transactions/$_txId/milk', body: {
-          'milk_type': _milkType,
-          'container_type': _containerType.text.trim(),
-          'container_identifier': _containerId.text.trim(),
-        }),
-        nextStep: 2,
-      );
+    () => widget.client.txStep(
+      '/v1/milk-transactions/$_txId/milk',
+      body: {
+        'milk_type': _milkType,
+        'container_type': _containerType.text.trim(),
+        'container_identifier': _containerId.text.trim(),
+      },
+    ),
+    nextStep: 2,
+  );
 
   Future<void> _weight({required bool mock}) => _run(
-        () => widget.client.txStep('/v1/milk-transactions/$_txId/weight', body: {
-          'source': mock ? 'mock_scale' : 'manual',
-          if (!mock) 'gross': double.tryParse(_gross.text),
-          if (!mock) 'tare': double.tryParse(_tare.text),
-        }),
-        nextStep: 3,
-      );
+    () => widget.client.txStep(
+      '/v1/milk-transactions/$_txId/weight',
+      body: {
+        'source': mock ? 'mock_scale' : 'manual',
+        if (!mock) 'gross': double.tryParse(_gross.text),
+        if (!mock) 'tare': double.tryParse(_tare.text),
+      },
+    ),
+    nextStep: 3,
+  );
 
   Future<void> _quality({required bool mock}) => _run(
-        () => widget.client.txStep('/v1/milk-transactions/$_txId/quality', body: {
-          'source': mock ? 'mock_analyzer' : 'manual',
-          if (!mock) 'fat': double.tryParse(_fat.text),
-          if (!mock) 'snf': double.tryParse(_snf.text),
-          if (!mock) 'clr': double.tryParse(_clr.text),
-        }),
-        nextStep: 4,
-      );
+    () => widget.client.txStep(
+      '/v1/milk-transactions/$_txId/quality',
+      body: {
+        'source': mock ? 'mock_analyzer' : 'manual',
+        if (!mock) 'fat': double.tryParse(_fat.text),
+        if (!mock) 'snf': double.tryParse(_snf.text),
+        if (!mock) 'clr': double.tryParse(_clr.text),
+      },
+    ),
+    nextStep: 4,
+  );
 
   Future<void> _decide(bool accept) async {
     await _run(() async {
       if (accept) {
         await widget.client.txStep('/v1/milk-transactions/$_txId/accept');
       } else {
-        await widget.client.txStep('/v1/milk-transactions/$_txId/reject',
-            body: {'reason': 'Rejected at review'});
+        await widget.client.txStep(
+          '/v1/milk-transactions/$_txId/reject',
+          body: {'reason': 'Rejected at review'},
+        );
       }
       return widget.client.txStep('/v1/milk-transactions/$_txId/complete');
     }, nextStep: 5);
@@ -132,9 +147,10 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: Text(_error!,
-                    style:
-                        TextStyle(color: Theme.of(context).colorScheme.error)),
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
               ),
             if (_step == 0) ...[
               Text('Supplier', style: Theme.of(context).textTheme.titleLarge),
@@ -171,8 +187,9 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
               const SizedBox(height: 12),
               TextField(
                 controller: _containerId,
-                decoration:
-                    const InputDecoration(labelText: 'Container identifier'),
+                decoration: const InputDecoration(
+                  labelText: 'Container identifier',
+                ),
               ),
               const SizedBox(height: 16),
               FilledButton(
@@ -247,20 +264,26 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Net weight: ${tx['net_weight']} kg'),
-                      Text('FAT ${tx['fat']} · SNF ${tx['snf']} · CLR ${tx['clr']}'),
+                      Text(
+                        'FAT ${tx['fat']} · SNF ${tx['snf']} · CLR ${tx['clr']}',
+                      ),
                       const Divider(),
                       if (tx['pricing_status'] == 'priced') ...[
                         Text(
                           '${tx['gross_amount']} ${tx['currency']}',
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
-                        Text('${tx['unit_price']} ${tx['currency']}/kg · '
-                            '${tx['pricing_detail']}'),
+                        Text(
+                          '${tx['unit_price']} ${tx['currency']}/kg · '
+                          '${tx['pricing_detail']}',
+                        ),
                       ] else ...[
                         Text('Pricing: ${tx['pricing_status']}'),
                         if (tx['pricing_detail'] != null)
-                          Text('${tx['pricing_detail']}',
-                              style: Theme.of(context).textTheme.bodySmall),
+                          Text(
+                            '${tx['pricing_detail']}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                       ],
                     ],
                   ),
@@ -283,13 +306,16 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                     ? Icons.check_circle
                     : Icons.cancel,
                 size: 72,
-                color:
-                    tx['rejected_reason'] == null ? Colors.green : Colors.red,
+                color: tx['rejected_reason'] == null
+                    ? Colors.green
+                    : Colors.red,
               ),
               const SizedBox(height: 12),
               Center(
-                child: Text('Transaction ${tx['state']}',
-                    style: Theme.of(context).textTheme.titleLarge),
+                child: Text(
+                  'Transaction ${tx['state']}',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
               ),
               Center(child: Text('Net ${tx['net_weight']} kg')),
               if (tx['rejected_reason'] == null &&

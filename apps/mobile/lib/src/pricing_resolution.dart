@@ -6,8 +6,11 @@ import 'api.dart';
 /// which pricing band a transaction WOULD use, then calculate the gross
 /// amount for a quantity — with the full calculation trace.
 class ResolutionTestScreen extends StatefulWidget {
-  const ResolutionTestScreen(
-      {super.key, required this.client, required this.centerId});
+  const ResolutionTestScreen({
+    super.key,
+    required this.client,
+    required this.centerId,
+  });
 
   final ApiClient client;
   final String centerId;
@@ -74,8 +77,7 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
     } on ApiException catch (e) {
       if (mounted) {
         setState(() {
-          _failureMessage =
-              (e.extra?['reason'] ?? e.detail).toString();
+          _failureMessage = (e.extra?['reason'] ?? e.detail).toString();
           _failureStage = e.extra?['stage']?.toString();
         });
       }
@@ -88,8 +90,9 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
     final result = _result;
     final quantity = double.tryParse(_quantity.text.trim());
     if (result == null || quantity == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enter a numeric quantity')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a numeric quantity')));
       return;
     }
     try {
@@ -101,8 +104,9 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
       if (mounted) setState(() => _calculation = calculation);
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text((e.extra?['reason'] ?? e.detail).toString())));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text((e.extra?['reason'] ?? e.detail).toString())),
+      );
     }
   }
 
@@ -124,8 +128,9 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
                 children: [
                   TextFormField(
                     controller: _product,
-                    decoration:
-                        const InputDecoration(labelText: 'Product code'),
+                    decoration: const InputDecoration(
+                      labelText: 'Product code',
+                    ),
                     textCapitalization: TextCapitalization.characters,
                     validator: (v) => (v == null || v.trim().length < 2)
                         ? 'Product code is required'
@@ -134,13 +139,16 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     initialValue: _dimensionCode,
-                    decoration:
-                        const InputDecoration(labelText: 'Quality dimension'),
+                    decoration: const InputDecoration(
+                      labelText: 'Quality dimension',
+                    ),
                     items: _dimensions
-                        .map((d) => DropdownMenuItem(
-                              value: d.code,
-                              child: Text('${d.code} — ${d.name}'),
-                            ))
+                        .map(
+                          (d) => DropdownMenuItem(
+                            value: d.code,
+                            child: Text('${d.code} — ${d.name}'),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) => setState(() => _dimensionCode = v),
                     validator: (v) => v == null ? 'Pick a dimension' : null,
@@ -149,12 +157,13 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
                   TextFormField(
                     controller: _value,
                     decoration: const InputDecoration(
-                        labelText: 'Reading value (e.g. 4.2)'),
+                      labelText: 'Reading value (e.g. 4.2)',
+                    ),
                     keyboardType: TextInputType.number,
                     validator: (v) =>
                         (v == null || double.tryParse(v.trim()) == null)
-                            ? 'Enter a numeric reading'
-                            : null,
+                        ? 'Enter a numeric reading'
+                        : null,
                   ),
                   const SizedBox(height: 16),
                   FilledButton(
@@ -172,22 +181,30 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Matched',
-                          style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        'Matched',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                       const SizedBox(height: 8),
-                      Text('Rate card: ${result.rateCardCode} '
-                          'v${result.rateCardVersion}'),
+                      Text(
+                        'Rate card: ${result.rateCardCode} '
+                        'v${result.rateCardVersion}',
+                      ),
                       Text('Matrix: ${result.matrixName}'),
-                      Text('Band: [${result.rangeFrom} – ${result.rangeTo}) '
-                          'for ${result.readingValue}${result.readingUnit}'),
+                      Text(
+                        'Band: [${result.rangeFrom} – ${result.rangeTo}) '
+                        'for ${result.readingValue}${result.readingUnit}',
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         'Unit price: ${result.priceAmount} ${result.currency}',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       const Divider(height: 24),
-                      Text('Calculate gross amount',
-                          style: Theme.of(context).textTheme.titleSmall),
+                      Text(
+                        'Calculate gross amount',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
                       const SizedBox(height: 8),
                       Row(
                         children: [
@@ -195,7 +212,8 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
                             child: TextField(
                               controller: _quantity,
                               decoration: const InputDecoration(
-                                  labelText: 'Quantity (kg)'),
+                                labelText: 'Quantity (kg)',
+                              ),
                               keyboardType: TextInputType.number,
                             ),
                           ),
@@ -222,14 +240,18 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
                         '${calculation.currency}',
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
-                      Text('${calculation.unitPrice} ${calculation.currency}'
-                          ' x ${calculation.quantityValue}'
-                          ' ${calculation.quantityUnit}'
-                          ' · ${calculation.roundingPolicy}'
-                          ' · calculator v${calculation.calculatorVersion}'),
+                      Text(
+                        '${calculation.unitPrice} ${calculation.currency}'
+                        ' x ${calculation.quantityValue}'
+                        ' ${calculation.quantityUnit}'
+                        ' · ${calculation.roundingPolicy}'
+                        ' · calculator v${calculation.calculatorVersion}',
+                      ),
                       const SizedBox(height: 12),
-                      Text('Trace',
-                          style: Theme.of(context).textTheme.titleSmall),
+                      Text(
+                        'Trace',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
                       ...calculation.trace.map(
                         (step) => Padding(
                           padding: const EdgeInsets.only(top: 4),
@@ -248,11 +270,15 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
             if (_failureMessage != null)
               Card(
                 child: ListTile(
-                  leading: Icon(Icons.error_outline,
-                      color: Theme.of(context).colorScheme.error),
-                  title: Text(_failureStage != null
-                      ? 'No resolution (failed at: $_failureStage)'
-                      : 'No resolution'),
+                  leading: Icon(
+                    Icons.error_outline,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  title: Text(
+                    _failureStage != null
+                        ? 'No resolution (failed at: $_failureStage)'
+                        : 'No resolution',
+                  ),
                   subtitle: Text(_failureMessage!),
                 ),
               ),

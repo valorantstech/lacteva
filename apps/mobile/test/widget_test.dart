@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lacteva_mobile/main.dart';
 import 'package:lacteva_mobile/src/api.dart';
+import 'package:lacteva_mobile/src/offline/store.dart';
+import 'package:lacteva_mobile/src/offline/queue.dart';
+import 'package:lacteva_mobile/src/offline/offline_client.dart';
 import 'package:lacteva_mobile/src/center_summary.dart';
 import 'package:lacteva_mobile/src/centers.dart';
 import 'package:lacteva_mobile/src/collection_wizard.dart';
@@ -31,7 +34,17 @@ void main() {
 
   testWidgets('login form validates required fields', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(home: LoginScreen(client: ApiClient())),
+      MaterialApp(
+        home: LoginScreen(
+          // DEMO-012: sign-in leads to the delivery round, which captures
+          // into the durable queue — so the login screen takes the OFFLINE
+          // client. A plain ApiClient would compile and then drop a round.
+          client: OfflineApiClient(
+            queue: SyncQueue(MemoryOfflineStore()),
+            deviceId: 'test',
+          ),
+        ),
+      ),
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pump();

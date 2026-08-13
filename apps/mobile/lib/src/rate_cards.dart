@@ -80,8 +80,10 @@ class _RateCardsListScreenState extends State<RateCardsListScreen> {
             ),
             const SizedBox(height: 12),
             if (_error != null)
-              Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             if (page == null && _error == null)
               const Padding(
                 padding: EdgeInsets.all(32),
@@ -97,14 +99,17 @@ class _RateCardsListScreenState extends State<RateCardsListScreen> {
                 (c) => Card(
                   child: ListTile(
                     title: Text(c.name),
-                    subtitle:
-                        Text('${c.code} v${c.version} · ${c.currency} · ${c.effectiveLabel}'),
+                    subtitle: Text(
+                      '${c.code} v${c.version} · ${c.currency} · ${c.effectiveLabel}',
+                    ),
                     trailing: RateCardStatusChip(status: c.status),
                     onTap: () async {
                       await Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => RateCardDetailScreen(
-                              client: widget.client, cardId: c.id),
+                            client: widget.client,
+                            cardId: c.id,
+                          ),
                         ),
                       );
                       await _load();
@@ -126,7 +131,8 @@ class _RateCardsListScreenState extends State<RateCardsListScreen> {
                     child: const Text('Previous'),
                   ),
                   Text(
-                      '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}'),
+                    '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}',
+                  ),
                   TextButton(
                     onPressed: _offset + pageSize >= page.total
                         ? null
@@ -180,16 +186,21 @@ class RateCardFormScreen extends StatefulWidget {
 
 class _RateCardFormScreenState extends State<RateCardFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _name =
-      TextEditingController(text: widget.card?.name ?? '');
-  late final TextEditingController _currency =
-      TextEditingController(text: widget.card?.currency ?? 'KES');
-  late final TextEditingController _from =
-      TextEditingController(text: widget.card?.effectiveFrom ?? '');
-  late final TextEditingController _until =
-      TextEditingController(text: widget.card?.effectiveUntil ?? '');
-  late final TextEditingController _description =
-      TextEditingController(text: widget.card?.description ?? '');
+  late final TextEditingController _name = TextEditingController(
+    text: widget.card?.name ?? '',
+  );
+  late final TextEditingController _currency = TextEditingController(
+    text: widget.card?.currency ?? 'KES',
+  );
+  late final TextEditingController _from = TextEditingController(
+    text: widget.card?.effectiveFrom ?? '',
+  );
+  late final TextEditingController _until = TextEditingController(
+    text: widget.card?.effectiveUntil ?? '',
+  );
+  late final TextEditingController _description = TextEditingController(
+    text: widget.card?.description ?? '',
+  );
   String? _error;
   bool _busy = false;
 
@@ -233,9 +244,11 @@ class _RateCardFormScreenState extends State<RateCardFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEdit
-            ? 'Edit ${widget.card!.code} v${widget.card!.version}'
-            : 'New rate card'),
+        title: Text(
+          widget.isEdit
+              ? 'Edit ${widget.card!.code} v${widget.card!.version}'
+              : 'New rate card',
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -254,8 +267,9 @@ class _RateCardFormScreenState extends State<RateCardFormScreen> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _currency,
-                decoration:
-                    const InputDecoration(labelText: 'Currency (ISO 4217)'),
+                decoration: const InputDecoration(
+                  labelText: 'Currency (ISO 4217)',
+                ),
                 textCapitalization: TextCapitalization.characters,
                 validator: (v) => (v == null || v.trim().length != 3)
                     ? 'Currency must be 3 letters'
@@ -265,8 +279,10 @@ class _RateCardFormScreenState extends State<RateCardFormScreen> {
               TextFormField(
                 controller: _from,
                 decoration: const InputDecoration(
-                    labelText: 'Effective from (YYYY-MM-DD)'),
-                validator: (v) => (v == null || !_datePattern.hasMatch(v.trim()))
+                  labelText: 'Effective from (YYYY-MM-DD)',
+                ),
+                validator: (v) =>
+                    (v == null || !_datePattern.hasMatch(v.trim()))
                     ? 'Enter a date as YYYY-MM-DD'
                     : null,
               ),
@@ -274,7 +290,8 @@ class _RateCardFormScreenState extends State<RateCardFormScreen> {
               TextFormField(
                 controller: _until,
                 decoration: const InputDecoration(
-                    labelText: 'Effective until (optional)'),
+                  labelText: 'Effective until (optional)',
+                ),
                 validator: (v) {
                   final value = v?.trim() ?? '';
                   if (value.isEmpty) return null;
@@ -293,9 +310,12 @@ class _RateCardFormScreenState extends State<RateCardFormScreen> {
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(_error!,
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.error)),
+                  child: Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ),
               FilledButton(
                 onPressed: _busy ? null : _submit,
@@ -311,8 +331,11 @@ class _RateCardFormScreenState extends State<RateCardFormScreen> {
 
 /// Detail with the review workflow: submit → approve → publish → archive.
 class RateCardDetailScreen extends StatefulWidget {
-  const RateCardDetailScreen(
-      {super.key, required this.client, required this.cardId});
+  const RateCardDetailScreen({
+    super.key,
+    required this.client,
+    required this.cardId,
+  });
 
   final ApiClient client;
   final String cardId;
@@ -351,8 +374,9 @@ class _RateCardDetailScreenState extends State<RateCardDetailScreen> {
       await _load();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.detail)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.detail)));
     }
   }
 
@@ -383,7 +407,9 @@ class _RateCardDetailScreenState extends State<RateCardDetailScreen> {
                 await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => MatrixListScreen(
-                        client: widget.client, rateCardId: card.id),
+                      client: widget.client,
+                      rateCardId: card.id,
+                    ),
                   ),
                 );
                 await _load();
@@ -410,8 +436,9 @@ class _RateCardDetailScreenState extends State<RateCardDetailScreen> {
                   child: ListTile(
                     title: Text('${card.code} v${card.version}'),
                     subtitle: Text(
-                        '${card.currency} · ${card.effectiveLabel}'
-                        '${card.description.isNotEmpty ? '\n${card.description}' : ''}'),
+                      '${card.currency} · ${card.effectiveLabel}'
+                      '${card.description.isNotEmpty ? '\n${card.description}' : ''}',
+                    ),
                     trailing: RateCardStatusChip(status: card.status),
                     isThreeLine: card.description.isNotEmpty,
                   ),
@@ -436,8 +463,7 @@ class _RateCardDetailScreenState extends State<RateCardDetailScreen> {
                         onPressed: () => _action('publish'),
                         child: const Text('Publish'),
                       ),
-                    if (card.status == 'published' ||
-                        card.status == 'archived')
+                    if (card.status == 'published' || card.status == 'archived')
                       FilledButton.tonal(
                         onPressed: () => _action('versions'),
                         child: const Text('New version'),
@@ -452,10 +478,14 @@ class _RateCardDetailScreenState extends State<RateCardDetailScreen> {
                 const SizedBox(height: 16),
                 Text('Scope', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
-                Text('${detail.centerIds.length} collection center(s) assigned'),
-                Text(detail.productCodes.isEmpty
-                    ? 'No products assigned'
-                    : 'Products: ${detail.productCodes.join(', ')}'),
+                Text(
+                  '${detail.centerIds.length} collection center(s) assigned',
+                ),
+                Text(
+                  detail.productCodes.isEmpty
+                      ? 'No products assigned'
+                      : 'Products: ${detail.productCodes.join(', ')}',
+                ),
                 const SizedBox(height: 16),
                 Text(
                   'Pricing rules arrive with Increment-002 — this card only '

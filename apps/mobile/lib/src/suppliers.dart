@@ -81,8 +81,10 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
             ),
             const SizedBox(height: 12),
             if (_error != null)
-              Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             if (page == null && _error == null)
               const Padding(
                 padding: EdgeInsets.all(32),
@@ -107,7 +109,9 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => SupplierDetailScreen(
-                            client: widget.client, supplierId: s.id),
+                          client: widget.client,
+                          supplierId: s.id,
+                        ),
                       ),
                     ),
                   ),
@@ -127,7 +131,8 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
                     child: const Text('Previous'),
                   ),
                   Text(
-                      '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}'),
+                    '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}',
+                  ),
                   TextButton(
                     onPressed: _offset + pageSize >= page.total
                         ? null
@@ -160,10 +165,12 @@ class SupplierFormScreen extends StatefulWidget {
 
 class _SupplierFormScreenState extends State<SupplierFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _name =
-      TextEditingController(text: widget.supplier?.fullName ?? '');
-  late final TextEditingController _phone =
-      TextEditingController(text: widget.supplier?.phone ?? '');
+  late final TextEditingController _name = TextEditingController(
+    text: widget.supplier?.fullName ?? '',
+  );
+  late final TextEditingController _phone = TextEditingController(
+    text: widget.supplier?.phone ?? '',
+  );
   final _village = TextEditingController();
   String? _error;
   bool _busy = false;
@@ -201,9 +208,9 @@ class _SupplierFormScreenState extends State<SupplierFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEdit
-            ? 'Edit ${widget.supplier!.code}'
-            : 'New supplier'),
+        title: Text(
+          widget.isEdit ? 'Edit ${widget.supplier!.code}' : 'New supplier',
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -234,9 +241,12 @@ class _SupplierFormScreenState extends State<SupplierFormScreen> {
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(_error!,
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.error)),
+                  child: Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ),
               FilledButton(
                 onPressed: _busy ? null : _submit,
@@ -252,8 +262,11 @@ class _SupplierFormScreenState extends State<SupplierFormScreen> {
 
 /// Detail with status actions and the supplier QR (rendered client-side).
 class SupplierDetailScreen extends StatefulWidget {
-  const SupplierDetailScreen(
-      {super.key, required this.client, required this.supplierId});
+  const SupplierDetailScreen({
+    super.key,
+    required this.client,
+    required this.supplierId,
+  });
 
   final ApiClient client;
   final String supplierId;
@@ -292,8 +305,9 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       await _load();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.detail)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.detail)));
     }
   }
 
@@ -315,8 +329,9 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                   child: ListTile(
                     title: Text(detail.supplier.code),
                     subtitle: Text(
-                        '${detail.supplier.status} · ${detail.supplier.phone}'
-                        '${detail.village.isNotEmpty ? ' · ${detail.village}' : ''}'),
+                      '${detail.supplier.status} · ${detail.supplier.phone}'
+                      '${detail.village.isNotEmpty ? ' · ${detail.village}' : ''}',
+                    ),
                   ),
                 ),
                 Wrap(
@@ -353,8 +368,10 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                             backgroundColor: Colors.white,
                           ),
                           const SizedBox(height: 8),
-                          Text(detail.supplier.code,
-                              style: Theme.of(context).textTheme.titleMedium),
+                          Text(
+                            detail.supplier.code,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
                         ],
                       ),
                     ),

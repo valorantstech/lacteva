@@ -65,8 +65,10 @@ class _SettlementListScreenState extends State<SettlementListScreen> {
             ),
             const SizedBox(height: 12),
             if (_error != null)
-              Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             if (page == null && _error == null)
               const Padding(
                 padding: EdgeInsets.all(32),
@@ -82,9 +84,11 @@ class _SettlementListScreenState extends State<SettlementListScreen> {
                 (s) => Card(
                   child: ListTile(
                     title: Text(s.number),
-                    subtitle: Text('${s.periodFrom} → ${s.periodTo} · '
-                        '${s.lineCount} line(s) · '
-                        'net ${s.netAmount} ${s.currency}'),
+                    subtitle: Text(
+                      '${s.periodFrom} → ${s.periodTo} · '
+                      '${s.lineCount} line(s) · '
+                      'net ${s.netAmount} ${s.currency}',
+                    ),
                     trailing: Chip(
                       label: Text(s.status),
                       visualDensity: VisualDensity.compact,
@@ -93,7 +97,9 @@ class _SettlementListScreenState extends State<SettlementListScreen> {
                       await Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => SettlementDetailScreen(
-                              client: widget.client, settlementId: s.id),
+                            client: widget.client,
+                            settlementId: s.id,
+                          ),
                         ),
                       );
                       await _load();
@@ -115,7 +121,8 @@ class _SettlementListScreenState extends State<SettlementListScreen> {
                     child: const Text('Previous'),
                   ),
                   Text(
-                      '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}'),
+                    '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}',
+                  ),
                   TextButton(
                     onPressed: _offset + pageSize >= page.total
                         ? null
@@ -136,8 +143,11 @@ class _SettlementListScreenState extends State<SettlementListScreen> {
 
 /// Detail: settlement fields, line list, totals, lifecycle actions.
 class SettlementDetailScreen extends StatefulWidget {
-  const SettlementDetailScreen(
-      {super.key, required this.client, required this.settlementId});
+  const SettlementDetailScreen({
+    super.key,
+    required this.client,
+    required this.settlementId,
+  });
 
   final ApiClient client;
   final String settlementId;
@@ -176,8 +186,9 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
       await _load();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.detail)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.detail)));
     }
   }
 
@@ -210,8 +221,10 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
                 Card(
                   child: ListTile(
                     title: Text('${s.periodFrom} → ${s.periodTo}'),
-                    subtitle: Text('Gross ${s.grossAmount} ${s.currency} · '
-                        'Net ${s.netAmount} ${s.currency}'),
+                    subtitle: Text(
+                      'Gross ${s.grossAmount} ${s.currency} · '
+                      'Net ${s.netAmount} ${s.currency}',
+                    ),
                     trailing: Chip(
                       label: Text(s.status),
                       visualDensity: VisualDensity.compact,
@@ -221,8 +234,10 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
                 if (!detail.totalsMatch)
                   Card(
                     child: ListTile(
-                      leading: Icon(Icons.warning_amber,
-                          color: Theme.of(context).colorScheme.error),
+                      leading: Icon(
+                        Icons.warning_amber,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                       title: const Text('Totals out of sync'),
                       subtitle: const Text('Recalculate before finalizing.'),
                     ),
@@ -250,18 +265,23 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                Text('Lines (${detail.lines.length})',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Lines (${detail.lines.length})',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 4),
                 if (detail.lines.isEmpty)
-                  const Text('No lines — add pricing calculations '
-                      'from the portal or transaction flow.'),
+                  const Text(
+                    'No lines — add pricing calculations '
+                    'from the portal or transaction flow.',
+                  ),
                 ...detail.lines.map(
                   (line) => Card(
                     child: ListTile(
                       dense: true,
                       title: Text(
-                          '${line.quantity} ${line.quantityUnit} @ ${line.unitPrice}'),
+                        '${line.quantity} ${line.quantityUnit} @ ${line.unitPrice}',
+                      ),
                       subtitle: Text(line.transactionDate),
                       trailing: Text('${line.grossAmount} ${s.currency}'),
                     ),
@@ -288,8 +308,10 @@ class FinalizeSettlementScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(settlement.number,
-                style: Theme.of(context).textTheme.headlineSmall),
+            Text(
+              settlement.number,
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
             const SizedBox(height: 8),
             Text('${settlement.periodFrom} → ${settlement.periodTo}'),
             Text('${settlement.lineCount} line(s)'),
@@ -299,8 +321,10 @@ class FinalizeSettlementScreen extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 24),
-            const Text('Finalizing is permanent: the settlement becomes '
-                'immutable and its calculations stay locked to it.'),
+            const Text(
+              'Finalizing is permanent: the settlement becomes '
+              'immutable and its calculations stay locked to it.',
+            ),
             const Spacer(),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),

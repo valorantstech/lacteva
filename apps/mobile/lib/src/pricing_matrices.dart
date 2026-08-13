@@ -88,8 +88,10 @@ class _MatrixListScreenState extends State<MatrixListScreen> {
             ),
             const SizedBox(height: 12),
             if (_error != null)
-              Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             if (page == null && _error == null)
               const Padding(
                 padding: EdgeInsets.all(32),
@@ -106,8 +108,9 @@ class _MatrixListScreenState extends State<MatrixListScreen> {
                   child: ListTile(
                     title: Text(m.name),
                     subtitle: Text(
-                        '${m.rateCardCode} v${m.version} · ${m.productCode} · '
-                        '${m.dimensionCode} · ${m.rowCount} band(s)'),
+                      '${m.rateCardCode} v${m.version} · ${m.productCode} · '
+                      '${m.dimensionCode} · ${m.rowCount} band(s)',
+                    ),
                     trailing: Chip(
                       label: Text(m.status),
                       visualDensity: VisualDensity.compact,
@@ -116,7 +119,9 @@ class _MatrixListScreenState extends State<MatrixListScreen> {
                       await Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => MatrixDetailScreen(
-                              client: widget.client, matrixId: m.id),
+                            client: widget.client,
+                            matrixId: m.id,
+                          ),
                         ),
                       );
                       await _load();
@@ -138,7 +143,8 @@ class _MatrixListScreenState extends State<MatrixListScreen> {
                     child: const Text('Previous'),
                   ),
                   Text(
-                      '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}'),
+                    '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}',
+                  ),
                   TextButton(
                     onPressed: _offset + pageSize >= page.total
                         ? null
@@ -158,8 +164,11 @@ class _MatrixListScreenState extends State<MatrixListScreen> {
 }
 
 class MatrixFormScreen extends StatefulWidget {
-  const MatrixFormScreen(
-      {super.key, required this.client, required this.rateCardId});
+  const MatrixFormScreen({
+    super.key,
+    required this.client,
+    required this.rateCardId,
+  });
 
   final ApiClient client;
   final String rateCardId;
@@ -239,7 +248,8 @@ class _MatrixFormScreenState extends State<MatrixFormScreen> {
               TextFormField(
                 controller: _productCode,
                 decoration: const InputDecoration(
-                    labelText: 'Product code (must be in card scope)'),
+                  labelText: 'Product code (must be in card scope)',
+                ),
                 textCapitalization: TextCapitalization.characters,
                 validator: (v) => (v == null || v.trim().length < 2)
                     ? 'Product code is required'
@@ -248,19 +258,23 @@ class _MatrixFormScreenState extends State<MatrixFormScreen> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _productName,
-                decoration:
-                    const InputDecoration(labelText: 'Product name (optional)'),
+                decoration: const InputDecoration(
+                  labelText: 'Product name (optional)',
+                ),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _dimensionCode,
-                decoration:
-                    const InputDecoration(labelText: 'Quality dimension'),
+                decoration: const InputDecoration(
+                  labelText: 'Quality dimension',
+                ),
                 items: _dimensions
-                    .map((d) => DropdownMenuItem(
-                          value: d.code,
-                          child: Text('${d.code} — ${d.name}'),
-                        ))
+                    .map(
+                      (d) => DropdownMenuItem(
+                        value: d.code,
+                        child: Text('${d.code} — ${d.name}'),
+                      ),
+                    )
                     .toList(),
                 onChanged: (v) => setState(() => _dimensionCode = v),
                 validator: (v) => v == null ? 'Pick a dimension' : null,
@@ -269,9 +283,12 @@ class _MatrixFormScreenState extends State<MatrixFormScreen> {
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(_error!,
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.error)),
+                  child: Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ),
               FilledButton(
                 onPressed: _busy ? null : _submit,
@@ -287,8 +304,11 @@ class _MatrixFormScreenState extends State<MatrixFormScreen> {
 
 /// Matrix detail: price bands with a row editor while the card is draft.
 class MatrixDetailScreen extends StatefulWidget {
-  const MatrixDetailScreen(
-      {super.key, required this.client, required this.matrixId});
+  const MatrixDetailScreen({
+    super.key,
+    required this.client,
+    required this.matrixId,
+  });
 
   final ApiClient client;
   final String matrixId;
@@ -325,8 +345,9 @@ class _MatrixDetailScreenState extends State<MatrixDetailScreen> {
   }
 
   void _toast(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _addRow() async {
@@ -338,8 +359,12 @@ class _MatrixDetailScreenState extends State<MatrixDetailScreen> {
       return;
     }
     try {
-      await widget.client.addMatrixRow(widget.matrixId,
-          fromValue: from, toValue: to, unitPrice: price);
+      await widget.client.addMatrixRow(
+        widget.matrixId,
+        fromValue: from,
+        toValue: to,
+        unitPrice: price,
+      );
       _from.clear();
       _to.clear();
       _price.clear();
@@ -375,8 +400,9 @@ class _MatrixDetailScreenState extends State<MatrixDetailScreen> {
                 Card(
                   child: ListTile(
                     title: Text(
-                        '${detail.matrix.rateCardCode} v${detail.matrix.version}'
-                        ' · ${detail.matrix.productCode}'),
+                      '${detail.matrix.rateCardCode} v${detail.matrix.version}'
+                      ' · ${detail.matrix.productCode}',
+                    ),
                     subtitle: Text('Dimension: ${detail.dimensionLabel}'),
                     trailing: Chip(
                       label: Text(detail.matrix.status),
@@ -385,8 +411,10 @@ class _MatrixDetailScreenState extends State<MatrixDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text('Price bands',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Price bands',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 4),
                 if (detail.rows.isEmpty) const Text('No price bands yet.'),
                 ...detail.rows.map(
@@ -417,13 +445,16 @@ class _MatrixDetailScreenState extends State<MatrixDetailScreen> {
                     child: Text(
                       'Continuity gaps: ${detail.gaps.map((g) => '[${g['from_value']} – ${g['to_value']})').join(', ')}',
                       style: TextStyle(
-                          color: Theme.of(context).colorScheme.tertiary),
+                        color: Theme.of(context).colorScheme.tertiary,
+                      ),
                     ),
                   ),
                 const SizedBox(height: 16),
                 if (detail.editable) ...[
-                  Text('Add band',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'Add band',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -438,8 +469,9 @@ class _MatrixDetailScreenState extends State<MatrixDetailScreen> {
                       Expanded(
                         child: TextField(
                           controller: _to,
-                          decoration:
-                              const InputDecoration(labelText: 'To (excl.)'),
+                          decoration: const InputDecoration(
+                            labelText: 'To (excl.)',
+                          ),
                           keyboardType: TextInputType.number,
                         ),
                       ),
@@ -447,8 +479,9 @@ class _MatrixDetailScreenState extends State<MatrixDetailScreen> {
                       Expanded(
                         child: TextField(
                           controller: _price,
-                          decoration:
-                              const InputDecoration(labelText: 'Unit price'),
+                          decoration: const InputDecoration(
+                            labelText: 'Unit price',
+                          ),
                           keyboardType: TextInputType.number,
                         ),
                       ),

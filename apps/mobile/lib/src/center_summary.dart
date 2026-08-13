@@ -5,8 +5,11 @@ import 'api.dart';
 /// Today's operational summary for one center — REP-001. Deliberately
 /// lightweight: the full reporting experience lives in the admin portal.
 class CenterTodayScreen extends StatefulWidget {
-  const CenterTodayScreen(
-      {super.key, required this.client, required this.centerId});
+  const CenterTodayScreen({
+    super.key,
+    required this.client,
+    required this.centerId,
+  });
 
   final ApiClient client;
   final String centerId;
@@ -40,23 +43,27 @@ class _CenterTodayScreenState extends State<CenterTodayScreen> {
   }
 
   Widget _tile(String value, String label) => Expanded(
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              children: [
-                Text(value,
-                    style: Theme.of(context).textTheme.titleLarge,
-                    textAlign: TextAlign.center),
-                const SizedBox(height: 4),
-                Text(label,
-                    style: Theme.of(context).textTheme.bodySmall,
-                    textAlign: TextAlign.center),
-              ],
+    child: Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Text(
+              value,
+              style: Theme.of(context).textTheme.titleLarge,
+              textAlign: TextAlign.center,
             ),
-          ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -69,37 +76,50 @@ class _CenterTodayScreenState extends State<CenterTodayScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             if (_error != null)
-              Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             if (s == null && _error == null)
               const Padding(
                 padding: EdgeInsets.all(32),
                 child: Center(child: CircularProgressIndicator()),
               ),
             if (s != null) ...[
-              Row(children: [
-                _tile('${s.totalNetWeightKg} kg', 'Milk collected'),
-                const SizedBox(width: 8),
-                _tile(s.payable.isEmpty ? '—' : s.payable, 'Payable'),
-              ]),
-              Row(children: [
-                _tile('${s.accepted} / ${s.rejected}', 'Accepted / Rejected'),
-                const SizedBox(width: 8),
-                _tile('${s.suppliersServed}', 'Suppliers served'),
-              ]),
-              Row(children: [
-                _tile('${s.avgFat ?? "—"}', 'Avg FAT'),
-                const SizedBox(width: 8),
-                _tile('${s.avgSnf ?? "—"}', 'Avg SNF'),
-              ]),
+              Row(
+                children: [
+                  _tile('${s.totalNetWeightKg} kg', 'Milk collected'),
+                  const SizedBox(width: 8),
+                  _tile(s.payable.isEmpty ? '—' : s.payable, 'Payable'),
+                ],
+              ),
+              Row(
+                children: [
+                  _tile('${s.accepted} / ${s.rejected}', 'Accepted / Rejected'),
+                  const SizedBox(width: 8),
+                  _tile('${s.suppliersServed}', 'Suppliers served'),
+                ],
+              ),
+              Row(
+                children: [
+                  _tile('${s.avgFat ?? "—"}', 'Avg FAT'),
+                  const SizedBox(width: 8),
+                  _tile('${s.avgSnf ?? "—"}', 'Avg SNF'),
+                ],
+              ),
               if (s.unpricedAccepted > 0)
                 Card(
                   child: ListTile(
-                    leading: Icon(Icons.warning_amber,
-                        color: Theme.of(context).colorScheme.tertiary),
-                    title: Text('${s.unpricedAccepted} accepted without pricing'),
-                    subtitle:
-                        const Text('Check the rate card for this center.'),
+                    leading: Icon(
+                      Icons.warning_amber,
+                      color: Theme.of(context).colorScheme.tertiary,
+                    ),
+                    title: Text(
+                      '${s.unpricedAccepted} accepted without pricing',
+                    ),
+                    subtitle: const Text(
+                      'Check the rate card for this center.',
+                    ),
                   ),
                 ),
               const SizedBox(height: 8),
