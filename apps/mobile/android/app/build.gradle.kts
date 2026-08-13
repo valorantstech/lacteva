@@ -6,7 +6,7 @@ import java.util.Properties
 // from secrets immediately before the build and deletes it after; a developer
 // building a signed APK locally writes their own. Its absence is not an
 // error here — it is an error only if someone then asks for a RELEASE build,
-// which is what the check in `buildTypes.release` enforces.
+// which is what the task-graph check at the bottom of this file enforces.
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {
@@ -72,16 +72,16 @@ android {
             // how a debug-signed APK reaches a farmer's phone — the build goes
             // green, nobody reads the warning, and the mistake is only visible
             // months later when the upgrade is rejected.
-            if (!hasReleaseKeystore) {
-                throw GradleException(
-                    "Release build requested with no signing configuration.\n" +
-                    "Create android/key.properties from android/key.properties.example " +
-                    "and point storeFile at the release keystore.\n" +
-                    "See DEPLOYMENT.md - Mobile release builds.\n" +
-                    "Debug signing is NEVER used for a release build."
-                )
-            }
-            signingConfig = signingConfigs.getByName("release")
+            //
+            // DEMO-012: the check itself used to live HERE, and this block is
+            // CONFIGURATION, which Gradle evaluates for every invocation. So it
+            // threw on `assembleDebug` too — on a machine with no release
+            // keystore, which is every developer's machine and every CI job that
+            // only runs tests, the app could not be built at all. The guard now
+            // fires from the task graph, where it can tell what was actually
+            // asked for. Leaving `signingConfig` null here is safe precisely
+            // because that guard stops a release before it can execute unsigned.
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -94,4 +94,26 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// PORTAL-001 / F-05, moved here by DEMO-012.
+//
+// The task graph is the only place that knows what was actually REQUESTED. A
+// check in `buildTypes.release { }` runs while Gradle configures the project,
+// which it does identically for `assembleDebug`, `test` and `assembleRelease` —
+// so the guard refused every build rather than release builds. Here it can tell
+// the difference, and it still refuses to let an unsigned release run.
+gradle.taskGraph.whenReady {
+    if (hasReleaseKeystore) return@whenReady
+    val releaseTask = allTasks.firstOrNull { task ->
+        task.project == project &&
+            Regex("^(assemble|bundle|package)Release$").matches(task.name)
+    } ?: return@whenReady
+    throw GradleException(
+        "Release build requested (${releaseTask.name}) with no signing configuration.\n" +
+        "Create android/key.properties from android/key.properties.example " +
+        "and point storeFile at the release keystore.\n" +
+        "See DEPLOYMENT.md - Mobile release builds.\n" +
+        "Debug signing is NEVER used for a release build."
+    )
 }
