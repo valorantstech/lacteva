@@ -26,6 +26,15 @@ from platform_core.modules.organization.service import MembershipService
 RESET_TOKEN_TTL = timedelta(hours=2)
 
 
+def _placeholder_hash() -> str:
+    """A value no real token can collide with, and no OTHER placeholder can.
+
+    `_hash_secret` returns 64 hex characters; this is deliberately shorter and
+    prefixed, so a stranded row is both inert and obvious to whoever finds it.
+    """
+    return f"unissued:{secrets.token_hex(16)}"
+
+
 def _hash_secret(secret: str) -> str:
     return hashlib.sha256(secret.encode()).hexdigest()
 
@@ -113,7 +122,21 @@ class AuthService:
         auth_session = AuthSession(
             user_id=user.id,
             tenant_id=user.tenant_id,
-            refresh_token_hash="pending",
+            # DEMO-012: the placeholder is UNIQUE PER ROW, and that is not
+            # cosmetic. It used to be the literal string `"pending"`, written
+            # into a column with a UNIQUE constraint and replaced a few lines
+            # later by `_issue_pair`. So a row that ever reached the database
+            # still holding it — one interrupted request is enough — made
+            # EVERY subsequent login on the platform fail with a 500, for
+            # every user, permanently, because the next insert collided with
+            # it and nothing in the system ever cleans it up.
+            #
+            # Found by accident: a local API process was killed mid-login and
+            # one such row survived, after which no account could sign in at
+            # all until it was deleted by hand. A placeholder is a value the
+            # code does not care about; a unique index cares about every
+            # value, so the two must not meet.
+            refresh_token_hash=_placeholder_hash(),
             expires_at=utcnow(),
         )
         self._session.add(auth_session)

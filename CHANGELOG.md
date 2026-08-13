@@ -8,6 +8,53 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Rep
 
 ### Added
 
+- DEMO-012 "Mobile Applications & Field Operations" — the app already
+  authenticated, held a durable offline queue and built. What it did not do
+  was know **who** had signed in: every account landed on the collection
+  centre list, so a household met a screen about the dairy's centres and then
+  a wall of 403s. The platform was refusing correctly; the app had promised
+  something it could not deliver. Now **one application, three experiences**
+  (collection operator, delivery rider, customer), routed by CAPABILITY rather
+  than role name — DEMO-008 made roles editable rows, so switching on a role
+  name would be wrong the moment an administrator added one doing the same job
+  under another name.
+- **A login that speaks for one customer.** Tenancy answers "which
+  organization" and cannot answer "which household inside it": every `sales.*`
+  permission is tenant-wide. `user_account.customer_id` answers it, and the
+  scope only ever REMOVES rows — asking for another household's id is **not
+  found**, never forbidden, because 403 confirms the row exists.
+- **Push as a CHANNEL on the existing notification engine**, not a second
+  notification system: it inherits BR-0016, the `(event, template, channel)`
+  idempotency key, retry, dead-lettering and the delivery history. A device
+  registry whose tokens are never returned, never logged in full, deleted on
+  revocation, moved when a handset is signed into another account, and
+  forgotten when the gateway says they are dead. Disabled by default, because
+  no vendor is chosen or paid for and `logging` would mark every push
+  delivered while sending nothing.
+- **The mobile signing guard refused every build, not release builds.**
+  PORTAL-001 put the check inside `buildTypes.release { }` — a CONFIGURATION
+  block Gradle evaluates on every invocation — so on any machine without a
+  release keystore the app could not be built at all. Verified both ways:
+  `--debug` produces an APK, `--release` still refuses.
+- **One row could lock every user out of the platform.** `login` writes a
+  placeholder into `auth_session.refresh_token_hash`, which is UNIQUE, and the
+  placeholder was the literal `"pending"` — so a single stranded row made
+  every subsequent login fail with a 500, for everyone, permanently, with
+  nothing to clean it up. Found by accident when a local process was killed
+  mid-login. A placeholder is a value the code does not care about; a unique
+  index cares about every value.
+- **Summed quantities were published at ten decimal places** — the customer's
+  monthly card read "23.0000000000 L". Money was quantised on the way out of
+  the aggregate and quantity was not. Fixed on the server, not in the app: a
+  client that formats a number has decided how many decimals a litre has, and
+  two clients would eventually disagree.
+- Also: two identically-named DTOs collapsing to one OpenAPI component, and
+  an RLS policy the drift guard could not read because the migration installed
+  it inline instead of from a snapshotted list. Verified in a real browser at a
+  phone viewport against real seeded data — a delivery recorded by one tap was
+  priced by the platform at 1.500 L x 62.0000 = 93.00, with the app supplying
+  neither number. See [DEMO-012-FINAL.md](DEMO-012-FINAL.md) and
+  [MOBILE-EXPERIENCES](docs/03-architecture/04-technology-layer/MOBILE-EXPERIENCES.md).
 - DEMO-011 "Backup, Disaster Recovery & Data Safety" — the platform had a
   backup engine, a restore verifier, PITR machinery, three systemd timers and
   a health probe that goes red at 26 hours. **None of it ran.** Not one backup

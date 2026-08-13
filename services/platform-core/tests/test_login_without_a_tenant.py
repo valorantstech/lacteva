@@ -216,3 +216,63 @@ async def test_the_ambiguous_answer_is_unreachable_without_the_password(client):
     assert r.status_code == 401
     assert r.json()["title"] == "invalid_credentials"
     assert org_a["id"] not in r.text and org_b["id"] not in r.text
+
+
+async def test_a_stranded_session_row_does_not_lock_everyone_out(client):
+    """DEMO-012 — the whole platform's logins, held hostage by one row.
+
+    `login` inserts the session before it can hash the refresh secret, so the
+    row needs a placeholder in `refresh_token_hash`. That column is UNIQUE.
+    While the placeholder was the literal string `"pending"`, a single row
+    that reached the database still holding it — one interrupted request is
+    enough — made EVERY subsequent login fail with a 500, for every user,
+    permanently, because the next insert collided with it. Nothing in the
+    system cleans such a row up.
+
+    Found by accident on a local instance killed mid-login: after that, no
+    account could sign in at all.
+
+    This test strands a row deliberately and then asks whether anyone can
+    still sign in.
+    """
+    import uuid as _uuid
+
+    from sqlalchemy import select
+
+    from platform_core.core import db
+    from platform_core.core.db import utcnow
+    from platform_core.modules.auth.models import AuthSession
+    from platform_core.modules.auth.service import _placeholder_hash
+    from platform_core.modules.identity.models import User
+
+    email = "stranded@example.com"
+    await client.post(
+        "/v1/auth/register",
+        json={"email": email, "password": "correct-horse-battery", "full_name": "Stranded"},
+    )
+
+    # One login, interrupted: the row exists, the token was never issued.
+    async with db.get_session_factory()() as session:
+        user = await session.scalar(select(User).where(User.email == email))
+        session.add(
+            AuthSession(
+                id=_uuid.uuid4(),
+                user_id=user.id,
+                tenant_id=None,
+                refresh_token_hash=_placeholder_hash(),
+                expires_at=utcnow(),
+            )
+        )
+        await session.commit()
+
+    # Everybody else's day continues.
+    r = await client.post(
+        "/v1/auth/token", json={"email": email, "password": "correct-horse-battery"}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["access_token"]
+
+    second = await client.post(
+        "/v1/auth/token", json={"email": email, "password": "correct-horse-battery"}
+    )
+    assert second.status_code == 200, "a second login collided with the first"

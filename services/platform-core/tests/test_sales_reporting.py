@@ -391,3 +391,36 @@ async def test_one_dairys_receivables_are_invisible_to_another(client):
     summary_a = (await client.get("/v1/reports/sales/summary", headers=admin_a)).json()
     assert summary_a["total_customers"] == len(who_a)
     assert Decimal(summary_a["receivable"]) > Decimal("0.00")
+
+
+async def test_summed_quantities_come_back_at_the_scale_they_are_stored(client):
+    """DEMO-012, found by running the mobile app against real data.
+
+    The customer's monthly card read **"23.0000000000 L"**. Aggregation casts
+    to unconstrained NUMERIC — deliberately, so the sum is exact — and every
+    money figure was quantised on the way out while the quantities were not.
+    The platform was publishing ten decimal places of a figure it stores to
+    three, and both clients rendered it faithfully.
+
+    Asserted on the SERVER because a client that formats a number has decided
+    how many decimals a litre has, and two clients would eventually disagree.
+    """
+    admin, _ledger_rows, _worth = await _ledger(client)
+
+    report = (
+        await client.get(
+            "/v1/deliveries/report?date_from=2020-01-01&date_to=2030-01-01",
+            headers=admin,
+        )
+    ).json()
+
+    assert report["total_quantity"] == str(
+        Decimal(report["total_quantity"]).quantize(Decimal("0.001"))
+    ), f"quantity published at the wrong scale: {report['total_quantity']!r}"
+    for day in report["by_day"]:
+        assert day["quantity"] == str(Decimal(day["quantity"]).quantize(Decimal("0.001")))
+
+    page = (await client.get("/v1/deliveries?limit=5", headers=admin)).json()
+    assert page["total_quantity"] == str(
+        Decimal(page["total_quantity"]).quantize(Decimal("0.001"))
+    )

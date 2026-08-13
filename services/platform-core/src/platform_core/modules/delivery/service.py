@@ -39,11 +39,31 @@ BUS_EVENTS = {
 }
 
 MONEY = Decimal("0.01")
+#: The scale `milk_delivery.quantity` is stored at — `Numeric(12, 3)`.
+QUANTITY = Decimal("0.001")
 
 
 def money(value: Decimal) -> Decimal:
     """Quantise once, explicitly, HALF_UP — the platform's rounding policy."""
     return value.quantize(MONEY, rounding=ROUND_HALF_UP)
+
+
+def litres(value: Decimal) -> Decimal:
+    """A summed volume, back at the scale the column stores.
+
+    DEMO-012 found this by running the mobile app against real data: the
+    customer's monthly card read **"23.0000000000 L"**. Aggregation casts to
+    unconstrained NUMERIC — deliberately, so the sum is exact and cannot
+    overflow the column's own scale — and every money figure was then
+    quantised on the way out while the quantities were not. So the platform
+    was publishing ten decimal places of a figure it stores to three, and both
+    clients rendered it faithfully.
+
+    Rounding here rather than in the app is the point: a client that formats a
+    number has decided how many decimals a litre has, and the two clients
+    would eventually disagree. The scale belongs to the column.
+    """
+    return Decimal(value or 0).quantize(QUANTITY, rounding=ROUND_HALF_UP)
 
 
 # --- commands ----------------------------------------------------------------
@@ -361,7 +381,7 @@ class DeliveryService:
             total=total or 0,
             limit=limit,
             offset=offset,
-            total_quantity=Decimal(sums[0] or 0),
+            total_quantity=litres(sums[0]),
             total_amount=money(Decimal(sums[1] or 0)),
         )
 
@@ -423,7 +443,7 @@ class DeliveryService:
             date_to=date_to,
             deliveries=headline[0] or 0,
             customers_served=headline[1] or 0,
-            total_quantity=Decimal(headline[2] or 0),
+            total_quantity=litres(headline[2]),
             total_amount=money(Decimal(headline[3] or 0)),
             skipped=skipped or 0,
             by_day=[
@@ -431,7 +451,7 @@ class DeliveryService:
                     delivery_date=row[0],
                     deliveries=row[1],
                     customers=row[2],
-                    quantity=Decimal(row[3] or 0),
+                    quantity=litres(row[3]),
                     amount=money(Decimal(row[4] or 0)),
                 )
                 for row in by_day
