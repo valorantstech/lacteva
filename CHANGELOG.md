@@ -8,6 +8,67 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Rep
 
 ### Added
 
+- DEMO-011 "Backup, Disaster Recovery & Data Safety" — the platform had a
+  backup engine, a restore verifier, PITR machinery, three systemd timers and
+  a health probe that goes red at 26 hours. **None of it ran.** Not one backup
+  unit was installed, `lacteva.service` did not exist, and every backup on the
+  machine had been taken incidentally by `deploy.sh`. The probe reported
+  `healthy: verified backup 12.8 hours old` because somebody had deployed the
+  previous evening. This milestone is mostly the work of making written
+  guarantees execute — and finding, by running them, that several could never
+  have worked at all.
+- **Backups and the WAL archive moved off the database's device**, onto the
+  dedicated 49GB volume that had sat empty at 1% because provisioning ran
+  `mkdir /var/lib/lacteva/{postgres,...}` under a shell without brace
+  expansion. Both copies were compared byte-for-byte before the old volumes
+  were removed. Root disk 59% → 49%.
+- **A restore drill on a SEPARATE PostgreSQL server**, not a scratch database
+  on the production one — a drill must not be able to touch what it is
+  rehearsing for. It compares per table and by money: sixteen of sixteen
+  tables and ten of ten financial totals exact, including 472,874.00 of
+  deliveries and 247,486.00 settled. It removes its server and volume on every
+  exit path, so a restored copy of live customer data never outlives it.
+- **A watchdog for the failure that has no failure to detect.** `OnFailure`
+  catches a backup that fails; nothing catches a backup that never runs, which
+  is the state this platform was in. It asks three times a day from two
+  independent sources, and checks the timers are enabled AND active.
+- **`backups_stale` and `backups_degraded` alert rules.** `core/alerts.py` had
+  twelve rules and none for backups, so the health component that has gone red
+  past 26 hours since BAK-001 was watched by nobody.
+- **DEMO-011-DR-RUNBOOK.md** — where backups are, how to find the newest valid
+  one, how to restore, how to verify, what to stop and start, how to rebuild
+  the host, how long each step takes, and the nine things never to do.
+
+### Fixed
+
+- **WAL archiving had been dead for eighteen hours, silently.** `cp` is not
+  atomic; a copy interrupted at 2026-08-12T17:41Z left 3.3MB of a 16MB segment
+  at the destination, and `test ! -f` then saw a file and retried the same
+  segment every second thereafter. 58 segments and 945MB queued in `pg_wal` on
+  the database's own disk, point-in-time recovery holed across the window, and
+  no alert — PostgreSQL logs a warning and keeps serving. Very likely the
+  mechanism behind DEMO-009's two disk-full events. `archive-wal.sh` writes to
+  a temp file and renames, treats a byte-identical file as success, and
+  refuses a same-name-different-content collision rather than destroying a
+  recovery point. The truncated segment was quarantined, not deleted; the
+  archive drained 58 → 0 and fell from 3.1GB to 97MB once pruning ran.
+- **The physical backup could never have worked** — three defects, none seen
+  because the unit had never executed: it ran on the host and the database
+  port is deliberately not published; `--format=tar` cannot be verified in
+  place by `pg_verifybackup` on PostgreSQL 16, so its own verification step
+  contradicted its own backup step; and the manifest digest was written INSIDE
+  the backup directory, making every later verification report a spurious
+  error. Also: a failed run left a directory that looked exactly like a
+  recovery point.
+- **The nightly script reported catastrophe on success.** A container path was
+  used for the host-side retention sweep, so it searched a directory that does
+  not exist on the host, found nothing, and ended every run on "FAILED:
+  retention removed everything. This should be impossible."
+- **The restore drill verified the wrong backup.** "Latest" was chosen by
+  sorting names, and `predeploy-…` sorts after a bare timestamp because `p` >
+  `2` — so it checked a pre-deployment backup from the previous day and never
+  looked at the scheduled one.
+
 - DEMO-010 "Customer Demo Readiness" — the two halves of the dairy, made one
   coherent product rather than two workflows that happen to share a database.
   The dashboard now reports **procurement and sales side by side, labelled**,

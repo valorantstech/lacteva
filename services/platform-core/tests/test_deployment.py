@@ -594,6 +594,12 @@ def test_every_lacteva_variable_in_the_example_is_a_real_setting():
         "LACTEVA_IMAGE_TAG",
         "LACTEVA_APP_USER",
         "LACTEVA_APP_PASSWORD",
+        # DEMO-011: the bind-mount devices for the backup and WAL volumes.
+        # Compose interpolates them into `volumes:`; the application never
+        # reads either, because inside the container they are simply /backup
+        # and /wal-archive.
+        "LACTEVA_BACKUP_DIR",
+        "LACTEVA_WAL_DIR",
     }
     # Read by the DEPLOYMENT SCRIPTS rather than by the application or by
     # compose. The distinction matters for the same reason the test exists: a
@@ -602,6 +608,13 @@ def test_every_lacteva_variable_in_the_example_is_a_real_setting():
     deploy_only = {
         "LACTEVA_PUBLIC_URL",  # deploy.sh: where verification and the smoke test point
     }
+    # Same discipline as `deploy_only` below: a variable claimed to be
+    # compose-level must actually appear in the compose file, or this set
+    # becomes a place to hide a typo.
+    compose_text = (_REPO_COMPOSE := REPO / "docker-compose.production.yml").read_text()
+    for name in ("LACTEVA_BACKUP_DIR", "LACTEVA_WAL_DIR"):
+        assert name in compose_text, f"{name} is declared compose-only but compose does not use it"
+
     for name in deploy_only:
         assert any(
             name in path.read_text()

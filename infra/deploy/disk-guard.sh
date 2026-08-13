@@ -88,6 +88,30 @@ if [ "${MODE}" = "report" ]; then
   exit 0
 fi
 
+# --- the backup volume (DEMO-011 §7) ----------------------------------------
+# Backups live on their own device now, so the root-disk sweep above cannot
+# see them at all. That is the point — a full root disk must not be solved by
+# deleting recovery points, and a full BACKUP disk must not be solved by
+# deleting the database's headroom. They are reported and bounded separately.
+#
+# Nothing is deleted here. Retention belongs to the backup scripts, which know
+# which copies are still needed (`pg_archivecleanup` prunes WAL against the
+# oldest retained base backup, not against a date). This only says loudly when
+# the bound is not holding, because a backup that fails for want of space is
+# how a bad night becomes an unrecoverable one.
+BACKUP_DIR="${LACTEVA_BACKUP_DIR:-/var/lib/lacteva/backup}"
+if [ -d "${BACKUP_DIR}" ]; then
+  BACKUP_PCT="$(df --output=pcent "${BACKUP_DIR}" 2>/dev/null | tail -1 | tr -dc '0-9')"
+  BACKUP_FREE="$(df -h --output=avail "${BACKUP_DIR}" 2>/dev/null | tail -1 | tr -d ' ')"
+  log "backup volume: ${BACKUP_PCT}% used, ${BACKUP_FREE} free ($(du -sh "${BACKUP_DIR}" 2>/dev/null | cut -f1) of backups)"
+  if [ -n "${BACKUP_PCT}" ] && [ "${BACKUP_PCT}" -ge "${BACKUP_CRITICAL:-85}" ]; then
+    log "BACKUP VOLUME AT ${BACKUP_PCT}% — the next backup may fail for want of space."
+    log "  Retention is in infra/backup/*.sh; do NOT free space by deleting"
+    log "  recovery points by hand. DEMO-011-DR-RUNBOOK.md §7."
+    exit 1
+  fi
+fi
+
 if [ "${MODE}" = "check" ] && [ "${start}" -lt "${HIGH_WATER}" ]; then
   log "nothing to do"
   exit 0
