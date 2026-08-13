@@ -163,12 +163,23 @@ services:
       # backup. Proven end to end by `./infra/ci/pitr-proof.sh`.
       - archive_mode=on
       - -c
-      # `test ! -f` FIRST: the archive is append-only and must refuse to
-      # overwrite. Silently replacing an archived segment destroys the
-      # recovery window from that segment forward, and nothing reports it.
-      # The `cp` is deliberately boring; a real deployment points this at
-      # object storage (see DEPLOYMENT.md §Point-in-time recovery).
-      - archive_command=test ! -f /wal-archive/%f && cp %p /wal-archive/%f
+      # DEMO-011 replaced `test ! -f /wal-archive/%f && cp %p /wal-archive/%f`
+      # — PostgreSQL's own documented example, and the thing that broke.
+      #
+      # `cp` is not atomic. An interrupted copy leaves a PARTIAL file at the
+      # destination; `test ! -f` then sees a file and returns non-zero, and
+      # the same segment is retried forever. Archiving stopped on
+      # 2026-08-12T17:41Z with one 3.3MB fragment of a 16MB segment, 58
+      # segments queued in pg_wal, 945MB of them, and no alert — PostgreSQL
+      # logs a warning and keeps serving.
+      #
+      # The script writes to a temporary file and renames (atomic within a
+      # filesystem), treats a byte-identical file as success so a post-crash
+      # re-archive cannot wedge it, and REFUSES a same-name-different-content
+      # collision rather than destroying a recovery point. The refusal to
+      # overwrite that the old comment was reaching for is kept — it is now
+      # a comparison rather than an existence check.
+      - archive_command=/opt/backup/archive-wal.sh %p %f
       - -c
       # A segment is archived when it FILLS, not when it is written. On a
       # quiet night the last transactions would otherwise sit unarchived for
@@ -488,7 +499,24 @@ services:
 
 volumes:
   # AWS-001: where the platform's own logical backups land. See x-api-base.
+  #
+  # DEMO-011: a BIND onto the dedicated data volume, not a Docker named
+  # volume. Named volumes live under /var/lib/docker on the ROOT disk — the
+  # same block device as `pgdata` — so the only copy of every backup sat on
+  # the one device whose loss is the reason backups exist. `/var/lib/lacteva`
+  # is a separate 49GB EBS volume that was provisioned for exactly this and
+  # was empty: the provisioning ran `mkdir /var/lib/lacteva/{postgres,...}`
+  # under a shell without brace expansion, so it created one directory with
+  # that literal name and everything silently went to the default location.
+  #
+  # This is still one machine. Losing the instance loses both. Off-host
+  # replication is `backup.cli replicate`; see DEMO-011-DR-RUNBOOK.md.
   backups:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${LACTEVA_BACKUP_DIR:-/var/lib/lacteva/backup}
   # TLS-001: shared between nginx (serves the challenge) and certbot (writes
   # it). A named volume rather than a bind, so nothing depends on the release
   # directory still existing at renewal time.
@@ -497,7 +525,16 @@ volumes:
   # PITR-001. Keep this on different storage from `pgdata` — an archive that
   # fails with the data directory is not a recovery path. Size it for the
   # retention window: WAL volume x the days between base backups.
+  #
+  # DEMO-011 made that true rather than aspirational: as a named volume it was
+  # on the same device as `pgdata`, which is precisely what this comment says
+  # not to do. It is now a bind onto the dedicated data volume.
   wal_archive:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${LACTEVA_WAL_DIR:-/var/lib/lacteva/wal-archive}
   rabbitmq-data:
   redisdata:
   prometheus-data:
