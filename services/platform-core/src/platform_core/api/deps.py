@@ -19,7 +19,11 @@ from platform_core.core.errors import ForbiddenError, UnauthorizedError
 from platform_core.core.metrics import AUTH_FAILURES, AUTHZ_DENIALS, JWT_VERIFICATION_FAILURES
 from platform_core.core.rls import platform_factory
 from platform_core.core.security import decode_token
-from platform_core.core.tenancy import get_current_tenant, set_current_tenant
+from platform_core.core.tenancy import (
+    get_current_tenant,
+    set_current_customer,
+    set_current_tenant,
+)
 from platform_core.infrastructure.events import EventBus, get_event_bus
 from platform_core.infrastructure.storage import get_object_storage
 from platform_core.modules.audit.service import AuditService
@@ -236,6 +240,13 @@ class Principal:
     user: User
     tenant_id: uuid.UUID | None
     session_id: uuid.UUID
+    #: DEMO-012 — set when this login speaks for ONE customer (the mobile
+    #: customer experience). None for every staff account.
+    customer_id: uuid.UUID | None = None
+
+    @property
+    def is_customer(self) -> bool:
+        return self.customer_id is not None
 
     @property
     def id(self) -> uuid.UUID:
@@ -317,7 +328,24 @@ async def get_current_principal(
         # Platform-level principals may act inside a tenant via X-Tenant-ID
         # (bootstrap/administration path, permission-guarded per route).
         principal_tenant = get_current_tenant()
-    return Principal(user=user, tenant_id=principal_tenant, session_id=session_id)
+
+    # DEMO-012: bind the customer scope from the ACCOUNT, never the request.
+    #
+    # A customer-facing login is limited to one customer's rows. That limit is
+    # a property of the account — set when the account is created — so it is
+    # read here from the user row rather than accepted from a header, a claim
+    # or a query parameter. There is deliberately no way for a client to ask
+    # for a different scope, or to ask for none.
+    #
+    # Staff accounts have NULL and are unaffected: the narrowing only ever
+    # removes rows, so a scope that fails to apply cannot widen access.
+    set_current_customer(user.customer_id)
+    return Principal(
+        user=user,
+        tenant_id=principal_tenant,
+        session_id=session_id,
+        customer_id=user.customer_id,
+    )
 
 
 CurrentPrincipal = Annotated[Principal, Depends(get_current_principal)]

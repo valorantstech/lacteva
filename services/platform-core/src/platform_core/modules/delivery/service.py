@@ -21,7 +21,7 @@ from sqlalchemy import Numeric, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.errors import ConflictError, NotFoundError
-from platform_core.core.tenancy import require_current_tenant
+from platform_core.core.tenancy import enforce_customer_scope, require_current_tenant
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.customer.service import CustomerService
@@ -293,6 +293,10 @@ class DeliveryService:
         status: str | None,
         invoiced: bool | None,
     ) -> list:
+        # DEMO-012: a customer-scoped principal sees only its own deliveries.
+        # Applied here, in the one place every delivery query builds its
+        # filters, so no caller can bypass it by forgetting.
+        customer_id = enforce_customer_scope(customer_id)
         conditions = [MilkDelivery.tenant_id == tenant_id]
         if customer_id is not None:
             conditions.append(MilkDelivery.customer_id == customer_id)

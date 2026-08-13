@@ -329,6 +329,26 @@ NAMED_ROLES: dict[str, list[str]] = {
     # Reads everything, changes nothing. Asserted by test rather than by
     # inspection: no key in this list ends in manage/record/finalize/retry.
     "AUDITOR": list(_AUDITOR_READS),
+    # DEMO-012 — the dairy's own CUSTOMER, on the mobile app.
+    #
+    # Read-only, and every grant here is additionally narrowed to that one
+    # customer by `enforce_customer_scope` (core/tenancy.py): the permission
+    # says "may read bills", the scope says "this household's bills". Without
+    # the scope this role would show a household every OTHER household's bill,
+    # because every sales permission is tenant-wide. Neither half is
+    # sufficient alone, which is why the scope lives on the account rather
+    # than in this list.
+    #
+    # Deliberately grants nothing that writes. A customer records nothing:
+    # deliveries are recorded by the delivery operator and payments by the
+    # dairy, so read is the entire surface.
+    "CUSTOMER_PORTAL": [
+        "sales.customer.read",
+        "sales.delivery.read",
+        "sales.invoice.read",
+        "sales.payment.read",
+        "sales.receipt.read",
+    ],
 }
 
 

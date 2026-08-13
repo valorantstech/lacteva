@@ -31,4 +31,17 @@ class User(Base, IdMixin):
     #: reviewing access needs to see a dormant account, and "never" is a
     #: meaningful answer, so it is nullable rather than defaulted to creation.
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: DEMO-012 — the customer this login speaks for, or NULL for staff.
+    #:
+    #: A dairy's household signing in on the mobile app must see its own
+    #: deliveries and its own bill and nothing else. Every `sales.*` permission
+    #: is tenant-wide, so a customer granted `sales.invoice.read` to see their
+    #: own bill would see every other household's too. This is the missing
+    #: boundary: tenancy says which organization, this says which customer
+    #: inside it.
+    #:
+    #: Referenced by id only, never joined — `customer` is another module's
+    #: table (baseline rule 3). NULL for every existing account, which is why
+    #: this is additive and changes nothing for staff.
+    customer_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

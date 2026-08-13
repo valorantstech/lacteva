@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from platform_core.core.db import utcnow
 from platform_core.core.document_numbers import next_document_number
 from platform_core.core.errors import ConflictError, NotFoundError
-from platform_core.core.tenancy import require_current_tenant
+from platform_core.core.tenancy import enforce_customer_scope, require_current_tenant
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.billing.models import (
@@ -522,6 +522,10 @@ class BillingService:
 
     async def invoice_detail(self, invoice_id: uuid.UUID) -> InvoiceDetailView:
         invoice = await self.get_invoice(invoice_id)
+        # DEMO-012: the bill is fetched by ITS id, so the scope is checked
+        # against the invoice's customer once it is known. A customer asking
+        # for another household's bill gets NOT FOUND.
+        enforce_customer_scope(invoice.customer_id)
         lines = (
             await self._session.scalars(
                 select(CustomerInvoiceLine)
@@ -549,6 +553,8 @@ class BillingService:
         offset: int = 0,
     ) -> InvoicePage:
         tenant_id = require_current_tenant()
+        # DEMO-012: narrowed to this principal's customer, if it has one.
+        customer_id = enforce_customer_scope(customer_id)
         limit = max(1, min(limit, 100))
         conditions = [CustomerInvoice.tenant_id == tenant_id]
         if customer_id is not None:
@@ -579,6 +585,8 @@ class BillingService:
     async def balance(self, customer_id: uuid.UUID) -> CustomerBalanceView:
         """What this customer owes. Four grouped queries, never a scan per row."""
         tenant_id = require_current_tenant()
+        # DEMO-012: a customer may ask for its own balance and no other.
+        customer_id = enforce_customer_scope(customer_id) or customer_id
         customer = await self._customer(customer_id)
 
         invoiced = await self._session.scalar(
@@ -638,6 +646,8 @@ class BillingService:
         offset: int = 0,
     ) -> CustomerPaymentPage:
         tenant_id = require_current_tenant()
+        # DEMO-012: narrowed to this principal's customer, if it has one.
+        customer_id = enforce_customer_scope(customer_id)
         limit = max(1, min(limit, 100))
         conditions = [CustomerPayment.tenant_id == tenant_id]
         if customer_id is not None:
@@ -748,6 +758,8 @@ class BillingService:
         offset: int = 0,
     ) -> dict:
         tenant_id = require_current_tenant()
+        # DEMO-012: narrowed to this principal's customer, if it has one.
+        customer_id = enforce_customer_scope(customer_id)
         limit = max(1, min(limit, 100))
         conditions = [CustomerReceipt.tenant_id == tenant_id]
         if customer_id is not None:
