@@ -6,8 +6,14 @@ not coverage: the things that would have cost money or availability.
 """
 
 import inspect
+import os
+import pathlib
+import subprocess
 
 import pytest
+
+# The repository root: this file is services/platform-core/tests/x.py
+REPO = pathlib.Path(__file__).resolve().parents[3]
 
 # --- concurrency: the money path -------------------------------------------
 
@@ -361,18 +367,71 @@ def test_production_postgres_archives_wal():
     assert archive_command, "archive_mode is on but no archive_command is set"
 
 
-def test_the_archive_command_refuses_to_overwrite():
+def test_the_archive_command_refuses_to_overwrite(tmp_path):
     """An archive that overwrites is worse than one that fails.
 
     Replacing an already-archived segment destroys the recovery window from
     that segment forward, and the failure is silent — the archive keeps
     looking healthy, and the gap is discovered during a recovery.
+
+    DEMO-011 made this EXECUTABLE rather than a string match. It used to
+    assert `"test ! -f" in archive_command`, which pinned one implementation
+    of the rule — and that implementation turned out to be the problem: `cp`
+    is not atomic, so an interrupted copy left a partial file, `test ! -f`
+    saw it and refused forever, and WAL archiving was dead for eighteen hours
+    with no alert. A test that had asserted the PROPERTY would have survived
+    the fix; one that asserted the string had to be edited to allow it.
+
+    So this runs the real script against a temporary directory and checks
+    what it actually does.
     """
     command = _production_postgres_command()
     archive_command = next(c for c in command if c.startswith("archive_command="))
-    assert "test ! -f" in archive_command, (
+    script = REPO / "infra/backup/archive-wal.sh"
+    assert script.is_file(), "infra/backup/archive-wal.sh is missing"
+    assert "archive-wal.sh" in archive_command or "test ! -f" in archive_command, (
         f"archive_command does not refuse to overwrite an existing segment: {archive_command}"
     )
+    if "archive-wal.sh" not in archive_command:
+        return  # a different mechanism; the string check above is all we can do
+
+    archive = tmp_path / "wal-archive"
+    archive.mkdir()
+    original = tmp_path / "segment-a"
+    original.write_bytes(b"the original segment" * 64)
+    intruder = tmp_path / "segment-b"
+    intruder.write_bytes(b"DIFFERENT CONTENT!!!" * 64)
+    env = {**os.environ, "WAL_ARCHIVE_DIR": str(archive)}
+    seg = "000000010000000000000099"
+
+    def run(source):
+        return subprocess.run(
+            ["bash", str(script), str(source), seg],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=30,
+        )
+
+    assert run(original).returncode == 0, "a fresh segment must archive"
+    assert (archive / seg).read_bytes() == original.read_bytes()
+
+    # Idempotent: re-archiving identical bytes must SUCCEED, or a post-crash
+    # retry wedges the archiver exactly as the old command did.
+    assert run(original).returncode == 0, "re-archiving identical bytes must succeed"
+
+    # The rule itself.
+    refused = run(intruder)
+    assert refused.returncode != 0, (
+        "archive-wal.sh OVERWROTE an archived segment with different content"
+    )
+    assert (archive / seg).read_bytes() == original.read_bytes(), (
+        "the archived segment was destroyed by a refused write"
+    )
+
+    # And nothing partial is left behind for the next run to trip over.
+    leftovers = [p.name for p in archive.iterdir() if p.name != seg]
+    assert leftovers == [], f"temporary files left in the archive: {leftovers}"
 
 
 def test_the_archive_timeout_bounds_the_rpo():

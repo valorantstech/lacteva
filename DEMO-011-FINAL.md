@@ -403,8 +403,24 @@ are healthy, so it resolves fresh addresses.
 ```
 backend      1,314 tests — 1,240 passed, 74 skipped (PostgreSQL-only), 0 failed
 ruff check + ruff format --check      clean (226 files)
-validate_docs.py                      174 files, all checks passed
+validate_docs.py                      175 files, all checks passed
 ```
+
+One test had to change, and it is worth saying why.
+`test_the_archive_command_refuses_to_overwrite` asserted
+`"test ! -f" in archive_command` — it pinned one IMPLEMENTATION of the rule,
+and that implementation was the defect in §2. A test written against the
+property would have survived the fix; one written against the string had to be
+edited to permit it.
+
+So it was not relaxed, it was made **executable**: it now runs
+`archive-wal.sh` against a temporary directory and checks that a fresh segment
+archives, that identical bytes archive again (or a post-crash retry wedges the
+archiver exactly as the old command did), that different bytes under the same
+name are REFUSED, that the archived copy survives the refusal, and that no
+temporary file is left behind. It was then verified to FAIL against a
+deliberately broken copy of the script — a guard nobody has seen fail is not
+a guard.
 
 Focused suites were used during development, as §11 asked; the full regression
 ran once at the milestone.
