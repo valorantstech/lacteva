@@ -165,6 +165,35 @@ Three mechanisms, in increasing order of safety:
 
 The rule for all of them: **add the new one, confirm it works, remove the old one.** Never the other way round — a rotation that starts by revoking is a rotation that can lock you out.
 
+### The SSH allow-list
+
+Port 22 is restricted to individual `/32` addresses, and an operator's address is **dynamic** — it changes with the network they are on. Following the rule above means a new address is added before the old one stops working, so the list accumulates addresses nobody uses any more. Each one is a standing invitation to whoever holds that address next.
+
+So the second half of the rule needs doing, not just the first. Before removing an entry, check that it is genuinely stale:
+
+```bash
+# who is connected right now
+sudo ss -tnp state established '( sport = :22 )'
+# when each source last authenticated successfully
+sudo zgrep -h sshd /var/log/auth.log* | grep Accepted | grep " <ip> " | tail -1
+# nothing else in the account references it
+aws ec2 describe-security-groups --filters "Name=ip-permission.cidr,Values=<ip>/32"
+```
+
+Then revoke **that one range**, by naming it explicitly — never by rewriting the port-22 permission, which would take the working address with it:
+
+```bash
+aws ec2 revoke-security-group-ingress --group-id <sg> \
+  --ip-permissions '[{"IpProtocol":"tcp","FromPort":22,"ToPort":22,
+                      "IpRanges":[{"CidrIp":"<ip>/32"}]}]'
+```
+
+**Nothing automated depends on this list.** CI builds images and pushes them to ECR over OIDC and never touches the host; the host pulls. Monitoring is Prometheus and Grafana in containers on the machine, and nginx already restricts `/metrics` to internal ranges. The only consumer is a human running `deploy.sh`.
+
+**The way back in, if the list is ever wrong: SSM.** Session Manager works over the instance's outbound connection and does not consult inbound rules at all, so it survives any mistake made here — including revoking the address you are sitting on. `aws ssm describe-instance-information` should always show this instance `Online`; if it does not, fix that before touching port 22.
+
+Removed so far: `122.170.193.69/32` (superseded 2026-08-11) and `223.236.99.188/32` (superseded 2026-08-13, removed after DEMO-012 — last successful login 2026-08-12T22:05Z, no session since, referenced by nothing else in the account).
+
 ---
 
 ## 7. Maintenance
