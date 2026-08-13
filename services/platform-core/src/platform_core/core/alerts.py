@@ -205,6 +205,37 @@ RULES: tuple[AlertRule, ...] = (
         ),
         condition=lambda s: _status_at_least(s, "jwt_keys", health.CRITICAL),
     ),
+    # DEMO-011. The `backups` health component has existed since BAK-001 and
+    # goes unhealthy once the last VERIFIED backup passes 26 hours — and there
+    # was no rule reading it, so nothing was ever raised and nothing reached
+    # Prometheus. The probe was watching; nobody was listening.
+    #
+    # This is the rule that would have caught the state DEMO-011 found: three
+    # backup units that had never been installed, and the only recovery points
+    # on the machine taken incidentally by deployments.
+    AlertRule(
+        name="backups_stale",
+        severity=CRITICAL,
+        summary="No verified backup in the last 26 hours — the recovery point is aging.",
+        action=(
+            "Check `systemctl status lacteva-backup-nightly.service` and "
+            "/var/log/lacteva/backup.log. If the timer is not enabled the platform has "
+            "no schedule at all, which is the failure this rule exists for. "
+            "DEMO-011-DR-RUNBOOK.md §4 finds the newest usable backup."
+        ),
+        condition=lambda s: _status_at_least(s, "backups", health.CRITICAL),
+    ),
+    AlertRule(
+        name="backups_degraded",
+        severity=WARNING,
+        summary="The last backup completed but has not been verified.",
+        action=(
+            "A backup nobody has verified is a hope. Run "
+            "`infra/backup/verify-latest-backup.sh`, which restores it into a throwaway "
+            "server and compares row counts and money against production."
+        ),
+        condition=lambda s: _status_at_least(s, "backups", health.DEGRADED),
+    ),
 )
 
 

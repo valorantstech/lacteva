@@ -1,0 +1,20 @@
+# What happens when a backup unit fails (DEMO-011 §8).
+#
+# Templated on the failing unit name, so one handler serves the nightly, the
+# weekly, the restore drill and the watchdog: `OnFailure=lacteva-backup-alert@%n.service`.
+#
+# It deliberately uses only what is already on the machine — the journal, a
+# marker file, and the platform's own notification module if the API is up.
+# A backup failure that needs a paging platform to be noticed is a backup
+# failure nobody will notice on this deployment.
+
+[Unit]
+Description=Lacteva backup failure alert for %i
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/lacteva/current
+EnvironmentFile=/etc/lacteva/.env.production
+ExecStart=/opt/lacteva/current/infra/backup/backup-alert.sh %i
+StandardOutput=append:/var/log/lacteva/backup-alert.log
+StandardError=append:/var/log/lacteva/backup-alert.log

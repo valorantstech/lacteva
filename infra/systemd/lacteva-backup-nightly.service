@@ -6,6 +6,8 @@
 # process ran; this proves the bytes are readable.
 
 [Unit]
+# DEMO-011 §8: a failure must reach a person.
+OnFailure=lacteva-backup-alert@%n.service
 Description=Lacteva nightly logical backup
 Documentation=file:///opt/lacteva/current/docs/03-architecture/06-operations/BACKUP.md
 Requires=lacteva.service

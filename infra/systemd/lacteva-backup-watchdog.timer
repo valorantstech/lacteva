@@ -1,0 +1,13 @@
+[Unit]
+Description=Lacteva backup watchdog
+
+[Timer]
+# Three times a day, and deliberately NOT aligned with the backup schedule:
+# 06:40 is four hours after the nightly should have finished, so a missed run
+# is noticed the same morning rather than the next night.
+OnCalendar=*-*-* 06,14,22:40:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

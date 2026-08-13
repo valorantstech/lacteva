@@ -11,6 +11,8 @@
 # failed to load.
 
 [Unit]
+# DEMO-011 §8: a failure must reach a person.
+OnFailure=lacteva-backup-alert@%n.service
 Description=Lacteva backup restore verification
 Requires=lacteva.service
 After=lacteva.service

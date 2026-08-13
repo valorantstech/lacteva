@@ -1,0 +1,22 @@
+# Is the platform protected RIGHT NOW? (DEMO-011 §8)
+#
+# `OnFailure=` catches a backup that fails. It cannot catch a backup that
+# never runs — nothing fails, so nothing fires, and that is precisely the
+# state this deployment was in: units in the repository, none installed, and
+# the only backups taken incidentally by deployments.
+#
+# This asks from the outside, and fails loudly when the answer is no.
+
+[Unit]
+Description=Lacteva backup watchdog
+Documentation=file:///opt/lacteva/current/DEMO-011-DR-RUNBOOK.md
+OnFailure=lacteva-backup-alert@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/lacteva/current
+EnvironmentFile=/etc/lacteva/.env.production
+ExecStart=/opt/lacteva/current/infra/backup/backup-watchdog.sh
+Nice=15
+StandardOutput=append:/var/log/lacteva/backup-watchdog.log
+StandardError=append:/var/log/lacteva/backup-watchdog.log
