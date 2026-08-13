@@ -478,6 +478,125 @@ class SmtpEmailProvider:
                 client.close()
 
 
+class HttpPushProvider:
+    """A generic HTTP push gateway (DEMO-012 §10).
+
+    Deliberately the same shape as `HttpSmsProvider`, and for the same
+    reason: the platform must not depend on one vendor. FCM, APNs, a
+    self-hosted relay and an operator's own gateway all differ in payload and
+    agree on HTTP status, so the contract here is a small documented JSON
+    body configured entirely from the environment, and the classification is
+    by status. A vendor SDK adapter implements `ChannelProvider` and is
+    installed with `register_provider` — that seam is why no SDK is imported.
+
+    Two things differ from SMS, both because of what a push token IS:
+
+    * `410 Gone` and `404` mean the token is DEAD — the app was uninstalled
+      or the token rotated. That is permanent, and it is also the platform's
+      cue to stop holding a token that can never be delivered to again, which
+      the service does on `PermanentSendError`.
+    * The recipient is never logged. A token is capability-like: whoever
+      holds it can push to that handset.
+
+    **This adapter has never delivered a real push.** It is exercised against
+    a stub gateway in `tests/test_push_delivery.py`, which proves the
+    contract, the classification and the idempotency key — not that any
+    particular vendor accepts it. `LACTEVA_NOTIFICATION_PUSH_PROVIDER`
+    therefore defaults to `disabled`, so a deployment that has not made the
+    vendor decision fails visibly rather than marking pushes delivered.
+    """
+
+    PERMANENT_STATUSES = frozenset({400, 401, 402, 403, 404, 405, 409, 410, 415, 422})
+
+    #: A dead token, as opposed to a rejected message. The distinction is the
+    #: whole reason this provider is not just the SMS one with a new name.
+    GONE_STATUSES = frozenset({404, 410})
+
+    def __init__(self, channel: str = "push") -> None:
+        self.name = "http-push"
+        self._channel = channel
+        settings = get_settings()
+        self._url = settings.push_api_url
+        self._api_key = settings.push_api_key
+        self._timeout = settings.push_timeout_seconds
+        if not self._url:
+            raise ValueError("LACTEVA_PUSH_API_URL must be set when the push provider is 'http'")
+
+    async def send(self, message: OutboundMessage) -> DeliveryResult:
+        import httpx
+
+        payload = {
+            "token": message.recipient,
+            "title": message.title or "Lacteva",
+            "body": message.body,
+            # What the app opens when the notification is tapped. The phone
+            # is told WHICH record, never the record's contents: a lock
+            # screen is a public surface and a balance is not.
+            "data": {
+                "template": message.template_key,
+                "notification_id": str(message.notification_id),
+            },
+            "client_reference": message.idempotency_key,
+        }
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+            "Idempotency-Key": message.idempotency_key,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(self._url, json=payload, headers=headers)
+        except httpx.TimeoutException as exc:
+            raise ProviderSendError(f"push gateway timeout after {self._timeout}s") from exc
+        except httpx.HTTPError as exc:
+            raise ProviderSendError(f"push gateway unreachable: {type(exc).__name__}") from exc
+
+        if response.status_code in self.GONE_STATUSES:
+            raise PermanentSendError(f"push token is no longer registered ({response.status_code})")
+        if response.status_code in self.PERMANENT_STATUSES:
+            raise PermanentSendError(
+                f"push gateway rejected the message ({response.status_code}): "
+                f"{_safe_detail(response.text)}"
+            )
+        if response.status_code >= 400:
+            raise ProviderSendError(
+                f"push gateway error {response.status_code}: {_safe_detail(response.text)}"
+            )
+
+        try:
+            body = response.json()
+        except ValueError:
+            log.warning("push_unparseable_response", status=response.status_code)
+            return DeliveryResult(
+                provider_message_id=message.idempotency_key,
+                status=UNKNOWN,
+                metadata={"unparseable": True, "http_status": response.status_code},
+            )
+        if not isinstance(body, dict):
+            log.warning("push_unexpected_response_shape", status=response.status_code)
+            return DeliveryResult(
+                provider_message_id=message.idempotency_key,
+                status=UNKNOWN,
+                metadata={"http_status": response.status_code},
+            )
+
+        # Note what is absent: the token. Not in the log line, not in the
+        # metadata that `NotificationView` exposes to an operator.
+        log.info(
+            "push_sent",
+            provider=self.name,
+            template=message.template_key,
+            language=message.language,
+        )
+        return DeliveryResult(
+            provider_message_id=str(
+                body.get("message_id") or body.get("id") or message.idempotency_key
+            ),
+            status=str(body.get("status") or ACCEPTED),
+            metadata={"http_status": response.status_code},
+        )
+
+
 def _safe_detail(text: str) -> str:
     """A gateway error, trimmed and free of anything worth stealing.
 
@@ -506,6 +625,7 @@ def get_provider(channel: str) -> ChannelProvider:
         configured = {
             "sms": settings.notification_sms_provider,
             "email": settings.notification_email_provider,
+            "push": settings.notification_push_provider,
         }.get(channel, "logging")
         _PROVIDERS[channel] = _build(channel, configured)
     return _PROVIDERS[channel]
@@ -519,7 +639,7 @@ def _build(channel: str, configured: str) -> ChannelProvider:
         "placeholder": PlaceholderProvider,
         "dry_run": DryRunProvider,
         "disabled": DisabledProvider,
-        "http": HttpSmsProvider,
+        "http": HttpSmsProvider if channel != "push" else HttpPushProvider,
         "smtp": SmtpEmailProvider,
     }
     builder = builders.get(configured)

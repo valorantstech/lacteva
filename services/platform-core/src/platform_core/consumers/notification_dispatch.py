@@ -33,6 +33,9 @@ RECEIPT_GENERATED = "receipt.generated.v1"  # emitted by RCP-001
 PASSWORD_RESET_REQUESTED = "identity.password-reset-requested.v1"  # noqa: S105
 MEMBER_ADDED = "organization.member-added.v1"
 TRANSACTION_REJECTED = "collection.transaction-rejected.v1"
+# DEMO-012 §10 — the customer-facing half, delivered to the mobile app.
+INVOICE_ISSUED = "sales.invoice-issued.v1"
+CUSTOMER_PAYMENT_RECORDED = "sales.customer-payment-recorded.v1"
 
 
 @dataclass(frozen=True)
@@ -140,6 +143,35 @@ def _transaction_rejected(envelope: EventEnvelope) -> dict | None:
     }
 
 
+def _invoice_issued(envelope: EventEnvelope) -> dict | None:
+    """A household's bill is ready.
+
+    The recipient reference is the CUSTOMER, not a user: this event has never
+    heard of a user account, and the device registry knows which handset a
+    customer-scoped login registered. A household with no mobile login
+    resolves to no device and the notification fails visibly in the history
+    rather than being silently dropped here — which is the difference between
+    "nobody has the app" and "the push channel is broken", and an operator
+    needs to be able to tell those apart.
+    """
+    data = envelope.data
+    return {
+        "recipient_ref": _uuid(data.get("customer_id")),
+        "variables": {
+            "number": data.get("invoice_number", ""),
+            "period": data.get("period") or envelope.time[:10],
+        },
+    }
+
+
+def _customer_payment_recorded(envelope: EventEnvelope) -> dict | None:
+    data = envelope.data
+    return {
+        "recipient_ref": _uuid(data.get("customer_id")),
+        "variables": {"number": data.get("payment_number", "")},
+    }
+
+
 MAPPINGS: dict[str, EventMapping] = {
     SUPPLIER_REGISTERED: EventMapping("supplier_registered", "sms", _supplier_registered),
     SUPPLIER_STATUS_CHANGED: EventMapping("supplier_archived", "sms", _supplier_archived),
@@ -157,6 +189,10 @@ MAPPINGS: dict[str, EventMapping] = {
     # other consumers may read it.
     MEMBER_ADDED: EventMapping("invitation_accepted", "email", _member_added),
     TRANSACTION_REJECTED: EventMapping("milk_rejected", "sms", _transaction_rejected),
+    INVOICE_ISSUED: EventMapping("invoice_issued", "push", _invoice_issued),
+    CUSTOMER_PAYMENT_RECORDED: EventMapping(
+        "customer_payment_recorded", "push", _customer_payment_recorded
+    ),
 }
 
 

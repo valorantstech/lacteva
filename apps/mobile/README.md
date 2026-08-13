@@ -1,6 +1,16 @@
 # mobile
 
-Lacteva Flutter application — the future home of Lacteva Collect's operator experience (shift control, member check-in, collection recording per `docs/13-products/lacteva-collect/`). Currently ships the SPRINT-001 bootstrap: a platform-status screen polling `platform-core`'s readiness endpoint.
+Lacteva Flutter application — **one app, three field experiences**, chosen by what the platform says the signed-in principal may do:
+
+| Who | Screen | Entry |
+| --- | --- | --- |
+| Collection operator | the centre, sessions, collection | `lib/src/centers.dart` |
+| Delivery rider | today's round, one tap per household | `lib/src/deliveries.dart` |
+| Customer | their own deliveries, balance, bills, receipts | `lib/src/customer_portal.dart` |
+
+`lib/src/home.dart` routes a sign-in by **capability, never by role name** — roles are editable database rows (DEMO-008), so `role == 'COLLECTION_OPERATOR'` would be wrong the moment an administrator created a role doing the same job under another name.
+
+The app is a *client*: no pricing, no billing, no settlement, no payment, no tenancy logic, and it never recomputes a financial figure the platform has already produced. The architecture, and why, is [docs/03-architecture/04-technology-layer/MOBILE-EXPERIENCES.md](../../docs/03-architecture/04-technology-layer/MOBILE-EXPERIENCES.md).
 
 Scaffolded with `flutter create` (org `com.lacteva`, project `lacteva_mobile`, platforms android/ios/web), Flutter 3.38 stable.
 
@@ -28,3 +38,30 @@ flutter test
 - **Localization from day one**: `flutter_localizations` + ARB files (en/sw/hi to start), matching platform i18n.
 - Auth against platform-core (`/v1/auth/token` + refresh), tenant-scoped.
 - Hardware integration (scales/analyzers per PSP-0007) goes behind a device-profile platform-channel interface — M2+.
+
+## Push notifications
+
+Off by design. No messaging vendor is chosen or paid for, so `PushTokenSource`
+defaults to `NoPushConfigured` (supplies no token, registers nothing) and the
+server's `LACTEVA_NOTIFICATION_PUSH_PROVIDER` defaults to `disabled`. To wire
+FCM: add `firebase_messaging`, drop in `google-services.json` /
+`GoogleService-Info.plist`, implement `PushTokenSource` over `getToken()`, and
+configure the server. `registerForPush` already runs after sign-in and
+`revokePush` on sign-out — see `lib/src/push.dart`.
+
+**No credential lives in this app.** The API base URL is a compile-time
+define; the release keystore comes from `android/key.properties`, which is
+gitignored, and a release build fails rather than falling back to debug
+signing.
+
+## Release builds
+
+```bash
+flutter build apk --debug                 # works with no keystore
+flutter build apk --release               # REFUSES without android/key.properties
+```
+
+The refusal is deliberate (PORTAL-001 / F-05): a debug-signed APK is not
+distributable and cannot be upgraded. The guard fires from the Gradle task
+graph, not from the release configuration block — a check there is evaluated
+for `assembleDebug` too and blocks every build (DEMO-012).

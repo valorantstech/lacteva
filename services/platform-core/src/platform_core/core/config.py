@@ -140,6 +140,14 @@ class Settings(BaseSettings):
     notification_email_provider: Literal[
         "logging", "placeholder", "smtp", "dry_run", "disabled"
     ] = "logging"
+    #: DEMO-012 §10. Defaults to `disabled`, not `logging`, and that is the
+    #: point: no push vendor has been chosen or paid for, so a deployment
+    #: that has not made that decision must FAIL a push visibly rather than
+    #: record it as delivered. `http` speaks the vendor-neutral contract in
+    #: `HttpPushProvider`.
+    notification_push_provider: Literal["logging", "placeholder", "http", "dry_run", "disabled"] = (
+        "disabled"
+    )
 
     # --- Email gateway (PROD-001) ------------------------------------------
     # SMTP is the provider-neutral choice deliberately: every transactional
@@ -172,6 +180,15 @@ class Settings(BaseSettings):
     #: as a PERMANENT failure, which is why it is worth getting right in
     #: staging rather than discovering in the field.
     sms_sender_id: str = "LACTEVA"
+
+    # --- Push gateway (DEMO-012 §10) ---------------------------------------
+    # Vendor-neutral for the same reason as SMS. The credential is a SERVER
+    # credential and lives here, in the environment or a Docker secret — it
+    # is never shipped in the mobile application, which holds only its own
+    # per-installation delivery token.
+    push_api_url: str = ""
+    push_api_key: str = ""
+    push_timeout_seconds: float = 10.0
     #: Below a farmer's patience and above a gateway's p99. Too short and
     #: every message retries; too long and the consumer loop stalls behind
     #: one unresponsive gateway.
@@ -292,6 +309,7 @@ class Settings(BaseSettings):
         for channel, configured in (
             ("SMS", self.notification_sms_provider),
             ("EMAIL", self.notification_email_provider),
+            ("PUSH", self.notification_push_provider),
         ):
             if configured in ("logging", "placeholder"):
                 problems.append(
@@ -379,6 +397,13 @@ class Settings(BaseSettings):
 
         # A gateway selected but not configured fails every send at runtime,
         # one message at a time, instead of failing the deployment once.
+        if self.notification_push_provider == "http" and not (
+            self.push_api_url and self.push_api_key
+        ):
+            problems.append(
+                "LACTEVA_NOTIFICATION_PUSH_PROVIDER is 'http' but LACTEVA_PUSH_API_URL / "
+                "LACTEVA_PUSH_API_KEY are not both set"
+            )
         if self.notification_sms_provider == "http" and not (self.sms_api_url and self.sms_api_key):
             problems.append(
                 "LACTEVA_NOTIFICATION_SMS_PROVIDER is 'http' but LACTEVA_SMS_API_URL / "

@@ -39,6 +39,7 @@ import asyncio
 import os
 import pathlib
 import sys
+import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
@@ -1251,6 +1252,10 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
         "suppliers": suppliers,
         "today": today,
         "current_card": current,
+        # DEMO-012: `make_customer_login` invites a member, which needs the
+        # platform admin and the organization the invitation belongs to.
+        "admin": admin,
+        "org": org,
     }
 
 
@@ -1491,10 +1496,73 @@ async def build_sales(client, built: dict) -> dict:
                 "state": pattern,
             }
         )
+        if index == 0:
+            first_customer = customer
 
     summary["ledger"] = records
+    # DEMO-012 §4: a login that IS a customer, so the mobile customer
+    # experience can be shown rather than described. Bound to the first
+    # household, which is `partial` — it has a bill, a part payment and a
+    # receipt, so the app has a balance, a bill and a receipt to render
+    # instead of four empty cards.
+    summary["customer_login"] = await make_customer_login(
+        client, built, customer=first_customer
+    )
     built["summary"]["sales"] = summary
     return built
+
+
+async def make_customer_login(client, built: dict, *, customer: dict) -> dict:
+    """A household that can sign in to the mobile app and see its own account.
+
+    Two steps, and the second is the interesting one.
+
+    The member is invited and accepts exactly like any other member, with the
+    `CUSTOMER_PORTAL` role — five read permissions, and nothing that could
+    change anything. That part is ordinary.
+
+    The BINDING is a direct write, because there is deliberately no API that
+    sets `customer_id` from a request body. A scope that an administrator
+    could set by hand is a scope an administrator could set WRONG, and the
+    failure mode is one household reading another's bills — so DEMO-012 left
+    it out of the API surface entirely and this seeder does what a migration
+    or an operator with database access would do. The limitation is recorded
+    in DEMO-012-FINAL.md rather than worked around with a hidden endpoint.
+    """
+    email = "household@lacteva-demo.example.com"
+    # This runs at the very end of the sales phase, twenty minutes after the
+    # admin signed in. DEMO-010 already found what that costs: a long job
+    # holding a short-lived credential fails with a bare 401 after twenty
+    # minutes of correct work.
+    await refresh_admin(client, built["admin"])
+    member = await make_member(
+        client,
+        built["admin"],
+        built["org"]["id"],
+        email=email,
+        full_name="Njeri Mwangi",
+        role_name="CUSTOMER_PORTAL",
+    )
+
+    from sqlalchemy import select
+
+    from platform_core.core.rls import platform_factory
+    from platform_core.modules.identity.models import User
+
+    async with platform_factory("demo seed: bind a customer login")() as session:
+        user = await session.scalar(select(User).where(User.email == email))
+        if user is None:
+            raise SeedError("customer login was not created")
+        user.customer_id = uuid.UUID(customer["id"])
+        await session.commit()
+
+    return {
+        "email": email,
+        "name": member["full_name"],
+        "role": "CUSTOMER_PORTAL",
+        "customer": customer["name"],
+        "customer_id": customer["id"],
+    }
 
 
 async def demonstrate_br_0027(client, built: dict) -> dict:

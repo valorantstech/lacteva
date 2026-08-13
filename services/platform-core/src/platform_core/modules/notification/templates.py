@@ -161,6 +161,42 @@ TEMPLATES: tuple[Template, ...] = (
         "Welcome to Lacteva",
         "Your account is active. You joined {organization} as {role}.",
     ),
+    # DEMO-012 §10 — the two things a household wants its phone to tell it.
+    #
+    # NO AMOUNT in either body, deliberately. A push notification is rendered
+    # on a lock screen, which is a public surface: the phone on a table shows
+    # what a household owes to whoever walks past. The figure is one tap away
+    # in the app, behind the sign-in, where it is also the platform's own
+    # figure rather than a copy of it that can go stale between the event and
+    # the reading.
+    _t(
+        "invoice_issued",
+        "push",
+        "en",
+        "Your bill is ready",
+        "Bill {number} for {period} is ready. Open Lacteva to see it.",
+    ),
+    _t(
+        "invoice_issued",
+        "push",
+        "sw",
+        "Bili yako iko tayari",
+        "Bili {number} ya {period} iko tayari. Fungua Lacteva kuiona.",
+    ),
+    _t(
+        "customer_payment_recorded",
+        "push",
+        "en",
+        "Payment received",
+        "We have recorded your payment {number}. Thank you.",
+    ),
+    _t(
+        "customer_payment_recorded",
+        "push",
+        "sw",
+        "Malipo yamepokelewa",
+        "Tumepokea malipo yako {number}. Asante.",
+    ),
 )
 
 _REGISTRY: dict[tuple[str, str, str], Template] = {

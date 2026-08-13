@@ -3,11 +3,11 @@ id: NOTIFICATION-ENGINE
 title: Notification Engine
 type: reference
 status: Approved
-version: "1.1"
+version: "1.2"
 owner: Engineering
 created: 2026-08-05
-last-updated: 2026-08-07
-related: [BR-REGISTER, PROJECTION-LIFECYCLE, CLAUDE-CONTEXT]
+last-updated: 2026-08-13
+related: [BR-REGISTER, PROJECTION-LIFECYCLE, MOBILE-EXPERIENCES, CLAUDE-CONTEXT]
 baseline: ARCH-BASELINE-V1
 ---
 
@@ -169,6 +169,7 @@ Gateway error bodies are truncated to 200 characters before they reach an except
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-08-13 | Engineering | DEMO-012: `push` as a channel on this engine — device registry, token lifecycle, customer-scoped resolution, vendor-neutral adapter, disabled by default. |
 | 1.1 | 2026-08-07 | Architecture Board | MSG-001: real delivery. Provider contract returns a DeliveryResult; permanent failures stop being retried; gateway idempotency key; PII masking; vendor-neutral HTTP adapter. |
 | 1.0 | 2026-08-05 | Engineering | Established by NOT-001. |
 
@@ -222,3 +223,57 @@ request often enough that a raw copy can carry the credential just rejected.
 Secrets (`secrets_dir`) or the environment; none is in source. Production
 refuses `smtp` with no host, and refuses `logging`/`placeholder` on either
 channel outright.
+
+## Push to a field user's handset (DEMO-012)
+
+The mobile application needed to reach a rider or a household when the app is
+closed. It did not need a second notification system, and does not have one:
+**push is a channel on this engine**, and inherits BR-0016, BR-0017, the
+retry ladder, the dead letter and the delivery history without restating any
+of them. One `EventMapping` entry and one template per message, as with every
+other channel.
+
+What is genuinely different is the ADDRESS. `notification_device` holds the
+delivery token a phone registers for itself after sign-in, and a token is not
+a phone number:
+
+- **Capability-like.** Whoever holds it can push to that handset through a
+  configured gateway. So it is never returned by any endpoint — `GET
+  /v1/notification-devices` shows a six-character suffix, enough for a
+  support call and useless to a sender — never logged in full, and deleted
+  rather than deactivated on revocation. A revoked token is not evidence of
+  anything.
+- **Re-registered constantly.** The app registers on every start, because the
+  gateway hands out the same token until it rotates. Registration is
+  idempotent by token; a row per launch would be five copies of every message.
+- **Movable.** A token already held by another user MOVES rather than being
+  rejected. A shared handset is a real situation in a dairy, and rejecting
+  would leave the old binding in place — which is the outcome that leaks.
+- **Silently mortal.** An uninstalled app leaves a token that fails forever.
+  A `PermanentSendError` on the push channel makes the platform forget it,
+  rather than spend a gateway call learning the same thing every time.
+
+`notification_device.customer_id` is what lets `sales.invoice-issued.v1` —
+which knows a customer id and has never heard of a user account — resolve to a
+handset without this module reading an identity table. The API layer copies it
+from the authenticated principal.
+
+**Bodies carry no figures.** A push renders on a lock screen, which is a
+public surface: `invoice_issued` announces that a bill is ready and does not
+quote it. The amount is one tap away, behind the sign-in, where it is also the
+platform's own figure rather than a copy that can go stale.
+
+**Configuration.** `LACTEVA_NOTIFICATION_PUSH_PROVIDER` defaults to
+**`disabled`**, not `logging`: no messaging vendor has been chosen or paid
+for, and a deployment that has not made that decision must fail a push
+visibly rather than mark it delivered. `http` selects `HttpPushProvider`,
+which speaks the same vendor-neutral JSON contract as the SMS adapter and
+needs `LACTEVA_PUSH_API_URL` and `LACTEVA_PUSH_API_KEY`. Production refuses
+`http` with either missing, and refuses `logging`/`placeholder` outright.
+
+**What is not proven.** `HttpPushProvider` has never delivered a real push.
+Its contract, status classification and idempotency key are exercised against
+a stub gateway in `tests/test_push_devices.py`; that no particular vendor has
+accepted a message from it is stated here rather than left to be discovered.
+See [MOBILE-EXPERIENCES](MOBILE-EXPERIENCES.md) for the phone's half.
+

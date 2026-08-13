@@ -8,6 +8,11 @@ dead notification stays visible for operators.
 `NotificationRecipient` is a rebuildable directory (a PLT-001 projection)
 mapping a subject — today a supplier — to its contact details, so the
 dispatch consumer never calls a business module to find out where to send.
+
+`NotificationDevice` (DEMO-012 §10) is the same idea for the `push` channel:
+a phone's delivery token, registered by the mobile app after sign-in. It is
+NOT a projection — nothing else in the platform knows a device exists — so it
+is the one contact record here that is authoritative rather than rebuildable.
 """
 
 import uuid
@@ -92,5 +97,53 @@ class NotificationRecipient(Base, IdMixin):
     language: Mapped[str] = mapped_column(String(8), default="en")
     active: Mapped[bool] = mapped_column(default=True)
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+#: What a device says it is. Constrained because the provider payload differs
+#: per platform and an unknown value would be sent to a gateway that cannot
+#: use it.
+DEVICE_PLATFORMS = ("android", "ios", "web")
+
+
+class NotificationDevice(Base, IdMixin):
+    """A phone that can be reached by push (DEMO-012 §10).
+
+    One row per (tenant, delivery token). The token is the ADDRESS, not a
+    credential the platform holds on the user's behalf — but it is still
+    capability-like: anyone holding it can push to that handset through a
+    configured gateway. So it is never returned by any view, never logged in
+    full, and is deleted rather than kept when a device is revoked. There is
+    no history to preserve: a revoked token is not evidence of anything.
+
+    Tokens rotate. The unique constraint is on the token, and registering a
+    token already held by another user MOVES it, because that is what actually
+    happened — the handset was signed into a different account and the old
+    owner must stop receiving its notifications immediately.
+    """
+
+    __tablename__ = "notification_device"
+    __table_args__ = (
+        UniqueConstraint("token", name="uq_notification_device_token"),
+        Index("ix_notification_device_user", "tenant_id", "user_id"),
+    )
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    #: The gateway's delivery token for this installation.
+    token: Mapped[str] = mapped_column(String(400))
+    #: DEMO-012: the customer this handset speaks for, when the login is a
+    #: customer-scoped one. Copied from the authenticated principal by the API
+    #: layer — the notification module never reads an identity table, it is
+    #: told. It is what lets a bill-issued event, which knows a customer and
+    #: not a user, find a phone.
+    customer_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
+    platform: Mapped[str] = mapped_column(String(10), default="android")
+    #: Free-form, for an operator looking at a support call. Never trusted.
+    label: Mapped[str] = mapped_column(String(80), default="")
+    language: Mapped[str] = mapped_column(String(8), default="en")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

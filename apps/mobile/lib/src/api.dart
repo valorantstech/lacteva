@@ -823,6 +823,34 @@ class ApiClient {
     return await _send('GET', '/v1/customer-receipts?$qs')
         as Map<String, dynamic>;
   }
+
+  // --- push devices (DEMO-012 §10) -----------------------------------------
+  //
+  // The phone registers ITSELF, for whoever is signed in. There is no user id
+  // in any of these: the platform takes it from the authenticated principal,
+  // because a client that could name the user it registers for could redirect
+  // another person's notifications to its own handset.
+
+  /// Register (or refresh) this handset. Idempotent by token on the platform.
+  Future<Map<String, dynamic>> registerDevice({
+    required String token,
+    required String platform,
+    String label = '',
+  }) async =>
+      await _send(
+            'POST',
+            '/v1/notification-devices',
+            body: {'token': token, 'platform': platform, 'label': label},
+          )
+          as Map<String, dynamic>;
+
+  /// This principal's own devices. The response never carries the token.
+  Future<List<dynamic>> listDevices() async =>
+      await _send('GET', '/v1/notification-devices') as List<dynamic>;
+
+  Future<void> revokeDevice(String deviceId) async {
+    await _send('DELETE', '/v1/notification-devices/$deviceId');
+  }
 }
 
 class CenterSummary {

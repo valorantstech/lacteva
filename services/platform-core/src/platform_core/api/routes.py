@@ -115,6 +115,8 @@ from platform_core.modules.notification.service import (
     NotificationService,
     NotificationStats,
     NotificationView,
+    PushDeviceView,
+    RegisterPushDeviceCommand,
     RenderedPreview,
     TemplateView,
 )
@@ -1954,6 +1956,41 @@ async def retry_notification(
 async def retry_pending_notifications(service: NotificationSvc, _: NotificationManage) -> dict:
     """Run the due-retry sweep immediately (the background loop does this)."""
     return await service.retry_pending()
+
+
+# --- Push devices (DEMO-012 §10) ---------------------------------------------
+#
+# Deliberately NOT behind `notification.manage`. A phone registers ITSELF, for
+# the person holding it, so the grant that matters is "you are signed in" —
+# requiring an administrative permission would mean no field user could ever
+# be reached. The user id comes from the authenticated principal and is never
+# read from the body: a client that could name the user it registers for could
+# redirect another person's notifications to its own handset.
+
+
+@notification_router.post("/notification-devices", response_model=PushDeviceView, status_code=201)
+async def register_notification_device(
+    command: RegisterPushDeviceCommand,
+    service: NotificationSvc,
+    principal: CurrentPrincipal,
+) -> Any:
+    """Register (or refresh) this handset for push. Idempotent by token."""
+    return await service.register_device(principal.id, command, customer_id=principal.customer_id)
+
+
+@notification_router.get("/notification-devices", response_model=list[PushDeviceView])
+async def list_notification_devices(service: NotificationSvc, principal: CurrentPrincipal) -> Any:
+    """This principal's own devices — never anybody else's, and never with the
+    token."""
+    return await service.list_devices(principal.id)
+
+
+@notification_router.delete("/notification-devices/{device_id}", status_code=204)
+async def revoke_notification_device(
+    device_id: uuid.UUID, service: NotificationSvc, principal: CurrentPrincipal
+) -> None:
+    """Sign-out, or a handset the user no longer has."""
+    await service.revoke_device(principal.id, device_id)
 
 
 # --- Receipts (immutable proof of payment — RCP-001) -------------------------

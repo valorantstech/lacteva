@@ -1,14 +1,23 @@
 /// PORTAL-001 / F-05 — a release build must never be signed with debug keys.
 ///
-/// The Android SDK on this machine has no BuildTools, so `flutter build apk
-/// --release` cannot run here and this cannot be proven by producing an APK.
-/// What CAN be proven, and is what actually regressed, is the Gradle contract:
-/// the release build type must not select the debug signing config, and it
-/// must FAIL rather than fall back when no keystore is configured.
+/// There is no release keystore on this machine — correctly, since the signing
+/// material is supplied from outside the repository — so `flutter build apk
+/// --release` cannot produce an APK here and this cannot be proven by making
+/// one. What CAN be proven, and is what actually regressed, is the Gradle
+/// contract: the release build type must not select the debug signing config,
+/// and it must FAIL rather than fall back when no keystore is configured.
 ///
 /// The original defect was one line — `signingConfig =
 /// signingConfigs.getByName("debug")` under a TODO — so a test that reads the
 /// build file is aimed exactly at how it will come back.
+///
+/// DEMO-012 found the SECOND defect this file is now aimed at. The guard was
+/// written inside `buildTypes.release { }`, which is a CONFIGURATION block
+/// Gradle evaluates on every invocation — so it refused `assembleDebug` too,
+/// and on any machine without `key.properties` the app could not be built at
+/// all. `flutter build apk --debug` failed with "Release build requested".
+/// The guard was right to exist and was looking in a place that could not see
+/// the question it was asking; it now fires from the task graph.
 library;
 
 import 'dart:io';
@@ -46,7 +55,12 @@ void main() {
           'a release build signed with the public Android debug key is not '
           'distributable and cannot be upgraded',
     );
-    expect(release.contains('signingConfigs.getByName("release")'), isTrue);
+    expect(
+      release.contains('signingConfigs.getByName("release")') ||
+          release.contains('signingConfigs.findByName("release")'),
+      isTrue,
+      reason: 'the release build type must bind to the release signing config',
+    );
   });
 
   test('a release build with no keystore fails instead of falling back', () {
@@ -56,6 +70,32 @@ void main() {
       reason: 'a silent fallback is how a debug-signed build reaches a phone',
     );
     expect(gradle.contains('key.properties'), isTrue);
+  });
+
+  test('the guard refuses release builds, not every build', () {
+    // DEMO-012. A check inside `buildTypes.release { }` runs while Gradle
+    // CONFIGURES the project, which it does identically for assembleDebug,
+    // `flutter test` and assembleRelease — so the guard blocked every build
+    // on every machine without a keystore. Only the task graph knows what was
+    // actually requested.
+    final buildTypes = gradle.substring(gradle.indexOf('buildTypes'));
+    final afterBuildTypes = buildTypes.substring(
+      buildTypes.indexOf('flutter {'),
+    );
+    expect(
+      buildTypes
+          .substring(0, buildTypes.indexOf('flutter {'))
+          .contains('throw GradleException'),
+      isFalse,
+      reason:
+          'a throw inside the release configuration block fires for '
+          'assembleDebug as well, and blocks every build',
+    );
+    expect(
+      afterBuildTypes.contains('gradle.taskGraph'),
+      isTrue,
+      reason: 'the guard must decide from the requested tasks',
+    );
   });
 
   test('the signing material is supplied from outside the repository', () {

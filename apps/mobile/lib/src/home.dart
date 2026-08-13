@@ -21,19 +21,30 @@
 /// principal CAN DO.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'centers.dart';
 import 'customer_portal.dart';
 import 'deliveries.dart';
 import 'offline/offline_client.dart';
+import 'push.dart';
 import 'session.dart';
 
 /// Resolves the session, then shows the experience it earns.
 class HomeRouter extends StatefulWidget {
-  const HomeRouter({super.key, required this.client});
+  const HomeRouter({
+    super.key,
+    required this.client,
+    this.pushTokens = const NoPushConfigured(),
+  });
 
   final OfflineApiClient client;
+
+  /// Where this build's push token comes from (DEMO-012 §10). The default
+  /// supplies none, because no messaging vendor is wired — see `push.dart`.
+  final PushTokenSource pushTokens;
 
   @override
   State<HomeRouter> createState() => _HomeRouterState();
@@ -55,6 +66,18 @@ class _HomeRouterState extends State<HomeRouter> {
       final session = await loadSession(widget.client);
       if (!mounted) return;
       setState(() => _session = session);
+      // After the session, never before: the platform binds the handset to
+      // the authenticated principal, and a registration sent before sign-in
+      // has nobody to belong to. Deliberately not awaited into the screen's
+      // loading state — being reachable by push is a nice-to-have and must
+      // not hold up a rider's round.
+      unawaited(
+        registerForPush(
+          widget.client,
+          source: widget.pushTokens,
+          label: session.email,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(

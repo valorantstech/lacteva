@@ -885,7 +885,9 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
     That last one reached a deployment before it was caught, because the
     incremental test selection that day did not include this file — the
     deployment verifier stopped it instead. Both guards were needed; neither
-    was redundant.
+    was redundant. It earned its keep once more in DEMO-012, on the push
+    device registry: the migration DID install the policy, but inline rather
+    than from a snapshotted list, so nothing the build could read said so.
     """
     from migrations.versions.a1c7f3b90e22_row_level_security import TENANT_TABLES
     from migrations.versions.c8a4d2f10b73_demo_009_rls_for_the_sales_tables import (
@@ -893,6 +895,9 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
     )
     from migrations.versions.e62a7e569a6a_prod_001_document_number_sequences import (
         POLICY_TABLES as PROD001_TABLES,
+    )
+    from migrations.versions.e91b6c47a2d8_demo_012_push_devices import (
+        POLICY_TABLES as DEMO012_TABLES,
     )
     from migrations.versions.f2d18ba60c47_sec002_complete_rls_coverage import NEW_TENANT_TABLES
     from migrations.versions.f73f41473469_idempotency_records import POLICY_TABLES
@@ -905,6 +910,7 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
         | set(POLICY_TABLES)
         | set(PROD001_TABLES)
         | set(DEMO009_TABLES)
+        | set(DEMO012_TABLES)
     )
     uncovered = set(tenant_tables()) - covered
     assert not uncovered, (

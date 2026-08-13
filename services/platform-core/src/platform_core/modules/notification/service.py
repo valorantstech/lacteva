@@ -14,9 +14,10 @@ roll back the very history this module exists to keep.
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 import structlog
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +35,11 @@ from platform_core.core.metrics import (
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.event_relay.consumers import MAX_CONSUMER_ATTEMPTS
 from platform_core.modules.event_relay.service import backoff_delay
-from platform_core.modules.notification.models import Notification, NotificationRecipient
+from platform_core.modules.notification.models import (
+    Notification,
+    NotificationDevice,
+    NotificationRecipient,
+)
 from platform_core.modules.notification.providers import (
     OutboundMessage,
     PermanentSendError,
@@ -50,6 +55,24 @@ from platform_core.modules.notification.templates import (
 )
 
 log = structlog.get_logger("notification")
+
+
+def _token_suffix(token: str) -> str:
+    """The last few characters, which identify a device in a support call and
+    reach no handset."""
+    return f"…{token[-6:]}" if len(token) > 6 else "…"
+
+
+def _device_view(device: NotificationDevice) -> "PushDeviceView":
+    return PushDeviceView(
+        id=device.id,
+        platform=device.platform,
+        label=device.label,
+        language=device.language,
+        token_suffix=_token_suffix(device.token),
+        last_seen_at=as_utc(device.last_seen_at),
+    )
+
 
 #: What a secret variable looks like everywhere except the outbound message
 #: (SEC-003 / F-04). Deliberately not empty and not a plausible token: an
@@ -74,6 +97,54 @@ class NotificationRequest(BaseModel):
     #: outbound message, stored in `secret_payload` only until delivery, never
     #: returned by any API, never logged. See `Notification.secret_payload`.
     secret_variables: dict = {}
+
+
+class RegisterPushDeviceCommand(BaseModel):
+    """What a phone tells the platform after signing in (DEMO-012 §10).
+
+    Validated HERE rather than in the service, so a malformed registration is
+    a 422 from the framework instead of a 500 from a `ValueError` this
+    application has no handler for.
+    """
+
+    token: str = Field(min_length=1, max_length=400)
+    #: Constrained because the outbound payload differs per platform: a value
+    #: the gateway does not know is a message that silently goes nowhere.
+    platform: Literal["android", "ios", "web"] = "android"
+    label: str = Field(default="", max_length=80)
+    language: str = Field(default="en", max_length=8)
+
+    @field_validator("token")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        token = value.strip()
+        if not token:
+            raise ValueError("token is required")
+        return token
+
+
+class PushDeviceView(BaseModel):
+    """A device, WITHOUT its token.
+
+    Named `Push…` and not `Device…` deliberately: `operational_readiness`
+    already exports `DeviceView` and `RegisterDeviceCommand` for weighing
+    scales and analyzers. Two identically-named DTOs in one API produce ONE
+    OpenAPI component — a generated client would get one of them wrong — and
+    in `routes.py` the second import silently shadowed the first.
+
+    The token is never returned — not to the operator who can read the
+    notification history, and not to the phone that supplied it. Anyone
+    holding it can push to that handset, and an endpoint that hands it back
+    turns a read grant into that capability. The suffix is enough for a
+    support call and useless to a sender.
+    """
+
+    id: uuid.UUID
+    platform: str
+    label: str
+    language: str
+    token_suffix: str
+    last_seen_at: datetime
 
 
 class NotificationView(BaseModel):
@@ -285,6 +356,11 @@ class NotificationService:
             self._record_failure(
                 notification, str(exc)[:500], now=now, forced=forced, permanent=True
             )
+            # DEMO-012 §10: a push that failed permanently usually failed
+            # because the token is dead — the app was uninstalled, or the
+            # token rotated. Keeping it means every future notification for
+            # that user spends a gateway call to learn the same thing.
+            await self._forget_dead_token(notification)
             return
         except (TemplateRenderError, TemplateNotFoundError) as exc:
             # A missing template or an unrenderable one is a DEPLOYMENT fault,
@@ -384,6 +460,96 @@ class NotificationService:
                 error=error,
             )
 
+    # --- devices (DEMO-012 §10) ----------------------------------------------
+
+    async def register_device(
+        self,
+        user_id: uuid.UUID,
+        command: RegisterPushDeviceCommand,
+        *,
+        customer_id: uuid.UUID | None = None,
+    ) -> PushDeviceView:
+        """Record (or refresh) the handset a user can be pushed to.
+
+        Idempotent by token, because the app calls this on every start: the
+        gateway hands out the same token until it rotates, and a fresh row
+        per launch would push the same message to a phone five times.
+
+        A token already held by ANOTHER user moves to this one. That is not a
+        conflict to reject — it is a handset that was signed into a different
+        account, and the previous owner must stop receiving its notifications
+        at once. Rejecting would leave the old binding in place, which is the
+        outcome that leaks.
+        """
+        token = command.token
+        tenant_id = require_current_tenant()
+
+        device = await self._session.scalar(
+            select(NotificationDevice).where(NotificationDevice.token == token)
+        )
+        if device is None:
+            device = NotificationDevice(tenant_id=tenant_id, user_id=user_id, token=token)
+            self._session.add(device)
+        else:
+            device.tenant_id = tenant_id
+            device.user_id = user_id
+        device.customer_id = customer_id
+        device.platform = command.platform
+        device.label = (command.label or "")[:80]
+        device.language = (command.language or "en")[:8]
+        device.last_seen_at = utcnow()
+        await self._session.flush()
+        log.info(
+            "push_device_registered",
+            user_id=str(user_id),
+            platform=device.platform,
+            token_suffix=_token_suffix(token),
+        )
+        return _device_view(device)
+
+    async def list_devices(self, user_id: uuid.UUID) -> list[PushDeviceView]:
+        tenant_id = require_current_tenant()
+        rows = await self._session.scalars(
+            select(NotificationDevice)
+            .where(
+                NotificationDevice.tenant_id == tenant_id,
+                NotificationDevice.user_id == user_id,
+            )
+            .order_by(NotificationDevice.last_seen_at.desc())
+        )
+        return [_device_view(d) for d in rows]
+
+    async def revoke_device(self, user_id: uuid.UUID, device_id: uuid.UUID) -> None:
+        """Sign-out, or a token the gateway says is dead.
+
+        Deleted rather than deactivated. A revoked token is not evidence of
+        anything and keeping it is keeping a way to reach a handset that no
+        longer belongs to this account.
+        """
+        tenant_id = require_current_tenant()
+        device = await self._session.get(NotificationDevice, device_id)
+        if device is None or device.tenant_id != tenant_id or device.user_id != user_id:
+            # Another user's device is a 404, never a 403 — the house rule.
+            raise NotFoundError("device not found")
+        await self._session.delete(device)
+        await self._session.flush()
+
+    async def _forget_dead_token(self, notification: Notification) -> None:
+        """The gateway said the token is gone. Stop holding it.
+
+        Called on a PERMANENT push failure. Without this, an uninstalled app
+        leaves a token that fails forever, and every future notification for
+        that user spends a gateway call to learn the same thing again.
+        """
+        if notification.channel != "push" or not notification.recipient:
+            return
+        device = await self._session.scalar(
+            select(NotificationDevice).where(NotificationDevice.token == notification.recipient)
+        )
+        if device is not None:
+            await self._session.delete(device)
+            log.info("push_device_forgotten", token_suffix=_token_suffix(notification.recipient))
+
     # --- recipients ----------------------------------------------------------
 
     async def _directory_entry(self, notification: Notification) -> NotificationRecipient | None:
@@ -411,12 +577,54 @@ class NotificationService:
         )
 
     async def _resolve_recipient(self, notification: Notification) -> str | None:
+        if notification.channel == "push":
+            return await self._resolve_device_token(notification)
         entry = await self._directory_entry(notification)
         if entry is None:
             return None
         if not notification.language or notification.language == "en":
             notification.language = entry.language or "en"
         return entry.phone if notification.channel == "sms" else entry.email
+
+    async def _resolve_device_token(self, notification: Notification) -> str | None:
+        """The most recently seen handset for this user.
+
+        Tenant-scoped as well as user-scoped for the same reason
+        `_directory_entry` is: this runs in the dispatch consumer, which holds
+        a platform-bound session with RLS deliberately bypassed, so the
+        predicate below is the only thing between a notification and another
+        tenant's device.
+
+        The reference is matched against the user OR the customer, because the
+        two kinds of event that reach a household name different subjects: a
+        bill-issued event knows a customer id and has never heard of a user
+        account. Both are UUIDs from the same tenant and neither collides with
+        the other by accident.
+
+        One device, not all of them: a person carrying two handsets gets the
+        one they last used, and the alternative — a notification row per
+        device — would break the `(event, template, channel)` idempotency key
+        that stops a replay re-sending.
+        """
+        if notification.recipient_ref is None:
+            return None
+        device = await self._session.scalar(
+            select(NotificationDevice)
+            .where(
+                NotificationDevice.tenant_id == notification.tenant_id,
+                or_(
+                    NotificationDevice.user_id == notification.recipient_ref,
+                    NotificationDevice.customer_id == notification.recipient_ref,
+                ),
+            )
+            .order_by(NotificationDevice.last_seen_at.desc())
+            .limit(1)
+        )
+        if device is None:
+            return None
+        if not notification.language or notification.language == "en":
+            notification.language = device.language or "en"
+        return device.token
 
     async def _recipient_name(self, notification: Notification) -> str:
         entry = await self._directory_entry(notification)
