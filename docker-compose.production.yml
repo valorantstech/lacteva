@@ -122,6 +122,13 @@ services:
       # the failure mode PITR exists to survive. Mount this on different
       # storage, and replicate it off-host.
       - wal_archive:/wal-archive
+      # DEMO-011: physical backups are PostgreSQL's own job, and postgres is
+      # the only container with `pg_basebackup`, `pg_verifybackup` and
+      # `pg_archivecleanup`, network reach to itself, and the WAL archive.
+      # The database port is deliberately not published, so a base backup
+      # taken from the host cannot connect at all — which is why the weekly
+      # physical backup had never run.
+      - backups:/backup
       - ./infra/backup:/opt/backup:ro
       # VER-001. Runs ONCE, on an empty data directory — an existing database
       # needs the same statements applied by hand (DEPLOYMENT.md §Database

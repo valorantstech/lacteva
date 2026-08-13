@@ -14,7 +14,24 @@
 # the worst case is too many backups, which costs disk and nothing else.
 set -euo pipefail
 
+# TWO paths, because this script straddles two filesystems and conflating them
+# was a real bug (DEMO-011).
+#
+# `BACKUP_ROOT` is where the API CONTAINER writes: it is the container's own
+# view, and the only thing the CLI ever sees. `BACKUP_HOST_DIR` is the same
+# directory as the HOST sees it, and is what `find`, `rm` and `df` below need.
+#
+# They used to be one variable. `mkdir`, the retention sweep and the disk
+# report therefore ran against `/backup/logical` ON THE HOST — a path that
+# does not exist there — so the sweep found nothing, `REMAINING` came out
+# zero, and the script ended every single night on
+#
+#     FAILED: retention removed everything. This should be impossible.
+#
+# after a backup that had in fact succeeded. A guard reporting catastrophe on
+# a healthy run teaches an operator to ignore it.
 BACKUP_ROOT="${BACKUP_ROOT:-/backup/logical}"
+BACKUP_HOST_DIR="${BACKUP_HOST_DIR:-${LACTEVA_BACKUP_DIR:-/var/lib/lacteva/backup}/logical}"
 RETAIN_DAYS="${BACKUP_RETAIN_DAYS:-30}"
 COMPOSE="${COMPOSE:-docker compose -f docker-compose.production.yml --env-file /etc/lacteva/.env.production}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -22,8 +39,13 @@ TARGET="${BACKUP_ROOT}/${STAMP}"
 
 log() { printf '%s  %s\n' "$(date -u +%FT%TZ)" "$*"; }
 
-log "starting logical backup -> ${TARGET}"
-mkdir -p "${BACKUP_ROOT}"
+log "starting logical backup -> ${TARGET} (host: ${BACKUP_HOST_DIR})"
+[ -d "${BACKUP_HOST_DIR}" ] || {
+  log "FAILED: ${BACKUP_HOST_DIR} does not exist on this host."
+  log "        It must be the host side of the API's /backup mount, and it"
+  log "        must NOT be on the same device as the database (DEMO-011 §2)."
+  exit 1
+}
 
 if ! ${COMPOSE} exec -T api python -m platform_core.core.backup.cli backup "${TARGET}"; then
   log "FAILED: backup did not complete. Nothing pruned."
@@ -62,13 +84,13 @@ while IFS= read -r -d '' old; do
   log "  removing $(basename "${old}")"
   rm -rf "${old}"
   DELETED=$((DELETED + 1))
-done < <(find "${BACKUP_ROOT}" -mindepth 1 -maxdepth 1 -type d -mtime "+${RETAIN_DAYS}" -print0)
+done < <(find "${BACKUP_HOST_DIR}" -mindepth 1 -maxdepth 1 -type d -mtime "+${RETAIN_DAYS}" -print0)
 
-REMAINING="$(find "${BACKUP_ROOT}" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+REMAINING="$(find "${BACKUP_HOST_DIR}" -mindepth 1 -maxdepth 1 -type d | wc -l)"
 if [ "${REMAINING}" -lt 1 ]; then
   log "FAILED: retention removed everything. This should be impossible."
   exit 1
 fi
 
-USAGE="$(df -h "${BACKUP_ROOT}" | awk 'NR==2 {print $5" used, "$4" free"}')"
+USAGE="$(df -h "${BACKUP_HOST_DIR}" | awk 'NR==2 {print $5" used, "$4" free"}')"
 log "done: ${REMAINING} backup(s) retained, ${DELETED} pruned. Volume: ${USAGE}"

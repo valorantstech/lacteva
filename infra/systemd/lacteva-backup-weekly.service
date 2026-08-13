@@ -18,8 +18,7 @@ After=lacteva.service
 Type=oneshot
 WorkingDirectory=/opt/lacteva/current
 EnvironmentFile=/etc/lacteva/.env.production
-Environment=BACKUP_ROOT=/backup
-ExecStart=/opt/lacteva/current/infra/backup/pg-backup.sh
+ExecStart=/opt/lacteva/current/infra/backup/run-physical-backup.sh
 Nice=10
 IOSchedulingClass=idle
 StandardOutput=append:/var/log/lacteva/backup.log
