@@ -55,6 +55,29 @@ CATALOGS: dict[str, dict[str, str]] = {
             "Vipimo vya mfano havihairuhusiwi hapa. Pima maziwa kisha uweke kipimo halisi."
         ),
     },
+    "ar": {  # Arabic — DEMO-014. RTL is a layout decision and lives in the clients.
+        "error.not_found": "لم يتم العثور على المورد المطلوب.",
+        "error.conflict": "المورد موجود بالفعل.",
+        "error.unauthorized": "المصادقة مطلوبة.",
+        "error.forbidden": "ليست لديك صلاحية للقيام بهذا الإجراء.",
+        "error.invalid_credentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+        # The two suppressions below: E501 counts CHARACTERS, and Arabic says more
+        # per character than English does. Both lines are shorter on screen
+        # than the English they translate.
+        "error.ambiguous_tenant": "تصلح بيانات الدخول هذه لأكثر من مؤسسة. اختر المؤسسة التي تريد الدخول إليها.",  # noqa: E501
+        "error.validation": "الطلب غير صالح.",
+        "error.invalid_token": "هذا الرابط غير صالح أو انتهت صلاحيته.",
+        "error.rate_limited": "طلبات كثيرة جدًا. يرجى الانتظار ثم المحاولة مرة أخرى.",
+        "error.idempotency_key_invalid": "ترويسة Idempotency-Key فارغة أو طويلة جدًا.",
+        "error.idempotency_key_reused": "استُخدم هذا المفتاح Idempotency-Key لطلب آخر.",
+        "error.idempotency_in_progress": "لا يزال طلب مطابق قيد التنفيذ. أعد المحاولة بعد قليل.",
+        "error.pricing_no_match": "لم يُعثر على تسعير ينطبق على هذه المعاملة.",
+        "error.pricing_integrity": "بيانات التسعير غامضة لهذه المعاملة — تواصل مع المسؤول.",
+        "error.mock_hardware_refused": "قراءات الميزان والمحلّل المحاكاة غير مسموح بها هنا. زِن الحليب واختبره، ثم أدخل القراءة.",  # noqa: E501
+        "notification.welcome.subject": "مرحبًا بك في Lacteva",
+        "notification.password_reset.subject": "إعادة تعيين كلمة مرور Lacteva",
+        "notification.invitation.subject": "لقد تمت دعوتك إلى Lacteva",
+    },
     "hi": {  # Hindi — starter subset
         "error.not_found": "अनुरोधित संसाधन नहीं मिला।",
         "error.unauthorized": "प्रमाणीकरण आवश्यक है।",

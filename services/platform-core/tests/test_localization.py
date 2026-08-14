@@ -748,3 +748,106 @@ async def test_an_organization_can_always_change_its_own_settings(client):
     )
     assert r.status_code == 200, r.text
     assert r.json()["default_language"] in r.json()["supported_languages"]
+
+
+# --- DEMO-014: the registries as a contract ----------------------------------
+
+
+def test_every_country_the_milestone_names_is_onboardable():
+    """DEMO-014 §1's list, asserted rather than assumed.
+
+    A country missing from the registry is not a subtle failure — onboarding
+    refuses it outright — but it is a silent one until somebody tries.
+    """
+    expected = {
+        "IN": ("INR", "Asia/Kolkata"),
+        "KE": ("KES", "Africa/Nairobi"),
+        "SA": ("SAR", "Asia/Riyadh"),
+        "AE": ("AED", "Asia/Dubai"),
+        "QA": ("QAR", "Asia/Qatar"),
+        "US": ("USD", None),  # six zones: the registry proposes one, and says so
+        "GB": ("GBP", "Europe/London"),
+    }
+    for code, (currency, timezone) in expected.items():
+        settings = resolve(code)
+        assert settings.currency_code == currency, code
+        if timezone:
+            assert settings.timezone == timezone, code
+
+
+def test_the_gulf_countries_lead_with_arabic():
+    """A Saudi dairy's staff read Arabic; English is the second language there.
+
+    The ORDER in the registry is the entire mechanism — no code anywhere asks
+    which country this is.
+    """
+    for code in ("SA", "AE", "QA"):
+        settings = resolve(code)
+        assert base_language(settings.default_language) == "ar", code
+        assert any(base_language(t) == "en" for t in settings.supported_languages), code
+
+
+def test_india_and_kenya_still_lead_with_english():
+    """The regression that adding Arabic markets could have caused: reordering
+    somebody else's languages."""
+    assert base_language(resolve("IN").default_language) == "en"
+    assert base_language(resolve("KE").default_language) == "en"
+    assert "hi-IN" in resolve("IN").supported_languages
+
+
+def test_every_registered_language_has_a_backend_catalog():
+    """Listing a language in the registry is a CLAIM that the platform speaks
+    it. This is what makes the claim true, or the build red."""
+    from platform_core.core.i18n import CATALOGS
+
+    for country in COUNTRIES.values():
+        for tag in country.languages:
+            assert base_language(tag) in CATALOGS, f"{tag} has no catalog"
+
+
+def test_every_registered_currency_states_its_own_scale():
+    """`minor_units` is what `core/money.py` reads instead of assuming two."""
+    for code, entry in CURRENCIES.items():
+        assert entry.minor_units in (0, 2, 3), f"{code} has an implausible scale"
+
+
+async def test_onboarding_a_gulf_dairy_needs_only_the_country(client):
+    headers = await _platform_admin(client, "root-gulf@example.com")
+    r = await _make_org(client, headers, name="Gulf Dairy", slug="gulf-demo", country_code="SA")
+    assert r.status_code == 201, r.text
+    org = r.json()
+    assert org["currency_code"] == "SAR"
+    assert org["timezone"] == "Asia/Riyadh"
+    assert org["default_locale"] == "ar-SA"
+    assert org["supported_languages"] == ["ar-SA", "en-SA"]
+
+
+async def test_a_person_may_choose_the_clock_they_read(client):
+    """DEMO-014 §4 — display only, and it cannot move a business date."""
+    _org, headers = await _tenant_admin_for(
+        client, country="IN", slug="tz-pref", email="tz@india.example"
+    )
+    r = await client.put(
+        "/v1/auth/me/timezone", json={"timezone": "Europe/London"}, headers=headers
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["timezone"] == "Europe/London"
+
+    # The dairy's day is unchanged: the report still answers in Asia/Kolkata.
+    report = (await client.get("/v1/deliveries/report", headers=headers)).json()
+    assert report["date_from"] == str(business_today("Asia/Kolkata"))
+
+    # And it can be given back.
+    back = await client.put("/v1/auth/me/timezone", json={"timezone": None}, headers=headers)
+    assert back.status_code == 200, back.text
+    assert back.json()["timezone"] is None
+
+
+async def test_a_timezone_that_is_not_a_timezone_is_refused(client):
+    """Stored nonsense would fall back forever, and the person would never
+    learn their setting had not taken."""
+    _org, headers = await _tenant_admin_for(
+        client, country="KE", slug="tz-bad", email="tzbad@kenya.example"
+    )
+    r = await client.put("/v1/auth/me/timezone", json={"timezone": "Mars/Olympus"}, headers=headers)
+    assert r.status_code == 422, r.text

@@ -8,6 +8,7 @@
 /// takes currency, timezone and language from the session the platform sent.
 library;
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lacteva_mobile/src/l10n.dart';
 import 'package:lacteva_mobile/src/session.dart';
@@ -286,6 +287,70 @@ void main() {
       expect(s.isCustomer, isTrue);
       expect(s.customerId, 'cus-42');
       expect(experienceFor(s), Experience.customer);
+    });
+  });
+
+  group('Arabic and right-to-left (DEMO-014)', () {
+    test('an Arabic rider reads Arabic', () {
+      expect(L10n.of(_session(locale: 'ar-SA')).t('round.title'), 'جولة اليوم');
+      expect(L10n.of(_session(locale: 'ar-AE')).t('customer.owe'), 'ما عليّ');
+    });
+
+    test('Arabic covers every key English defines', () {
+      final missing = catalogs['en']!.keys
+          .where((k) => !catalogs['ar']!.containsKey(k))
+          .toList();
+      expect(
+        missing,
+        isEmpty,
+        reason: 'Arabic is missing: ${missing.join(', ')}',
+      );
+    });
+
+    test('no catalog defines a key English does not', () {
+      for (final language in ['hi', 'ar']) {
+        final orphans = catalogs[language]!.keys
+            .where((k) => !catalogs['en']!.containsKey(k))
+            .toList();
+        expect(orphans, isEmpty, reason: '$language has orphans: $orphans');
+      }
+    });
+
+    test('Arabic is right to left and the others are not', () {
+      expect(isRtl('ar-SA'), isTrue);
+      expect(isRtl('ar'), isTrue);
+      expect(isRtl('hi-IN'), isFalse);
+      expect(isRtl('en-KE'), isFalse);
+      expect(isRtl(null), isFalse);
+    });
+
+    test('the direction comes from the session, not from a screen', () {
+      expect(directionFor(_session(locale: 'ar-SA')), TextDirection.rtl);
+      expect(directionFor(_session(locale: 'en-IN')), TextDirection.ltr);
+      expect(directionFor(null), TextDirection.ltr);
+    });
+
+    test('an Arabic variable substitutes like any other', () {
+      expect(
+        L10n.of(_session(locale: 'ar-SA')).t('round.waiting', {'count': 3}),
+        contains('3'),
+      );
+    });
+  });
+
+  group('the app performs no timezone arithmetic (DEMO-014 §9)', () {
+    test('a business date is rendered exactly as the platform sent it', () {
+      // A handset cannot convert to an IANA zone without shipping tzdata, and
+      // its own clock is not the dairy's. The platform computes the date; the
+      // app shows it.
+      expect(businessDate('2026-08-14'), '2026-08-14');
+      expect(businessDate(null), '');
+    });
+
+    test('the organization clock is readable but never computed with', () {
+      final session = _session(org: _india);
+      expect(businessClock(session), 'Asia/Kolkata');
+      expect(businessClock(null), 'UTC');
     });
   });
 }

@@ -28,6 +28,7 @@ import 'package:flutter/material.dart';
 import 'centers.dart';
 import 'customer_portal.dart';
 import 'deliveries.dart';
+import 'l10n.dart';
 import 'offline/offline_client.dart';
 import 'push.dart';
 import 'session.dart';
@@ -114,6 +115,17 @@ class _HomeRouterState extends State<HomeRouter> {
     if (session == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    // DEMO-014 §9: the whole experience takes its direction from the person's
+    // language, once, here. Wrapping at the router rather than per screen is
+    // the point — a screen that had to remember would eventually forget, and
+    // a half-mirrored app is worse than an unmirrored one.
+    return Directionality(
+      textDirection: directionFor(session),
+      child: _experience(session),
+    );
+  }
+
+  Widget _experience(Session session) {
     return switch (experienceFor(session)) {
       Experience.customer => CustomerHomeScreen(
         client: widget.client,

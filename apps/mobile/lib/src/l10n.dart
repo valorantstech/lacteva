@@ -15,6 +15,8 @@
 /// KEY. Nothing here or anywhere in the app asks what country it is in.
 library;
 
+import 'package:flutter/widgets.dart';
+
 import 'session.dart';
 
 typedef Catalog = Map<String, String>;
@@ -131,7 +133,62 @@ const Catalog _hi = {
   'common.nothingHere': 'इस खाते के लिए मोबाइल पर कुछ नहीं',
 };
 
-const Map<String, Catalog> catalogs = {'en': _en, 'hi': _hi};
+const Catalog _ar = {
+  'round.title': 'جولة اليوم',
+  'round.empty': 'لا يوجد عملاء في هذه الجولة',
+  'round.emptyDetail': 'يظهر العملاء هنا بمجرد أن تسجّلهم الألبان.',
+  'round.delivered': 'مُسلَّم',
+  'round.customers': 'العملاء',
+  'round.quantity': 'الكمية',
+  'round.value': 'القيمة',
+  'round.notRecorded': 'لم يُسجَّل بعد',
+  'round.allSent': 'أُرسلت كل التوصيلات',
+  'round.waiting': '{count} بانتظار الإرسال',
+  'round.sync': 'أرسل الآن',
+  'round.refresh': 'تحديث',
+
+  'record.delivered': 'مُسلَّم',
+  'record.notDelivered': 'غير مُسلَّم',
+  'record.returned': 'مُرتجع',
+  'record.quantityHint': 'الكمية (اتركها فارغة للطلب الدائم)',
+  'record.amountNote':
+      'تحسب المنصّة المبلغ من السعر المتفق عليه — ولا يُدخل هنا أبدًا.',
+  'record.queued': 'حُفظ على هذا الهاتف. سيُرسل عند توفّر الشبكة.',
+
+  'customer.today': 'اليوم',
+  'customer.noDeliveryToday': 'لم يُسجَّل أي توصيل اليوم بعد.',
+  'customer.owe': 'ما عليّ',
+  'customer.billed': 'الفاتورة {billed} · المدفوع {paid}',
+  'customer.thisMonth': 'هذا الشهر',
+  'customer.deliveries': '{count} توصيلة',
+  'customer.bills': 'فواتيري',
+  'customer.receipts': 'إيصالاتي',
+  'customer.noReceipts': 'يظهر الإيصال هنا بعد كل دفعة.',
+  'customer.history': 'سجل التوصيلات',
+  'customer.bill': 'فاتورة',
+  'customer.amountDue': 'المبلغ المستحق',
+  'customer.paid': 'المدفوع',
+  'customer.outstanding': 'المتبقّي',
+  'customer.subtotal': 'المجموع الفرعي',
+  'customer.adjustments': 'التسويات',
+  'customer.broughtForward': 'الرصيد السابق',
+  'customer.everyDelivery': 'كل توصيلة في هذه الفاتورة',
+  'customer.checked':
+      'تم التحقق من قِبل الألبان: هذه الفاتورة تطابق التوصيلات أدناه.',
+  'customer.mismatch': 'لم تعد هذه الفاتورة تطابق توصيلاتها. تواصل مع الألبان.',
+
+  'auth.signIn': 'تسجيل الدخول',
+  'auth.email': 'البريد الإلكتروني',
+  'auth.password': 'كلمة المرور',
+  'auth.signingIn': 'جارٍ تسجيل الدخول…',
+
+  'common.retry': 'إعادة المحاولة',
+  'common.loading': 'جارٍ التحميل…',
+  'common.offline': 'لا توجد شبكة',
+  'common.nothingHere': 'لا يوجد شيء لهذا الحساب على الجوال',
+};
+
+const Map<String, Catalog> catalogs = {'en': _en, 'hi': _hi, 'ar': _ar};
 
 /// `hi-IN` → `hi`. The catalog key for a BCP-47 tag: the region carries the
 /// money and the clock, which live on the organization, not in the words.
@@ -159,6 +216,41 @@ class L10n {
     return text;
   }
 }
+
+/// Dates, and why this file has no timezone arithmetic (DEMO-014 §9).
+///
+/// A handset cannot convert to an arbitrary IANA zone without shipping a
+/// timezone database, and its own clock is not the dairy's — a rider who has
+/// crossed a border, or a phone left on the wrong setting, must not move a
+/// business day.
+///
+/// So the app performs NO conversion. Every date it displays is a business
+/// date the platform already computed in the organization's clock
+/// (`core/business_time.py`) and sent as a plain `YYYY-MM-DD` string, and the
+/// app renders it verbatim. `delivery_date`, the report's echoed `date_from`,
+/// an invoice period: all of them arrive correct and leave untouched.
+///
+/// `organization.timezone` is carried on the session for one purpose — so a
+/// screen can TELL a person which clock they are looking at — and never to
+/// compute with.
+String businessDate(String? isoDate) => (isoDate ?? '').trim();
+
+/// The clock this person's dairy runs on, for a screen that wants to say so.
+String businessClock(Session? session) =>
+    session?.organization?.timezone ?? 'UTC';
+
+/// Languages written right to left (DEMO-014 §7).
+///
+/// A layout fact rather than a translation one, which is why it sits beside
+/// the catalogs: Flutter's `Directionality` takes it, and the whole app flips
+/// from one value instead of from a conditional per screen.
+const Set<String> rtlLanguages = {'ar', 'fa', 'he', 'ur'};
+
+bool isRtl(String? tag) => rtlLanguages.contains(baseLanguage(tag));
+
+/// The text direction for a session's language.
+TextDirection directionFor(Session? session) =>
+    isRtl(session?.locale) ? TextDirection.rtl : TextDirection.ltr;
 
 /// Money as the ORGANIZATION counts it.
 ///
