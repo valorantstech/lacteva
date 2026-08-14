@@ -688,3 +688,29 @@ async def test_the_whole_procurement_chain_uses_the_organizations_currency(clien
     )
     assert ke.status_code == 201, ke.text
     assert ke.json()["currency"] == "KES"
+
+
+async def test_a_new_member_starts_in_the_organizations_language(client):
+    """DEMO-013 §8, surfaced by reconciling a real database.
+
+    Every seeded user's locale was the bare `en` the registration command
+    defaults to, which is not among an Indian dairy's supported tags — so the
+    language chooser highlighted nothing until the person picked one, and a
+    tenant that defaulted to Hindi would have started every new member in
+    English.
+
+    Nothing reads differently today (both are English), which is exactly why
+    it needed a test rather than a glance.
+    """
+    _org, headers = await _tenant_admin_for(
+        client, country="IN", slug="member-lang", email="member@india.example"
+    )
+    me = (await client.get("/v1/auth/me", headers=headers)).json()
+    assert me["user"]["locale"] == "en-IN"
+    assert me["user"]["locale"] in me["organization"]["supported_languages"]
+
+    _ke, kenya = await _tenant_admin_for(
+        client, country="KE", slug="member-lang-ke", email="member@kenya.example"
+    )
+    ke_me = (await client.get("/v1/auth/me", headers=kenya)).json()
+    assert ke_me["user"]["locale"] == "en-KE"

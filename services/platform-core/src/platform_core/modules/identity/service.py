@@ -63,12 +63,25 @@ class IdentityService:
         )
         if existing is not None:
             raise ConflictError("user already exists")
+        # DEMO-013: a new member starts in their ORGANIZATION's default
+        # language, not the bare `en` the command defaults to.
+        #
+        # Both are English for every tenant today, so nothing reads
+        # differently — but `en` is not among an Indian dairy's supported
+        # tags (`en-IN`, `hi-IN`), so the language chooser highlighted nothing
+        # until the person picked one, and a future tenant defaulting to Hindi
+        # would have had every new member start in English.
+        #
+        # A platform-level registration has no tenant and keeps `en`.
+        locale = cmd.locale
+        if tenant_id is not None and locale == RegisterUserCommand.model_fields["locale"].default:
+            locale = (await tenant_locale(self._session, tenant_id)).default_language
         user = User(
             tenant_id=tenant_id,
             email=cmd.email.lower(),
             password_hash=hash_password(cmd.password),
             full_name=cmd.full_name,
-            locale=cmd.locale,
+            locale=locale,
         )
         self._session.add(user)
         await self._session.flush()
