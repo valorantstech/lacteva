@@ -486,14 +486,11 @@ class DeliveryService:
         # recorded exactly as an automatic one and the two cannot drift. The
         # work order forbids a second generation implementation and this is
         # what honouring that looks like at the call site.
-        run = await record_run(self._session, tenant_id=tenant_id, day=day, trigger="manual")
-        result = GenerationResult(
-            business_date=run.business_date,
-            due=run.plans_due,
-            created=run.created,
-            already_present=run.already_present,
-            not_due=run.not_due,
-            inactive_customers=run.inactive_customers,
+        # The RESULT is what THIS call did; the RECORD is what the day did.
+        # DEMO-018 found these conflated: returning the record here reported a
+        # second run as having created everything the first one created.
+        _run, result = await record_run(
+            self._session, tenant_id=tenant_id, day=day, trigger="manual"
         )
         await self._audit.record(
             action="sales.delivery.generated",

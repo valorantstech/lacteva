@@ -245,10 +245,12 @@ async def test_running_the_scheduler_twice_creates_nothing_the_second_time(clien
     first = await run_for_tenant(tenant, generation_hour=HOUR, force_date=day)
     second = await run_for_tenant(tenant, generation_hour=HOUR, force_date=day)
 
+    # `run_for_tenant` returns the RECORD, which is the day's. A second
+    # scheduler pass finds the day owned and finished, so it neither
+    # re-generates nor blanks what the first pass recorded.
     assert first.created == 3
-    assert second.created == 0
-    assert second.already_present == 3
-    assert second.attempts == 2, "the retry must be counted on the same row"
+    assert second.created == 3, "the day's count must survive a second pass"
+    assert second.attempts == 1, "a finished day is not re-claimed by the scheduler"
 
     page = (
         await client.get(
@@ -323,8 +325,8 @@ async def test_a_manual_run_and_a_scheduled_run_cannot_duplicate(client):
     assert manual.json()["created"] == 3
 
     scheduled = await run_for_tenant(tenant, generation_hour=HOUR, force_date=day)
-    assert scheduled.created == 0
-    assert scheduled.already_present == 3
+    # The day's record, which the manual run already filled in.
+    assert scheduled.created == 3
 
     page = (
         await client.get(
@@ -375,7 +377,10 @@ async def test_the_run_record_answers_the_operators_question(client):
     assert row["business_date"] == "2026-08-17"
     assert row["status"] == "success"
     assert row["plans_due"] == 3
-    assert row["created"] == 0  # the second run created nothing
+    # The RECORD is the day's: three were created for 2026-08-17, whichever
+    # attempt created them. The per-CALL answer is what the endpoint returns,
+    # and `test_running_the_scheduler_twice...` asserts that separately.
+    assert row["created"] == 3
     assert row["already_present"] == 3
     assert row["attempts"] == 2
     assert row["duration_ms"] >= 0
@@ -444,3 +449,77 @@ async def test_each_tenant_generates_its_own_date_at_one_instant(client, timezon
     run = await run_for_tenant(tenant, now=instant, generation_hour=0)
     assert run is not None
     assert run.business_date == expected
+
+
+# --- what production taught us (DEMO-018) ------------------------------------
+
+
+# `test_concurrent_schedulers_do_not_overwrite_each_others_record` lives in
+# `test_scheduler_concurrency_postgres.py`, not here. On SQLite the test stack
+# shares ONE connection through a StaticPool, so four "concurrent" sessions are
+# one transaction and a rollback in any of them discards the others' work — the
+# race cannot be expressed, let alone proven. This is the same reason
+# `test_payment_concurrency_postgres.py` exists.
+
+
+async def test_a_retry_accumulates_what_it_created(client, monkeypatch):
+    """A retry that creates the deliveries a failed attempt missed must show
+    them as created FOR THE DAY. An operator reads this row to answer "did the
+    round go out", and the answer is about the day, not about the attempt."""
+    org, _admin = await _dairy_with_plans(client, count=3)
+    tenant = Tenant(id=uuid.UUID(org["id"]), slug=org["slug"], timezone=org["timezone"])
+    day = date(2026, 8, 17)
+
+    from platform_core.modules.delivery import scheduler as scheduler_module
+
+    calls = {"n": 0}
+    real = scheduler_module.generate_for_day
+
+    async def flaky(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient")
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(scheduler_module, "generate_for_day", flaky)
+
+    await run_for_tenant(tenant, generation_hour=HOUR, force_date=day)
+    recovered = await run_for_tenant(tenant, generation_hour=HOUR, force_date=day)
+    assert recovered.status == "success"
+    assert recovered.created == 3
+    assert recovered.attempts == 2
+
+
+async def test_a_manual_run_can_always_take_the_day(client):
+    """§9. An operator who presses the button has asked for it, even on a day
+    the scheduler already finished — the constraint means the worst case is a
+    round that finds everything already there."""
+    org, admin = await _dairy_with_plans(client, count=2)
+    tenant = Tenant(id=uuid.UUID(org["id"]), slug=org["slug"], timezone=org["timezone"])
+    day = date(2026, 8, 17)
+
+    await run_for_tenant(tenant, generation_hour=HOUR, force_date=day)
+    manual = await client.post(
+        "/v1/deliveries/generate", json={"for_date": str(day)}, headers=admin
+    )
+    assert manual.status_code == 200, manual.text
+    assert manual.json()["created"] == 0
+    assert manual.json()["already_present"] == 2
+
+    runs = (await client.get("/v1/deliveries/generation-runs", headers=admin)).json()
+    assert runs[0]["trigger"] == "manual"
+    assert runs[0]["created"] == 2, "the day's created count must survive a manual re-run"
+
+
+async def test_a_second_scheduler_pass_does_not_reset_the_days_count(client):
+    """The narrow form of the production defect: a later pass that creates
+    nothing must not blank what an earlier pass created."""
+    org, admin = await _dairy_with_plans(client, count=3)
+    tenant = Tenant(id=uuid.UUID(org["id"]), slug=org["slug"], timezone=org["timezone"])
+    day = date(2026, 8, 17)
+
+    await run_for_tenant(tenant, generation_hour=HOUR, force_date=day)
+    await run_for_tenant(tenant, generation_hour=HOUR, force_date=day)
+
+    runs = (await client.get("/v1/deliveries/generation-runs", headers=admin)).json()
+    assert runs[0]["created"] == 3

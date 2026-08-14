@@ -46,13 +46,16 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.exc import StaleDataError
 
 from platform_core.core.business_time import zone
 from platform_core.core.db import get_session_factory, utcnow
 from platform_core.core.rls import platform_session, rebind_tenant
-from platform_core.modules.delivery.generation import generate_for_day
+from platform_core.modules.delivery.generation import GenerationResult, generate_for_day
 from platform_core.modules.delivery.models import MAX_ATTEMPTS, DeliveryGenerationRun
 
 log = structlog.get_logger("delivery.scheduler")
@@ -185,7 +188,7 @@ async def run_for_tenant(
         if day is None:
             return None
 
-        return await record_run(
+        run, _result = await record_run(
             session,
             tenant_id=tenant.id,
             day=day,
@@ -193,6 +196,104 @@ async def run_for_tenant(
             label=tenant.slug,
             now=now,
         )
+        return run
+
+
+async def _run_for(
+    session: AsyncSession, tenant_id: uuid.UUID, day: date
+) -> DeliveryGenerationRun | None:
+    return await session.scalar(
+        select(DeliveryGenerationRun).where(
+            DeliveryGenerationRun.tenant_id == tenant_id,
+            DeliveryGenerationRun.business_date == day,
+        )
+    )
+
+
+async def _claim(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    day: date,
+    trigger: str,
+    now: datetime,
+) -> DeliveryGenerationRun | None:
+    """Take ownership of one tenant's business date, or return None.
+
+    Atomic, because SELECT-then-INSERT is exactly the pattern this codebase
+    refuses everywhere else and DEMO-018 caught it here in production: four
+    uvicorn workers all looked, all found nothing, and all proceeded.
+
+    Two mechanisms, both already the platform's conventions:
+
+    * a first claim is `INSERT … ON CONFLICT DO NOTHING` against
+      `uq_generation_run_tenant_date` — the winner is whoever the database
+      says inserted a row;
+    * a re-claim after a failure is a **CAS update** (`UPDATE … WHERE status =
+      'failed'` with a rowcount check), which is how this platform does
+      concurrency everywhere rather than `SELECT FOR UPDATE`.
+
+    A MANUAL run always takes the day, even from a successful row: an operator
+    who presses the button has asked for it, and DEMO-016's constraint means
+    the worst case is a round that finds everything already there.
+    """
+    dialect = session.get_bind().dialect.name
+    maker = postgres_insert if dialect == "postgresql" else sqlite_insert
+    row_id = uuid.uuid4()
+    inserted = await session.execute(
+        maker(DeliveryGenerationRun)
+        .values(
+            id=row_id,
+            tenant_id=tenant_id,
+            business_date=day,
+            status="running",
+            trigger=trigger,
+            plans_due=0,
+            created=0,
+            already_present=0,
+            not_due=0,
+            inactive_customers=0,
+            attempts=1,
+            error="",
+            started_at=now,
+            duration_ms=0,
+        )
+        .on_conflict_do_nothing(index_elements=["tenant_id", "business_date"])
+    )
+    if inserted.rowcount:
+        return await _run_for(session, tenant_id, day)
+
+    existing = await _run_for(session, tenant_id, day)
+    if existing is None:  # pragma: no cover - the conflict says it exists
+        return None
+    claimable = ("failed",) if trigger == "scheduler" else ("failed", "success", "running")
+    if existing.status not in claimable:
+        return None
+    if trigger == "scheduler" and existing.attempts >= MAX_ATTEMPTS:
+        return None
+    won = await session.execute(
+        update(DeliveryGenerationRun)
+        .where(
+            DeliveryGenerationRun.id == existing.id,
+            DeliveryGenerationRun.status == existing.status,
+        )
+        .values(
+            status="running",
+            trigger=trigger,
+            attempts=DeliveryGenerationRun.attempts + 1,
+            started_at=now,
+            error="",
+        )
+    )
+    if not won.rowcount:
+        return None
+    # Expire and re-read rather than `refresh`. The CAS above is a Core
+    # UPDATE, so the ORM's copy of this row is stale the moment it lands —
+    # and a stale copy with pending changes makes the next flush raise
+    # `StaleDataError` about a row it thinks vanished. Found by the four-way
+    # concurrency test written for this defect.
+    session.expire_all()
+    return await _run_for(session, tenant_id, day)
 
 
 async def record_run(
@@ -203,8 +304,20 @@ async def record_run(
     trigger: str,
     label: str = "",
     now: datetime | None = None,
-) -> DeliveryGenerationRun:
+) -> tuple[DeliveryGenerationRun | None, GenerationResult]:
     """Generate one day's round and record what happened, on a caller's session.
+
+    Returns BOTH, because they answer different questions and DEMO-018 found
+    them conflated:
+
+    * the `GenerationResult` is what THIS invocation did — a second run
+      reports `created: 0`, which is how a caller knows idempotency held;
+    * the run RECORD is what the DAY did — `created` accumulates across
+      attempts, because an operator reading it asks "did the round go out?"
+      and the answer is about the day, not about one attempt.
+
+    Returning one and calling it both is what made a four-worker production
+    deployment report a day as having generated nothing.
 
     The one implementation both paths use. The scheduler calls it with a
     session it opened and bound itself; the manual endpoint calls it with the
@@ -214,35 +327,31 @@ async def record_run(
     "both are safe" stops being a claim about two code paths.
     """
     now = now or utcnow()
-    existing = await session.scalar(
-        select(DeliveryGenerationRun).where(
-            DeliveryGenerationRun.tenant_id == tenant_id,
-            DeliveryGenerationRun.business_date == day,
+    run = await _claim(session, tenant_id=tenant_id, day=day, trigger=trigger, now=now)
+    if run is None:
+        # Another worker owns this day. DEMO-018 found this in production on
+        # the first real run: uvicorn runs FOUR workers, so four scheduler
+        # loops woke together and all four generated. The deliveries were
+        # safe — the unique constraint saw to that — but the last writer's
+        # `created: 0` overwrote the first's `created: 16`, so the record said
+        # a day had generated nothing when it had generated everything.
+        #
+        # Losing the claim is now a return, not a race to redo the work.
+        existing = await _run_for(session, tenant_id, day)
+        log.info(
+            "delivery_generation_already_claimed",
+            tenant=label or str(tenant_id),
+            business_date=str(day),
         )
-    )
-    if existing is None:
-        run = DeliveryGenerationRun(
-            tenant_id=tenant_id,
+        return existing, GenerationResult(
             business_date=day,
-            status="running",
-            trigger=trigger,
-            started_at=now,
+            due=existing.plans_due if existing else 0,
+            created=0,
+            already_present=existing.plans_due if existing else 0,
+            not_due=existing.not_due if existing else 0,
+            inactive_customers=existing.inactive_customers if existing else 0,
         )
-        session.add(run)
-    else:
-        # Reuse the row and count the attempt, so an operator can see that a
-        # green day took three tries.
-        run = existing
-        run.status = "running"
-        run.trigger = trigger
-        run.attempts += 1
-        run.started_at = now
-        run.error = ""
-    # Flush the claim before the work. Two workers racing here both write
-    # `running` and one loses on the unique constraint — but even if both
-    # proceeded the delivery constraint makes the outcome identical. The claim
-    # is for legibility and load, not for safety.
-    await session.flush()
+    created_before = run.created
 
     started = time.monotonic()
     try:
@@ -278,17 +387,50 @@ async def record_run(
             attempts=failed.attempts,
             error=str(exc)[:200],
         )
-        return failed
+        return failed, GenerationResult(
+            business_date=day,
+            due=0,
+            created=0,
+            already_present=0,
+            not_due=0,
+            inactive_customers=0,
+        )
 
     run.status = "success"
     run.plans_due = result.due
-    run.created = result.created
+    # ACCUMULATED across attempts, not assigned. A retry that creates the four
+    # deliveries a failed attempt missed must show four created for the day,
+    # not four for the attempt — an operator reads this row to answer "did the
+    # round go out", and the answer is about the day.
+    run.created = created_before + result.created
     run.already_present = result.already_present
     run.not_due = result.not_due
     run.inactive_customers = result.inactive_customers
     run.finished_at = utcnow()
     run.duration_ms = int((time.monotonic() - started) * 1000)
-    await session.commit()
+    try:
+        await session.commit()
+    except StaleDataError:
+        # Another worker finished this day underneath us. The deliveries are
+        # safe either way — that is the unique constraint's job — so losing
+        # here is a return, not an error: re-read what the winner recorded and
+        # report what THIS call did, which is nothing new.
+        await session.rollback()
+        await rebind_tenant(session, tenant_id)
+        winner = await _run_for(session, tenant_id, day)
+        log.info(
+            "delivery_generation_superseded",
+            tenant=label or str(tenant_id),
+            business_date=str(day),
+        )
+        return winner, GenerationResult(
+            business_date=day,
+            due=result.due,
+            created=0,
+            already_present=result.due,
+            not_due=result.not_due,
+            inactive_customers=result.inactive_customers,
+        )
 
     log.info(
         "delivery_generation_completed",
@@ -300,7 +442,7 @@ async def record_run(
         duration_ms=run.duration_ms,
         trigger=trigger,
     )
-    return run
+    return run, result
 
 
 async def run_once(
