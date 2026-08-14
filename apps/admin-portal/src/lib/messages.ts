@@ -26,6 +26,18 @@
 export type Catalog = Record<string, string>;
 
 const en: Catalog = {
+  // --- DEMO-017: the automatic scheduler ------------------------------
+  "generation.auto": "Generated automatically",
+  "generation.lastRun": "Last generation",
+  "generation.trigger.scheduler": "automatic",
+  "generation.trigger.manual": "manual",
+  "generation.attempt": "attempt {count}",
+  "generation.neverRun": "Today's round has not been generated yet",
+  "generation.failedNotice":
+    "The last automatic run failed. Generating manually is safe — it will not deliver twice.",
+  "status.running": "running",
+  "status.success": "successful",
+  "status.failed": "failed",
   "status.scheduled": "scheduled",
   "status.delivered": "delivered",
   "status.skipped": "not delivered",
@@ -425,6 +437,18 @@ const en: Catalog = {
 };
 
 const hi: Catalog = {
+  // --- DEMO-017: the automatic scheduler ------------------------------
+  "generation.auto": "स्वतः बनाया गया",
+  "generation.lastRun": "पिछली बार बनाया गया",
+  "generation.trigger.scheduler": "स्वचालित",
+  "generation.trigger.manual": "मैन्युअल",
+  "generation.attempt": "प्रयास {count}",
+  "generation.neverRun": "आज का राउंड अभी नहीं बनाया गया है",
+  "generation.failedNotice":
+    "पिछला स्वचालित प्रयास विफल रहा। मैन्युअल रूप से बनाना सुरक्षित है — दो बार वितरण नहीं होगा।",
+  "status.running": "चल रहा है",
+  "status.success": "सफल",
+  "status.failed": "विफल",
   "status.scheduled": "निर्धारित",
   "status.delivered": "वितरित",
   "status.skipped": "वितरित नहीं",
@@ -826,6 +850,18 @@ const hi: Catalog = {
 };
 
 const ar: Catalog = {
+  // --- DEMO-017: the automatic scheduler ------------------------------
+  "generation.auto": "أُنشئت تلقائيًا",
+  "generation.lastRun": "آخر إنشاء",
+  "generation.trigger.scheduler": "تلقائي",
+  "generation.trigger.manual": "يدوي",
+  "generation.attempt": "المحاولة {count}",
+  "generation.neverRun": "لم تُنشأ جولة اليوم بعد",
+  "generation.failedNotice":
+    "فشلت المحاولة التلقائية الأخيرة. الإنشاء يدويًا آمن — لن تُسلَّم مرتين.",
+  "status.running": "قيد التشغيل",
+  "status.success": "ناجح",
+  "status.failed": "فشل",
   "status.scheduled": "مجدول",
   "status.delivered": "مُسلَّم",
   "status.skipped": "غير مُسلَّم",

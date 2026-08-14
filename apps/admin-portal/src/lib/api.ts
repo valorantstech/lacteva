@@ -2245,7 +2245,10 @@ export const setDeliveryPlan = (
 
 /** Send a standing order on holiday. Generates nothing inside the window;
  *  touches no delivery that has already happened. */
-export const pauseDeliveryPlan = (planId: string, body: { paused_from: string; paused_to?: string | null }) =>
+export const pauseDeliveryPlan = (
+  planId: string,
+  body: { paused_from: string; paused_to?: string | null },
+) =>
   api<DeliveryPlan>(`/v1/customers/plans/${planId}/pause`, {
     method: "POST",
     body: JSON.stringify(body),
@@ -2257,6 +2260,27 @@ export const resumeDeliveryPlan = (planId: string) =>
     method: "POST",
     body: JSON.stringify({}),
   });
+
+export type GenerationRun = {
+  id: string;
+  business_date: string;
+  status: "running" | "success" | "failed";
+  trigger: "scheduler" | "manual";
+  plans_due: number;
+  created: number;
+  already_present: number;
+  not_due: number;
+  inactive_customers: number;
+  attempts: number;
+  error: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number;
+};
+
+/** What the scheduler has been doing (DEMO-017 §10). Newest first. */
+export const listGenerationRuns = (limit = 14) =>
+  api<GenerationRun[]>(`/v1/deliveries/generation-runs?limit=${limit}`);
 
 export type GenerationResult = {
   business_date: string;

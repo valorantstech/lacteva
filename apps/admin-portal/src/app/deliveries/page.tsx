@@ -21,6 +21,8 @@ import {
   deliveryReportCsvUrl,
   generateDeliveries,
   type GenerationResult,
+  type GenerationRun,
+  listGenerationRuns,
   getDeliveryReport,
   listCustomers,
   listDeliveries,
@@ -109,6 +111,7 @@ function DeliveriesView() {
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generated, setGenerated] = useState<GenerationResult | null>(null);
+  const [lastRun, setLastRun] = useState<GenerationRun | null>(null);
 
   const filtered = Boolean(customerId || status || billed);
 
@@ -136,6 +139,11 @@ function DeliveriesView() {
       })
         .then(setReport)
         .catch(() => setReport(null));
+      // DEMO-017 §10. Context, never a blocker: a scheduler whose history
+      // cannot be read must not stop a manager reading the round itself.
+      listGenerationRuns(1)
+        .then((runs) => setLastRun(runs[0] ?? null))
+        .catch(() => setLastRun(null));
     } catch (err) {
       setError(describe(err));
     } finally {
@@ -284,6 +292,39 @@ function DeliveriesView() {
           </a>
         </div>
       </div>
+
+      {/*
+        DEMO-017 §10: one line, not a dashboard. It answers the question an
+        operator actually has at 06:00 — did the round go out, and if not, is
+        it safe for me to press the button? The answer to the second is always
+        yes, and the notice says so when the last run failed.
+      */}
+      {lastRun ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+          <span>
+            {t("generation.lastRun")}:{" "}
+            <span className="text-foreground">{lastRun.business_date}</span>
+          </span>
+          <StatusBadge status={lastRun.status} />
+          <span>
+            {t(`generation.trigger.${lastRun.trigger}`)}
+            {lastRun.attempts > 1
+              ? ` · ${t("generation.attempt", { count: lastRun.attempts })}`
+              : ""}
+          </span>
+          <span>
+            {t("generation.created", { count: lastRun.created })}
+            {lastRun.already_present > 0
+              ? ` · ${t("generation.alreadyPresent", { count: lastRun.already_present })}`
+              : ""}
+          </span>
+          {lastRun.status === "failed" ? (
+            <span className="text-amber-700 dark:text-amber-500">
+              {t("generation.failedNotice")}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {generated ? (
         <div

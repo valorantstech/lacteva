@@ -219,6 +219,25 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
     }
     // These are POSTs with their own shapes, so they must be matched BEFORE
     // the blanket "any POST records a delivery" fallback below.
+    if (path.includes("/v1/deliveries/generation-runs"))
+      return json([
+        {
+          id: "gr-1",
+          business_date: "2026-08-15",
+          status: "success",
+          trigger: "scheduler",
+          plans_due: 300,
+          created: 286,
+          already_present: 14,
+          not_due: 0,
+          inactive_customers: 0,
+          attempts: 1,
+          error: "",
+          started_at: "2026-08-15T05:00:02Z",
+          finished_at: "2026-08-15T05:00:04Z",
+          duration_ms: 1840,
+        },
+      ]);
     if (path.endsWith("/v1/deliveries/generate"))
       return json({
         business_date: "2026-08-12",
@@ -817,5 +836,61 @@ describe("standing orders (DEMO-016)", () => {
     const banner = await screen.findByRole("status");
     expect(banner.textContent).toMatch(/6 already existed/i);
     expect(banner.textContent).toMatch(/will not deliver twice/i);
+  });
+});
+
+describe("the automatic scheduler (DEMO-017)", () => {
+  it("says when the round last went out, and how", async () => {
+    routeAll();
+    render(<DeliveriesPage />);
+    expect(await screen.findByText(/last generation/i)).toBeInTheDocument();
+    expect(screen.getByText("2026-08-15")).toBeInTheDocument();
+    expect(screen.getByText("successful")).toBeInTheDocument();
+    expect(screen.getByText(/automatic/i)).toBeInTheDocument();
+    expect(screen.getByText(/286 deliveries generated/i)).toBeInTheDocument();
+  });
+
+  it("tells an operator that pressing the button after a failure is safe", async () => {
+    // The question at 06:00 is "the round did not go out — can I fix it?".
+    // The answer is always yes, and the screen has to say so.
+    routeAll({
+      "/v1/deliveries/generation-runs": () =>
+        json([
+          {
+            id: "gr-2",
+            business_date: "2026-08-15",
+            status: "failed",
+            trigger: "scheduler",
+            plans_due: 0,
+            created: 0,
+            already_present: 0,
+            not_due: 0,
+            inactive_customers: 0,
+            attempts: 2,
+            error: "database went away",
+            started_at: "2026-08-15T05:00:02Z",
+            finished_at: "2026-08-15T05:00:03Z",
+            duration_ms: 900,
+          },
+        ]),
+    });
+    render(<DeliveriesPage />);
+    expect(
+      await screen.findByText(/will not deliver twice/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText("failed")).toBeInTheDocument();
+    expect(screen.getByText(/attempt 2/i)).toBeInTheDocument();
+  });
+
+  it("still shows the round when the scheduler history cannot be read", async () => {
+    // Context must never be a blocker.
+    routeAll({
+      "/v1/deliveries/generation-runs": () => json({ title: "forbidden" }, 403),
+    });
+    render(<DeliveriesPage />);
+    expect((await screen.findAllByText("By customer")).length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.queryByText(/last generation/i)).not.toBeInTheDocument();
   });
 });
