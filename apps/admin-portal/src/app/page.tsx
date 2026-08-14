@@ -43,6 +43,7 @@ import { Money, Quantity } from "@/components/money";
 import { PageHeader, SectionHeading, StatTile } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState, TableSkeleton } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
+import { useT } from "@/lib/i18n";
 
 /**
  * The customer dashboard (DEMO-002).
@@ -87,6 +88,7 @@ function describe(error: unknown): string {
 }
 
 export default function Home() {
+  const t = useT();
   const [session, setSession] = useState<Session | null>(null);
   const [checked, setChecked] = useState(false);
   const [range, setRange] = useState<DateRange>(() => resolveRange("7d"));
@@ -188,11 +190,11 @@ export default function Home() {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Dashboard"
-        description="Both sides of the dairy — milk bought from suppliers and milk sold to customers. Every figure is computed by the platform."
+        title={t("dashboard.title")}
+        description={t("dashboard.description")}
         actions={
           <Button type="button" variant="outline" disabled={busy} onClick={() => void load(range)}>
-            {busy ? "Refreshing…" : "Refresh"}
+            {busy ? t("dashboard.refreshing") : t("action.refresh")}
           </Button>
         }
       />
@@ -227,13 +229,13 @@ export default function Home() {
           PAYS, sales is what it is OWED, and putting them in one undivided
           grid was the fastest way to make an owner mistrust the whole page. */}
       <SectionHeading
-        title="Procurement"
-        detail="Milk bought from suppliers, and what the dairy owes for it"
+        title={t("dashboard.procurement")}
+        detail={t("dashboard.procurementDetail")}
       />
 
       <section aria-label="Collection summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatTile
-          label="Collections"
+          label={t("dashboard.collections")}
           value={collection ? collection.transactions : "—"}
           hint={
             collection
@@ -243,13 +245,13 @@ export default function Home() {
           icon={<Activity className="size-4" />}
         />
         <StatTile
-          label="Quantity"
+          label={t("dashboard.quantity")}
           value={collection ? <Quantity value={collection.total_net_weight_kg} unit="kg" /> : "—"}
           hint={collection ? `${collection.suppliers_served} suppliers served` : undefined}
           icon={<Droplets className="size-4" />}
         />
         <StatTile
-          label="Collection value"
+          label={t("dashboard.collectionValue")}
           value={
             primary ? (
               <Money amount={primary[1]} currency={primary[0]} />
@@ -263,19 +265,19 @@ export default function Home() {
           icon={<Banknote className="size-4" />}
         />
         <StatTile
-          label="Average fat"
+          label={t("dashboard.averageFat")}
           value={collection?.weighted_avg_fat != null ? `${collection.weighted_avg_fat}%` : "—"}
           hint="weighted by quantity"
           icon={<Percent className="size-4" />}
         />
         <StatTile
-          label="Active suppliers"
+          label={t("dashboard.activeSuppliers")}
           value={report ? report.active_suppliers : "—"}
           hint="registered and active"
           icon={<Truck className="size-4" />}
         />
         <StatTile
-          label="Active centres"
+          label={t("dashboard.activeCentres")}
           value={report ? report.active_centers : "—"}
           hint={report?.inactive_centers ? `${report.inactive_centers} not active` : "all active"}
           icon={<Building2 className="size-4" />}
@@ -283,21 +285,21 @@ export default function Home() {
       </section>
 
       <SectionHeading
-        title="Sales"
-        detail="Milk delivered to customers, and what they owe the dairy"
+        title={t("dashboard.sales")}
+        detail={t("dashboard.salesDetail")}
         href="/receivables"
-        hrefLabel="Who owes money"
+        hrefLabel={t("nav.receivables")}
       />
 
       <section aria-label="Sales summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatTile
-          label="Deliveries"
+          label={t("dashboard.deliveries")}
           value={sales ? sales.deliveries_in_period : "—"}
           hint={sales ? `${sales.customers_served_in_period} customers served` : undefined}
           icon={<PackageCheck className="size-4" />}
         />
         <StatTile
-          label="Milk delivered"
+          label={t("dashboard.milkDelivered")}
           value={
             sales ? (
               <Quantity
@@ -312,7 +314,7 @@ export default function Home() {
           icon={<Droplets className="size-4" />}
         />
         <StatTile
-          label="Sales value"
+          label={t("dashboard.salesValue")}
           value={
             sales ? (
               <Money amount={sales.sales_value_in_period} currency={sales.currency ?? "KES"} />
@@ -324,7 +326,7 @@ export default function Home() {
           icon={<Banknote className="size-4" />}
         />
         <StatTile
-          label="Customer receivable"
+          label={t("dashboard.customerReceivable")}
           value={
             sales ? <Money amount={sales.receivable} currency={sales.currency ?? "KES"} /> : "—"
           }
@@ -336,13 +338,13 @@ export default function Home() {
           icon={<Wallet className="size-4" />}
         />
         <StatTile
-          label="Bills outstanding"
+          label={t("dashboard.billsOutstanding")}
           value={sales ? sales.open_invoices : "—"}
           hint={sales ? `${sales.receipts_issued} receipts issued` : undefined}
           icon={<FileText className="size-4" />}
         />
         <StatTile
-          label="Delivered, not billed"
+          label={t("dashboard.deliveredNotBilled")}
           value={sales ? sales.unbilled_deliveries : "—"}
           hint={
             sales ? (

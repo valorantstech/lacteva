@@ -271,7 +271,10 @@ class PaymentService:
                 # the caller omits it the platform supplies the
                 # organization's, and this guard would otherwise compare a
                 # settlement against None and refuse every payment.
-                allocation.settlement_id, tenant_id, cmd.supplier_id, currency
+                allocation.settlement_id,
+                tenant_id,
+                cmd.supplier_id,
+                currency,
             )
             amount = await self._resolve_allocation(settlement, allocation.amount)
             resolved.append((settlement, amount))

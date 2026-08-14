@@ -224,7 +224,9 @@ describe("organization settings", () => {
     await userEvent.click(screen.getByTestId("choose-language-hi-IN"));
 
     await waitFor(() => {
-      const sent = spy.mock.calls.find(([url]) => String(url).includes("/v1/auth/me/language"));
+      const sent = spy.mock.calls.find((call) =>
+        String(call[0]).includes("/v1/auth/me/language"),
+      ) as unknown as [string, RequestInit] | undefined;
       expect(sent, "the language was never sent to the platform").toBeTruthy();
       expect(String(sent?.[1]?.body)).toContain("hi-IN");
     });
