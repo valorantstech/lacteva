@@ -844,3 +844,26 @@ async def test_another_tenant_cannot_act_on_a_payment(client):
     for action, body in (("submit", {}), ("cancel", {"reason": "x"})):
         r = await _action(client, other_headers, payment["id"], action, body)
         assert r.status_code == 404, action
+
+
+async def test_a_payment_with_no_currency_takes_the_organizations(client):
+    """DEMO-013, and the case that broke the demo seeder.
+
+    Making `currency` optional is only half the change: `_payable_settlement`
+    compares the payment's currency against the settlement's, and it was still
+    being handed the REQUEST's value. When the caller omitted it that value
+    was None, so every settlement looked like a currency mismatch and every
+    payment was refused with "currency conversion is not a payment operation".
+
+    The guard is right and stays; what it compares had to become the resolved
+    currency.
+    """
+    headers, _center, supplier, settlement = await _payable(client)
+    body = {
+        "supplier_id": supplier["id"],
+        "method": "BANK_TRANSFER",
+        "allocations": [{"settlement_id": settlement["id"]}],
+    }
+    r = await client.post("/v1/payments", json=body, headers=headers)
+    assert r.status_code == 201, r.text
+    assert r.json()["currency"] == settlement["currency"]
