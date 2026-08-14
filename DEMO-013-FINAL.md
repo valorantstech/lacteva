@@ -3,7 +3,7 @@ id: DEMO-013-FINAL
 title: DEMO-013 — Globalization, Country, Currency, Timezone & Language
 type: reference
 status: Approved
-version: "1.0"
+version: "2.0"
 owner: Platform Engineering
 created: 2026-08-14
 last-updated: 2026-08-14
@@ -27,7 +27,9 @@ An organization now resolves **country → currency + timezone + languages**
 once, at onboarding, and everything else reads the organization. Nothing in
 the application branches on which country a tenant is in.
 
-**Three defects found, two of them only by running things.** **AWS cost: none.**
+**Six defects found. Five of them only by running things** — against real
+PostgreSQL, in a real browser, and against the production database itself.
+**AWS cost: none.**
 
 ---
 
@@ -61,7 +63,7 @@ backend, no new currency column anywhere, no change to the money model.
 
 ## 3. Database changes
 
-One migration, `f3a92d18c47b`, additive and reversible:
+Two migrations, both additive and reversible. `f3a92d18c47b`:
 
 | Change | Note |
 | --- | --- |
@@ -79,8 +81,17 @@ such an organization cannot trade until an administrator says what it uses.
 Every organization in existence is `KE`, so that branch is theoretical, which
 is the point of writing it down rather than defaulting to Kenya.
 
-Verified up → down → up on SQLite and applied on production PostgreSQL;
-`alembic check` reports no drift.
+And `b8d41f7e2a95`, which repairs what the first one left inconsistent —
+`default_locale` still `en` while `supported_languages` had become
+`["en-KE","sw-KE"]`. See D6.
+
+Verified against **real PostgreSQL 16.2** (the `pgserver` wheel — no Docker,
+no root), not only SQLite: migrations from empty; then production's own case,
+migrating to `e91b6c47a2d8`, inserting organizations with lowercase `ke` and
+an unlisted `ZZ`, upgrading, and confirming `KES`/`Africa/Nairobi`,
+`XXX`/`UTC` for the unlisted one and zero nulls; then down (data intact,
+`default_locale` narrowed back to 8); then up again; then `alembic check` —
+no drift. Finally applied to production.
 
 ## 4. API changes
 
@@ -218,10 +229,12 @@ billing system itself was **not** redesigned (§9 of the work order).
 
 | Suite | Result |
 | --- | --- |
-| Backend, full | **1,385 passed**, 0 failed |
-| Backend, new for DEMO-013 | 40 (localization 38, payment currency 1, RLS 1) |
+| Backend, full | **1,391 passed**, 0 failed |
+| Backend, new for DEMO-013 | 48 |
+| PostgreSQL proof (9 steps + new 1b) | **PASSED** end to end |
+| Reconciliation, production database | **PASSED** |
 | Portal | **208 passed** (11 new) |
-| Mobile | **107 passed** (13 new) |
+| Mobile | **114 passed** (20 new) |
 | Analyzer / lint | `dart analyze`, `eslint --max-warnings 0`, `ruff` all clean |
 | Migration | up → down → up, `alembic check` no drift |
 | Docs | validator + XREF regenerated |
@@ -261,7 +274,88 @@ Real Chrome, the built portal against the two-market database:
 
 ## 15. Deployment
 
-See §18 below.
+**Deployed and verified on production: `main-31d074a`**, schema at
+`b8d41f7e2a95`. https://dev.phoenixsoft.in.
+
+It took three attempts, and the two failures were both worth having.
+
+### D4 — The migration failed on PostgreSQL and the deploy refused it
+
+The first attempt applied nothing. `deploy.sh` stopped at step 4, kept the
+old version serving and left the schema untouched — which is exactly what it
+is built to do.
+
+    column "supported_languages" is of type json
+    but expression is of type character varying
+
+The backfill was hand-written SQL binding a **pre-serialized JSON string**.
+That is right for SQLite, where a JSON column is TEXT, and PostgreSQL refuses
+it at parse time: asyncpg sends the parameter as `text` and PostgreSQL will
+not implicitly cast text to json in an assignment.
+
+It failed on an **empty** database, so it was never about data — which means
+`./infra/ci/verify-postgres.sh` would have caught it and **I had not run it**.
+That is the root cause; the SQL was the symptom.
+
+Fixed by declaring the table with its real column types and using a Core
+`update()`, so SQLAlchemy renders the statement for whichever dialect is
+running. The nine-step proof gained a **step 1b**: migrations meeting existing
+rows. An empty database proves a migration parses; it says nothing about a
+backfill, and the production case is always the other one.
+
+### D5 — The verifier failed a healthy stack, and its rollback failed too
+
+The second attempt applied the migration, started cleanly, and was then torn
+down by its own verification — nine component checks failed on a platform
+whose every probe was green. The automatic rollback ran the same verifier a
+second later, failed identically, and gave up. That left **old code serving
+against a new schema with a newer portal beside it**: the half-deployed state
+the rollback exists to prevent.
+
+`/health/ready` has a deliberate startup window: before the first health
+sample lands it answers 200 with the cheap adapter checks
+(`{"checks": {"database": true}}`), so a just-started instance is not reported
+unready for a whole sampling interval. Right for a load balancer, wrong for a
+verifier that then asserts the four-level vocabulary against booleans and
+reports `database is True` and every other component "not being probed at
+all".
+
+**Waiting for a 200 was never the same as waiting for an answer.** The
+verifier now waits for `platform_status`, which exists only once a real sample
+does. Same family as the DEMO-010 defect where it followed a 301 into a
+certificate mismatch: a healthy deployment destroyed by its own smoke test.
+
+### D6 — Every existing tenant was locked out of its own settings
+
+Found by running the reconciliation **against production, minutes after
+deploying** — which is what it is for.
+
+`f3a92d18c47b` back-filled `supported_languages` from the country
+(`["en-KE","sw-KE"]`) and left `default_locale` at the bare `en` every
+organization already held. The row then contradicts itself, and
+`update_locale_settings` validates through the same `resolve` onboarding uses,
+which refuses a default language that is not among the supported ones. So on
+**every pre-existing tenant** an administrator could not change their currency,
+timezone or languages at all, and the 422 named a value they had never set.
+
+`b8d41f7e2a95` preserves the language and repairs the tag: `en` with
+`["en-KE","sw-KE"]` available means English, and `en-KE` is English.
+`user_account.locale` is deliberately untouched — a person's preference is
+theirs.
+
+### The production deployment
+
+| Step | Result |
+| --- | --- |
+| Pre-deployment backup | `predeploy-demo013b-20260814T083656Z`, verified on disk before deploying |
+| Migrations | `f3a92d18c47b` then `b8d41f7e2a95`, applied to real PostgreSQL |
+| Schema | `b8d41f7e2a95`; `currency_code varchar(3)`, `timezone varchar(64)`, `supported_languages json`, all NOT NULL |
+| RLS | enabled **and FORCED** with a policy on all **61** tenant tables |
+| Health | every probe healthy; smoke test passed |
+| Images | api and portal both `main-31d074a` — no mixed state |
+| Reconciliation | **PASSED** against the production database |
+
+Four backups were taken across the three attempts; every one exists on disk.
 
 ## 16. AWS resources and cost
 
@@ -311,6 +405,30 @@ the real payload.
   that protects a real endpoint.
 - **A bad IANA zone answered 500** because the error hierarchy had no 422.
 
+## 17b. Production data findings
+
+Reconciling the production database surfaced one thing that is **not** a defect
+and must not be "fixed":
+
+**`phoenix-demo` is an Indian tenant holding four settlements, four payments,
+four receipts and one rate card in KES** — real history from before this
+platform could express an Indian dairy. That history is **not converted**. Each
+row carries the currency it was written in, which is the reason the column
+exists, and rewriting it would be an exchange rate nobody agreed at a date
+nobody recorded. The tenant's *going-forward* currency is INR; the platform
+handles the mixture coherently, because a payment is guarded against its
+settlement's currency and a calculation cannot enter a settlement in another
+one.
+
+`reconcile_localization.py --legacy-currency phoenix-demo` accepts it **by
+name while still listing every row**, so the fact stays visible in the output
+and somebody has to have said so.
+
+Two pre-existing users (`manager@phoenixsoft.in` and the Kenyan demo staff)
+still prefer the bare `en`. That is reported, not corrected: DEMO-013's rule is
+that an organization's settings never rewrite a person's stored preference, and
+`en` negotiates to English correctly.
+
 ## 18. Remaining limitations
 
 - **Hindi coverage is partial by design.** Navigation, the dashboard, the
@@ -338,6 +456,10 @@ the real payload.
   Flutter changes have 13 tests and a clean analyzer; the browser verification
   above is the portal. No emulator image is available on this machine
   (unchanged since DEMO-012).
+- **The seeder is not in the API image.** Seeding the Indian demo on
+  production meant `docker cp`-ing `seed_demo.py` into the running container
+  and removing it afterwards. DEMO-010 recorded the same gap; it is still
+  open, and it is the reason demo data cannot be seeded from a pipeline.
 - **Money scale is still a constant.** `Currency.minor_units` exists and is
   correct, but every supported currency has two decimals, so nothing reads it
   yet. A zero-decimal currency (UGX is already in the registry) would need

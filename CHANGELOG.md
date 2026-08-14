@@ -49,6 +49,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Rep
   with the Kenyan tenant untouched. The seeder now waits when the platform
   rate-limits it rather than being exempted from a control that protects a
   real endpoint.
+- **The migration failed on real PostgreSQL and the deployment refused it** —
+  correctly, keeping the old version serving with the schema untouched. The
+  backfill bound a pre-serialized JSON string, which is right for SQLite's TEXT
+  column and refused by PostgreSQL at parse time. It failed on an EMPTY
+  database, so `verify-postgres.sh` would have caught it and had not been run.
+  The nine-step proof gained a step for migrations meeting EXISTING rows: an
+  empty database proves a migration parses, and the production case is always
+  the other one.
+- **The deployment verifier failed a healthy stack, and its rollback failed the
+  same way**, leaving old code against a new schema. It was racing the health
+  sampler: `/health/ready` answers 200 with cheap boolean checks during its
+  startup window, and the verifier asserted the four-level vocabulary against
+  them. Waiting for a 200 was never the same as waiting for an answer.
+- **Every existing tenant was locked out of its own settings.** The first
+  migration back-filled `supported_languages` from the country and left
+  `default_locale` at the bare `en`, so the row contradicted itself and
+  `resolve` — correctly — refused every settings update on every pre-existing
+  tenant. Found by reconciling PRODUCTION minutes after deploying.
+- **`reconcile_localization.py`** asks a real database whether each
+  organization's money matches its country, whether any money row is in a
+  currency its tenant does not use, and whether RLS is still forced on every
+  tenant table. It restates the country table rather than importing it, because
+  a check that imports what it checks agrees by construction.
 - Also: `ValidationError` (422), because the error hierarchy had no home for a
   value wrong in domain terms and a bad IANA zone was answering 500; and a
   latent DEMO-012 defect where the mobile session read the person from the top

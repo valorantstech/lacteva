@@ -211,23 +211,33 @@ void main() {
     );
   });
 
-  test('the queue survives on disk and tolerates a corrupt file', () async {
-    final dir = await Directory.systemTemp.createTemp('lacteva-offline');
-    final path = '${dir.path}/queue.json';
-    await _collectOffline(_client(FileOfflineStore(path)));
-    expect(await File(path).exists(), isTrue);
+  test(
+    'the queue survives on disk and tolerates a corrupt file',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('lacteva-offline');
+      final path = '${dir.path}/queue.json';
+      await _collectOffline(_client(FileOfflineStore(path)));
+      expect(await File(path).exists(), isTrue);
 
-    final reopened = _client(FileOfflineStore(path));
-    await reopened.queue.load();
-    expect(reopened.queue.operations.length, 7);
+      final reopened = _client(FileOfflineStore(path));
+      await reopened.queue.load();
+      expect(reopened.queue.operations.length, 7);
 
-    // A crash mid-write leaves garbage: start clean rather than crash-loop.
-    await File(path).writeAsString('{not json');
-    final afterCorruption = _client(FileOfflineStore(path));
-    await afterCorruption.queue.load();
-    expect(afterCorruption.queue.operations, isEmpty);
-    await dir.delete(recursive: true);
-  });
+      // A crash mid-write leaves garbage: start clean rather than crash-loop.
+      await File(path).writeAsString('{not json');
+      final afterCorruption = _client(FileOfflineStore(path));
+      await afterCorruption.queue.load();
+      expect(afterCorruption.queue.operations, isEmpty);
+      await dir.delete(recursive: true);
+    },
+    // The ONLY test here that touches a real filesystem, and the default 30s
+    // is a harness limit rather than a guarantee: under a full parallel run
+    // on a loaded machine this times out while passing every time it is run
+    // alone. Nothing about durability or corruption tolerance is relaxed —
+    // every assertion above is unchanged — but a test that fails half the
+    // full runs teaches people to ignore red, which is worse than slow.
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
 
   test('a crash mid-push recovers in-flight work', () async {
     final store = MemoryOfflineStore();
