@@ -51,17 +51,37 @@ FAILURES=0
 step "Waiting for the API to report ready (up to ${TIMEOUT}s)"
 # Poll readiness rather than sleeping: readiness is the platform's own answer
 # to "should I receive traffic", and it already aggregates every probe below.
+#
+# DEMO-013: wait for the SAMPLED payload, not merely for a 200.
+#
+# `/health/ready` has a deliberate startup window (`core/observability.py`):
+# before the first health sample lands it answers 200 with the cheap adapter
+# checks — `{"status": "ok", "checks": {"database": true}}` — so that a
+# just-started instance is not reported unready for a whole sampling
+# interval. That is correct for a load balancer and wrong for this script,
+# which then asserts the four-level component vocabulary against booleans and
+# reports every probe "not being probed at all".
+#
+# It cost a production deployment: the verifier failed a healthy stack, and
+# the automatic rollback it triggered failed the same way one second later,
+# leaving old code running against a new schema. `platform_status` appears
+# only once a real sample exists, so that is what "ready" means here.
 deadline=$(( $(date +%s) + TIMEOUT ))
-until curl -fsS "${CURL_OPTS[@]}" "${API}/health/ready" >/dev/null 2>&1; do
+sampled() {
+  curl -fsS "${CURL_OPTS[@]}" "${API}/health/ready" 2>/dev/null \
+    | python3 -c "import json,sys; sys.exit(0 if 'platform_status' in json.load(sys.stdin) else 1)" \
+    2>/dev/null
+}
+until sampled; do
   if [ "$(date +%s)" -ge "${deadline}" ]; then
-    fail "API never became ready within ${TIMEOUT}s"
+    fail "API never reported a sampled health snapshot within ${TIMEOUT}s"
     echo "  last response:" >&2
-    curl -sS --max-time 5 "${API}/health/ready" >&2 || true
+    curl -sS --max-time 5 "${CURL_OPTS[@]}" "${API}/health/ready" >&2 || true
     exit 1
   fi
   sleep 2
 done
-pass "API is ready"
+pass "API is ready (health sampler has run)"
 
 READY_JSON="$(curl -fsS "${CURL_OPTS[@]}" "${API}/health/ready")"
 
