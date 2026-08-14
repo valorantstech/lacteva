@@ -2,7 +2,7 @@
 boundaries, pagination, permissions, tenant isolation, query bounds."""
 
 import uuid
-from datetime import date, timedelta
+from datetime import UTC, date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import update
@@ -127,9 +127,23 @@ async def test_date_boundaries(client):
             .values(created_at=yesterday)
         )
         await s.commit()
-        moved_day = yesterday.date().isoformat()
-        today_str = (yesterday.date() + timedelta(days=1)).isoformat()
-    assert (await _daily(client, headers))["transactions"] == 2
+        # DEMO-019: derive the days from the ORGANIZATION's clock, which is
+        # what the report answers in. This test used to take the UTC date of
+        # each timestamp — the same assumption the report itself carried, and
+        # the one that made it read zero for a Nairobi dairy after local
+        # midnight. With the report fixed, a UTC-derived range here asks for
+        # a window the transactions are not in.
+        from platform_core.core.business_time import business_date_of
+
+        zone_name = "Africa/Nairobi"  # `_reported_env` onboards a Kenyan dairy
+        moved_day = business_date_of(yesterday, zone_name).isoformat()
+    remaining = await _daily(client, headers)
+    assert remaining["transactions"] == 2
+    # The platform's own answer for "today", rather than a date derived here.
+    # Deriving it was how this test came to encode the UTC assumption the
+    # report itself carried: `tx.created_at` has already been moved by the
+    # UPDATE above, so reading it back gives the wrong day entirely.
+    today_str = remaining["date_from"]
     ranged = await _daily(client, headers, date_from=moved_day, date_to=today_str)
     assert ranged["transactions"] == 3
     only_yesterday = await _daily(client, headers, date_from=moved_day, date_to=moved_day)
@@ -432,3 +446,43 @@ async def test_supplier_report_no_n_plus_one(client):
     headers, _, _, _ = await _reported_env(client)
     selects = await _count_selects(client, headers, "/v1/reports/collection/by-supplier")
     assert selects <= 11, f"per-supplier lookups detected: {selects} SELECTs"
+
+
+async def test_a_collection_recorded_after_local_midnight_is_on_that_days_report(client):
+    """DEMO-019 found this by the suite failing at midnight in Nairobi.
+
+    The daily collection report resolved "today" as the ORGANIZATION's date —
+    correctly, since DEMO-013 — and then built its window from the NAIVE UTC
+    MIDNIGHTS of that date. For a UTC+3 dairy between 21:00 and 24:00 UTC the
+    local date is already tomorrow, so the window began three hours in the
+    future and the report read **zero for a day on which milk had been
+    collected**. An Indian dairy lost five and a half hours of every day.
+
+    This pins the boundary rather than the wall clock: a collection stamped at
+    22:30 UTC belongs to the next local day for a UTC+3 dairy, and must appear
+    on that day's report.
+    """
+    from datetime import datetime
+
+    from sqlalchemy import update as sa_update
+
+    from platform_core.core import db
+    from platform_core.modules.milk_collection.models import MilkCollectionTransaction
+
+    headers, _, _, _ = await _reported_env(client)
+
+    # 22:30 UTC on the 13th is 01:30 on the 14th in Nairobi.
+    instant = datetime(2026, 8, 13, 22, 30, tzinfo=UTC)
+    async with db.get_session_factory()() as s:
+        await s.execute(sa_update(MilkCollectionTransaction).values(created_at=instant))
+        await s.commit()
+
+    local_day = await _daily(client, headers, date_from="2026-08-14", date_to="2026-08-14")
+    assert local_day["transactions"] == 3, (
+        "a collection made after local midnight fell off its own day's report"
+    )
+
+    utc_day = await _daily(client, headers, date_from="2026-08-13", date_to="2026-08-13")
+    assert utc_day["transactions"] == 0, (
+        "the collection was counted on UTC's day rather than the dairy's"
+    )

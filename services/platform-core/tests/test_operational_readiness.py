@@ -191,11 +191,16 @@ async def test_readiness_walkthrough(client):
 
 
 async def test_calendar_closure_blocks_readiness(client):
-    from platform_core.core.db import utcnow
+    from platform_core.core.business_time import business_today
 
     headers, _, center = await _center_fixture(client)
     cid = center["id"]
-    today = utcnow().date().isoformat()
+    # DEMO-019: the CENTRE's today, not UTC's. Readiness evaluates a closure
+    # against the dairy's own calendar day — correctly, since a centre is shut
+    # on its own Tuesday — and this test closed it on UTC's day instead. For a
+    # Nairobi cooperative after local midnight those are different dates, so
+    # the closure landed on a day nobody asked about and readiness passed.
+    today = business_today("Africa/Nairobi").isoformat()
     r = await client.post(
         f"/v1/collection-centers/{cid}/calendar",
         json={"day": today, "kind": "closure", "note": "Stocktaking"},

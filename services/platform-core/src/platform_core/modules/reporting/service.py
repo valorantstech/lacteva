@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy import Numeric, case, cast, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.business_time import range_bounds
 from platform_core.core.db import as_utc
 from platform_core.core.money import quantize_money
 from platform_core.core.tenancy import require_current_tenant
@@ -452,6 +453,18 @@ class ReportingService:
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    async def _timezone(self) -> str:
+        """The organization's IANA zone, for every window this module builds.
+
+        DEMO-019: a report's date bounds and its "today" have to come from the
+        same clock. They did not — `_today()` resolved the organization's zone
+        and the windows were built from naive UTC midnights of the date it
+        returned, which is a different instant for every dairy not on UTC.
+        """
+        from platform_core.core.org_context import tenant_timezone
+
+        return await tenant_timezone(self._session)
+
     async def _today(self):
         """Today, as the ORGANIZATION reckons it (DEMO-013 §8).
 
@@ -480,7 +493,12 @@ class ReportingService:
         date_from = date_from or await self._today()
         date_to = date_to or date_from
         conditions = self._tx_conditions(
-            tenant_id, date_from, date_to, center_id=center_id, supplier_id=supplier_id
+            tenant_id,
+            date_from,
+            date_to,
+            timezone=await self._timezone(),
+            center_id=center_id,
+            supplier_id=supplier_id,
         )
         stmt = select(
             func.count().label("transactions"),
@@ -564,7 +582,9 @@ class ReportingService:
         date_from = date_from or await self._today()
         date_to = date_to or date_from
         limit = max(1, min(limit, 100))
-        conditions = self._tx_conditions(tenant_id, date_from, date_to)
+        conditions = self._tx_conditions(
+            tenant_id, date_from, date_to, timezone=await self._timezone()
+        )
         stmt = (
             select(
                 Tx.center_id,
@@ -639,7 +659,9 @@ class ReportingService:
         date_from = date_from or await self._today()
         date_to = date_to or date_from
         limit = max(1, min(limit, 100))
-        conditions = self._tx_conditions(tenant_id, date_from, date_to, center_id=center_id)
+        conditions = self._tx_conditions(
+            tenant_id, date_from, date_to, timezone=await self._timezone(), center_id=center_id
+        )
         stmt = (
             select(
                 Tx.supplier_id,
@@ -980,16 +1002,17 @@ class ReportingService:
         payments somebody needs to act on.
         """
         tenant_id = require_current_tenant()
+        # Same defect, same fix as `_tx_conditions`: a payment raised at 23:30
+        # in Nairobi belongs to that local day, and a naive UTC midnight put it
+        # outside the window that asked for it.
+        timezone = await self._timezone()
         conditions = [Payment.tenant_id == tenant_id]
         if date_from is not None:
-            conditions.append(
-                Payment.created_at >= datetime.combine(date_from, datetime.min.time())
-            )
+            start, _ = range_bounds(date_from, date_from, timezone)
+            conditions.append(Payment.created_at >= start)
         if date_to is not None:
-            conditions.append(
-                Payment.created_at
-                < datetime.combine(date_to + timedelta(days=1), datetime.min.time())
-            )
+            _, end = range_bounds(date_to, date_to, timezone)
+            conditions.append(Payment.created_at < end)
         if supplier_id is not None:
             conditions.append(Payment.supplier_id == supplier_id)
 
@@ -1071,11 +1094,27 @@ class ReportingService:
         date_to = date_to or await self._today()
         date_from = date_from or date_to
         conditions = self._tx_conditions(
-            tenant_id, date_from, date_to, center_id=center_id, supplier_id=supplier_id
+            tenant_id,
+            date_from,
+            date_to,
+            timezone=await self._timezone(),
+            center_id=center_id,
+            supplier_id=supplier_id,
         )
-        # `date()` is a function-style cast on PostgreSQL and a built-in on
-        # SQLite, so one expression buckets correctly on both engines. The
-        # database runs in UTC, which is the clock `created_at` is stamped with.
+        # Bucketed by UTC's day, which is a KNOWN INACCURACY (DEMO-019).
+        #
+        # The window above is now correctly the dairy's; this grouping is not,
+        # so a collection recorded after local midnight sits one point to the
+        # left of where it belongs. It affects where a bar is drawn, never a
+        # figure anyone is paid on — the daily summary, the settlements and
+        # the bills all read the corrected window.
+        #
+        # Attempted and reverted: `func.date(created_at + offset)`. Adding a
+        # `timedelta` to a datetime column is fine on PostgreSQL and produces
+        # nonsense on SQLite, where datetimes are strings and the `+` is
+        # numeric — `Invalid isoformat string: '-4702-11-0'`. The portable fix
+        # is a dialect-specific `AT TIME ZONE`, which is a larger change than
+        # a misplaced chart point justifies today. See DEMO-019-FINAL.
         day = func.date(Tx.created_at)
         rows = (
             await self._session.execute(
@@ -1137,7 +1176,9 @@ class ReportingService:
         tenant_id = require_current_tenant()
         date_to = date_to or await self._today()
         date_from = date_from or date_to
-        conditions = self._tx_conditions(tenant_id, date_from, date_to, center_id=center_id)
+        conditions = self._tx_conditions(
+            tenant_id, date_from, date_to, timezone=await self._timezone(), center_id=center_id
+        )
         rows = (
             await self._session.execute(
                 select(
@@ -1633,7 +1674,9 @@ class ReportingService:
         tenant_id = require_current_tenant()
         date_from = date_from or await self._today()
         date_to = date_to or date_from
-        conditions = self._tx_conditions(tenant_id, date_from, date_to, center_id=center_id)
+        conditions = self._tx_conditions(
+            tenant_id, date_from, date_to, timezone=await self._timezone(), center_id=center_id
+        )
         row = (
             await self._session.execute(
                 select(
@@ -1693,15 +1736,34 @@ class ReportingService:
         date_from: date,
         date_to: date,
         *,
+        timezone: str | None = None,
         center_id: uuid.UUID | None = None,
         supplier_id: uuid.UUID | None = None,
     ) -> list:
-        """Closed date range [date_from, date_to] applied as half-open
-        datetimes [00:00 of date_from, 00:00 of date_to + 1 day)."""
+        """Closed local date range, applied as the half-open UTC interval it
+        actually spans.
+
+        **This used to build the window from NAIVE UTC MIDNIGHTS of a date
+        that is the ORGANIZATION's**, and the two are not the same instant for
+        any dairy that is not on UTC. For a Nairobi cooperative at 00:24 local
+        — 21:24 UTC the previous day — `date_from` was correctly today's local
+        date and the window began at that date's UTC midnight, three hours in
+        the future. Every collection recorded that evening fell outside it, so
+        the daily collection report read ZERO for a day on which milk had been
+        collected, for the last three hours of every UTC day. An Indian dairy
+        lost five and a half.
+
+        DEMO-013 built `range_bounds` for exactly this and the delivery side
+        has used it since; the procurement reports were never converted.
+        Found by DEMO-019 when the wall clock happened to be inside the
+        window — which is to say, found by the suite failing at midnight in
+        Nairobi rather than by anybody reading it.
+        """
+        start, end = range_bounds(date_from, date_to, timezone)
         conditions = [
             Tx.tenant_id == tenant_id,
-            Tx.created_at >= datetime.combine(date_from, datetime.min.time()),
-            Tx.created_at < datetime.combine(date_to + timedelta(days=1), datetime.min.time()),
+            Tx.created_at >= start,
+            Tx.created_at < end,
         ]
         if center_id is not None:
             conditions.append(Tx.center_id == center_id)

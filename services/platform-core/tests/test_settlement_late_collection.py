@@ -19,14 +19,18 @@ the trap PILOT-001 fell into.
 from datetime import timedelta
 from decimal import Decimal
 
-from platform_core.core.db import utcnow
+from platform_core.core.business_time import business_today
 from tests.test_payments import _second_tenant
 from tests.test_procurement_e2e import _accept_complete, _procurement_env, _run_collection
 
 # UTC, not the local day: the platform stamps a collection's business date
 # from `as_utc(created_at)`, and for half of every day the two disagree —
 # which is precisely how the first draft of this file failed.
-TODAY = utcnow().date()
+# DEMO-019: the DAIRY's today, not UTC's. A settlement line is dated by the
+# organization's business date, so a test whose `TODAY` came from `utcnow()`
+# disagreed with the platform for the hours when a Nairobi dairy is already on
+# tomorrow — three of every twenty-four, and green the rest of the time.
+TODAY = business_today("Africa/Nairobi")
 # The period that contains today, closed prematurely — the PILOT-001 shape.
 THIS_PERIOD = {
     "period_from": (TODAY - timedelta(days=20)).isoformat(),
