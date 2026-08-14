@@ -86,6 +86,12 @@ ISOLATION_ORG_SLUG = "lacteva-isolation-demo"
 #   partial   bill issued, part paid; carries a balance
 #   unpaid    bill issued, nothing paid; the oldest debt on the round
 #   unbilled  delivered, no bill raised yet — work waiting to become money
+#   showcase  TWO bills over two halves of the window: the first paid in full
+#             with a receipt, the second left outstanding (DEMO-015 §18). It is
+#             the one customer a demonstration can be walked through end to end
+#             — bill, payment, receipt, and a STATEMENT that opens with a
+#             brought-forward balance rather than at zero, which is the only
+#             way to show that the opening balance is real.
 #
 # `evening` marks the customers who take a second delivery each day. It exists
 # so the daily delivery report has two slots to group, which is what a real
@@ -93,7 +99,7 @@ ISOLATION_ORG_SLUG = "lacteva-isolation-demo"
 CUSTOMERS = [
     # (name, type, phone, address, litres/day, rate, state, evening)
     ("Mama Njeri Household", "household", "+254701000101", "12 Kilima Road", "2.000", "62.00", "partial", False),
-    ("Kilima Tea House", "shop", "+254701000102", "Market Street", "8.000", "58.00", "paid", False),
+    ("Kilima Tea House", "shop", "+254701000102", "Market Street", "8.000", "58.00", "showcase", False),
     ("Ngong View Hotel", "hotel", "+254701000103", "Ngong Road", "20.000", "55.00", "partial", True),
     ("St. Mary's School", "institution", "+254701000104", "Limuru Road", "35.000", "54.00", "paid", False),
     ("Wanjala Distributors", "distributor", "+254701000105", "Industrial Area", "60.000", "52.00", "unpaid", True),
@@ -277,7 +283,7 @@ INDIA_SUPPLIERS = [
 #: (name, type, phone, address, litres/day, rate, state, evening)
 INDIA_CUSTOMERS = [
     ("Sharma Household", "household", "+919845000101", "12 Jayanagar 4th Block", "1.000", "56.00", "partial", False),
-    ("Iyengar Bakery", "shop", "+919845000102", "MG Road", "6.000", "52.00", "paid", False),
+    ("Iyengar Bakery", "shop", "+919845000102", "MG Road", "6.000", "52.00", "showcase", False),
     ("Hotel Sagar Deluxe", "hotel", "+919845000103", "Residency Road", "18.000", "50.00", "partial", True),
     ("St. Joseph's School", "institution", "+919845000104", "Museum Road", "30.000", "48.00", "paid", False),
     ("Nandini Distributors", "distributor", "+919845000105", "Peenya Industrial Area", "50.000", "46.00", "unpaid", True),
@@ -292,6 +298,14 @@ INDIA_CUSTOMERS = [
     ("Bengaluru Grocers", "distributor", "+919845000114", "KR Market", "40.000", "47.00", "paid", False),
     ("Pillai Household", "household", "+919845000115", "9 Koramangala 5th Block", "1.000", "56.00", "unbilled", False),
     ("Nair Household", "household", "+919845000116", "31 Whitefield", "1.500", "56.00", "unbilled", False),
+    ("Bhat Household", "household", "+919845000117", "42 Vijayanagar", "2.000", "56.00", "paid", False),
+    ("Rao Household", "household", "+919845000118", "7 HSR Layout", "1.000", "56.00", "partial", False),
+    ("Udupi Krishna Bhavan", "shop", "+919845000119", "Seshadripuram", "12.000", "51.00", "paid", False),
+    ("Cafe Coorg", "shop", "+919845000120", "Church Street", "8.000", "52.00", "unpaid", False),
+    ("Hotel Mayura Residency", "hotel", "+919845000121", "Race Course Road", "20.000", "50.00", "partial", True),
+    ("Vidyaniketan School", "institution", "+919845000122", "Yeshwanthpur", "26.000", "48.00", "paid", False),
+    ("Bharath Milk Agencies", "distributor", "+919845000123", "Yeshwanthpur APMC", "45.000", "46.50", "unpaid", True),
+    ("Joshi Household", "household", "+919845000124", "3 Sadashivanagar", "2.500", "56.00", "paid", False),
 ]
 
 #: Rupees per litre by fat band. Indian co-operatives pay on fat and SNF; this
@@ -1622,6 +1636,24 @@ async def build_sales(client, built: dict) -> dict:
             records.append({"customer": name, "state": "delivered, not yet billed"})
             continue
 
+        if pattern == "showcase":
+            # DEMO-015 §18: the one customer a demonstration is walked
+            # through. Two bills over two halves of the window rather than one
+            # over all of it, because a statement that opens at zero cannot
+            # show what an opening balance IS — and "what does this customer
+            # owe me, and how did they come to owe it?" is the question the
+            # statement exists to answer.
+            records.append(
+                await seed_showcase_ledger(client, h, customer=customer, name=name, today=today)
+            )
+            summary["bills_issued"] += 2
+            summary["paid"] += 1
+            summary["unpaid"] += 1
+            summary["showcase"] = name
+            if index == 0:
+                first_customer = customer
+            continue
+
         # Bill the completed month: everything up to yesterday.
         invoice = await expect(
             await client.post(
@@ -1693,6 +1725,81 @@ async def build_sales(client, built: dict) -> dict:
     )
     built["summary"]["sales"] = summary
     return built
+
+
+async def seed_showcase_ledger(client, h: dict, *, customer: dict, name: str, today) -> dict:
+    """Two bills, one paid, one not — the deterministic demo scenario.
+
+    The window is split in half. The FIRST half is billed, issued and paid in
+    full, which produces a receipt through the consumer exactly as any payment
+    does. The SECOND half is billed and issued and left alone.
+
+    What that arrangement buys, and why it is worth the extra requests:
+
+      * the customer's statement OPENS with a brought-forward balance instead
+        of at zero, so the opening-balance line is demonstrably doing work;
+      * the running balance moves twice, down and then up, so a reader can see
+        it is arithmetic rather than a repeated total;
+      * there is one paid bill with a receipt to open, and one outstanding
+        bill to collect — which is the whole receivables story on one screen.
+
+    Every figure is still the platform's. This chooses dates and who pays; it
+    computes nothing.
+    """
+    first_from = today - timedelta(days=DELIVERY_DAYS)
+    first_to = today - timedelta(days=(DELIVERY_DAYS // 2) + 1)
+    second_from = today - timedelta(days=DELIVERY_DAYS // 2)
+    second_to = today - timedelta(days=1)
+
+    async def bill(period_from, period_to, what):
+        draft = await expect(
+            await client.post(
+                "/v1/invoices",
+                json={
+                    "customer_id": customer["id"],
+                    "period_from": period_from.isoformat(),
+                    "period_to": period_to.isoformat(),
+                },
+                headers=h,
+            ),
+            201,
+            what=f"{what} for {name}",
+        )
+        return await expect(
+            await client.post(f"/v1/invoices/{draft['id']}/issue", json={}, headers=h),
+            200,
+            what=f"issue {what} for {name}",
+        )
+
+    settled = await bill(first_from, first_to, "showcase bill 1")
+    # `total`, not `amount_due`: the first bill has no brought-forward balance,
+    # and paying the total is what closes it. Paying `amount_due` on a later
+    # bill would be paying the previous month twice.
+    await expect(
+        await client.post(
+            "/v1/customer-payments",
+            json={
+                "customer_id": customer["id"],
+                "amount": str(Decimal(str(settled["total"]))),
+                "method": "BANK_TRANSFER",
+                "reference": f"NEFT-{settled['invoice_number']}",
+                "invoice_ids": [settled["id"]],
+            },
+            headers=h,
+        ),
+        201,
+        what=f"showcase payment for {name}",
+    )
+    outstanding = await bill(second_from, second_to, "showcase bill 2")
+
+    return {
+        "customer": name,
+        "state": "showcase",
+        "settled_invoice": settled["invoice_number"],
+        "settled_amount": str(settled["total"]),
+        "outstanding_invoice": outstanding["invoice_number"],
+        "outstanding_amount": str(outstanding["amount_due"]),
+    }
 
 
 async def make_customer_login(client, built: dict, *, customer: dict) -> dict:
