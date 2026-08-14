@@ -23,11 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from platform_core.core.business_time import business_today
 from platform_core.core.errors import ConflictError, NotFoundError
 from platform_core.core.money import quantize_money
-from platform_core.core.org_context import tenant_timezone
+from platform_core.core.org_context import tenant_currency, tenant_timezone
 from platform_core.core.tenancy import enforce_customer_scope, require_current_tenant
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.audit.service import AuditService
-from platform_core.modules.customer.service import CustomerService
+from platform_core.modules.customer.service import CustomerName, CustomerService
 from platform_core.modules.delivery.models import (
     BILLABLE_STATUSES,
     DELIVERY_SLOTS,
@@ -43,6 +43,24 @@ BUS_EVENTS = {
 
 #: The scale `milk_delivery.quantity` is stored at — `Numeric(12, 3)`.
 QUANTITY = Decimal("0.001")
+
+#: What a report says the volume is measured in when there is nothing to
+#: measure. An empty day still has to answer the question, and "L" is what
+#: every delivery plan on this platform uses; a window with deliveries in it
+#: reports THEIR unit instead, read from the rows.
+DEFAULT_QUANTITY_UNIT = "L"
+
+#: How many rows one download may carry. A year of a three-hundred-household
+#: round is two hundred thousand deliveries; a file that large is neither
+#: openable nor a thing to build in memory on request. A capped export says so
+#: in its own last line — see `modules/delivery/export.py`.
+EXPORT_LIMIT = 20_000
+
+#: A customer whose record has gone while their deliveries remain. Not
+#: expected — customers are deactivated, never deleted — but a report that
+#: raised here would be a report a dairy could not run, and the row's money is
+#: correct whatever the label says.
+_UNKNOWN = CustomerName(id=uuid.UUID(int=0), code="—", name="(unknown customer)")
 
 
 def money(value: Decimal, currency: str | None = None) -> Decimal:
@@ -156,15 +174,81 @@ class DeliveryDayRow(BaseModel):
     amount: Decimal
 
 
+class DeliveryCustomerRow(BaseModel):
+    """One customer's share of the window (DEMO-015 §7).
+
+    The dairy owner's second question, after "how much milk went out today?",
+    is "to whom?" — and the answer has to come from the database for the same
+    reason the first one does: a browser that groups the visible page produces
+    a report that changes when you turn to page two.
+
+    `unit_price` is the rate on this customer's deliveries when they all agree,
+    and NULL when they do not. A single average would be arithmetic nobody
+    asked for: a customer whose rate changed mid-month has two rates, and one
+    blended number would hide that while looking authoritative.
+    """
+
+    customer_id: uuid.UUID
+    code: str
+    name: str
+    product: str
+    deliveries: int
+    quantity: Decimal
+    unit_price: Decimal | None
+    amount: Decimal
+    skipped: int
+
+
 class DeliveryReport(BaseModel):
     date_from: date
     date_to: date
+    #: The ORGANIZATION's currency. Present so a client never has to decide
+    #: what these figures are denominated in — DEMO-013's rule, and the reason
+    #: no screen carries a hard-coded symbol.
+    currency: str
+    quantity_unit: str
     deliveries: int
     customers_served: int
     total_quantity: Decimal
     total_amount: Decimal
     skipped: int
     by_day: list[DeliveryDayRow]
+    by_customer: list[DeliveryCustomerRow]
+
+
+class DeliveryExportRow(BaseModel):
+    """One delivery, flattened, with its customer already named."""
+
+    customer_code: str
+    customer_name: str
+    delivery_date: date
+    slot: str
+    product: str
+    quantity: Decimal
+    quantity_unit: str
+    unit_price: Decimal
+    amount: Decimal
+    currency: str
+    status: str
+    #: Whether this milk is already on a bill. The invoice NUMBER would be more
+    #: useful and is deliberately absent: it belongs to the billing module, and
+    #: a delivery references it by UUID only. Yes/no answers the question this
+    #: file is downloaded to answer — "what have we not billed yet?"
+    billed: bool
+
+
+class DeliveryExport(BaseModel):
+    """Everything a file of this report needs, and nothing about its format.
+
+    The rows and the aggregate travel together on purpose: the totals a
+    downloaded file shows must be the totals the screen showed, and the only
+    way to guarantee that is for both to be the same object.
+    """
+
+    report: DeliveryReport
+    rows: list[DeliveryExportRow]
+    matched: int  #: deliveries in the window, before any cap
+    truncated: bool
 
 
 class DeliveryService:
@@ -398,11 +482,12 @@ class DeliveryService:
         date_to: date | None = None,
         customer_id: uuid.UUID | None = None,
     ) -> DeliveryReport:
-        """ "What was delivered, and what is it worth?" — answered in SQL.
+        """ "What was delivered, to whom, and what is it worth?" — in SQL.
 
-        Four grouped queries whatever the size of the window. A report that
-        pulled the deliveries into a browser to total them would be wrong at
-        the page boundary and slow everywhere else.
+        Five grouped queries whatever the size of the window: a day, a month,
+        or a year of a three-hundred-household round. A report that pulled the
+        deliveries into a browser to total them would be wrong at the page
+        boundary and slow everywhere else.
         """
         # DEMO-013: "today" is the ORGANIZATION's today. A dairy at UTC+5:30
         # asking for today at 04:00 local is asking about a day UTC has not
@@ -428,6 +513,11 @@ class DeliveryService:
                     func.count(func.distinct(MilkDelivery.customer_id)),
                     func.coalesce(func.sum(cast(MilkDelivery.quantity, Numeric)), 0),
                     func.coalesce(func.sum(cast(MilkDelivery.amount, Numeric)), 0),
+                    # The unit these deliveries are actually in, rather than a
+                    # constant a client would have to trust. Every plan on this
+                    # platform says litres; the day one says kilograms, the
+                    # report says kilograms too.
+                    func.min(MilkDelivery.quantity_unit),
                 ).where(*billable, MilkDelivery.status.in_(BILLABLE_STATUSES))
             )
         ).one()
@@ -451,14 +541,77 @@ class DeliveryService:
             )
         ).all()
 
+        # DEMO-015 §7: and to WHOM. Grouped over this module's OWN table and
+        # then named through `CustomerService`, rather than joined to the
+        # customer table — a delivery references a customer by UUID and asks
+        # the owning module for anything else, which is the platform's module
+        # boundary and not a formality here: the reporting module is the one
+        # place allowed to SELECT across contexts, and it is allowed to because
+        # it owns nothing and writes nothing.
+        #
+        # Two queries, not one per row. The N+1 §23 forbids is what a client
+        # resolving these names itself would produce.
+        #
+        # `min = max` is how "they all agree" is asked in SQL. Two rates in one
+        # window leave `unit_price` null rather than averaging them; see
+        # DeliveryCustomerRow.
+        by_customer = (
+            await self._session.execute(
+                select(
+                    MilkDelivery.customer_id,
+                    func.min(MilkDelivery.product),
+                    func.count(),
+                    func.coalesce(func.sum(cast(MilkDelivery.quantity, Numeric)), 0),
+                    func.min(MilkDelivery.unit_price),
+                    func.max(MilkDelivery.unit_price),
+                    func.coalesce(func.sum(cast(MilkDelivery.amount, Numeric)), 0),
+                )
+                .where(*billable, MilkDelivery.status.in_(BILLABLE_STATUSES))
+                .group_by(MilkDelivery.customer_id)
+                .order_by(func.coalesce(func.sum(cast(MilkDelivery.amount, Numeric)), 0).desc())
+            )
+        ).all()
+        # Skips are counted separately rather than joined in: a customer who
+        # took nothing all week has no billable row to hang the count on, and
+        # dropping them from the report is how a dairy stops noticing that a
+        # household has quietly stopped buying milk.
+        skipped_by_customer = dict(
+            (
+                await self._session.execute(
+                    select(MilkDelivery.customer_id, func.count())
+                    .where(*billable, MilkDelivery.status == "skipped")
+                    .group_by(MilkDelivery.customer_id)
+                )
+            ).all()
+        )
+        named = await self._customers.directory(
+            {row[0] for row in by_customer} | set(skipped_by_customer)
+        )
+
         return DeliveryReport(
             date_from=date_from,
             date_to=date_to,
+            currency=await tenant_currency(self._session),
+            quantity_unit=headline[4] or DEFAULT_QUANTITY_UNIT,
             deliveries=headline[0] or 0,
             customers_served=headline[1] or 0,
             total_quantity=litres(headline[2]),
             total_amount=money(Decimal(headline[3] or 0)),
             skipped=skipped or 0,
+            by_customer=[
+                DeliveryCustomerRow(
+                    customer_id=row[0],
+                    code=named.get(row[0], _UNKNOWN).code,
+                    name=named.get(row[0], _UNKNOWN).name,
+                    product=row[1],
+                    deliveries=row[2],
+                    quantity=litres(row[3]),
+                    unit_price=Decimal(row[4]) if row[4] == row[5] else None,
+                    amount=money(Decimal(row[6] or 0)),
+                    skipped=skipped_by_customer.get(row[0], 0),
+                )
+                for row in by_customer
+            ],
             by_day=[
                 DeliveryDayRow(
                     delivery_date=row[0],
@@ -468,5 +621,71 @@ class DeliveryService:
                     amount=money(Decimal(row[4] or 0)),
                 )
                 for row in by_day
+            ],
+        )
+
+    async def export(
+        self,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        customer_id: uuid.UUID | None = None,
+        status: str | None = None,
+    ) -> DeliveryExport:
+        """Every delivery in the window, named, with the report's own totals.
+
+        The cap is real and deliberate. A year of a three-hundred-household
+        round is two hundred thousand rows, and building that string in memory
+        to hand to a browser is a way to take the platform down from a screen
+        that looks harmless. `EXPORT_LIMIT` rows come back and `truncated`
+        says the rest were left — §23's rule against silent caps, and the
+        renderer writes the fact into the file itself.
+        """
+        report = await self.report(date_from=date_from, date_to=date_to, customer_id=customer_id)
+        tenant_id = require_current_tenant()
+        conditions = self._conditions(
+            tenant_id,
+            customer_id=customer_id,
+            date_from=report.date_from,
+            date_to=report.date_to,
+            status=status,
+            invoiced=None,
+        )
+        matched = await self._session.scalar(
+            select(func.count()).select_from(MilkDelivery).where(*conditions)
+        )
+        rows = (
+            await self._session.scalars(
+                select(MilkDelivery)
+                .where(*conditions)
+                .order_by(
+                    MilkDelivery.delivery_date,
+                    MilkDelivery.slot,
+                    MilkDelivery.created_at,
+                )
+                .limit(EXPORT_LIMIT)
+            )
+        ).all()
+        named = await self._customers.directory({row.customer_id for row in rows})
+        return DeliveryExport(
+            report=report,
+            matched=matched or 0,
+            truncated=(matched or 0) > len(rows),
+            rows=[
+                DeliveryExportRow(
+                    customer_code=named.get(row.customer_id, _UNKNOWN).code,
+                    customer_name=named.get(row.customer_id, _UNKNOWN).name,
+                    delivery_date=row.delivery_date,
+                    slot=row.slot,
+                    product=row.product,
+                    quantity=Decimal(row.quantity),
+                    quantity_unit=row.quantity_unit,
+                    unit_price=Decimal(row.unit_price),
+                    amount=Decimal(row.amount),
+                    currency=row.currency,
+                    status=row.status,
+                    billed=row.invoice_id is not None,
+                )
+                for row in rows
             ],
         )

@@ -22,11 +22,17 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Numeric, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.business_time import (
+    business_date_of,
+    business_today,
+    month_bounds,
+    range_bounds,
+)
 from platform_core.core.db import utcnow
 from platform_core.core.document_numbers import next_document_number
 from platform_core.core.errors import ConflictError, NotFoundError
 from platform_core.core.money import quantize_money
-from platform_core.core.org_context import tenant_currency
+from platform_core.core.org_context import tenant_currency, tenant_timezone
 from platform_core.core.tenancy import enforce_customer_scope, require_current_tenant
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.audit.service import AuditService
@@ -191,6 +197,57 @@ class CustomerBalanceView(BaseModel):
     unbilled_amount: Decimal
     unbilled_deliveries: int
     open_invoices: int
+
+
+class StatementEntry(BaseModel):
+    """One line of a customer's ledger — a bill or a payment, never both."""
+
+    entry_date: date
+    #: `invoice` or `payment`. Two columns rather than one signed number,
+    #: because that is how a dairy's own ledger book is written and what a
+    #: customer disputing a line will point at.
+    kind: str
+    reference: str  #: the invoice or payment number
+    detail: str  #: the period billed, or how the money arrived
+    debit: Decimal  #: what they were billed
+    credit: Decimal  #: what they paid
+    balance: Decimal  #: what they owed after this line
+
+
+class CustomerStatement(BaseModel):
+    """What a customer owes and how they came to owe it (DEMO-015 §13).
+
+    `balance()` answers "what is owed **now**", which is the right answer to
+    the dairy owner's morning question and the wrong one to the customer's:
+    *"I paid you in August — what is this for?"* A statement answers that by
+    showing the movement, and it has to start from an OPENING BALANCE or the
+    arithmetic on the page will not add up for any window that does not begin
+    at the beginning of time.
+
+    The identity this holds to, and what its test asserts:
+
+        opening + billed - paid = closing
+
+    and, when the window ends today, `closing == balance().outstanding` — so a
+    customer's statement and the dairy's receivables report can never tell two
+    different stories about the same money.
+
+    Deliberately NOT a general ledger. No accounts, no journals, no ageing
+    buckets: a dairy's statement is a list of bills and the money against them,
+    and DEMO-015 §13 says so in as many words.
+    """
+
+    customer_id: uuid.UUID
+    code: str
+    name: str
+    currency: str
+    date_from: date
+    date_to: date
+    opening_balance: Decimal
+    billed: Decimal
+    paid: Decimal
+    closing_balance: Decimal
+    entries: list[StatementEntry]
 
 
 class CustomerReceiptView(BaseModel):
@@ -642,6 +699,140 @@ class BillingService:
             unbilled_amount=money(Decimal(unbilled[1] or 0)),
             unbilled_deliveries=unbilled[0] or 0,
             open_invoices=open_invoices or 0,
+        )
+
+    async def statement(
+        self,
+        customer_id: uuid.UUID,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> CustomerStatement:
+        """Opening balance, the movement, closing balance. Four queries.
+
+        Two for the opening — aggregates, so a customer with ten years of
+        history costs the same as one with ten days — and two for the rows
+        inside the window, which is the only part anybody reads.
+
+        **Dates are the dairy's, not UTC's.** An invoice issued at 03:00 on the
+        first of September in Bengaluru is stored as 21:30 on the 31st of
+        August, and a statement for August that included it would bill the
+        customer for a document they had not yet been handed.
+        """
+        tenant_id = require_current_tenant()
+        # DEMO-012: a customer may read its own statement and no other's.
+        customer_id = enforce_customer_scope(customer_id) or customer_id
+        customer = await self._customer(customer_id)
+
+        timezone = await tenant_timezone(self._session)
+        today = business_today(timezone)
+        # A month back, which is the window a dairy actually asks for, and the
+        # one the printed statement a household receives covers.
+        date_from = date_from or month_bounds(today, timezone)[0]
+        date_to = date_to or today
+        if date_to < date_from:
+            raise ConflictError("the statement ends before it begins")
+        window_start, window_end = range_bounds(date_from, date_to, timezone)
+
+        invoiced_before = await self._session.scalar(
+            select(func.coalesce(func.sum(cast(CustomerInvoice.total, Numeric)), 0)).where(
+                CustomerInvoice.tenant_id == tenant_id,
+                CustomerInvoice.customer_id == customer_id,
+                CustomerInvoice.status.in_(PAYABLE_INVOICE_STATUSES),
+                CustomerInvoice.issued_at < window_start,
+            )
+        )
+        paid_before = await self._session.scalar(
+            select(func.coalesce(func.sum(cast(CustomerPayment.amount, Numeric)), 0)).where(
+                CustomerPayment.tenant_id == tenant_id,
+                CustomerPayment.customer_id == customer_id,
+                CustomerPayment.status == "recorded",
+                CustomerPayment.received_at < window_start,
+            )
+        )
+        opening = money(Decimal(invoiced_before or 0) - Decimal(paid_before or 0))
+
+        invoices = (
+            await self._session.scalars(
+                select(CustomerInvoice).where(
+                    CustomerInvoice.tenant_id == tenant_id,
+                    CustomerInvoice.customer_id == customer_id,
+                    CustomerInvoice.status.in_(PAYABLE_INVOICE_STATUSES),
+                    CustomerInvoice.issued_at >= window_start,
+                    CustomerInvoice.issued_at < window_end,
+                )
+            )
+        ).all()
+        payments = (
+            await self._session.scalars(
+                select(CustomerPayment).where(
+                    CustomerPayment.tenant_id == tenant_id,
+                    CustomerPayment.customer_id == customer_id,
+                    CustomerPayment.status == "recorded",
+                    CustomerPayment.received_at >= window_start,
+                    CustomerPayment.received_at < window_end,
+                )
+            )
+        ).all()
+
+        movements: list[tuple[date, int, StatementEntry]] = []
+        for invoice in invoices:
+            movements.append(
+                (
+                    business_date_of(invoice.issued_at, timezone),
+                    0,  # a bill before the money against it, on the same day
+                    StatementEntry(
+                        entry_date=business_date_of(invoice.issued_at, timezone),
+                        kind="invoice",
+                        reference=invoice.invoice_number,
+                        detail=f"{invoice.period_from} — {invoice.period_to}",
+                        debit=money(Decimal(invoice.total)),
+                        credit=ZERO,
+                        balance=ZERO,  # filled by the running total below
+                    ),
+                )
+            )
+        for payment in payments:
+            movements.append(
+                (
+                    business_date_of(payment.received_at, timezone),
+                    1,
+                    StatementEntry(
+                        entry_date=business_date_of(payment.received_at, timezone),
+                        kind="payment",
+                        reference=payment.payment_number,
+                        detail=payment.method,
+                        debit=ZERO,
+                        credit=money(Decimal(payment.amount)),
+                        balance=ZERO,
+                    ),
+                )
+            )
+        movements.sort(key=lambda m: (m[0], m[1], m[2].reference))
+
+        running = opening
+        entries = []
+        billed = ZERO
+        paid = ZERO
+        for _day, _order, entry in movements:
+            running = money(running + entry.debit - entry.credit)
+            entry.balance = running
+            billed += entry.debit
+            paid += entry.credit
+            entries.append(entry)
+
+        return CustomerStatement(
+            customer_id=customer.id,
+            code=customer.code,
+            name=customer.name,
+            currency=customer.currency,
+            date_from=date_from,
+            date_to=date_to,
+            opening_balance=opening,
+            billed=money(billed),
+            paid=money(paid),
+            closing_balance=running,
+            entries=entries,
         )
 
     async def search_payments(

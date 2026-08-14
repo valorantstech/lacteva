@@ -122,6 +122,20 @@ class CustomerView(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CustomerName(BaseModel):
+    """Just enough of a customer to label a row somebody else owns.
+
+    Deliberately three fields. A neighbouring module reporting on its own data
+    needs a name against an id and nothing else, and handing it the whole
+    customer would let a report grow a dependency on a column this module is
+    still free to change.
+    """
+
+    id: uuid.UUID
+    code: str
+    name: str
+
+
 class CustomerPage(BaseModel):
     items: list[CustomerView]
     total: int
@@ -281,6 +295,29 @@ class CustomerService:
         if customer is None:
             raise NotFoundError("customer not found")
         return customer
+
+    async def directory(self, customer_ids: set[uuid.UUID]) -> dict[uuid.UUID, CustomerName]:
+        """Names for a set of ids, in ONE query (DEMO-015).
+
+        The module boundary says a delivery references a customer by UUID and
+        asks this module for anything else. Honoured literally, that turns a
+        report of two hundred rows into two hundred lookups — so the shape the
+        boundary needs is a batch, and this is it.
+
+        A caller with no ids gets an empty map without touching the database,
+        because an `IN ()` is a query asked in order to learn nothing.
+        """
+        if not customer_ids:
+            return {}
+        tenant_id = require_current_tenant()
+        rows = (
+            await self._session.execute(
+                select(Customer.id, Customer.code, Customer.name).where(
+                    Customer.tenant_id == tenant_id, Customer.id.in_(customer_ids)
+                )
+            )
+        ).all()
+        return {row[0]: CustomerName(id=row[0], code=row[1], name=row[2]) for row in rows}
 
     async def active_plan(self, customer_id: uuid.UUID, product: str) -> DeliveryPlan | None:
         tenant_id = require_current_tenant()

@@ -40,6 +40,7 @@ from platform_core.modules.billing.service import (
     CustomerPaymentDetailView,
     CustomerPaymentPage,
     CustomerPaymentView,
+    CustomerStatement,
     GenerateInvoiceCommand,
     InvoiceDetailView,
     InvoicePage,
@@ -69,6 +70,8 @@ from platform_core.modules.customer.service import (
     DeliveryPlanView,
     UpdateCustomerCommand,
 )
+from platform_core.modules.delivery.export import filename as export_filename
+from platform_core.modules.delivery.export import to_csv
 from platform_core.modules.delivery.service import (
     AmendDeliveryCommand,
     DeliveryPage,
@@ -3296,6 +3299,34 @@ async def delivery_report(
     return await service.report(date_from=date_from, date_to=date_to, customer_id=customer_id)
 
 
+@delivery_router.get("/deliveries/report.csv")
+async def delivery_report_csv(
+    service: DeliverySvc,
+    _: DeliveryRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    customer_id: uuid.UUID | None = None,
+    status: str | None = None,
+) -> Response:
+    """The same report, as a file somebody can open (DEMO-015 §15).
+
+    Declared BEFORE `/deliveries/{delivery_id}`, because FastAPI matches in
+    declaration order and `report.csv` is not a UUID — routed the other way
+    round this endpoint would answer 422 forever.
+
+    The totals row is the platform's aggregate, not a sum of the lines above
+    it, so the file and the screen cannot disagree.
+    """
+    export = await service.export(
+        date_from=date_from, date_to=date_to, customer_id=customer_id, status=status
+    )
+    return Response(
+        content=to_csv(export),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{export_filename(export)}"'},
+    )
+
+
 @delivery_router.get("/deliveries/{delivery_id}", response_model=DeliveryView)
 async def get_delivery(delivery_id: uuid.UUID, service: DeliverySvc, _: DeliveryRead) -> Any:
     return await service.get(delivery_id)
@@ -3399,6 +3430,23 @@ async def customer_balance(
 ) -> Any:
     """What this customer owes, including the bill still forming."""
     return await service.balance(customer_id)
+
+
+@billing_router.get("/customers/{customer_id}/statement", response_model=CustomerStatement)
+async def customer_statement(
+    customer_id: uuid.UUID,
+    service: BillingSvc,
+    _: CustomerPaymentRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> Any:
+    """How they came to owe it: opening balance, bills, payments, closing.
+
+    The dates are OPTIONAL and default to the dairy's current month, for the
+    same reason the delivery report's do — a client cannot compute a local
+    month without a timezone database, and the platform already knows the zone.
+    """
+    return await service.statement(customer_id, date_from=date_from, date_to=date_to)
 
 
 @billing_router.get("/customer-receipts")
