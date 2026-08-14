@@ -22,7 +22,7 @@ price, and it already superseded rather than edited on change. Two of the work
 order's requirements were therefore already true, and one of them — §8, that
 editing a plan must not rewrite history — needed no code at all.
 
-**Four defects found, three of them by tests written for this milestone.**
+**Five defects found, four of them by tests or by the browser.**
 **AWS cost: none.**
 
 ---
@@ -176,14 +176,37 @@ seed, not only in the test suite.
 
 | Suite | Result |
 |---|---|
-| Backend | *(recorded at the end of this run)* |
-| Portal | **227 passed** |
+| Backend | **1,419 passed**, 75 skipped, 0 failed |
+| Portal | **228 passed** |
 | Mobile | **125 passed**, `flutter analyze` clean |
 | PostgreSQL proof | **PASSED** — 62 policies, FORCEd, app role NOBYPASSRLS |
 | Sales chain proof | **the chain holds** |
 | Migration | up → down → up on real PostgreSQL, with a pre-existing row |
 
 50 new backend tests, 5 portal, 2 mobile.
+
+## 10b. Verified on the deployed platform
+
+Every step of §23's browser journey ran against `https://dev.phoenixsoft.in`.
+The ones worth naming:
+
+| | |
+|---|---|
+| Generate, then generate again | `created 16, already 1` → `created 0, already 17` |
+| **At the Indian midnight boundary** | 18:33 UTC — still the 14th — produced the round for **2026-08-15**, live, three minutes past IST midnight, while Kenya's report answered 2026-08-14 at the same instant |
+| Pause | the paused customer got 0 while the other 16 plans generated |
+| Resume | generation resumed, and 15–17 August were **not** backfilled |
+| Future edit | the 14th kept 2.000 L / ₹112.00; the 20th generated at 3.000 L |
+| Operator confirmation | 40.000 L confirmed → priced ₹1,880.00 by the server |
+| Report | planned 16 → 15 still to deliver, 1 completed, ₹1,880.00 |
+| Full chain | `INV-2026-000017` → `CPY-2026-000013` → `CRC-2026-000013`, balance 0.00, statement reconciles |
+| Hindi | standing-order card, schedule, and the `scheduled`/`delivered`/`skipped` badges all read Hindi; quantities and INR unchanged |
+| Permissions | viewer **403** on generate and on pause; Kenyan manager **404** on an Indian plan; unauthenticated **401** |
+| Kenya | 521 deliveries, KES 472,874.00, receivable 211,961.00 — unchanged, `scheduled: 0` |
+
+Production after the migration: all **32 pre-existing plans** became daily
+standing orders (`1111111`), and 1,141 deliveries, 30 invoices, 23 payments
+and 23 receipts were preserved exactly.
 
 ## 11. Defects discovered and fixed
 
@@ -202,7 +225,18 @@ Hindi-speaking rider, on an otherwise fully translated screen. The third
 instance of this defect class in three milestones, and the reason both guards
 now exist.
 
-**4. `sales-chain-proof.sh` failed when run without an argument.** My own
+**4. The portal's status badge printed the machine token, in English.**
+`statusLabel` lowercases the token and swaps underscores — it has never
+translated anything, so every badge on every screen in every language has been
+English since DEMO-001. Invisible while the statuses were incidental;
+`scheduled` is a status this milestone introduced and put in front of an
+operator sixteen times on one screen. Fixed narrowly: a status with a
+`status.*` key reads in the reader's language, one without keeps today's
+behaviour, so the catalog is what to extend and the component never changes
+again. **The fourth instance of this defect class in four milestones** — a
+catalog and a render path that never met.
+
+**5. `sales-chain-proof.sh` failed when run without an argument.** My own
 DEMO-015 script passed `"${1:-}"`, so with no output path it handed the proof
 an empty string, which `pathlib.Path("")` reads as the current directory — and
 it failed with `IsADirectoryError` *after* doing all the work. It had only
