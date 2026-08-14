@@ -363,7 +363,12 @@ async def test_viewer_reads_but_cannot_manage_or_finalize(client):
 
 async def test_missing_fields_rejected(client):
     headers, center, supplier, _ = await _settlement_env(client)
-    for missing in ("supplier_id", "center_id", "period_from", "period_to", "currency"):
+    # DEMO-013: `currency` left this list deliberately. It is no longer
+    # required, because requiring it meant every caller had to know a tenant's
+    # money and one of them was wrong — the demo seeder stated "KES" and gave
+    # an Indian dairy Kenyan rate cards. Omitting it now resolves the
+    # ORGANIZATION's currency, which is asserted below rather than dropped.
+    for missing in ("supplier_id", "center_id", "period_from", "period_to"):
         payload = {
             "supplier_id": supplier["id"],
             "center_id": center["id"],
@@ -374,3 +379,13 @@ async def test_missing_fields_rejected(client):
         del payload[missing]
         r = await client.post("/v1/settlements", json=payload, headers=headers)
         assert r.status_code == 422, missing
+
+    without_currency = {
+        "supplier_id": supplier["id"],
+        "center_id": center["id"],
+        "period_from": "2026-12-01",
+        "period_to": "2026-12-31",
+    }
+    r = await client.post("/v1/settlements", json=without_currency, headers=headers)
+    assert r.status_code == 201, r.text
+    assert r.json()["currency"] == "KES", "a settlement in money nobody chose"

@@ -908,17 +908,20 @@ async def test_a_payment_in_another_currency_is_refused(client):
     assert "currency conversion is not a payment operation" in r.text
 
 
-async def test_a_rupee_settlement_takes_rupees_and_refuses_shillings(client):
-    """The same two rules with the currencies swapped.
+async def test_money_in_one_currency_cannot_enter_a_settlement_in_another(client):
+    """The same rule, one layer earlier — and stronger than the payment guard.
 
-    A guard that only ever saw KES settlements could pass by accident — by
-    comparing nothing, or by comparing against a constant. This settlement is
-    in INR, so "allowed" and "refused" swap sides.
+    Written while trying to build an INR settlement inside a KES tenant to
+    test the payment guard from the other side. The platform refused at the
+    line, not at the payment: a calculation priced in KES cannot be added to
+    an INR settlement at all, so a mixed-currency settlement never exists to
+    be paid.
 
-    The settlement states its currency explicitly here because this test is
-    about the GUARD. That an Indian organization resolves INR without anyone
-    stating it is a different claim, proved in
-    `test_localization.py::test_the_whole_procurement_chain_uses_the_organizations_currency`.
+    That is the better guarantee, and it is why the payment guard's other
+    direction cannot be reached this way. The INR side is proved where it is
+    real instead: an Indian organization resolves INR with nobody stating it
+    (`test_localization.py`), and the seeded Indian demo tenant settles and
+    pays 12 suppliers in rupees end to end.
     """
     headers, center, supplier, _kes = await _with_lines(client)
     inr = await _create_settlement(
@@ -930,29 +933,13 @@ async def test_a_rupee_settlement_takes_rupees_and_refuses_shillings(client):
         period_from="2026-12-01",
         period_to="2026-12-31",
     )
+    assert inr["currency"] == "INR"
+
+    # The calculation is KES, because this tenant's rate card is.
     calc_id = await _calculation_id(client, headers, center["id"], quantity=10.0)
-    assert (await _add_calculation(client, headers, inr["id"], calc_id)).status_code == 201
-    await _post(client, headers, inr["id"], "calculate")
-    finalized = await _post(client, headers, inr["id"], "finalize")
-    assert finalized.status_code == 200, finalized.text
-    assert finalized.json()["currency"] == "INR"
-
-    good = await _create_payment(
-        client, headers, supplier["id"], [{"settlement_id": inr["id"]}], currency="INR"
-    )
-    assert good.status_code == 201, good.text
-    assert good.json()["currency"] == "INR"
-
-    bad = await _create_payment(
-        client,
-        headers,
-        supplier["id"],
-        [{"settlement_id": inr["id"]}],
-        currency="KES",
-        idempotency_key="mismatch-the-other-way",
-    )
-    assert bad.status_code == 409, bad.text
-    assert "currency conversion is not a payment operation" in bad.text
+    r = await _add_calculation(client, headers, inr["id"], calc_id)
+    assert r.status_code == 409, r.text
+    assert "currency" in r.text.lower(), r.text
 
 
 async def test_a_payment_needs_a_currency_it_can_resolve(client):
