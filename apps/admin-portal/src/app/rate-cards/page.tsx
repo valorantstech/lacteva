@@ -42,7 +42,14 @@ import {
 } from "@/lib/api";
 
 const PAGE_SIZE = 10;
-const STATUSES = ["", "draft", "under_review", "approved", "published", "archived"] as const;
+const STATUSES = [
+  "",
+  "draft",
+  "under_review",
+  "approved",
+  "published",
+  "archived",
+] as const;
 
 const statusVariant = (s: RateCard["status"]) =>
   s === "published" ? "default" : s === "archived" ? "outline" : "secondary";
@@ -50,27 +57,29 @@ const statusVariant = (s: RateCard["status"]) =>
 const statusLabel = (s: string) => s.replace("_", " ");
 
 // Workflow actions available per status (published is immutable; archived terminal).
-const ACTIONS: Record<RateCard["status"], { label: string; action: string }[]> = {
-  draft: [
-    { label: "Submit", action: "submit" },
-    { label: "Archive", action: "archive" },
-  ],
-  under_review: [
-    { label: "Approve", action: "approve" },
-    { label: "Archive", action: "archive" },
-  ],
-  approved: [
-    { label: "Publish", action: "publish" },
-    { label: "Archive", action: "archive" },
-  ],
-  published: [
-    { label: "New version", action: "versions" },
-    { label: "Archive", action: "archive" },
-  ],
-  archived: [{ label: "New version", action: "versions" }],
-};
+const ACTIONS: Record<RateCard["status"], { label: string; action: string }[]> =
+  {
+    draft: [
+      { label: "Submit", action: "submit" },
+      { label: "Archive", action: "archive" },
+    ],
+    under_review: [
+      { label: "Approve", action: "approve" },
+      { label: "Archive", action: "archive" },
+    ],
+    approved: [
+      { label: "Publish", action: "publish" },
+      { label: "Archive", action: "archive" },
+    ],
+    published: [
+      { label: "New version", action: "versions" },
+      { label: "Archive", action: "archive" },
+    ],
+    archived: [{ label: "New version", action: "versions" }],
+  };
 
-type FormState = { mode: "closed" } | { mode: "create" } | { mode: "edit"; card: RateCard };
+type FormState =
+  { mode: "closed" } | { mode: "create" } | { mode: "edit"; card: RateCard };
 
 export default function RateCardsPage() {
   const [page, setPage] = useState<RateCardPage | null>(null);
@@ -86,10 +95,14 @@ export default function RateCardsPage() {
 
   const refresh = useCallback(async () => {
     try {
-      setPage(await listRateCards({ q, status, currency, limit: PAGE_SIZE, offset }));
+      setPage(
+        await listRateCards({ q, status, currency, limit: PAGE_SIZE, offset }),
+      );
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load rate cards");
+      setError(
+        err instanceof ApiError ? err.detail : "Failed to load rate cards",
+      );
     }
   }, [q, status, currency, offset]);
 
@@ -100,7 +113,9 @@ export default function RateCardsPage() {
 
   useEffect(() => {
     const t = setTimeout(() => {
-      listBranches().then(setBranches).catch(() => setBranches([]));
+      listBranches()
+        .then(setBranches)
+        .catch(() => setBranches([]));
       listCenters({ limit: 100, offset: 0 })
         .then((p) => setCenters(p.items))
         .catch(() => setCenters([]));
@@ -113,7 +128,9 @@ export default function RateCardsPage() {
       setDetail(await getRateCardDetail(card.id));
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load rate card");
+      setError(
+        err instanceof ApiError ? err.detail : "Failed to load rate card",
+      );
     }
   }
 
@@ -122,7 +139,8 @@ export default function RateCardsPage() {
       await rateCardAction(card.id, action);
       setError(null);
       await refresh();
-      if (detail?.card.id === card.id) setDetail(await getRateCardDetail(card.id));
+      if (detail?.card.id === card.id)
+        setDetail(await getRateCardDetail(card.id));
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Action failed");
     }
@@ -156,11 +174,13 @@ export default function RateCardsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Rate cards</h1>
           <p className="text-sm text-muted-foreground">
-            Pricing agreements per collection center and product — lifecycle only, no
-            calculations yet
+            Pricing agreements per collection center and product — lifecycle
+            only, no calculations yet
           </p>
         </div>
-        <Button onClick={() => setForm({ mode: "create" })}>New rate card</Button>
+        <Button onClick={() => setForm({ mode: "create" })}>
+          New rate card
+        </Button>
       </header>
 
       <div className="flex gap-3">
@@ -238,7 +258,9 @@ export default function RateCardsPage() {
                   </TableCell>
                   <TableCell>v{c.version}</TableCell>
                   <TableCell>
-                    <Badge variant={statusVariant(c.status)}>{statusLabel(c.status)}</Badge>
+                    <Badge variant={statusVariant(c.status)}>
+                      {statusLabel(c.status)}
+                    </Badge>
                   </TableCell>
                   <TableCell className="flex justify-end gap-2">
                     {/* DEMO-004: the bands live on their own page now. */}
@@ -248,7 +270,11 @@ export default function RateCardsPage() {
                     >
                       Bands
                     </Link>
-                    <Button size="sm" variant="outline" onClick={() => openDetail(c)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openDetail(c)}
+                    >
                       Detail
                     </Button>
                     {c.status === "draft" && (
@@ -275,7 +301,10 @@ export default function RateCardsPage() {
               ))}
               {page && page.items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={7}
+                    className="text-center text-muted-foreground"
+                  >
                     No rate cards match.
                   </TableCell>
                 </TableRow>
@@ -295,9 +324,11 @@ export default function RateCardsPage() {
               </Badge>
             </CardTitle>
             <CardDescription>
-              {detail.card.code} v{detail.card.version} · {detail.card.currency} ·{" "}
-              {detail.card.effective_from} → {detail.card.effective_until ?? "open-ended"}
-              {detail.card.published_at && ` · published ${detail.card.published_at.slice(0, 10)}`}
+              {detail.card.code} v{detail.card.version} · {detail.card.currency}{" "}
+              · {detail.card.effective_from} →{" "}
+              {detail.card.effective_until ?? "open-ended"}
+              {detail.card.published_at &&
+                ` · published ${detail.card.published_at.slice(0, 10)}`}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4 text-sm">
@@ -341,18 +372,26 @@ export default function RateCardsPage() {
                   size="sm"
                   variant="outline"
                   onClick={() => {
-                    const el = document.getElementById("rc-assign-center") as HTMLSelectElement;
+                    const el = document.getElementById(
+                      "rc-assign-center",
+                    ) as HTMLSelectElement;
                     if (el?.value) void assignCenter(detail.card.id, el.value);
                   }}
                 >
                   Assign center
                 </Button>
-                <Input id="rc-assign-product" placeholder="Product code" className="max-w-40" />
+                <Input
+                  id="rc-assign-product"
+                  placeholder="Product code"
+                  className="max-w-40"
+                />
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => {
-                    const el = document.getElementById("rc-assign-product") as HTMLInputElement;
+                    const el = document.getElementById(
+                      "rc-assign-product",
+                    ) as HTMLInputElement;
                     if (el?.value) void assignProduct(detail.card.id, el.value);
                   }}
                 >
@@ -374,7 +413,9 @@ export default function RateCardsPage() {
 
       <footer className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground">
-          {page ? `${page.total} rate card${page.total === 1 ? "" : "s"}` : "Loading…"}
+          {page
+            ? `${page.total} rate card${page.total === 1 ? "" : "s"}`
+            : "Loading…"}
         </span>
         <div className="flex items-center gap-2">
           <Button
@@ -419,8 +460,12 @@ function RateCardForm({
   // DEMO-013: a new rate card starts in the ORGANIZATION's currency.
   const { currency: orgCurrency } = useLocale();
   const [currency, setCurrency] = useState(card?.currency ?? orgCurrency ?? "");
-  const [effectiveFrom, setEffectiveFrom] = useState(card?.effective_from ?? "");
-  const [effectiveUntil, setEffectiveUntil] = useState(card?.effective_until ?? "");
+  const [effectiveFrom, setEffectiveFrom] = useState(
+    card?.effective_from ?? "",
+  );
+  const [effectiveUntil, setEffectiveUntil] = useState(
+    card?.effective_until ?? "",
+  );
   const [branchId, setBranchId] = useState(card?.branch_id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -451,10 +496,12 @@ function RateCardForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{card ? `Edit ${card.code} v${card.version}` : "New rate card"}</CardTitle>
+        <CardTitle>
+          {card ? `Edit ${card.code} v${card.version}` : "New rate card"}
+        </CardTitle>
         <CardDescription>
-          Rate cards start as drafts; publishing requires review, approval, and at least one
-          center and product assignment.
+          Rate cards start as drafts; publishing requires review, approval, and
+          at least one center and product assignment.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -535,7 +582,9 @@ function RateCardForm({
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
-          {error && <p className="col-span-2 text-sm text-destructive">{error}</p>}
+          {error && (
+            <p className="col-span-2 text-sm text-destructive">{error}</p>
+          )}
           <div className="col-span-2 flex gap-2">
             <Button type="submit" disabled={busy}>
               {busy ? "Saving…" : "Save"}

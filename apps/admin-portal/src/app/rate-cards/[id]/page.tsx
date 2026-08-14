@@ -12,9 +12,20 @@ import {
   getRateCardDetail,
   listMatrices,
 } from "@/lib/api";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState, ErrorState, LoadingState, TableSkeleton } from "@/components/states";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  TableSkeleton,
+} from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 
 /**
@@ -37,9 +48,17 @@ type Load<T> =
 
 const LOADING = { state: "loading" } as const;
 const describe = (e: unknown) =>
-  e instanceof ApiError ? e.detail : e instanceof Error ? e.message : "the request failed";
+  e instanceof ApiError
+    ? e.detail
+    : e instanceof Error
+      ? e.message
+      : "the request failed";
 
-export default function RateCardDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function RateCardDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
   const [detail, setDetail] = useState<Load<RateCardDetail>>(LOADING);
   const [matrices, setMatrices] = useState<Load<PricingMatrix[]>>(LOADING);
@@ -63,11 +82,15 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
           setMatrices({ state: "ready", data: items });
           // One detail request per matrix. A card carries a handful, not a
           // table's worth, so this is bounded by the domain rather than by data.
-          const loaded = await Promise.allSettled(items.map((m) => getMatrixDetail(m.id)));
+          const loaded = await Promise.allSettled(
+            items.map((m) => getMatrixDetail(m.id)),
+          );
           setBands(
             Object.fromEntries(
               loaded.flatMap((r, i) =>
-                r.status === "fulfilled" ? [[items[i].id, r.value] as const] : [],
+                r.status === "fulfilled"
+                  ? [[items[i].id, r.value] as const]
+                  : [],
               ),
             ),
           );
@@ -84,7 +107,9 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
   if (detail.state === "error") {
     return (
       <div className="mx-auto w-full max-w-3xl p-8">
-        <ErrorState message={`This rate card could not be loaded — ${detail.message}.`} />
+        <ErrorState
+          message={`This rate card could not be loaded — ${detail.message}.`}
+        />
         <p className="mt-4 text-sm">
           <Link className="underline underline-offset-4" href="/rate-cards">
             Back to rate cards
@@ -101,7 +126,10 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
-        breadcrumbs={[{ label: "Rate cards", href: "/rate-cards" }, { label: card?.code ?? "Card" }]}
+        breadcrumbs={[
+          { label: "Rate cards", href: "/rate-cards" },
+          { label: card?.code ?? "Card" },
+        ]}
         title={card?.name ?? "Rate card"}
         description={
           card
@@ -111,7 +139,9 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
         actions={card ? <StatusBadge status={card.status} /> : undefined}
       />
 
-      {detail.state === "loading" ? <LoadingState label="Loading the rate card…" /> : null}
+      {detail.state === "loading" ? (
+        <LoadingState label="Loading the rate card…" />
+      ) : null}
 
       {card && ready ? (
         <div className="grid gap-6 lg:grid-cols-3">
@@ -135,14 +165,19 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
                 </Row>
                 <Row label="Currency">{card.currency}</Row>
                 <Row label="Version">{card.version}</Row>
-                {card.published_at ? <Row label="Published">{String(card.published_at).slice(0, 10)}</Row> : null}
+                {card.published_at ? (
+                  <Row label="Published">
+                    {String(card.published_at).slice(0, 10)}
+                  </Row>
+                ) : null}
               </dl>
               {/* The lifecycle is the platform's, and its actions live on the
                   list page. Showing them twice would be two places to keep
                   correct — and only one of them would be tested. */}
               <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
-                Lifecycle: draft → submitted → approved → published. Actions are on the rate cards
-                list; the platform decides which are available.
+                Lifecycle: draft → submitted → approved → published. Actions are
+                on the rate cards list; the platform decides which are
+                available.
               </p>
             </CardContent>
           </Card>
@@ -150,10 +185,15 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Building2 aria-hidden className="size-4 text-muted-foreground" />
+                <Building2
+                  aria-hidden
+                  className="size-4 text-muted-foreground"
+                />
                 Scope
               </CardTitle>
-              <CardDescription>Where and to what this card applies.</CardDescription>
+              <CardDescription>
+                Where and to what this card applies.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <dl className="flex flex-col gap-3 text-sm">
@@ -175,7 +215,9 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
                   </dd>
                 </div>
                 <div>
-                  <dt className="mb-1 text-muted-foreground">Collection centres</dt>
+                  <dt className="mb-1 text-muted-foreground">
+                    Collection centres
+                  </dt>
                   <dd className="flex flex-col gap-1">
                     {(ready.center_ids ?? []).length === 0 ? (
                       <span className="text-muted-foreground">all centres</span>
@@ -202,13 +244,14 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
               <p>
-                A collection&apos;s quality reading is matched against the bands below. The band it
-                falls into gives the unit price, and the platform multiplies that by the net
-                weight.
+                A collection&apos;s quality reading is matched against the bands
+                below. The band it falls into gives the unit price, and the
+                platform multiplies that by the net weight.
               </p>
               <p className="mt-2">
-                Bands are half-open — a reading equal to a band&apos;s upper bound belongs to the
-                next band, so no reading can match two prices.
+                Bands are half-open — a reading equal to a band&apos;s upper
+                bound belongs to the next band, so no reading can match two
+                prices.
               </p>
             </CardContent>
           </Card>
@@ -224,7 +267,9 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
           {matrices.state === "loading" ? (
             <TableSkeleton rows={4} columns={3} />
           ) : matrices.state === "error" ? (
-            <ErrorState message={`Bands are unavailable — ${matrices.message}.`} />
+            <ErrorState
+              message={`Bands are unavailable — ${matrices.message}.`}
+            />
           ) : matrices.data.length === 0 ? (
             <EmptyState
               title="No pricing matrix on this card"
@@ -244,7 +289,9 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
                   {!loaded ? (
                     <TableSkeleton rows={3} columns={2} />
                   ) : (loaded.rows ?? []).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No bands defined.</p>
+                    <p className="text-sm text-muted-foreground">
+                      No bands defined.
+                    </p>
                   ) : (
                     <div className="w-full overflow-x-auto">
                       <table className="w-full text-sm">
@@ -254,16 +301,23 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
                         <thead>
                           <tr className="border-b border-border text-start text-muted-foreground">
                             <th scope="col" className="py-2 font-medium">
-                              Band ({loaded.dimension?.unit ?? matrix.dimension_code})
+                              Band (
+                              {loaded.dimension?.unit ?? matrix.dimension_code})
                             </th>
-                            <th scope="col" className="py-2 text-end font-medium">
+                            <th
+                              scope="col"
+                              className="py-2 text-end font-medium"
+                            >
                               Rate
                             </th>
                           </tr>
                         </thead>
                         <tbody>
                           {(loaded.rows ?? []).map((row) => (
-                            <tr key={row.id} className="border-b border-border/60 last:border-0">
+                            <tr
+                              key={row.id}
+                              className="border-b border-border/60 last:border-0"
+                            >
                               <td className="py-2 tabular-nums">
                                 {row.from_value} – {row.to_value}
                               </td>
@@ -278,9 +332,12 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
                         </tbody>
                       </table>
                       {(loaded.gaps ?? []).length > 0 ? (
-                        <p role="note" className="mt-2 text-xs text-destructive">
-                          {loaded.gaps.length} gap(s) in coverage — a reading falling in a gap
-                          cannot be priced.
+                        <p
+                          role="note"
+                          className="mt-2 text-xs text-destructive"
+                        >
+                          {loaded.gaps.length} gap(s) in coverage — a reading
+                          falling in a gap cannot be priced.
                         </p>
                       ) : null}
                     </div>
@@ -295,7 +352,13 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-4">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>

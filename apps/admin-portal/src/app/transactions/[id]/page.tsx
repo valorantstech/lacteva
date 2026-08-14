@@ -28,7 +28,13 @@ import {
   listPeople,
 } from "@/lib/api";
 import { formatStamp } from "@/components/datetime";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Money, Quantity, sameAmount } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
@@ -60,7 +66,11 @@ type Load<T> =
 
 const LOADING = { state: "loading" } as const;
 const describe = (e: unknown) =>
-  e instanceof ApiError ? e.detail : e instanceof Error ? e.message : "the request failed";
+  e instanceof ApiError
+    ? e.detail
+    : e instanceof Error
+      ? e.message
+      : "the request failed";
 
 /** One definition, shared with every other screen. */
 const stamp = formatStamp;
@@ -75,9 +85,20 @@ const stamp = formatStamp;
 function summarise(data: Record<string, unknown> | null | undefined): string {
   if (!data) return "";
   const parts: string[] = [];
-  for (const key of ["net", "gross", "tare", "fat", "snf", "clr", "method", "reason", "stage"]) {
+  for (const key of [
+    "net",
+    "gross",
+    "tare",
+    "fat",
+    "snf",
+    "clr",
+    "method",
+    "reason",
+    "stage",
+  ]) {
     const value = (data as Record<string, unknown>)[key];
-    if (value !== undefined && value !== null && value !== "") parts.push(`${key} ${value}`);
+    if (value !== undefined && value !== null && value !== "")
+      parts.push(`${key} ${value}`);
   }
   return parts.join(", ");
 }
@@ -90,7 +111,11 @@ const humanise = (event: string) =>
     .toLowerCase()
     .replace(/^./, (c) => c.toUpperCase());
 
-export default function TransactionDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function TransactionDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
   const [tx, setTx] = useState<Load<MilkTransaction>>(LOADING);
   const [events, setEvents] = useState<Load<TransactionEvent[]>>(LOADING);
@@ -99,7 +124,9 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
   // browser, not a product. Two keyed reads, once, give it names.
   const [center, setCenter] = useState<CenterDetail | null>(null);
   const [supplier, setSupplier] = useState<SupplierDetail | null>(null);
-  const [people, setPeople] = useState<Array<Member & { user: User | null }>>([]);
+  const [people, setPeople] = useState<Array<Member & { user: User | null }>>(
+    [],
+  );
 
   const load = useCallback(async () => {
     const ok =
@@ -147,7 +174,9 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
   if (tx.state === "error") {
     return (
       <div className="mx-auto w-full max-w-3xl p-8">
-        <ErrorState message={`This collection could not be loaded — ${tx.message}.`} />
+        <ErrorState
+          message={`This collection could not be loaded — ${tx.message}.`}
+        />
         <p className="mt-4 text-sm">
           <Link className="underline underline-offset-4" href="/transactions">
             Back to collections
@@ -162,10 +191,12 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
   // Optional at every hop: a name is a nicety, and a malformed or partial
   // response must degrade to the identifier rather than blank the page.
   const centerName = center?.center?.name ?? null;
-  const supplierName = supplier?.profile?.full_name ?? supplier?.supplier?.full_name ?? null;
+  const supplierName =
+    supplier?.profile?.full_name ?? supplier?.supplier?.full_name ?? null;
   const actorName: Record<string, string> = {};
   for (const person of people) {
-    if (person.user?.full_name) actorName[person.user_id] = person.user.full_name;
+    if (person.user?.full_name)
+      actorName[person.user_id] = person.user.full_name;
     else if (person.user?.email) actorName[person.user_id] = person.user.email;
   }
 
@@ -192,7 +223,9 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
         actions={t ? <StatusBadge status={t.state} /> : undefined}
       />
 
-      {tx.state === "loading" ? <LoadingState label="Loading the collection…" /> : null}
+      {tx.state === "loading" ? (
+        <LoadingState label="Loading the collection…" />
+      ) : null}
 
       {t ? (
         <>
@@ -204,7 +237,10 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
               <CardContent>
                 <dl className="flex flex-col gap-2.5 text-sm">
                   <Row label="Quantity">
-                    <Quantity value={t.net_weight} unit={t.weight_unit ?? "kg"} />
+                    <Quantity
+                      value={t.net_weight}
+                      unit={t.weight_unit ?? "kg"}
+                    />
                   </Row>
                   <Row label="Gross / tare">
                     <span className="tabular-nums text-muted-foreground">
@@ -215,7 +251,9 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                     <SourceTag source={t.weight_source} />
                   </Row>
                   <Row label="Milk">
-                    <span className="text-muted-foreground">{t.milk_type ?? "—"}</span>
+                    <span className="text-muted-foreground">
+                      {t.milk_type ?? "—"}
+                    </span>
                   </Row>
                   <Row label="Container">
                     <span className="text-muted-foreground">
@@ -224,16 +262,24 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                   </Row>
                   <Row label="Supplier">
                     {t.supplier_id ? (
-                      <Link className="hover:underline" href={`/suppliers/${t.supplier_id}`}>
+                      <Link
+                        className="hover:underline"
+                        href={`/suppliers/${t.supplier_id}`}
+                      >
                         <Truck aria-hidden className="me-1 inline size-3.5" />
                         {supplierName ?? `${t.supplier_id.slice(0, 8)}…`}
                       </Link>
                     ) : (
-                      <span className="text-muted-foreground">not identified</span>
+                      <span className="text-muted-foreground">
+                        not identified
+                      </span>
                     )}
                   </Row>
                   <Row label="Centre">
-                    <Link className="hover:underline" href={`/centers/${t.center_id}`}>
+                    <Link
+                      className="hover:underline"
+                      href={`/centers/${t.center_id}`}
+                    >
                       <Building2 aria-hidden className="me-1 inline size-3.5" />
                       {centerName ?? `${t.center_id.slice(0, 8)}…`}
                     </Link>
@@ -245,7 +291,9 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Quality</CardTitle>
-                <CardDescription>The readings the price was resolved from.</CardDescription>
+                <CardDescription>
+                  The readings the price was resolved from.
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <dl className="flex flex-col gap-2.5 text-sm">
@@ -263,7 +311,9 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                   </Row>
                   {t.quality_remarks ? (
                     <Row label="Remarks">
-                      <span className="text-end text-muted-foreground">{t.quality_remarks}</span>
+                      <span className="text-end text-muted-foreground">
+                        {t.quality_remarks}
+                      </span>
                     </Row>
                   ) : null}
                   <Row label="Pricing status">
@@ -281,12 +331,16 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                   ) : null}
                   {t.rejected_reason ? (
                     <Row label="Rejected">
-                      <span className="text-destructive">{t.rejected_reason}</span>
+                      <span className="text-destructive">
+                        {t.rejected_reason}
+                      </span>
                     </Row>
                   ) : null}
                   {t.cancelled_reason ? (
                     <Row label="Cancelled">
-                      <span className="text-destructive">{t.cancelled_reason}</span>
+                      <span className="text-destructive">
+                        {t.cancelled_reason}
+                      </span>
                     </Row>
                   ) : null}
                 </dl>
@@ -299,15 +353,30 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
           <div className="grid gap-6 lg:grid-cols-3">
             <ChainCard
               title="Settlement"
-              icon={<Handshake aria-hidden className="size-4 text-muted-foreground" />}
+              icon={
+                <Handshake
+                  aria-hidden
+                  className="size-4 text-muted-foreground"
+                />
+              }
               state={chain}
               empty="This collection has not been settled yet."
-              href={links?.settlement ? `/settlements/${links.settlement.id}` : undefined}
+              href={
+                links?.settlement
+                  ? `/settlements/${links.settlement.id}`
+                  : undefined
+              }
               rows={
                 links?.settlement
                   ? [
                       ["Number", links.settlement.settlement_number],
-                      ["Status", <StatusBadge key="s" status={links.settlement.status} />],
+                      [
+                        "Status",
+                        <StatusBadge
+                          key="s"
+                          status={links.settlement.status}
+                        />,
+                      ],
                       [
                         "Period",
                         `${links.settlement.period_from} → ${links.settlement.period_to}`,
@@ -337,20 +406,33 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
 
             <ChainCard
               title="Payment"
-              icon={<Banknote aria-hidden className="size-4 text-muted-foreground" />}
+              icon={
+                <Banknote
+                  aria-hidden
+                  className="size-4 text-muted-foreground"
+                />
+              }
               state={chain}
               empty={
                 links?.settlement
                   ? "The settlement has not been paid yet."
                   : "Payment follows settlement."
               }
-              href={links?.payment ? `/payments/${links.payment.id}` : undefined}
+              href={
+                links?.payment ? `/payments/${links.payment.id}` : undefined
+              }
               rows={
                 links?.payment
                   ? [
                       ["Number", links.payment.payment_number],
-                      ["Status", <StatusBadge key="s" status={links.payment.status} />],
-                      ["Method", links.payment.method.replace(/_/g, " ").toLowerCase()],
+                      [
+                        "Status",
+                        <StatusBadge key="s" status={links.payment.status} />,
+                      ],
+                      [
+                        "Method",
+                        links.payment.method.replace(/_/g, " ").toLowerCase(),
+                      ],
                       ["Reference", links.payment.reference ?? "—"],
                       [
                         "Allocated",
@@ -368,20 +450,32 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
 
             <ChainCard
               title="Receipt"
-              icon={<ReceiptIcon aria-hidden className="size-4 text-muted-foreground" />}
+              icon={
+                <ReceiptIcon
+                  aria-hidden
+                  className="size-4 text-muted-foreground"
+                />
+              }
               state={chain}
               empty={
                 links?.payment
                   ? "A receipt is generated once the payment completes."
                   : "A receipt follows payment."
               }
-              href={links?.receipt && links.payment ? `/payments/${links.payment.id}` : undefined}
+              href={
+                links?.receipt && links.payment
+                  ? `/payments/${links.payment.id}`
+                  : undefined
+              }
               linkLabel="open on payment"
               rows={
                 links?.receipt
                   ? [
                       ["Number", links.receipt.receipt_number],
-                      ["Status", <StatusBadge key="s" status={links.receipt.status} />],
+                      [
+                        "Status",
+                        <StatusBadge key="s" status={links.receipt.status} />,
+                      ],
                       [
                         "Amount",
                         <Money
@@ -403,8 +497,9 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
               <CardHeader>
                 <CardTitle className="text-base">Money trail</CardTitle>
                 <CardDescription>
-                  What this collection was worth, and what happened to it. Every figure is the
-                  platform&apos;s; the only thing computed here is whether two of them agree.
+                  What this collection was worth, and what happened to it. Every
+                  figure is the platform&apos;s; the only thing computed here is
+                  whether two of them agree.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -420,7 +515,13 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-4">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
@@ -475,18 +576,31 @@ function SourceTag({ source }: { source: string | null }) {
  * be shown, and it is expected to be 0.00. If it ever is not, this is the
  * screen that says so instead of the screen that hides it.
  */
-function MoneyTrail({ tx, chain }: { tx: MilkTransaction; chain: Load<CollectionChain> }) {
+function MoneyTrail({
+  tx,
+  chain,
+}: {
+  tx: MilkTransaction;
+  chain: Load<CollectionChain>;
+}) {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
   const { currency: orgCurrency } = useLocale();
 
-  if (chain.state === "loading") return <LoadingState label="Following the money…" />;
+  if (chain.state === "loading")
+    return <LoadingState label="Following the money…" />;
   if (chain.state === "error")
-    return <ErrorState message={`The financial trail is unavailable — ${chain.message}.`} />;
+    return (
+      <ErrorState
+        message={`The financial trail is unavailable — ${chain.message}.`}
+      />
+    );
 
   const links = chain.data;
   const currency = tx.currency ?? links.settlement?.currency ?? orgCurrency;
   const collected = tx.gross_amount == null ? null : String(tx.gross_amount);
-  const contributed = links.settlement ? String(links.settlement.line_amount) : null;
+  const contributed = links.settlement
+    ? String(links.settlement.line_amount)
+    : null;
 
   // COMPARED, not computed. `sameAmount` normalises two exact-decimal strings
   // and asks whether they denote the same amount — "450.00" and "450.0" do.
@@ -495,7 +609,12 @@ function MoneyTrail({ tx, chain }: { tx: MilkTransaction; chain: Load<Collection
   const comparable = collected != null && contributed != null;
   const agrees = comparable && sameAmount(collected, contributed);
 
-  const stages: { label: string; amount: string | null; note: string; href?: string }[] = [
+  const stages: {
+    label: string;
+    amount: string | null;
+    note: string;
+    href?: string;
+  }[] = [
     {
       label: "Collection",
       amount: collected,
@@ -510,7 +629,9 @@ function MoneyTrail({ tx, chain }: { tx: MilkTransaction; chain: Load<Collection
       note: links.settlement
         ? `${links.settlement.settlement_number} · ${links.settlement.status}`
         : "not settled yet",
-      href: links.settlement ? `/settlements/${links.settlement.id}` : undefined,
+      href: links.settlement
+        ? `/settlements/${links.settlement.id}`
+        : undefined,
     },
     {
       label: "Payment allocation",
@@ -534,16 +655,24 @@ function MoneyTrail({ tx, chain }: { tx: MilkTransaction; chain: Load<Collection
     <div className="flex flex-col gap-4">
       <ol className="flex flex-col divide-y">
         {stages.map((stage) => (
-          <li key={stage.label} className="flex items-baseline justify-between gap-4 py-3">
+          <li
+            key={stage.label}
+            className="flex items-baseline justify-between gap-4 py-3"
+          >
             <div className="flex flex-col">
               {stage.href ? (
-                <Link className="text-sm font-medium hover:underline" href={stage.href}>
+                <Link
+                  className="text-sm font-medium hover:underline"
+                  href={stage.href}
+                >
                   {stage.label}
                 </Link>
               ) : (
                 <span className="text-sm font-medium">{stage.label}</span>
               )}
-              <span className="text-xs text-muted-foreground">{stage.note}</span>
+              <span className="text-xs text-muted-foreground">
+                {stage.note}
+              </span>
             </div>
             {stage.amount != null ? (
               <Money amount={stage.amount} currency={currency} />
@@ -558,8 +687,8 @@ function MoneyTrail({ tx, chain }: { tx: MilkTransaction; chain: Load<Collection
         agrees ? (
           <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
             <Check aria-hidden className="size-4" />
-            The settlement recorded this collection at exactly its collection value — difference
-            0.00 {currency}.
+            The settlement recorded this collection at exactly its collection
+            value — difference 0.00 {currency}.
           </p>
         ) : (
           <p
@@ -567,8 +696,8 @@ function MoneyTrail({ tx, chain }: { tx: MilkTransaction; chain: Load<Collection
             className="inline-flex items-center gap-2 text-sm font-medium text-destructive"
           >
             <AlertTriangle aria-hidden className="size-4" />
-            The settlement recorded {contributed} {currency} for a collection worth {collected}{" "}
-            {currency}. These should be identical.
+            The settlement recorded {contributed} {currency} for a collection
+            worth {collected} {currency}. These should be identical.
           </p>
         )
       ) : null}
@@ -582,7 +711,9 @@ function PricingBreakdown({ tx }: { tx: MilkTransaction }) {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Pricing</CardTitle>
-        <CardDescription>Resolved by the platform&apos;s pricing engine.</CardDescription>
+        <CardDescription>
+          Resolved by the platform&apos;s pricing engine.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {!priced ? (
@@ -624,7 +755,9 @@ function PricingBreakdown({ tx }: { tx: MilkTransaction }) {
             </div>
 
             <div className="flex items-baseline justify-between border-t border-border pt-3">
-              <span className="text-sm text-muted-foreground">Collection value</span>
+              <span className="text-sm text-muted-foreground">
+                Collection value
+              </span>
               <Money amount={tx.gross_amount} currency={tx.currency} emphasis />
             </div>
           </div>
@@ -661,7 +794,10 @@ function ChainCard({
           {title}
         </CardTitle>
         {href ? (
-          <Link className="text-xs underline-offset-4 hover:underline" href={href}>
+          <Link
+            className="text-xs underline-offset-4 hover:underline"
+            href={href}
+          >
             {linkLabel}
           </Link>
         ) : null}
@@ -730,7 +866,9 @@ function Timeline({
       done: links?.payment?.status === "completed",
     },
     {
-      label: links?.receipt ? `Receipt ${links.receipt.receipt_number}` : "Receipt generated",
+      label: links?.receipt
+        ? `Receipt ${links.receipt.receipt_number}`
+        : "Receipt generated",
       at: links?.receipt?.generated_at ?? null,
       done: Boolean(links?.receipt),
     },
@@ -741,20 +879,26 @@ function Timeline({
       <CardHeader>
         <CardTitle className="text-base">Lifecycle</CardTitle>
         <CardDescription>
-          The platform&apos;s own event trail. Stages that have not happened are shown as pending.
+          The platform&apos;s own event trail. Stages that have not happened are
+          shown as pending.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {events.state === "loading" ? (
           <LoadingState label="Loading the trail…" />
         ) : events.state === "error" ? (
-          <ErrorState message={`The event trail is unavailable — ${events.message}.`} />
+          <ErrorState
+            message={`The event trail is unavailable — ${events.message}.`}
+          />
         ) : recorded.length === 0 ? (
           <EmptyState title="No events recorded for this collection" />
         ) : (
           <ol className="flex flex-col">
             {recorded.map((event) => (
-              <li key={`${event.sequence}-${event.event_type}`} className="flex gap-3 pb-4 last:pb-0">
+              <li
+                key={`${event.sequence}-${event.event_type}`}
+                className="flex gap-3 pb-4 last:pb-0"
+              >
                 <span className="relative flex flex-col items-center">
                   <span className="mt-1 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15">
                     <Check aria-hidden className="size-3 text-primary" />
@@ -763,7 +907,9 @@ function Timeline({
                 </span>
                 <span className="flex flex-1 flex-col gap-0.5">
                   <span className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-sm font-medium">{humanise(event.event_type)}</span>
+                    <span className="text-sm font-medium">
+                      {humanise(event.event_type)}
+                    </span>
                     <span className="text-xs tabular-nums text-muted-foreground">
                       {stamp(event.created_at)}
                     </span>
@@ -772,7 +918,8 @@ function Timeline({
                       unattributed event says so rather than guessing. */}
                   <span className="text-xs text-muted-foreground">
                     {event.actor_id
-                      ? (actorName[event.actor_id] ?? `operator ${event.actor_id.slice(0, 8)}…`)
+                      ? (actorName[event.actor_id] ??
+                        `operator ${event.actor_id.slice(0, 8)}…`)
                       : "the platform"}
                     {summarise(event.data) ? ` · ${summarise(event.data)}` : ""}
                   </span>
@@ -790,14 +937,18 @@ function Timeline({
                         : "mt-1 flex size-5 shrink-0 items-center justify-center rounded-full border border-dashed border-border"
                     }
                   >
-                    {stage.done ? <Check aria-hidden className="size-3 text-primary" /> : null}
+                    {stage.done ? (
+                      <Check aria-hidden className="size-3 text-primary" />
+                    ) : null}
                   </span>
                   <span className="mt-1 w-px flex-1 bg-border" />
                 </span>
                 <span className="flex flex-1 flex-wrap items-baseline justify-between gap-2">
                   <span
                     className={
-                      stage.done ? "text-sm font-medium" : "text-sm text-muted-foreground"
+                      stage.done
+                        ? "text-sm font-medium"
+                        : "text-sm text-muted-foreground"
                     }
                   >
                     {stage.label}

@@ -21,12 +21,27 @@ import {
   getSupplierReport,
   listMilkTransactions,
 } from "@/lib/api";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { type DateRange, DateRangePicker, resolveRange } from "@/components/date-range";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  type DateRange,
+  DateRangePicker,
+  useDefaultRange,
+} from "@/components/date-range";
 import { BarBreakdown, TrendChart } from "@/components/trend-chart";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
-import { EmptyState, ErrorState, LoadingState, TableSkeleton } from "@/components/states";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  TableSkeleton,
+} from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { useLocale } from "@/lib/i18n";
 
@@ -50,27 +65,51 @@ type Load<T> =
 
 const LOADING = { state: "loading" } as const;
 const describe = (e: unknown) =>
-  e instanceof ApiError ? e.detail : e instanceof Error ? e.message : "the request failed";
+  e instanceof ApiError
+    ? e.detail
+    : e instanceof Error
+      ? e.message
+      : "the request failed";
 
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
 
-export default function CenterDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function CenterDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency, timezone: orgTimezone } = useLocale();
+  const { currency: orgCurrency } = useLocale();
   const { id } = use(params);
-  const [range, setRange] = useState<DateRange>(() => resolveRange("30d", orgTimezone));
+  // Derived until the reader chooses, so a timezone that arrives after the
+  // first render still corrects the window (DEMO-019).
+  const [range, setRange] = useDefaultRange("30d");
 
   const [detail, setDetail] = useState<Load<CenterDetail>>(LOADING);
   const [readiness, setReadiness] = useState<Load<ReadinessResult>>(LOADING);
   const [summary, setSummary] = useState<Load<DailyCollectionSummary>>(LOADING);
   const [trend, setTrend] = useState<Load<CollectionTrend>>(LOADING);
-  const [suppliers, setSuppliers] = useState<Load<ReportPage<SupplierSummaryRow>>>(LOADING);
+  const [suppliers, setSuppliers] =
+    useState<Load<ReportPage<SupplierSummaryRow>>>(LOADING);
   const [recent, setRecent] = useState<Load<MilkTransactionPage>>(LOADING);
-  const [settlements, setSettlements] = useState<Load<SettlementReport>>(LOADING);
+  const [settlements, setSettlements] =
+    useState<Load<SettlementReport>>(LOADING);
 
   const load = useCallback(
     async (window: DateRange) => {
-      const params = { date_from: window.from, date_to: window.to, center_id: id };
+      const params = {
+        date_from: window.from,
+        date_to: window.to,
+        center_id: id,
+      };
       const ok =
         <T,>(set: (v: Load<T>) => void) =>
         (data: T) =>
@@ -85,12 +124,18 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
         getReadiness(id).then(ok(setReadiness), fail(setReadiness)),
         getDailyReport(params).then(ok(setSummary), fail(setSummary)),
         getCollectionTrend(params).then(ok(setTrend), fail(setTrend)),
-        getSupplierReport({ ...params, limit: "6" }).then(ok(setSuppliers), fail(setSuppliers)),
+        getSupplierReport({ ...params, limit: "6" }).then(
+          ok(setSuppliers),
+          fail(setSuppliers),
+        ),
         listMilkTransactions({ center_id: id, limit: 8, offset: 0 }).then(
           ok(setRecent),
           fail(setRecent),
         ),
-        getSettlementReport({ center_id: id }).then(ok(setSettlements), fail(setSettlements)),
+        getSettlementReport({ center_id: id }).then(
+          ok(setSettlements),
+          fail(setSettlements),
+        ),
       ]);
     },
     [id],
@@ -109,7 +154,9 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
   if (detail.state === "error") {
     return (
       <div className="mx-auto w-full max-w-3xl p-8">
-        <ErrorState message={`This centre could not be loaded — ${detail.message}.`} />
+        <ErrorState
+          message={`This centre could not be loaded — ${detail.message}.`}
+        />
         <p className="mt-4 text-sm">
           <Link className="underline underline-offset-4" href="/centers">
             Back to collection centres
@@ -122,7 +169,10 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
-        breadcrumbs={[{ label: "Centres", href: "/centers" }, { label: center?.name ?? "Centre" }]}
+        breadcrumbs={[
+          { label: "Centres", href: "/centers" },
+          { label: center?.name ?? "Centre" },
+        ]}
         title={center?.name ?? "Collection centre"}
         description={
           center
@@ -134,26 +184,51 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
 
       <DateRangePicker value={range} onChange={setRange} />
 
-      <section aria-label="Centre statistics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        aria-label="Centre statistics"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
         <StatTile
           label="Collections"
           value={stats ? stats.transactions : "—"}
-          hint={stats ? `${stats.accepted} accepted · ${stats.rejected} rejected` : undefined}
+          hint={
+            stats
+              ? `${stats.accepted} accepted · ${stats.rejected} rejected`
+              : undefined
+          }
         />
         <StatTile
           label="Quantity"
-          value={stats ? <Quantity value={stats.total_net_weight_kg} unit="kg" /> : "—"}
-          hint={stats ? `${stats.suppliers_served} suppliers served` : undefined}
+          value={
+            stats ? (
+              <Quantity value={stats.total_net_weight_kg} unit="kg" />
+            ) : (
+              "—"
+            )
+          }
+          hint={
+            stats ? `${stats.suppliers_served} suppliers served` : undefined
+          }
           icon={<Droplets className="size-4" />}
         />
         <StatTile
           label="Collection value"
-          value={primary ? <Money amount={primary[1]} currency={primary[0]} /> : stats ? <Money amount="0.00" currency={orgCurrency} /> : "—"}
+          value={
+            primary ? (
+              <Money amount={primary[1]} currency={primary[0]} />
+            ) : stats ? (
+              <Money amount="0.00" currency={orgCurrency} />
+            ) : (
+              "—"
+            )
+          }
           hint="payable in this period"
         />
         <StatTile
           label="Average fat"
-          value={stats?.weighted_avg_fat != null ? `${stats.weighted_avg_fat}%` : "—"}
+          value={
+            stats?.weighted_avg_fat != null ? `${stats.weighted_avg_fat}%` : "—"
+          }
           hint="weighted by quantity"
         />
       </section>
@@ -163,28 +238,39 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
           <CardHeader>
             <CardTitle className="text-base">Readiness</CardTitle>
             <CardDescription>
-              Whether this centre can receive milk right now, evaluated by the platform.
+              Whether this centre can receive milk right now, evaluated by the
+              platform.
             </CardDescription>
           </CardHeader>
           <CardContent>
             {readiness.state === "loading" ? (
               <LoadingState label="Evaluating readiness…" />
             ) : readiness.state === "error" ? (
-              <ErrorState message={`Readiness is unavailable — ${readiness.message}.`} />
+              <ErrorState
+                message={`Readiness is unavailable — ${readiness.message}.`}
+              />
             ) : (
               <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-2">
                   <StatusBadge status={readiness.data.status} />
                   <span className="text-xs text-muted-foreground">
-                    checked {String(readiness.data.evaluated_at).slice(0, 19).replace("T", " ")}
+                    checked{" "}
+                    {String(readiness.data.evaluated_at)
+                      .slice(0, 19)
+                      .replace("T", " ")}
                   </span>
                 </div>
                 {(readiness.data.checks ?? []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No readiness rules reported.</p>
+                  <p className="text-sm text-muted-foreground">
+                    No readiness rules reported.
+                  </p>
                 ) : (
                   <ul className="flex flex-col gap-2">
                     {(readiness.data.checks ?? []).map((check) => (
-                      <li key={check.rule} className="flex items-start gap-2.5 text-sm">
+                      <li
+                        key={check.rule}
+                        className="flex items-start gap-2.5 text-sm"
+                      >
                         {check.passed ? (
                           <CheckCircle2
                             aria-hidden
@@ -207,7 +293,9 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
                           {/* The platform's own reason. A centre that cannot
                               take milk must say WHY, not merely that it cannot. */}
                           {!check.passed && check.detail ? (
-                            <span className="text-muted-foreground">{check.detail}</span>
+                            <span className="text-muted-foreground">
+                              {check.detail}
+                            </span>
                           ) : null}
                         </span>
                         <span className="ml-auto shrink-0 text-xs text-muted-foreground">
@@ -228,7 +316,9 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
               <Clock aria-hidden className="size-4 text-muted-foreground" />
               Operating hours
             </CardTitle>
-            <CardDescription>Interpreted in {center?.timezone ?? "the centre's timezone"}.</CardDescription>
+            <CardDescription>
+              Interpreted in {center?.timezone ?? "the centre's timezone"}.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {detail.state === "loading" ? (
@@ -244,7 +334,10 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
                   .slice()
                   .sort((a, b) => a.day_of_week - b.day_of_week)
                   .map((w) => (
-                    <li key={`${w.day_of_week}-${w.opens}`} className="flex justify-between gap-4">
+                    <li
+                      key={`${w.day_of_week}-${w.opens}`}
+                      className="flex justify-between gap-4"
+                    >
                       <span className="text-muted-foreground">
                         {DAYS[w.day_of_week] ?? `Day ${w.day_of_week}`}
                       </span>
@@ -270,7 +363,9 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
           {trend.state === "loading" ? (
             <LoadingState label="Loading the trend…" />
           ) : trend.state === "error" ? (
-            <ErrorState message={`The trend is unavailable — ${trend.message}.`} />
+            <ErrorState
+              message={`The trend is unavailable — ${trend.message}.`}
+            />
           ) : (
             <TrendChart
               metric="quantity"
@@ -289,8 +384,12 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Suppliers delivering here</CardTitle>
-            <CardDescription>By quantity over the selected range.</CardDescription>
+            <CardTitle className="text-base">
+              Suppliers delivering here
+            </CardTitle>
+            <CardDescription>
+              By quantity over the selected range.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {suppliers.state === "loading" ? (
@@ -307,7 +406,10 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
                   detail: (
                     <span className="flex items-center gap-2">
                       <Quantity value={row.total_net_weight_kg} unit="kg" />
-                      <Money amount={row.payable_amount} currency={row.currency} />
+                      <Money
+                        amount={row.payable_amount}
+                        currency={row.currency}
+                      />
                     </span>
                   ),
                 }))}
@@ -332,7 +434,10 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
               <div className="flex flex-col gap-4">
                 <div className="flex flex-wrap items-center gap-2">
                   {(settlements.data.by_status ?? []).map((row) => (
-                    <span key={row.status} className="flex items-center gap-1.5">
+                    <span
+                      key={row.status}
+                      className="flex items-center gap-1.5"
+                    >
                       <StatusBadge status={row.status} />
                       <span className="text-sm tabular-nums text-muted-foreground">
                         {row.count}
@@ -342,14 +447,21 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
                 </div>
                 <dl className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <dt className="text-muted-foreground">Finalized net total</dt>
+                    <dt className="text-muted-foreground">
+                      Finalized net total
+                    </dt>
                     <dd className="mt-0.5">
-                      <Money amount={settlements.data.finalized_net_total} emphasis />
+                      <Money
+                        amount={settlements.data.finalized_net_total}
+                        emphasis
+                      />
                     </dd>
                   </div>
                   <div>
                     <dt className="text-muted-foreground">Settlement lines</dt>
-                    <dd className="mt-0.5 tabular-nums">{settlements.data.total_lines ?? 0}</dd>
+                    <dd className="mt-0.5 tabular-nums">
+                      {settlements.data.total_lines ?? 0}
+                    </dd>
                   </div>
                 </dl>
               </div>
@@ -361,7 +473,9 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Recent collections</CardTitle>
-          <CardDescription>The most recent transactions at this centre.</CardDescription>
+          <CardDescription>
+            The most recent transactions at this centre.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {recent.state === "loading" ? (
@@ -376,23 +490,40 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
           ) : (
             <div className="w-full overflow-x-auto">
               <table className="w-full text-sm">
-                <caption className="sr-only">Recent collections at this centre</caption>
+                <caption className="sr-only">
+                  Recent collections at this centre
+                </caption>
                 <thead>
                   <tr className="border-b border-border text-start text-muted-foreground">
-                    <th scope="col" className="py-2 font-medium">State</th>
-                    <th scope="col" className="py-2 font-medium">Milk</th>
-                    <th scope="col" className="py-2 text-end font-medium">Net</th>
-                    <th scope="col" className="py-2 text-end font-medium">Rate</th>
-                    <th scope="col" className="py-2 text-end font-medium">Amount</th>
+                    <th scope="col" className="py-2 font-medium">
+                      State
+                    </th>
+                    <th scope="col" className="py-2 font-medium">
+                      Milk
+                    </th>
+                    <th scope="col" className="py-2 text-end font-medium">
+                      Net
+                    </th>
+                    <th scope="col" className="py-2 text-end font-medium">
+                      Rate
+                    </th>
+                    <th scope="col" className="py-2 text-end font-medium">
+                      Amount
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {(recent.data.items ?? []).map((tx) => (
-                    <tr key={tx.id} className="border-b border-border/60 last:border-0">
+                    <tr
+                      key={tx.id}
+                      className="border-b border-border/60 last:border-0"
+                    >
                       <td className="py-2">
                         <StatusBadge status={tx.state} />
                       </td>
-                      <td className="py-2 text-muted-foreground">{tx.milk_type ?? "—"}</td>
+                      <td className="py-2 text-muted-foreground">
+                        {tx.milk_type ?? "—"}
+                      </td>
                       <td className="py-2 text-end">
                         <Quantity value={tx.net_weight} unit="kg" />
                       </td>
@@ -400,7 +531,10 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
                         {tx.unit_price ?? "—"}
                       </td>
                       <td className="py-2 text-end">
-                        <Money amount={tx.gross_amount} currency={tx.currency} />
+                        <Money
+                          amount={tx.gross_amount}
+                          currency={tx.currency}
+                        />
                       </td>
                     </tr>
                   ))}

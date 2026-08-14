@@ -12,7 +12,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ApiError, type BackupRun, type BackupStatus, getBackupStatus, listBackupRuns } from "@/lib/api";
+import {
+  ApiError,
+  type BackupRun,
+  type BackupStatus,
+  getBackupStatus,
+  listBackupRuns,
+} from "@/lib/api";
 
 /**
  * Backup visibility (PORTAL-001 / F-10).
@@ -29,12 +35,17 @@ export default function OperationsPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const [s, history] = await Promise.all([getBackupStatus(), listBackupRuns(20)]);
+      const [s, history] = await Promise.all([
+        getBackupStatus(),
+        listBackupRuns(20),
+      ]);
       setStatus(s);
       setRuns(history);
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load backup status");
+      setError(
+        err instanceof ApiError ? err.detail : "Failed to load backup status",
+      );
     }
   }, []);
 
@@ -53,13 +64,23 @@ export default function OperationsPage() {
     >
       <section className="flex flex-wrap items-center gap-4">
         <Badge variant={status?.healthy ? "default" : "destructive"}>
-          {status === null ? "checking…" : status.healthy ? "protected" : "NOT PROTECTED"}
+          {status === null
+            ? "checking…"
+            : status.healthy
+              ? "protected"
+              : "NOT PROTECTED"}
         </Badge>
         <span className="text-sm text-muted-foreground">
-          Last backup: {status?.last_backup_at ? formatStamp(status.last_backup_at) : "never"}
+          Last backup:{" "}
+          {status?.last_backup_at
+            ? formatStamp(status.last_backup_at)
+            : "never"}
         </span>
         <span className="text-sm text-muted-foreground">
-          Last verified: {status?.last_verified_at ? formatStamp(status.last_verified_at) : "never"}
+          Last verified:{" "}
+          {status?.last_verified_at
+            ? formatStamp(status.last_verified_at)
+            : "never"}
         </span>
       </section>
 
@@ -86,7 +107,11 @@ export default function OperationsPage() {
                 </TableCell>
                 <TableCell>{run.kind}</TableCell>
                 <TableCell>
-                  <Badge variant={run.status === "succeeded" ? "default" : "destructive"}>
+                  <Badge
+                    variant={
+                      run.status === "succeeded" ? "default" : "destructive"
+                    }
+                  >
                     {run.status}
                   </Badge>
                 </TableCell>

@@ -31,7 +31,9 @@ export default function ConfigurationPage() {
       setValue(JSON.stringify(result.value, null, 2));
       setNote(`Loaded ${key}.`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to read the setting");
+      setError(
+        err instanceof ApiError ? err.detail : "Failed to read the setting",
+      );
     }
   }
 
@@ -42,14 +44,20 @@ export default function ConfigurationPage() {
     try {
       parsed = JSON.parse(value);
     } catch {
-      setError("The value is not valid JSON. Use \"text\" for a string, 12 for a number.");
+      setError(
+        'The value is not valid JSON. Use "text" for a string, 12 for a number.',
+      );
       return;
     }
     try {
       await setConfig(key, parsed, scope);
       setNote(`Saved ${key} at ${scope} scope.`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "The platform refused the change");
+      setError(
+        err instanceof ApiError
+          ? err.detail
+          : "The platform refused the change",
+      );
     }
   }
 

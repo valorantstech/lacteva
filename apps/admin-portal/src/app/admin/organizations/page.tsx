@@ -3,8 +3,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { AdminPage } from "@/components/admin-page";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableRow } from "@/components/ui/table";
-import { ApiError, type Me, type Organization, getMe, getOrganization } from "@/lib/api";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  ApiError,
+  type Me,
+  type Organization,
+  getMe,
+  getOrganization,
+} from "@/lib/api";
 
 /**
  * The organization this session is acting inside (PORTAL-001 / F-10).
@@ -23,10 +35,16 @@ export default function OrganizationsPage() {
     try {
       const session = await getMe();
       setMe(session);
-      setOrg(session.tenant_id ? await getOrganization(session.tenant_id) : null);
+      setOrg(
+        session.tenant_id ? await getOrganization(session.tenant_id) : null,
+      );
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load the organization");
+      setError(
+        err instanceof ApiError
+          ? err.detail
+          : "Failed to load the organization",
+      );
     }
   }, []);
 
@@ -47,8 +65,9 @@ export default function OrganizationsPage() {
         <p>Loading…</p>
       ) : me.tenant_id === null ? (
         <p className="text-sm text-muted-foreground">
-          This is a platform-level session with no organization bound. Sign in with an
-          organization id, or send <code>X-Tenant-ID</code>, to act inside a tenant.
+          This is a platform-level session with no organization bound. Sign in
+          with an organization id, or send <code>X-Tenant-ID</code>, to act
+          inside a tenant.
         </p>
       ) : (
         <Table>
@@ -67,7 +86,9 @@ export default function OrganizationsPage() {
             </TableRow>
             <TableRow>
               <TableHead>Tenant id</TableHead>
-              <TableCell className="font-mono text-xs">{me.tenant_id}</TableCell>
+              <TableCell className="font-mono text-xs">
+                {me.tenant_id}
+              </TableCell>
             </TableRow>
             <TableRow>
               <TableHead>Signed in as</TableHead>
@@ -80,7 +101,11 @@ export default function OrganizationsPage() {
                   <span className="text-muted-foreground">none</span>
                 ) : (
                   me.permissions.map((p) => (
-                    <Badge key={p} variant="secondary" className="font-mono text-[11px]">
+                    <Badge
+                      key={p}
+                      variant="secondary"
+                      className="font-mono text-[11px]"
+                    >
                       {p}
                     </Badge>
                   ))

@@ -25,7 +25,10 @@ import TransactionDetailPage from "@/app/transactions/[id]/page";
 import TransactionsPage from "@/app/transactions/page";
 
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 
 /** 10.000 kg at 45.0000 = 450.00 KES, entered by an operator. */
 const TX = {
@@ -206,7 +209,8 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
     for (const [fragment, handler] of Object.entries(overrides)) {
       if (url.includes(fragment)) return handler(url);
     }
-    if (path.endsWith("/v1/reports/collection/operational-status")) return json(STATUS);
+    if (path.endsWith("/v1/reports/collection/operational-status"))
+      return json(STATUS);
     if (path.endsWith("/v1/reports/collection/daily")) return json(DAILY);
     if (path.endsWith("/chain")) return json(CHAIN);
     if (path.endsWith("/v1/milk-transactions/tx-1/events")) return json(EVENTS);
@@ -214,13 +218,23 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
     if (path.endsWith("/v1/milk-transactions"))
       return json({ items: [TX, SECOND], total: 2, limit: 15, offset: 0 });
     if (path.endsWith("/v1/collection-centers/c1"))
-      return json({ center: CENTER, settings: {}, operating_windows: [], calendar: [] });
+      return json({
+        center: CENTER,
+        settings: {},
+        operating_windows: [],
+        calendar: [],
+      });
     if (path.endsWith("/v1/collection-centers"))
       return json({ items: [CENTER], total: 1, limit: 100, offset: 0 });
     if (path.endsWith("/v1/suppliers/s1"))
       return json({
         supplier: SUPPLIER,
-        profile: { full_name: "Amina Njoroge", phone: "", village: "", national_id: "" },
+        profile: {
+          full_name: "Amina Njoroge",
+          phone: "",
+          village: "",
+          national_id: "",
+        },
         center_ids: ["c1"],
         bank_accounts: [],
         documents: [],
@@ -228,7 +242,9 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
     if (path.endsWith("/v1/suppliers"))
       return json({ items: [SUPPLIER], total: 1, limit: 100, offset: 0 });
     if (path.endsWith("/v1/members"))
-      return json([{ user_id: "u1", status: "active", joined_at: "2026-01-01T00:00:00Z" }]);
+      return json([
+        { user_id: "u1", status: "active", joined_at: "2026-01-01T00:00:00Z" },
+      ]);
     if (path.includes("/v1/identity/users/"))
       return json({
         id: "u1",
@@ -252,7 +268,8 @@ const renderDetail = async (ui: React.ReactElement) => {
   });
 };
 
-const urls = (spy: ReturnType<typeof routeAll>) => spy.mock.calls.map((c) => String(c[0]));
+const urls = (spy: ReturnType<typeof routeAll>) =>
+  spy.mock.calls.map((c) => String(c[0]));
 
 describe("transactions list", () => {
   it("asks for the whole page's financial position in ONE call", async () => {
@@ -260,7 +277,9 @@ describe("transactions list", () => {
     render(<TransactionsPage />);
     await screen.findByText("STL-2026-000004");
 
-    const statusCalls = urls(spy).filter((u) => u.includes("operational-status"));
+    const statusCalls = urls(spy).filter((u) =>
+      u.includes("operational-status"),
+    );
     expect(statusCalls).toHaveLength(1);
     // Both ids in the one request — never a call per row.
     expect(statusCalls[0]).toContain("transaction_ids=tx-1");
@@ -273,14 +292,12 @@ describe("transactions list", () => {
     routeAll();
     render(<TransactionsPage />);
 
-    expect(await screen.findByRole("link", { name: "STL-2026-000004" })).toHaveAttribute(
-      "href",
-      "/settlements/st-1",
-    );
-    expect(screen.getByRole("link", { name: "PAY-2026-000004" })).toHaveAttribute(
-      "href",
-      "/payments/pa-1",
-    );
+    expect(
+      await screen.findByRole("link", { name: "STL-2026-000004" }),
+    ).toHaveAttribute("href", "/settlements/st-1");
+    expect(
+      screen.getByRole("link", { name: "PAY-2026-000004" }),
+    ).toHaveAttribute("href", "/payments/pa-1");
     // The second collection is drawn as an absence, not as a zero.
     expect(screen.getByText("not settled")).toBeInTheDocument();
     expect(screen.getByText("not paid")).toBeInTheDocument();
@@ -289,7 +306,9 @@ describe("transactions list", () => {
   it("shows the last activity from the platform's own event log", async () => {
     routeAll();
     render(<TransactionsPage />);
-    expect((await screen.findAllByText("Transaction completed")).length).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByText("Transaction completed")).length,
+    ).toBeGreaterThan(0);
   });
 
   it("sends every filter to the SERVER", async () => {
@@ -337,10 +356,9 @@ describe("transaction detail", () => {
   it("names the centre and the supplier instead of showing identifiers", async () => {
     routeAll();
     await renderDetail(<TransactionDetailPage params={params()} />);
-    expect(await screen.findByRole("link", { name: /Kilima Hill/ })).toHaveAttribute(
-      "href",
-      "/centers/c1",
-    );
+    expect(
+      await screen.findByRole("link", { name: /Kilima Hill/ }),
+    ).toHaveAttribute("href", "/centers/c1");
     expect(screen.getByRole("link", { name: /Amina Njoroge/ })).toHaveAttribute(
       "href",
       "/suppliers/s1",
@@ -361,7 +379,9 @@ describe("transaction detail", () => {
     await renderDetail(<TransactionDetailPage params={params()} />);
     expect(await screen.findByText("Money trail")).toBeInTheDocument();
     expect(
-      screen.getByText(/recorded this collection at exactly its collection value/),
+      screen.getByText(
+        /recorded this collection at exactly its collection value/,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText(/difference 0\.00 KES/)).toBeInTheDocument();
   });
@@ -376,7 +396,9 @@ describe("transaction detail", () => {
     });
     await renderDetail(<TransactionDetailPage params={params()} />);
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/449\.00 KES for a collection worth 450\.00 KES/);
+    expect(alert).toHaveTextContent(
+      /449\.00 KES for a collection worth 450\.00 KES/,
+    );
     expect(alert).toHaveTextContent(/should be identical/);
   });
 
@@ -385,11 +407,16 @@ describe("transaction detail", () => {
     // the same money written two ways.
     routeAll({
       "/chain": () =>
-        json({ ...CHAIN, settlement: { ...CHAIN.settlement, line_amount: "450.0" } }),
+        json({
+          ...CHAIN,
+          settlement: { ...CHAIN.settlement, line_amount: "450.0" },
+        }),
     });
     await renderDetail(<TransactionDetailPage params={params()} />);
     expect(
-      await screen.findByText(/recorded this collection at exactly its collection value/),
+      await screen.findByText(
+        /recorded this collection at exactly its collection value/,
+      ),
     ).toBeInTheDocument();
   });
 

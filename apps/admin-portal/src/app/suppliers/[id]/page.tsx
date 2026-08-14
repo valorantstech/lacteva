@@ -20,12 +20,27 @@ import {
   setSupplierStatus,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { type DateRange, DateRangePicker, resolveRange } from "@/components/date-range";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  type DateRange,
+  DateRangePicker,
+  useDefaultRange,
+} from "@/components/date-range";
 import { TrendChart } from "@/components/trend-chart";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
-import { EmptyState, ErrorState, LoadingState, TableSkeleton } from "@/components/states";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  TableSkeleton,
+} from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { useLocale } from "@/lib/i18n";
 
@@ -49,19 +64,30 @@ type Load<T> =
 
 const LOADING = { state: "loading" } as const;
 const describe = (e: unknown) =>
-  e instanceof ApiError ? e.detail : e instanceof Error ? e.message : "the request failed";
+  e instanceof ApiError
+    ? e.detail
+    : e instanceof Error
+      ? e.message
+      : "the request failed";
 
-export default function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function SupplierDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency, timezone: orgTimezone } = useLocale();
+  const { currency: orgCurrency } = useLocale();
   const { id } = use(params);
-  const [range, setRange] = useState<DateRange>(() => resolveRange("30d", orgTimezone));
+  // Derived until the reader chooses, so a timezone that arrives after the
+  // first render still corrects the window (DEMO-019).
+  const [range, setRange] = useDefaultRange("30d");
 
   const [detail, setDetail] = useState<Load<SupplierDetail>>(LOADING);
   const [summary, setSummary] = useState<Load<DailyCollectionSummary>>(LOADING);
   const [trend, setTrend] = useState<Load<CollectionTrend>>(LOADING);
   const [recent, setRecent] = useState<Load<MilkTransactionPage>>(LOADING);
-  const [settlements, setSettlements] = useState<Load<SettlementReport>>(LOADING);
+  const [settlements, setSettlements] =
+    useState<Load<SettlementReport>>(LOADING);
   const [payments, setPayments] = useState<Load<PaymentReport>>(LOADING);
   const [metric, setMetric] = useState<"quantity" | "value">("quantity");
   const [notice, setNotice] = useState<string | null>(null);
@@ -69,7 +95,11 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
   const load = useCallback(
     async (window: DateRange) => {
-      const params = { date_from: window.from, date_to: window.to, supplier_id: id };
+      const params = {
+        date_from: window.from,
+        date_to: window.to,
+        supplier_id: id,
+      };
       const ok =
         <T,>(set: (v: Load<T>) => void) =>
         (data: T) =>
@@ -87,8 +117,14 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
           ok(setRecent),
           fail(setRecent),
         ),
-        getSettlementReport({ supplier_id: id }).then(ok(setSettlements), fail(setSettlements)),
-        getPaymentReport({ supplier_id: id }).then(ok(setPayments), fail(setPayments)),
+        getSettlementReport({ supplier_id: id }).then(
+          ok(setSettlements),
+          fail(setSettlements),
+        ),
+        getPaymentReport({ supplier_id: id }).then(
+          ok(setPayments),
+          fail(setPayments),
+        ),
       ]);
     },
     [id],
@@ -100,7 +136,8 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   }, [load, range]);
 
   const supplier = detail.state === "ready" ? detail.data.supplier : null;
-  const centerIds = detail.state === "ready" ? (detail.data.center_ids ?? []) : [];
+  const centerIds =
+    detail.state === "ready" ? (detail.data.center_ids ?? []) : [];
   const stats = summary.state === "ready" ? summary.data : null;
   const currencies = Object.entries(stats?.payable_by_currency ?? {});
   const primary = currencies[0];
@@ -127,7 +164,9 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   if (detail.state === "error") {
     return (
       <div className="mx-auto w-full max-w-3xl p-8">
-        <ErrorState message={`This supplier could not be loaded — ${detail.message}.`} />
+        <ErrorState
+          message={`This supplier could not be loaded — ${detail.message}.`}
+        />
         <p className="mt-4 text-sm">
           <Link className="underline underline-offset-4" href="/suppliers">
             Back to suppliers
@@ -145,13 +184,21 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
           { label: supplier?.full_name ?? "Supplier" },
         ]}
         title={supplier?.full_name ?? "Supplier"}
-        description={supplier ? `${supplier.code}` : "Loading this supplier's details…"}
+        description={
+          supplier ? `${supplier.code}` : "Loading this supplier's details…"
+        }
         actions={
           supplier ? (
             <div className="flex items-center gap-2">
               <StatusBadge status={supplier.status} />
-              {supplier.status === "draft" || supplier.status === "suspended" ? (
-                <Button type="button" size="sm" disabled={busy} onClick={() => void changeStatus("active")}>
+              {supplier.status === "draft" ||
+              supplier.status === "suspended" ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void changeStatus("active")}
+                >
                   Activate
                 </Button>
               ) : null}
@@ -172,29 +219,49 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
       />
 
       {notice ? (
-        <div role="status" className="rounded-md border border-border bg-card px-4 py-2 text-sm">
+        <div
+          role="status"
+          className="rounded-md border border-border bg-card px-4 py-2 text-sm"
+        >
           {notice}
         </div>
       ) : null}
 
       {supplier && supplier.status === "draft" && centerIds.length === 0 ? (
-        <div role="note" className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm">
-          This supplier is not assigned to a collection centre yet. The platform will refuse to
-          activate them until they are — a supplier needs somewhere to deliver.
+        <div
+          role="note"
+          className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm"
+        >
+          This supplier is not assigned to a collection centre yet. The platform
+          will refuse to activate them until they are — a supplier needs
+          somewhere to deliver.
         </div>
       ) : null}
 
       <DateRangePicker value={range} onChange={setRange} />
 
-      <section aria-label="Supplier statistics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        aria-label="Supplier statistics"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
         <StatTile
           label="Collections"
           value={stats ? stats.transactions : "—"}
-          hint={stats ? `${stats.accepted} accepted · ${stats.rejected} rejected` : undefined}
+          hint={
+            stats
+              ? `${stats.accepted} accepted · ${stats.rejected} rejected`
+              : undefined
+          }
         />
         <StatTile
           label="Quantity"
-          value={stats ? <Quantity value={stats.total_net_weight_kg} unit="kg" /> : "—"}
+          value={
+            stats ? (
+              <Quantity value={stats.total_net_weight_kg} unit="kg" />
+            ) : (
+              "—"
+            )
+          }
           icon={<Droplets className="size-4" />}
         />
         <StatTile
@@ -212,7 +279,9 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
         />
         <StatTile
           label="Average fat"
-          value={stats?.weighted_avg_fat != null ? `${stats.weighted_avg_fat}%` : "—"}
+          value={
+            stats?.weighted_avg_fat != null ? `${stats.weighted_avg_fat}%` : "—"
+          }
           hint="weighted by quantity"
           icon={<Percent className="size-4" />}
         />
@@ -237,7 +306,9 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                     <Phone aria-hidden className="size-3.5" />
                     Phone
                   </dt>
-                  <dd>{detail.data.profile?.phone || supplier?.phone || "—"}</dd>
+                  <dd>
+                    {detail.data.profile?.phone || supplier?.phone || "—"}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-4">
                   <dt className="text-muted-foreground">Village</dt>
@@ -337,7 +408,10 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
               <div className="flex flex-col gap-4">
                 <div className="flex flex-wrap items-center gap-2">
                   {(settlements.data.by_status ?? []).map((row) => (
-                    <span key={row.status} className="flex items-center gap-1.5">
+                    <span
+                      key={row.status}
+                      className="flex items-center gap-1.5"
+                    >
                       <StatusBadge status={row.status} />
                       <span className="text-sm tabular-nums text-muted-foreground">
                         {row.count}
@@ -347,14 +421,21 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 </div>
                 <dl className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <dt className="text-muted-foreground">Finalized net total</dt>
+                    <dt className="text-muted-foreground">
+                      Finalized net total
+                    </dt>
                     <dd className="mt-0.5">
-                      <Money amount={settlements.data.finalized_net_total} emphasis />
+                      <Money
+                        amount={settlements.data.finalized_net_total}
+                        emphasis
+                      />
                     </dd>
                   </div>
                   <div>
                     <dt className="text-muted-foreground">Settlement lines</dt>
-                    <dd className="mt-0.5 tabular-nums">{settlements.data.total_lines ?? 0}</dd>
+                    <dd className="mt-0.5 tabular-nums">
+                      {settlements.data.total_lines ?? 0}
+                    </dd>
                   </div>
                 </dl>
               </div>
@@ -378,14 +459,24 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
               <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {[
-                    { label: "Completed", value: payments.data.completed_count },
-                    { label: "Processing", value: payments.data.processing_count },
+                    {
+                      label: "Completed",
+                      value: payments.data.completed_count,
+                    },
+                    {
+                      label: "Processing",
+                      value: payments.data.processing_count,
+                    },
                     { label: "Pending", value: payments.data.pending_count },
                     { label: "Failed", value: payments.data.failed_count },
                   ].map((cell) => (
                     <div key={cell.label}>
-                      <p className="text-xs text-muted-foreground">{cell.label}</p>
-                      <p className="text-lg font-semibold tabular-nums">{cell.value ?? 0}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {cell.label}
+                      </p>
+                      <p className="text-lg font-semibold tabular-nums">
+                        {cell.value ?? 0}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -426,23 +517,40 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
           ) : (
             <div className="w-full overflow-x-auto">
               <table className="w-full text-sm">
-                <caption className="sr-only">Recent collections for this supplier</caption>
+                <caption className="sr-only">
+                  Recent collections for this supplier
+                </caption>
                 <thead>
                   <tr className="border-b border-border text-start text-muted-foreground">
-                    <th scope="col" className="py-2 font-medium">State</th>
-                    <th scope="col" className="py-2 font-medium">Milk</th>
-                    <th scope="col" className="py-2 text-end font-medium">Net</th>
-                    <th scope="col" className="py-2 text-end font-medium">Rate</th>
-                    <th scope="col" className="py-2 text-end font-medium">Amount</th>
+                    <th scope="col" className="py-2 font-medium">
+                      State
+                    </th>
+                    <th scope="col" className="py-2 font-medium">
+                      Milk
+                    </th>
+                    <th scope="col" className="py-2 text-end font-medium">
+                      Net
+                    </th>
+                    <th scope="col" className="py-2 text-end font-medium">
+                      Rate
+                    </th>
+                    <th scope="col" className="py-2 text-end font-medium">
+                      Amount
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {(recent.data.items ?? []).map((tx) => (
-                    <tr key={tx.id} className="border-b border-border/60 last:border-0">
+                    <tr
+                      key={tx.id}
+                      className="border-b border-border/60 last:border-0"
+                    >
                       <td className="py-2">
                         <StatusBadge status={tx.state} />
                       </td>
-                      <td className="py-2 text-muted-foreground">{tx.milk_type ?? "—"}</td>
+                      <td className="py-2 text-muted-foreground">
+                        {tx.milk_type ?? "—"}
+                      </td>
                       <td className="py-2 text-end">
                         <Quantity value={tx.net_weight} unit="kg" />
                       </td>
@@ -450,7 +558,10 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                         {tx.unit_price ?? "—"}
                       </td>
                       <td className="py-2 text-end">
-                        <Money amount={tx.gross_amount} currency={tx.currency} />
+                        <Money
+                          amount={tx.gross_amount}
+                          currency={tx.currency}
+                        />
                       </td>
                     </tr>
                   ))}

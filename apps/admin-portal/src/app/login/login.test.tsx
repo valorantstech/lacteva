@@ -7,7 +7,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const push = vi.fn();
 const assign = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push, refresh: vi.fn() }),
+}));
 
 // jsdom's `window.location` is not assignable; replace the method itself.
 Object.defineProperty(window, "location", {
@@ -30,7 +32,9 @@ async function fillIn(user: ReturnType<typeof userEvent.setup>) {
 
 describe("login page", () => {
   it("signs in and moves on", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchSpy);
     const user = userEvent.setup();
 
@@ -52,10 +56,13 @@ describe("login page", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ detail: "Email or password is incorrect." }), {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        }),
+        new Response(
+          JSON.stringify({ detail: "Email or password is incorrect." }),
+          {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
       ),
     );
     const user = userEvent.setup();
@@ -64,7 +71,9 @@ describe("login page", () => {
     await fillIn(user);
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
-    expect(await screen.findByText("Email or password is incorrect.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Email or password is incorrect."),
+    ).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
   });
 
@@ -72,10 +81,15 @@ describe("login page", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ detail: "Too many requests. Please wait and try again." }), {
-          status: 429,
-          headers: { "Content-Type": "application/json" },
-        }),
+        new Response(
+          JSON.stringify({
+            detail: "Too many requests. Please wait and try again.",
+          }),
+          {
+            status: 429,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
       ),
     );
     const user = userEvent.setup();
@@ -88,7 +102,10 @@ describe("login page", () => {
   });
 
   it("never writes a credential into browser storage", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
+    );
     const user = userEvent.setup();
 
     render(<LoginPage />);
@@ -112,21 +129,29 @@ describe("signing in without knowing a tenant UUID", () => {
 
   it("sends only the credentials", async () => {
     const calls: RequestInit[] = [];
-    const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      void input;
-      if (init) calls.push(init);
-      return new Response(null, { status: 204 });
-    });
+    const fetchSpy = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        void input;
+        if (init) calls.push(init);
+        return new Response(null, { status: 204 });
+      },
+    );
     vi.stubGlobal("fetch", fetchSpy);
     render(<LoginPage />);
 
-    await userEvent.type(screen.getByLabelText("Email"), "owner@kilima.example");
+    await userEvent.type(
+      screen.getByLabelText("Email"),
+      "owner@kilima.example",
+    );
     await userEvent.type(screen.getByLabelText("Password"), "correct-horse");
     await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
     const body = JSON.parse(String(calls[0]?.body));
-    expect(body).toEqual({ email: "owner@kilima.example", password: "correct-horse" });
+    expect(body).toEqual({
+      email: "owner@kilima.example",
+      password: "correct-horse",
+    });
     expect(body).not.toHaveProperty("tenant_id");
   });
 
@@ -150,21 +175,29 @@ describe("signing in without knowing a tenant UUID", () => {
 
     expect(await screen.findByLabelText("Organization")).toBeInTheDocument();
     // Both the platform's message and the field's own hint say it; one is enough.
-    expect(screen.getAllByText(/more than one organization/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/more than one organization/i).length,
+    ).toBeGreaterThan(0);
   });
 
   it("keeps an ordinary failure ordinary — no organization field appears", async () => {
     const fetchSpy = vi.fn(
       async () =>
         new Response(
-          JSON.stringify({ title: "invalid_credentials", detail: "Email or password is incorrect." }),
+          JSON.stringify({
+            title: "invalid_credentials",
+            detail: "Email or password is incorrect.",
+          }),
           { status: 401, headers: { "Content-Type": "application/json" } },
         ),
     );
     vi.stubGlobal("fetch", fetchSpy);
     render(<LoginPage />);
 
-    await userEvent.type(screen.getByLabelText("Email"), "owner@kilima.example");
+    await userEvent.type(
+      screen.getByLabelText("Email"),
+      "owner@kilima.example",
+    );
     await userEvent.type(screen.getByLabelText("Password"), "wrong");
     await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
 

@@ -22,7 +22,13 @@ import {
   receiptDownloadUrl,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Money } from "@/components/money";
@@ -60,7 +66,8 @@ const LOADING = { state: "loading" } as const;
 
 /** The business reason when the platform gave one, the HTTP detail otherwise. */
 const describe = (e: unknown) => {
-  if (e instanceof ApiError) return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+  if (e instanceof ApiError)
+    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
   return e instanceof Error ? e.message : "Request failed";
 };
 
@@ -79,11 +86,16 @@ function allowed(p: Payment) {
     retry: p.status === "failed",
     complete: p.status === "processing",
     fail: p.status === "processing",
-    cancel: p.status === "draft" || p.status === "pending" || p.status === "failed",
+    cancel:
+      p.status === "draft" || p.status === "pending" || p.status === "failed",
   };
 }
 
-export default function PaymentDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function PaymentDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
   const [detail, setDetail] = useState<Load<PaymentDetail>>(LOADING);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
@@ -92,9 +104,9 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
   const [failure, setFailure] = useState<string | null>(null);
 
   // Free text the operator supplies to the platform, never invented here.
-  const [form, setForm] = useState<"execute" | "complete" | "fail" | "cancel" | "retry" | null>(
-    null,
-  );
+  const [form, setForm] = useState<
+    "execute" | "complete" | "fail" | "cancel" | "retry" | null
+  >(null);
   const [provider, setProvider] = useState("");
   const [reference, setReference] = useState("");
   const [reason, setReason] = useState("");
@@ -121,7 +133,11 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
   }, [load]);
 
   /** Act, then re-read — including after a refusal. See the settlement page. */
-  async function run(label: string, action: () => Promise<unknown>, success: string) {
+  async function run(
+    label: string,
+    action: () => Promise<unknown>,
+    success: string,
+  ) {
     setBusy(label);
     setFailure(null);
     setNotice(null);
@@ -140,14 +156,18 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
-  if (detail.state === "loading") return <LoadingState label="Loading payment…" />;
+  if (detail.state === "loading")
+    return <LoadingState label="Loading payment…" />;
   if (detail.state === "error")
     return (
       <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">
         <ErrorState
           message={`This payment could not be loaded — ${detail.message}.`}
           action={
-            <Link className="text-sm underline underline-offset-4" href="/payments">
+            <Link
+              className="text-sm underline underline-offset-4"
+              href="/payments"
+            >
               Back to payments
             </Link>
           }
@@ -173,7 +193,10 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
         </p>
       ) : null}
       {failure ? (
-        <p role="alert" className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <p
+          role="alert"
+          className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
           The platform refused: {failure}
         </p>
       ) : null}
@@ -184,15 +207,18 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
           role="alert"
           className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3"
         >
-          <XCircle aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <XCircle
+            aria-hidden
+            className="mt-0.5 size-4 shrink-0 text-destructive"
+          />
           <div>
             <p className="text-sm font-medium text-destructive">
               This payment failed on {stamp(p.failed_at)}
             </p>
             <p className="text-sm text-muted-foreground">{p.failure_reason}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              The allocation has been released — the settlement is payable again, either by retrying
-              this payment or by raising a new one.
+              The allocation has been released — the settlement is payable
+              again, either by retrying this payment or by raising a new one.
             </p>
           </div>
         </div>
@@ -203,7 +229,8 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
           <CardHeader>
             <CardTitle>Amount</CardTitle>
             <CardDescription>
-              The stored amount and its allocations, exactly as the platform holds them.
+              The stored amount and its allocations, exactly as the platform
+              holds them.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -213,8 +240,9 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
             {totals_match_lines ? (
               <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                 <CheckCircle2 aria-hidden className="size-4" />
-                Still equals its {p.line_count} {p.line_count === 1 ? "allocation" : "allocations"} —
-                verified by the platform.
+                Still equals its {p.line_count}{" "}
+                {p.line_count === 1 ? "allocation" : "allocations"} — verified
+                by the platform.
               </p>
             ) : (
               <p
@@ -239,7 +267,10 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
                   <User aria-hidden className="size-3.5" /> Supplier
                 </dt>
                 <dd>
-                  <Link className="hover:underline" href={`/suppliers/${p.supplier_id}`}>
+                  <Link
+                    className="hover:underline"
+                    href={`/suppliers/${p.supplier_id}`}
+                  >
                     View supplier
                   </Link>
                 </dd>
@@ -310,18 +341,30 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
                 </Button>
               ) : null}
               {can.execute ? (
-                <Button type="button" disabled={busy !== null} onClick={() => setForm("execute")}>
+                <Button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => setForm("execute")}
+                >
                   Execute
                 </Button>
               ) : null}
               {can.retry ? (
-                <Button type="button" disabled={busy !== null} onClick={() => setForm("retry")}>
+                <Button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => setForm("retry")}
+                >
                   <RotateCcw aria-hidden className="me-1.5 size-4" />
                   Retry
                 </Button>
               ) : null}
               {can.complete ? (
-                <Button type="button" disabled={busy !== null} onClick={() => setForm("complete")}>
+                <Button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => setForm("complete")}
+                >
                   Record success
                 </Button>
               ) : null}
@@ -350,8 +393,8 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
 
           {p.status === "processing" ? (
             <p className="text-xs text-muted-foreground">
-              A processing payment cannot be cancelled — money may already be in flight. Record the
-              failure first, then cancel.
+              A processing payment cannot be cancelled — money may already be in
+              flight. Record the failure first, then cancel.
             </p>
           ) : null}
 
@@ -395,9 +438,17 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
                 />
               </div>
               <Button type="submit" disabled={busy !== null}>
-                {busy ? "Working…" : form === "retry" ? "Open new attempt" : "Start execution"}
+                {busy
+                  ? "Working…"
+                  : form === "retry"
+                    ? "Open new attempt"
+                    : "Start execution"}
               </Button>
-              <Button type="button" variant="ghost" onClick={() => setForm(null)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setForm(null)}
+              >
                 Cancel
               </Button>
             </form>
@@ -410,17 +461,26 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
                 e.preventDefault();
                 void run(
                   "complete",
-                  () => paymentAction(p.id, "complete", reference ? { reference } : {}),
+                  () =>
+                    paymentAction(
+                      p.id,
+                      "complete",
+                      reference ? { reference } : {},
+                    ),
                   "Payment completed. A receipt is generated from the platform's own event.",
                 );
               }}
             >
               <p className="inline-flex items-start gap-2 text-sm">
-                <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                <AlertTriangle
+                  aria-hidden
+                  className="mt-0.5 size-4 shrink-0 text-amber-600"
+                />
                 <span>
-                  Recording success for <Money amount={p.amount} currency={p.currency} /> is
-                  permanent. A completed payment cannot be edited or reversed — a correction has to
-                  be a new payment or an adjustment.
+                  Recording success for{" "}
+                  <Money amount={p.amount} currency={p.currency} /> is
+                  permanent. A completed payment cannot be edited or reversed —
+                  a correction has to be a new payment or an adjustment.
                 </span>
               </p>
               <div className="flex flex-wrap items-end gap-2">
@@ -435,9 +495,15 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
                   />
                 </div>
                 <Button type="submit" disabled={busy !== null}>
-                  {busy === "complete" ? "Recording…" : "Yes, record as completed"}
+                  {busy === "complete"
+                    ? "Recording…"
+                    : "Yes, record as completed"}
                 </Button>
-                <Button type="button" variant="ghost" onClick={() => setForm(null)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setForm(null)}
+                >
                   Not yet
                 </Button>
               </div>
@@ -461,26 +527,39 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
             >
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="pay-reason">
-                  {form === "fail" ? "What went wrong?" : "Why is this payment cancelled?"}
+                  {form === "fail"
+                    ? "What went wrong?"
+                    : "Why is this payment cancelled?"}
                 </Label>
                 <Input
                   id="pay-reason"
                   required
                   className="w-96"
                   placeholder={
-                    form === "fail" ? "e.g. provider rejected: invalid account" : "reason"
+                    form === "fail"
+                      ? "e.g. provider rejected: invalid account"
+                      : "reason"
                   }
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Stored on the payment and on the attempt. The platform requires a reason.
+                  Stored on the payment and on the attempt. The platform
+                  requires a reason.
                 </p>
               </div>
-              <Button type="submit" variant="destructive" disabled={busy !== null || !reason}>
+              <Button
+                type="submit"
+                variant="destructive"
+                disabled={busy !== null || !reason}
+              >
                 {form === "fail" ? "Confirm failure" : "Confirm cancellation"}
               </Button>
-              <Button type="button" variant="ghost" onClick={() => setForm(null)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setForm(null)}
+              >
                 Back
               </Button>
             </form>
@@ -498,11 +577,16 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
         </CardHeader>
         <CardContent>
           {lines.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No allocations on this payment.</p>
+            <p className="text-sm text-muted-foreground">
+              No allocations on this payment.
+            </p>
           ) : (
             <ul className="flex flex-col divide-y">
               {lines.map((line) => (
-                <li key={line.id} className="flex items-center justify-between gap-4 py-3">
+                <li
+                  key={line.id}
+                  className="flex items-center justify-between gap-4 py-3"
+                >
                   <Link
                     className="font-medium hover:underline"
                     href={`/settlements/${line.settlement_id}`}
@@ -522,8 +606,8 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
         <CardHeader>
           <CardTitle>Attempt history</CardTitle>
           <CardDescription>
-            Attempts are never reused (BR-0019) — a retry opens a new one, and every previous
-            attempt stays exactly as it ended.
+            Attempts are never reused (BR-0019) — a retry opens a new one, and
+            every previous attempt stays exactly as it ended.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -547,7 +631,9 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
                     {a.reference ? ` · ${a.reference}` : ""}
                   </span>
                   {a.failure_reason ? (
-                    <span className="text-sm text-destructive">{a.failure_reason}</span>
+                    <span className="text-sm text-destructive">
+                      {a.failure_reason}
+                    </span>
                   ) : null}
                 </li>
               ))}
@@ -561,8 +647,8 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
         <CardHeader>
           <CardTitle>Receipt</CardTitle>
           <CardDescription>
-            A receipt is generated from the platform&apos;s own `payment.completed` event, not by
-            this page.
+            A receipt is generated from the platform&apos;s own
+            `payment.completed` event, not by this page.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -575,7 +661,10 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
           ) : (
             <ul className="flex flex-col divide-y">
               {receipts.map((r) => (
-                <li key={r.id} className="flex items-center justify-between gap-4 py-3">
+                <li
+                  key={r.id}
+                  className="flex items-center justify-between gap-4 py-3"
+                >
                   <div className="flex flex-col">
                     <span className="inline-flex items-center gap-1.5 font-medium">
                       <ReceiptIcon aria-hidden className="size-3.5" />

@@ -79,7 +79,11 @@ export default function UsersPage() {
       );
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to change the membership");
+      setError(
+        err instanceof ApiError
+          ? err.detail
+          : "Failed to change the membership",
+      );
     } finally {
       setBusy(null);
     }
@@ -99,7 +103,9 @@ export default function UsersPage() {
       );
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to change the account");
+      setError(
+        err instanceof ApiError ? err.detail : "Failed to change the account",
+      );
     } finally {
       setBusy(null);
     }
@@ -140,14 +146,19 @@ export default function UsersPage() {
             people.map((person) => (
               <TableRow key={person.user_id}>
                 <TableCell>{person.user?.full_name ?? "—"}</TableCell>
-                <TableCell>{person.user?.email ?? <em>account unavailable</em>}</TableCell>
+                <TableCell>
+                  {person.user?.email ?? <em>account unavailable</em>}
+                </TableCell>
                 <TableCell>
                   {(person.roles ?? []).length === 0 ? (
                     <span className="text-muted-foreground">no role</span>
                   ) : (
                     <div className="flex flex-col gap-0.5">
                       {(person.roles ?? []).map((role) => (
-                        <span key={`${role.name}-${role.center_id ?? "org"}`} className="text-sm">
+                        <span
+                          key={`${role.name}-${role.center_id ?? "org"}`}
+                          className="text-sm"
+                        >
                           {role.name}
                           <span className="ms-1 text-xs text-muted-foreground">
                             {role.center_id
@@ -160,13 +171,21 @@ export default function UsersPage() {
                   )}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={person.status === "active" ? "default" : "secondary"}>
+                  <Badge
+                    variant={
+                      person.status === "active" ? "default" : "secondary"
+                    }
+                  >
                     {person.status}
                   </Badge>
                 </TableCell>
                 <TableCell>
                   {person.user ? (
-                    <Badge variant={person.user.is_active ? "default" : "destructive"}>
+                    <Badge
+                      variant={
+                        person.user.is_active ? "default" : "destructive"
+                      }
+                    >
                       {person.user.is_active ? "active" : "deactivated"}
                     </Badge>
                   ) : (
@@ -179,17 +198,24 @@ export default function UsersPage() {
                 <TableCell className="text-end">
                   <div className="flex justify-end gap-2">
                     <Button
-                      variant={person.status === "active" ? "outline" : "default"}
+                      variant={
+                        person.status === "active" ? "outline" : "default"
+                      }
                       disabled={busy === person.user_id}
                       onClick={() =>
-                        void suspend(person, person.status === "active" ? "suspended" : "active")
+                        void suspend(
+                          person,
+                          person.status === "active" ? "suspended" : "active",
+                        )
                       }
                     >
                       {person.status === "active" ? "Suspend" : "Reinstate"}
                     </Button>
                     {person.user ? (
                       <Button
-                        variant={person.user.is_active ? "destructive" : "default"}
+                        variant={
+                          person.user.is_active ? "destructive" : "default"
+                        }
                         disabled={busy === person.user_id}
                         onClick={() => void toggle(person)}
                       >

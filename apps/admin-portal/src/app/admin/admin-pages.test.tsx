@@ -25,10 +25,13 @@ function routeFetch(routes: Record<string, unknown>, status = 200) {
     const url = String(input);
     const match = Object.keys(routes).find((key) => url.includes(key));
     if (!match) {
-      return new Response(JSON.stringify({ title: "not_found", detail: "No route." }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ title: "not_found", detail: "No route." }),
+        {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
     return new Response(JSON.stringify(routes[match]), {
       status,
@@ -44,7 +47,9 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("users", () => {
   const people = {
-    "/v1/members": [{ user_id: "u1", status: "active", joined_at: "2026-01-01T00:00:00Z" }],
+    "/v1/members": [
+      { user_id: "u1", status: "active", joined_at: "2026-01-01T00:00:00Z" },
+    ],
     "/v1/identity/users/u1": {
       id: "u1",
       email: "leaver@kilima.example",
@@ -57,15 +62,22 @@ describe("users", () => {
   it("lists the tenant's people with their account state", async () => {
     routeFetch(people);
     render(<UsersPage />);
-    expect(await screen.findByText("leaver@kilima.example")).toBeInTheDocument();
+    expect(
+      await screen.findByText("leaver@kilima.example"),
+    ).toBeInTheDocument();
     expect(screen.getByText("A Leaver")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Deactivate" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Deactivate" }),
+    ).toBeInTheDocument();
   });
 
   it("deactivates a user and says plainly that sessions were revoked", async () => {
     const fetchSpy = routeFetch({
       ...people,
-      "/v1/identity/users/u1/status": { ...people["/v1/identity/users/u1"], is_active: false },
+      "/v1/identity/users/u1/status": {
+        ...people["/v1/identity/users/u1"],
+        is_active: false,
+      },
     });
     const user = userEvent.setup();
 
@@ -73,14 +85,26 @@ describe("users", () => {
     await user.click(await screen.findByRole("button", { name: "Deactivate" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(/every live session was revoked/i),
+      expect(screen.getByRole("status")).toHaveTextContent(
+        /every live session was revoked/i,
+      ),
     );
-    const call = fetchSpy.mock.calls.find(([url]) => String(url).includes("/status"));
+    const call = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes("/status"),
+    );
     expect(call).toBeDefined();
   });
 
   it("keeps a member whose account cannot be read, rather than silently shortening the list", async () => {
-    routeFetch({ "/v1/members": [{ user_id: "gone", status: "active", joined_at: "2026-01-01T00:00:00Z" }] });
+    routeFetch({
+      "/v1/members": [
+        {
+          user_id: "gone",
+          status: "active",
+          joined_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
     render(<UsersPage />);
     expect(await screen.findByText("account unavailable")).toBeInTheDocument();
   });
@@ -89,14 +113,19 @@ describe("users", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ detail: "You do not have permission." }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        }),
+        new Response(
+          JSON.stringify({ detail: "You do not have permission." }),
+          {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
       ),
     );
     render(<UsersPage />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("You do not have permission.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "You do not have permission.",
+    );
   });
 });
 
@@ -104,7 +133,13 @@ describe("organization / tenant context", () => {
   it("shows the tenant this session acts inside and the permissions it carries", async () => {
     routeFetch({
       "/v1/auth/me": {
-        user: { id: "u1", email: "boss@kilima.example", full_name: "Boss", locale: "en", is_active: true },
+        user: {
+          id: "u1",
+          email: "boss@kilima.example",
+          full_name: "Boss",
+          locale: "en",
+          is_active: true,
+        },
         tenant_id: "org-1",
         permissions: ["identity.user.manage", "authz.role.manage"],
       },
@@ -116,7 +151,9 @@ describe("organization / tenant context", () => {
       },
     });
     render(<OrganizationsPage />);
-    expect(await screen.findByText("Kilima Dairy Cooperative")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Kilima Dairy Cooperative"),
+    ).toBeInTheDocument();
     expect(screen.getByText("KE")).toBeInTheDocument();
     expect(screen.getByText("identity.user.manage")).toBeInTheDocument();
   });
@@ -124,18 +161,31 @@ describe("organization / tenant context", () => {
   it("explains a platform-level session rather than showing a blank organization", async () => {
     routeFetch({
       "/v1/auth/me": {
-        user: { id: "u1", email: "root@example.com", full_name: "Root", locale: "en", is_active: true },
+        user: {
+          id: "u1",
+          email: "root@example.com",
+          full_name: "Root",
+          locale: "en",
+          is_active: true,
+        },
         tenant_id: null,
         permissions: ["*"],
       },
     });
     render(<OrganizationsPage />);
-    expect(await screen.findByText(/platform-level session/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/platform-level session/i),
+    ).toBeInTheDocument();
   });
 });
 
 describe("audit", () => {
-  const page = (items: unknown[]) => ({ items, total: items.length, limit: 25, offset: 0 });
+  const page = (items: unknown[]) => ({
+    items,
+    total: items.length,
+    limit: 25,
+    offset: 0,
+  });
   const record = (over: Record<string, unknown>) => ({
     id: "a1",
     action: "authz.role.granted",
@@ -153,8 +203,16 @@ describe("audit", () => {
       "/v1/audit/actions": ["authz.role.granted", "authz.role.revoked"],
       "/v1/members": [],
       "/v1/audit": page([
-        record({ id: "a1", action: "authz.role.granted", detail: { user_id: "u1" } }),
-        record({ id: "a2", action: "authz.role.revoked", created_at: "2026-08-09T11:00:00Z" }),
+        record({
+          id: "a1",
+          action: "authz.role.granted",
+          detail: { user_id: "u1" },
+        }),
+        record({
+          id: "a2",
+          action: "authz.role.revoked",
+          created_at: "2026-08-09T11:00:00Z",
+        }),
       ]),
     });
     render(<AuditPage />);
@@ -181,7 +239,9 @@ describe("audit", () => {
     // answer is not limited to the rows already in the browser.
     await waitFor(() => {
       const asked = spy.mock.calls.map((c) => String(c[0]));
-      expect(asked.some((u) => u.includes("/v1/audit?") && u.includes("q=payment"))).toBe(true);
+      expect(
+        asked.some((u) => u.includes("/v1/audit?") && u.includes("q=payment")),
+      ).toBe(true);
     });
   });
 
@@ -190,28 +250,56 @@ describe("audit", () => {
       "/v1/audit/actions": [],
       "/v1/members": [],
       "/v1/audit": page([
-        record({ id: "a1", action: "settlement.finalized", resource_type: "settlement", resource_id: "st-1" }),
-        record({ id: "a2", action: "config.updated", resource_type: "configuration_entry", resource_id: "c-1" }),
+        record({
+          id: "a1",
+          action: "settlement.finalized",
+          resource_type: "settlement",
+          resource_id: "st-1",
+        }),
+        record({
+          id: "a2",
+          action: "config.updated",
+          resource_type: "configuration_entry",
+          resource_id: "c-1",
+        }),
       ]),
     });
     render(<AuditPage />);
-    expect(await screen.findByRole("link", { name: "Settlement" })).toHaveAttribute(
-      "href",
-      "/settlements/st-1",
-    );
+    expect(
+      await screen.findByRole("link", { name: "Settlement" }),
+    ).toHaveAttribute("href", "/settlements/st-1");
     // No page exists for a configuration entry, so it is text, not a dead link.
-    expect(screen.queryByRole("link", { name: "Configuration entry" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Configuration entry" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Configuration entry")).toBeInTheDocument();
   });
 });
 
 describe("navigation (NAV-001)", () => {
-  const USER = { id: "u1", email: "boss@kilima.example", full_name: "Boss", locale: "en", is_active: true };
+  const USER = {
+    id: "u1",
+    email: "boss@kilima.example",
+    full_name: "Boss",
+    locale: "en",
+    is_active: true,
+  };
   const ALL = [
-    "collection.center.read", "supplier.read", "collection.transaction.read",
-    "pricing.ratecard.read", "settlement.read", "payment.read", "receipt.read",
-    "reporting.read", "notification.read", "sync.read", "identity.user.read",
-    "authz.role.read", "organization.read", "audit.read", "configuration.read",
+    "collection.center.read",
+    "supplier.read",
+    "collection.transaction.read",
+    "pricing.ratecard.read",
+    "settlement.read",
+    "payment.read",
+    "receipt.read",
+    "reporting.read",
+    "notification.read",
+    "sync.read",
+    "identity.user.read",
+    "authz.role.read",
+    "organization.read",
+    "audit.read",
+    "configuration.read",
     "platform.relay.manage",
   ];
   const SIGNED_IN = {
@@ -253,7 +341,9 @@ describe("navigation (NAV-001)", () => {
     );
 
     // Wait for the probe to answer and the signed-in chrome to appear.
-    expect(await screen.findByRole("link", { name: "Settlements" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: "Settlements" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("page content")).toBeInTheDocument();
     expect(mounts).toBe(1);
   });
@@ -263,9 +353,19 @@ describe("navigation (NAV-001)", () => {
     routeFetch({ "/api/auth/session": { authenticated: false } });
 
     render(<AppShell>{null}</AppShell>);
-    expect(await screen.findByRole("link", { name: /sign in/i })).toBeInTheDocument();
-    for (const label of ["Centers", "Suppliers", "Settlements", "Users", "Audit"]) {
-      expect(screen.queryByRole("link", { name: label })).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: /sign in/i }),
+    ).toBeInTheDocument();
+    for (const label of [
+      "Centers",
+      "Suppliers",
+      "Settlements",
+      "Users",
+      "Audit",
+    ]) {
+      expect(
+        screen.queryByRole("link", { name: label }),
+      ).not.toBeInTheDocument();
     }
     // The product name stays: it is the way back to a known page.
     expect(screen.getByRole("link", { name: "Lacteva" })).toBeInTheDocument();
@@ -284,10 +384,20 @@ describe("navigation (NAV-001)", () => {
     });
 
     render(<AppShell>{null}</AppShell>);
-    expect(await screen.findByRole("link", { name: "Centers" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: "Centers" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Suppliers" })).toBeInTheDocument();
-    for (const hidden of ["Users", "Roles", "Audit", "Settlements", "Payments"]) {
-      expect(screen.queryByRole("link", { name: hidden })).not.toBeInTheDocument();
+    for (const hidden of [
+      "Users",
+      "Roles",
+      "Audit",
+      "Settlements",
+      "Payments",
+    ]) {
+      expect(
+        screen.queryByRole("link", { name: hidden }),
+      ).not.toBeInTheDocument();
     }
   });
 
@@ -304,7 +414,9 @@ describe("navigation (NAV-001)", () => {
     });
 
     render(<AppShell>{null}</AppShell>);
-    expect(await screen.findByRole("link", { name: "Users" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: "Users" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Centers" })).toBeInTheDocument();
   });
 
@@ -339,21 +451,36 @@ describe("navigation (NAV-001)", () => {
     routeFetch(SIGNED_IN);
 
     render(<AppShell>{null}</AppShell>);
-    expect(await screen.findByRole("link", { name: "Centers" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Settlements" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: "Centers" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Settlements" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Users" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /sign out/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /sign in/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows nothing at all until the answer is known, rather than flashing a menu", async () => {
     const { AppShell } = await import("@/components/app-shell");
     // A probe that never resolves: the bar must stay quiet, not guess.
-    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => {})),
+    );
 
     render(<AppShell>{null}</AppShell>);
-    expect(screen.queryByRole("link", { name: "Centers" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Centers" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /sign in/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Lacteva" })).toBeInTheDocument();
   });
 
@@ -366,10 +493,14 @@ describe("navigation (NAV-001)", () => {
     await user.click(await screen.findByRole("button", { name: /sign out/i }));
 
     await waitFor(() =>
-      expect(fetchSpy.mock.calls.some(([url]) => String(url) === "/api/auth/logout")).toBe(true),
+      expect(
+        fetchSpy.mock.calls.some(([url]) => String(url) === "/api/auth/logout"),
+      ).toBe(true),
     );
     await waitFor(() =>
-      expect(screen.queryByRole("link", { name: "Centers" })).not.toBeInTheDocument(),
+      expect(
+        screen.queryByRole("link", { name: "Centers" }),
+      ).not.toBeInTheDocument(),
     );
   });
 });
@@ -393,7 +524,15 @@ describe("a representative business page", () => {
         limit: 20,
         offset: 0,
       },
-      "/v1/branches": [{ id: "b1", workspace_id: "w1", name: "Kilima Hill", code: "KH", status: "active" }],
+      "/v1/branches": [
+        {
+          id: "b1",
+          workspace_id: "w1",
+          name: "Kilima Hill",
+          code: "KH",
+          status: "active",
+        },
+      ],
     });
 
     render(<CentersPage />);

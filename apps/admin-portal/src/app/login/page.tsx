@@ -70,7 +70,9 @@ export default function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Sign in to Lacteva</CardTitle>
-          <CardDescription>Sign in with your email and password.</CardDescription>
+          <CardDescription>
+            Sign in with your email and password.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="flex flex-col gap-4">
@@ -104,8 +106,8 @@ export default function LoginPage() {
                   onChange={(e) => setTenantId(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  This sign-in works for more than one organization. Paste the id of the one you
-                  want.
+                  This sign-in works for more than one organization. Paste the
+                  id of the one you want.
                 </p>
               </div>
             ) : null}

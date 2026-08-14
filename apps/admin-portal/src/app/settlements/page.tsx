@@ -17,7 +17,13 @@ import {
   listSuppliers,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
@@ -54,7 +60,8 @@ const STATUSES = ["", "draft", "calculated", "finalized", "cancelled"] as const;
 
 /** The business reason when the platform gave one, the HTTP detail otherwise. */
 const describe = (e: unknown) => {
-  if (e instanceof ApiError) return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+  if (e instanceof ApiError)
+    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
   return e instanceof Error ? e.message : "Request failed";
 };
 
@@ -136,7 +143,10 @@ export default function SettlementsPage() {
       header: "Settlement",
       cell: (s) => (
         <div className="flex flex-col">
-          <Link className="font-medium hover:underline" href={`/settlements/${s.id}`}>
+          <Link
+            className="font-medium hover:underline"
+            href={`/settlements/${s.id}`}
+          >
             {s.settlement_number}
           </Link>
           <span className="text-xs text-muted-foreground">
@@ -187,7 +197,10 @@ export default function SettlementsPage() {
         <span className="inline-flex items-center gap-1.5">
           <StatusBadge status={s.status} />
           {s.status === "finalized" ? (
-            <Lock aria-label="immutable" className="size-3 text-muted-foreground" />
+            <Lock
+              aria-label="immutable"
+              className="size-3 text-muted-foreground"
+            />
           ) : null}
         </span>
       ),
@@ -220,17 +233,26 @@ export default function SettlementsPage() {
         }
       />
 
-      <section aria-label="Settlement summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        aria-label="Settlement summary"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
         <StatTile
           label="Settlements"
           value={report ? report.total_settlements : "—"}
-          hint={report ? `${report.total_lines} collections settled` : undefined}
+          hint={
+            report ? `${report.total_lines} collections settled` : undefined
+          }
           icon={<FileText className="size-4" />}
         />
         <StatTile
           label="Open"
           value={report ? byStatus("draft") + byStatus("calculated") : "—"}
-          hint={report ? `${byStatus("draft")} draft · ${byStatus("calculated")} calculated` : undefined}
+          hint={
+            report
+              ? `${byStatus("draft")} draft · ${byStatus("calculated")} calculated`
+              : undefined
+          }
         />
         <StatTile
           label="Finalized"
@@ -240,7 +262,16 @@ export default function SettlementsPage() {
         />
         <StatTile
           label="Finalized value"
-          value={report ? <Money amount={report.finalized_net_total} currency={orgCurrency} /> : "—"}
+          value={
+            report ? (
+              <Money
+                amount={report.finalized_net_total}
+                currency={orgCurrency}
+              />
+            ) : (
+              "—"
+            )
+          }
           icon={<Banknote className="size-4" />}
         />
       </section>
@@ -269,7 +300,9 @@ export default function SettlementsPage() {
             error={error}
             onRetry={() => void load()}
             empty={{
-              title: filtered ? "No settlement matches these filters" : "No settlements yet",
+              title: filtered
+                ? "No settlement matches these filters"
+                : "No settlements yet",
               description: filtered
                 ? "Try a different status, or clear the filters."
                 : "Create a settlement for a supplier and period, then collect its completed collections.",
@@ -427,7 +460,8 @@ function CreateSettlementCard({
       <CardHeader>
         <CardTitle>New settlement</CardTitle>
         <CardDescription>
-          One supplier, one centre, one period. Periods for a supplier may not overlap (BR-0009).
+          One supplier, one centre, one period. Periods for a supplier may not
+          overlap (BR-0009).
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -89,14 +89,21 @@ export default function SyncMonitorPage() {
   const refresh = useCallback(async () => {
     try {
       const [operations, summary] = await Promise.all([
-        listSyncOperations({ status, device_id: device, limit: PAGE_SIZE, offset }),
+        listSyncOperations({
+          status,
+          device_id: device,
+          limit: PAGE_SIZE,
+          offset,
+        }),
         getSyncStats(),
       ]);
       setPage(operations);
       setStats(summary);
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load sync activity");
+      setError(
+        err instanceof ApiError ? err.detail : "Failed to load sync activity",
+      );
     }
   }, [status, device, offset]);
 
@@ -108,7 +115,9 @@ export default function SyncMonitorPage() {
   async function retry(operation: SyncOperation) {
     try {
       const updated = await retrySyncOperation(operation.operation_id);
-      setNote(`Retried ${KIND_LABELS[operation.kind] ?? operation.kind} — now ${updated.status}.`);
+      setNote(
+        `Retried ${KIND_LABELS[operation.kind] ?? operation.kind} — now ${updated.status}.`,
+      );
       setError(null);
       await refresh();
     } catch (err) {
@@ -123,8 +132,8 @@ export default function SyncMonitorPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Sync monitor</h1>
         <p className="text-sm text-muted-foreground">
-          What field devices have replayed after collecting offline. Read-only — the record of
-          truth is the collection itself.
+          What field devices have replayed after collecting offline. Read-only —
+          the record of truth is the collection itself.
         </p>
       </header>
 
@@ -150,8 +159,8 @@ export default function SyncMonitorPage() {
           <CardHeader>
             <CardTitle className="text-base">Devices</CardTitle>
             <CardDescription>
-              Last sync tells you which centers are collecting into a queue rather than the
-              platform.
+              Last sync tells you which centers are collecting into a queue
+              rather than the platform.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -170,10 +179,18 @@ export default function SyncMonitorPage() {
                   <TableRow key={d.device_id}>
                     <TableCell className="font-mono">{d.device_id}</TableCell>
                     <TableCell>{d.operations}</TableCell>
-                    <TableCell className={d.conflicts > 0 ? "font-medium text-orange-600" : ""}>
+                    <TableCell
+                      className={
+                        d.conflicts > 0 ? "font-medium text-orange-600" : ""
+                      }
+                    >
                       {d.conflicts}
                     </TableCell>
-                    <TableCell className={d.failed > 0 ? "font-medium text-destructive" : ""}>
+                    <TableCell
+                      className={
+                        d.failed > 0 ? "font-medium text-destructive" : ""
+                      }
+                    >
                       {d.failed}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
@@ -238,20 +255,31 @@ export default function SyncMonitorPage() {
                   <TableCell className="whitespace-nowrap">
                     {KIND_LABELS[op.kind] ?? op.kind}
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{op.device_id || "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {op.device_id || "—"}
+                  </TableCell>
                   <TableCell>
-                    <Badge variant={statusVariant(op.status)}>{op.status}</Badge>
+                    <Badge variant={statusVariant(op.status)}>
+                      {op.status}
+                    </Badge>
                     {op.status === "conflict" && op.applied && (
-                      <span className="ms-1 text-xs text-muted-foreground">kept</span>
+                      <span className="ms-1 text-xs text-muted-foreground">
+                        kept
+                      </span>
                     )}
                   </TableCell>
                   <TableCell className="max-w-sm truncate text-muted-foreground">
                     {op.conflict_reason
-                      ? (CONFLICT_LABELS[op.conflict_reason] ?? op.conflict_reason)
+                      ? (CONFLICT_LABELS[op.conflict_reason] ??
+                        op.conflict_reason)
                       : (op.error ?? "")}
                   </TableCell>
                   <TableCell className="flex justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setSelected(op)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelected(op)}
+                    >
                       Inspect
                     </Button>
                     {op.status === "failed" && (
@@ -264,7 +292,10 @@ export default function SyncMonitorPage() {
               ))}
               {page && page.items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={6}
+                    className="text-center text-muted-foreground"
+                  >
                     No device has synchronised yet.
                   </TableCell>
                 </TableRow>
@@ -284,7 +315,9 @@ export default function SyncMonitorPage() {
 
       <footer className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground">
-          {page ? `${page.total} operation${page.total === 1 ? "" : "s"}` : "Loading…"}
+          {page
+            ? `${page.total} operation${page.total === 1 ? "" : "s"}`
+            : "Loading…"}
           {stats?.last_sync_at && ` · last sync ${ago(stats.last_sync_at)}`}
         </span>
         <div className="flex items-center gap-2">
@@ -325,7 +358,9 @@ function StatCard({
   return (
     <Card>
       <CardContent className="py-4">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
         <p
           className={
             tone === "bad"
@@ -361,8 +396,10 @@ function OperationDetailCard({
         </CardTitle>
         <CardDescription>
           device {op.device_id || "—"} · attempt {op.attempts}
-          {op.recorded_at && ` · captured ${op.recorded_at.slice(0, 16).replace("T", " ")}`}
-          {op.applied_at && ` · applied ${op.applied_at.slice(0, 16).replace("T", " ")}`}
+          {op.recorded_at &&
+            ` · captured ${op.recorded_at.slice(0, 16).replace("T", " ")}`}
+          {op.applied_at &&
+            ` · applied ${op.applied_at.slice(0, 16).replace("T", " ")}`}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-sm">

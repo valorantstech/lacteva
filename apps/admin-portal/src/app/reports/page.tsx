@@ -4,8 +4,7 @@ import Link from "next/link";
 
 import { useCallback, useEffect, useState } from "react";
 
-import { todayIn } from "@/components/date-range";
-import { useLocale } from "@/lib/i18n";
+import { useBusinessToday } from "@/components/date-range";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,10 +62,19 @@ export default function ReportsPage() {
   // The DAIRY's today. `new Date().toISOString()` is UTC, so a Kenyan
   // cooperative after local midnight opened this report on yesterday and an
   // Indian one did for five and a half hours of every day (DEMO-019).
-  const { timezone: orgTimezone } = useLocale();
-  const today = todayIn(orgTimezone);
-  const [dateFrom, setDateFrom] = useState(today);
-  const [dateTo, setDateTo] = useState(today);
+  //
+  // DERIVED, not stored: the shell mounts this page before it knows which
+  // organization is signed in, so a `useState` initializer would capture the
+  // UTC fallback and keep it. The reader's own choice IS stored, because that
+  // must survive — which is why these are two values and not one.
+  const today = useBusinessToday();
+  const [chosen, setChosen] = useState<{ from: string; to: string } | null>(
+    null,
+  );
+  const dateFrom = chosen?.from ?? today;
+  const dateTo = chosen?.to ?? today;
+  const setDateFrom = (from: string) => setChosen({ from, to: dateTo });
+  const setDateTo = (to: string) => setChosen({ from: dateFrom, to });
   const [centerId, setCenterId] = useState("");
   const [centers, setCenters] = useState<Center[]>([]);
   const [daily, setDaily] = useState<DailyCollectionSummary | null>(null);

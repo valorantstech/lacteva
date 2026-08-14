@@ -58,14 +58,23 @@ export default function NotificationsPage() {
   const refresh = useCallback(async () => {
     try {
       const [result, summary] = await Promise.all([
-        listNotifications({ q, status, channel, template_key: templateKey, limit: PAGE_SIZE, offset }),
+        listNotifications({
+          q,
+          status,
+          channel,
+          template_key: templateKey,
+          limit: PAGE_SIZE,
+          offset,
+        }),
         getNotificationStats(),
       ]);
       setPage(result);
       setStats(summary);
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load notifications");
+      setError(
+        err instanceof ApiError ? err.detail : "Failed to load notifications",
+      );
     }
   }, [q, status, channel, templateKey, offset]);
 
@@ -95,7 +104,9 @@ export default function NotificationsPage() {
   async function sweep() {
     try {
       const result = await retryPendingNotifications();
-      setNote(`Swept ${result.retried}: ${result.sent} sent, ${result.failed} still failing.`);
+      setNote(
+        `Swept ${result.retried}: ${result.sent} sent, ${result.failed} still failing.`,
+      );
       setError(null);
       await refresh();
     } catch (err) {
@@ -110,9 +121,12 @@ export default function NotificationsPage() {
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 p-8">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Notifications</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Notifications
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Every message the platform sent, why it was sent, and whether it arrived
+            Every message the platform sent, why it was sent, and whether it
+            arrived
           </p>
         </div>
         <Button variant="outline" onClick={sweep}>
@@ -204,14 +218,20 @@ export default function NotificationsPage() {
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                     {n.created_at.slice(0, 16).replace("T", " ")}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">{n.template_key}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {n.template_key}
+                  </TableCell>
                   <TableCell>
                     {n.channel}
                     {n.language !== "en" && (
-                      <span className="ms-1 text-xs text-muted-foreground">{n.language}</span>
+                      <span className="ms-1 text-xs text-muted-foreground">
+                        {n.language}
+                      </span>
                     )}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">{n.recipient ?? "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {n.recipient ?? "—"}
+                  </TableCell>
                   <TableCell className="max-w-sm truncate text-muted-foreground">
                     {n.rendered_text ?? n.error ?? "—"}
                   </TableCell>
@@ -224,7 +244,11 @@ export default function NotificationsPage() {
                     )}
                   </TableCell>
                   <TableCell className="flex justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setSelected(n)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelected(n)}
+                    >
                       Inspect
                     </Button>
                     {(n.status === "failed" || n.status === "dead") && (
@@ -237,7 +261,10 @@ export default function NotificationsPage() {
               ))}
               {page && page.items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={7}
+                    className="text-center text-muted-foreground"
+                  >
                     No notifications match.
                   </TableCell>
                 </TableRow>
@@ -257,7 +284,9 @@ export default function NotificationsPage() {
 
       <footer className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground">
-          {page ? `${page.total} notification${page.total === 1 ? "" : "s"}` : "Loading…"}
+          {page
+            ? `${page.total} notification${page.total === 1 ? "" : "s"}`
+            : "Loading…"}
         </span>
         <div className="flex items-center gap-2">
           <Button
@@ -299,7 +328,9 @@ function StatCard({
   return (
     <Card>
       <CardContent className="py-4">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
         <p
           className={
             tone === "bad"
@@ -358,11 +389,12 @@ function NotificationDetailCard({
           <Badge variant="outline">{n.channel}</Badge>
         </CardTitle>
         <CardDescription>
-          Triggered by <span className="font-mono">{n.event_name}</span> · attempt{" "}
-          {n.attempt_count}
+          Triggered by <span className="font-mono">{n.event_name}</span> ·
+          attempt {n.attempt_count}
           {n.provider && ` · via ${n.provider}`}
           {n.provider_reference && ` · ref ${n.provider_reference}`}
-          {n.next_attempt_at && ` · next retry ${n.next_attempt_at.slice(0, 16).replace("T", " ")}`}
+          {n.next_attempt_at &&
+            ` · next retry ${n.next_attempt_at.slice(0, 16).replace("T", " ")}`}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-sm">
@@ -373,7 +405,9 @@ function NotificationDetailCard({
         <div>
           <Label>Rendered message</Label>
           {n.title && <p className="font-medium">{n.title}</p>}
-          <p className="whitespace-pre-wrap text-muted-foreground">{n.rendered_text ?? "—"}</p>
+          <p className="whitespace-pre-wrap text-muted-foreground">
+            {n.rendered_text ?? "—"}
+          </p>
         </div>
         {n.error && (
           <div>
@@ -414,7 +448,9 @@ function TemplateCatalog({ templates }: { templates: NotificationTemplate[] }) {
     setPreview(null);
     setError(null);
     // Seed each placeholder with its own name so a preview always renders.
-    setVariables(Object.fromEntries(t.variables.map((v) => [v, v.toUpperCase()])));
+    setVariables(
+      Object.fromEntries(t.variables.map((v) => [v, v.toUpperCase()])),
+    );
   }
 
   async function render() {
@@ -435,7 +471,11 @@ function TemplateCatalog({ templates }: { templates: NotificationTemplate[] }) {
 
   if (!open) {
     return (
-      <Button variant="ghost" className="self-start" onClick={() => setOpen(true)}>
+      <Button
+        variant="ghost"
+        className="self-start"
+        onClick={() => setOpen(true)}
+      >
         Show template catalog ({templates.length})
       </Button>
     );
@@ -446,8 +486,8 @@ function TemplateCatalog({ templates }: { templates: NotificationTemplate[] }) {
       <CardHeader>
         <CardTitle>Template catalog</CardTitle>
         <CardDescription>
-          Every message the platform can send. Nothing is hardcoded — preview any template with
-          your own values.
+          Every message the platform can send. Nothing is hardcoded — preview
+          any template with your own values.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-sm">
@@ -492,7 +532,9 @@ function TemplateCatalog({ templates }: { templates: NotificationTemplate[] }) {
                   <Input
                     id={`var-${v}`}
                     value={variables[v] ?? ""}
-                    onChange={(e) => setVariables({ ...variables, [v]: e.target.value })}
+                    onChange={(e) =>
+                      setVariables({ ...variables, [v]: e.target.value })
+                    }
                   />
                 </div>
               ))}
@@ -501,7 +543,11 @@ function TemplateCatalog({ templates }: { templates: NotificationTemplate[] }) {
               <Button size="sm" onClick={render}>
                 Render
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setSelected(null)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelected(null)}
+              >
                 Close
               </Button>
             </div>
@@ -509,13 +555,19 @@ function TemplateCatalog({ templates }: { templates: NotificationTemplate[] }) {
             {preview && (
               <div className="rounded-lg bg-muted p-3">
                 <p className="font-medium">{preview.title}</p>
-                <p className="whitespace-pre-wrap text-muted-foreground">{preview.body}</p>
+                <p className="whitespace-pre-wrap text-muted-foreground">
+                  {preview.body}
+                </p>
               </div>
             )}
           </div>
         )}
 
-        <Button variant="ghost" className="self-start" onClick={() => setOpen(false)}>
+        <Button
+          variant="ghost"
+          className="self-start"
+          onClick={() => setOpen(false)}
+        >
           Hide catalog
         </Button>
       </CardContent>

@@ -17,7 +17,13 @@ import {
   listInvoices,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
@@ -37,7 +43,8 @@ const PAGE_SIZE = 15;
 const STATUSES = ["", "draft", "issued", "paid", "cancelled"] as const;
 
 const describe = (e: unknown) => {
-  if (e instanceof ApiError) return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+  if (e instanceof ApiError)
+    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
   return e instanceof Error ? e.message : "Could not load billing";
 };
 
@@ -69,7 +76,9 @@ function BillingView() {
   const [status, setStatus] = useState<(typeof STATUSES)[number]>(
     () => (searchParams.get("status") as (typeof STATUSES)[number]) ?? "",
   );
-  const [customerId, setCustomerId] = useState(() => searchParams.get("customer_id") ?? "");
+  const [customerId, setCustomerId] = useState(
+    () => searchParams.get("customer_id") ?? "",
+  );
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,10 +98,18 @@ function BillingView() {
           offset,
         }),
       );
-      listCustomerPayments({ customer_id: customerId || undefined, limit: 8, offset: 0 })
+      listCustomerPayments({
+        customer_id: customerId || undefined,
+        limit: 8,
+        offset: 0,
+      })
         .then((p) => setPayments(p.items ?? []))
         .catch(() => setPayments([]));
-      listCustomerReceipts({ customer_id: customerId || undefined, limit: 8, offset: 0 })
+      listCustomerReceipts({
+        customer_id: customerId || undefined,
+        limit: 8,
+        offset: 0,
+      })
         .then((p) => setReceipts(p.items ?? []))
         .catch(() => setReceipts([]));
     } catch (err) {
@@ -124,7 +141,10 @@ function BillingView() {
       header: "Bill",
       cell: (inv) => (
         <div className="flex flex-col">
-          <Link className="font-medium hover:underline" href={`/invoices/${inv.id}`}>
+          <Link
+            className="font-medium hover:underline"
+            href={`/invoices/${inv.id}`}
+          >
             {inv.invoice_number}
           </Link>
           <span className="text-xs text-muted-foreground">
@@ -137,7 +157,10 @@ function BillingView() {
       key: "customer",
       header: "Customer",
       cell: (inv) => (
-        <Link className="hover:underline" href={`/customers/${inv.customer_id}`}>
+        <Link
+          className="hover:underline"
+          href={`/customers/${inv.customer_id}`}
+        >
           {names[inv.customer_id] ?? `${inv.customer_id.slice(0, 8)}…`}
         </Link>
       ),
@@ -160,7 +183,9 @@ function BillingView() {
         <div className="flex flex-col items-end">
           <Money amount={inv.amount_due} currency={inv.currency} />
           {Number(inv.previous_balance) !== 0 ? (
-            <span className="text-xs text-muted-foreground">includes brought forward</span>
+            <span className="text-xs text-muted-foreground">
+              includes brought forward
+            </span>
           ) : null}
         </div>
       ),
@@ -172,7 +197,10 @@ function BillingView() {
         <span className="inline-flex items-center gap-1.5">
           <StatusBadge status={inv.status} />
           {inv.status === "issued" || inv.status === "paid" ? (
-            <Lock aria-label="immutable" className="size-3 text-muted-foreground" />
+            <Lock
+              aria-label="immutable"
+              className="size-3 text-muted-foreground"
+            />
           ) : null}
         </span>
       ),
@@ -199,7 +227,10 @@ function BillingView() {
         description="Monthly bills, the money customers have paid, and the receipts they were given."
       />
 
-      <section aria-label="Billing summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section
+        aria-label="Billing summary"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+      >
         <StatTile
           label="Bills"
           value={page ? page.total : "—"}
@@ -231,7 +262,9 @@ function BillingView() {
             error={error}
             onRetry={() => void load()}
             empty={{
-              title: filtered ? "No bill matches these filters" : "No bills yet",
+              title: filtered
+                ? "No bill matches these filters"
+                : "No bills yet",
               description: filtered
                 ? "Try a different status, or clear the filters."
                 : "Raise a customer's monthly bill from their page.",
@@ -319,15 +352,22 @@ function BillingView() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Payments received</CardTitle>
-            <CardDescription>Money from customers to the dairy.</CardDescription>
+            <CardDescription>
+              Money from customers to the dairy.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {payments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+              <p className="text-sm text-muted-foreground">
+                No payments recorded yet.
+              </p>
             ) : (
               <ul className="flex flex-col divide-y">
                 {payments.map((pay) => (
-                  <li key={pay.id} className="flex items-center justify-between gap-3 py-2">
+                  <li
+                    key={pay.id}
+                    className="flex items-center justify-between gap-3 py-2"
+                  >
                     <div className="flex flex-col">
                       <Link
                         className="text-sm font-medium hover:underline"
@@ -336,7 +376,8 @@ function BillingView() {
                         {pay.payment_number}
                       </Link>
                       <span className="text-xs text-muted-foreground">
-                        {names[pay.customer_id] ?? ""} · {pay.method} · {stamp(pay.received_at)}
+                        {names[pay.customer_id] ?? ""} · {pay.method} ·{" "}
+                        {stamp(pay.received_at)}
                       </span>
                     </div>
                     <Money amount={pay.amount} currency={pay.currency} />
@@ -356,15 +397,23 @@ function BillingView() {
           </CardHeader>
           <CardContent>
             {receipts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No receipts issued yet.</p>
+              <p className="text-sm text-muted-foreground">
+                No receipts issued yet.
+              </p>
             ) : (
               <ul className="flex flex-col divide-y">
                 {receipts.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between gap-3 py-2">
+                  <li
+                    key={r.id}
+                    className="flex items-center justify-between gap-3 py-2"
+                  >
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium">{r.receipt_number}</span>
+                      <span className="text-sm font-medium">
+                        {r.receipt_number}
+                      </span>
                       <span className="text-xs text-muted-foreground">
-                        {r.customer_name} · {r.payment_number} · {stamp(r.generated_at)}
+                        {r.customer_name} · {r.payment_number} ·{" "}
+                        {stamp(r.generated_at)}
                       </span>
                     </div>
                     <Money amount={r.amount} currency={r.currency} />

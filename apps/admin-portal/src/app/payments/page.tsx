@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Banknote, CheckCircle2, Clock, XCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  Banknote,
+  CheckCircle2,
+  Clock,
+  XCircle,
+} from "lucide-react";
 import {
   ApiError,
   type BalancePageResult,
@@ -19,7 +25,13 @@ import {
   listSuppliers,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
@@ -54,7 +66,8 @@ const STATUSES = [
 ] as const;
 
 const describe = (e: unknown) => {
-  if (e instanceof ApiError) return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+  if (e instanceof ApiError)
+    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
   return e instanceof Error ? e.message : "Request failed";
 };
 
@@ -97,7 +110,11 @@ export default function PaymentsPage() {
       getPaymentReport({})
         .then(setReport)
         .catch(() => setReport(null));
-      listOutstandingBalances({ supplier_id: supplierId || undefined, limit: 50, offset: 0 })
+      listOutstandingBalances({
+        supplier_id: supplierId || undefined,
+        limit: 50,
+        offset: 0,
+      })
         .then(setBalances)
         .catch(() => setBalances(null));
     } catch (err) {
@@ -129,7 +146,10 @@ export default function PaymentsPage() {
       header: "Payment",
       cell: (p) => (
         <div className="flex flex-col">
-          <Link className="font-medium hover:underline" href={`/payments/${p.id}`}>
+          <Link
+            className="font-medium hover:underline"
+            href={`/payments/${p.id}`}
+          >
             {p.payment_number}
           </Link>
           <span className="text-xs text-muted-foreground">
@@ -153,7 +173,9 @@ export default function PaymentsPage() {
       key: "reference",
       header: "Reference",
       secondary: true,
-      cell: (p) => <span className="font-mono text-xs">{p.reference || "—"}</span>,
+      cell: (p) => (
+        <span className="font-mono text-xs">{p.reference || "—"}</span>
+      ),
     },
     {
       key: "amount",
@@ -168,7 +190,10 @@ export default function PaymentsPage() {
         <div className="flex flex-col gap-0.5">
           <StatusBadge status={p.status} />
           {p.status === "failed" && p.failure_reason ? (
-            <span className="max-w-56 truncate text-xs text-destructive" title={p.failure_reason}>
+            <span
+              className="max-w-56 truncate text-xs text-destructive"
+              title={p.failure_reason}
+            >
               {p.failure_reason}
             </span>
           ) : null}
@@ -199,14 +224,21 @@ export default function PaymentsPage() {
         description="Money paid against finalized settlements. This platform records movement; it does not perform it."
       />
 
-      <section aria-label="Payment summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        aria-label="Payment summary"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
         <StatTile
           label="Completed"
           value={report ? report.completed_count : "—"}
           hint={
             report ? (
               <>
-                <Money amount={report.completed_amount} currency={orgCurrency} /> paid
+                <Money
+                  amount={report.completed_amount}
+                  currency={orgCurrency}
+                />{" "}
+                paid
               </>
             ) : undefined
           }
@@ -216,7 +248,9 @@ export default function PaymentsPage() {
           label="In flight"
           value={report ? report.pending_count + report.processing_count : "—"}
           hint={
-            report ? `${report.pending_count} pending · ${report.processing_count} processing` : undefined
+            report
+              ? `${report.pending_count} pending · ${report.processing_count} processing`
+              : undefined
           }
           icon={<Clock className="size-4" />}
         />
@@ -226,7 +260,8 @@ export default function PaymentsPage() {
           hint={
             report ? (
               <>
-                <Money amount={report.failed_amount} currency={orgCurrency} /> to retry
+                <Money amount={report.failed_amount} currency={orgCurrency} />{" "}
+                to retry
               </>
             ) : undefined
           }
@@ -234,7 +269,16 @@ export default function PaymentsPage() {
         />
         <StatTile
           label="Outstanding"
-          value={report ? <Money amount={report.outstanding_amount} currency={orgCurrency} /> : "—"}
+          value={
+            report ? (
+              <Money
+                amount={report.outstanding_amount}
+                currency={orgCurrency}
+              />
+            ) : (
+              "—"
+            )
+          }
           hint="finalized but unpaid"
           icon={<Banknote className="size-4" />}
         />
@@ -245,19 +289,24 @@ export default function PaymentsPage() {
         <CardHeader>
           <CardTitle>Settlements awaiting payment</CardTitle>
           <CardDescription>
-            Finalized settlements with money still owed, as the platform computes it. Allocated
-            counts live payments including drafts, so a settlement can never be paid twice.
+            Finalized settlements with money still owed, as the platform
+            computes it. Allocated counts live payments including drafts, so a
+            settlement can never be paid twice.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {owed.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nothing is outstanding — every finalized settlement is fully allocated.
+              Nothing is outstanding — every finalized settlement is fully
+              allocated.
             </p>
           ) : (
             <ul className="flex flex-col divide-y">
               {owed.slice(0, 8).map((b) => (
-                <li key={b.settlement_id} className="flex items-center justify-between gap-4 py-3">
+                <li
+                  key={b.settlement_id}
+                  className="flex items-center justify-between gap-4 py-3"
+                >
                   <div className="flex flex-col">
                     <Link
                       className="font-medium hover:underline"
@@ -266,7 +315,9 @@ export default function PaymentsPage() {
                       {b.settlement_number}
                     </Link>
                     <span className="text-xs text-muted-foreground">
-                      {supplierName[b.supplier_id] ?? `${b.supplier_id.slice(0, 8)}…`} · payable{" "}
+                      {supplierName[b.supplier_id] ??
+                        `${b.supplier_id.slice(0, 8)}…`}{" "}
+                      · payable{" "}
                       <Money amount={b.payable} currency={b.currency} />
                     </span>
                   </div>
@@ -274,7 +325,11 @@ export default function PaymentsPage() {
                     <span className="font-medium">
                       <Money amount={b.outstanding} currency={b.currency} />
                     </span>
-                    <Button type="button" size="sm" onClick={() => setPayFor(b)}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => setPayFor(b)}
+                    >
                       Pay
                     </Button>
                   </div>
@@ -284,7 +339,8 @@ export default function PaymentsPage() {
           )}
           {owed.length > 8 ? (
             <p className="pt-3 text-xs text-muted-foreground">
-              Showing 8 of {owed.length} outstanding settlements — filter by supplier to narrow.
+              Showing 8 of {owed.length} outstanding settlements — filter by
+              supplier to narrow.
             </p>
           ) : null}
         </CardContent>
@@ -313,7 +369,9 @@ export default function PaymentsPage() {
             error={error}
             onRetry={() => void load()}
             empty={{
-              title: filtered ? "No payment matches these filters" : "No payments yet",
+              title: filtered
+                ? "No payment matches these filters"
+                : "No payments yet",
               description: filtered
                 ? "Try a different status or method, or clear the filters."
                 : "Finalize a settlement, then pay it from the list above.",
@@ -469,8 +527,10 @@ function CreatePaymentCard({
       <CardHeader>
         <CardTitle>Pay {balance.settlement_number}</CardTitle>
         <CardDescription>
-          Outstanding <Money amount={balance.outstanding} currency={balance.currency} />. The payment
-          is created as a draft — approving and executing it are separate, deliberate steps.
+          Outstanding{" "}
+          <Money amount={balance.outstanding} currency={balance.currency} />.
+          The payment is created as a draft — approving and executing it are
+          separate, deliberate steps.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -501,7 +561,8 @@ function CreatePaymentCard({
                 onChange={(e) => setAmount(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Defaults to the full outstanding balance. A smaller figure is a partial payment.
+                Defaults to the full outstanding balance. A smaller figure is a
+                partial payment.
               </p>
             </div>
             <div className="flex flex-col gap-1.5">
@@ -524,7 +585,10 @@ function CreatePaymentCard({
             </div>
           </div>
           {error ? (
-            <p role="alert" className="inline-flex items-start gap-2 text-sm text-destructive">
+            <p
+              role="alert"
+              className="inline-flex items-start gap-2 text-sm text-destructive"
+            >
               <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
               The platform refused: {error}
             </p>

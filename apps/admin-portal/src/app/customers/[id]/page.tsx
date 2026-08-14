@@ -43,6 +43,7 @@ import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
+import { useBusinessToday } from "@/components/date-range";
 import { useLocale } from "@/lib/i18n";
 
 /**
@@ -76,23 +77,6 @@ const describe = (e: unknown) => {
 
 const stamp = (iso: string | null | undefined) =>
   iso ? String(iso).slice(0, 16).replace("T", " ") : "—";
-
-/** Today in the DAIRY's own zone (DEMO-015).
- *
- * This drove the default billing period, and it used to be UTC. For a Kenyan
- * dairy that is three hours out; for an Indian one it is five and a half, so
- * the month a manager was offered could be the wrong month for the first
- * hours of every first-of-the-month. `Intl` reads the browser's own timezone
- * database — nothing is shipped — and with no zone in context it falls back to
- * UTC, which is the server's fallback too. */
-function today(timezone: string | null): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone ?? "UTC",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
 
 /** The first and last day of the month a date falls in. Pure calendar
  *  arithmetic on an already-local date, so no clock is involved. */
@@ -864,8 +848,12 @@ function RecordDeliveryForm({
   // morning round before 05:30 IST would otherwise have the form propose
   // yesterday's date — and a delivery filed a day early is a delivery on the
   // wrong month's bill.
-  const { timezone } = useLocale();
-  const [day, setDay] = useState(() => today(timezone));
+  // Derived, not captured: this form can mount before the shell knows the
+  // organization, and a stored default freezes the UTC fallback (DEMO-019).
+  const businessToday = useBusinessToday();
+  const [chosenDay, setChosenDay] = useState<string | null>(null);
+  const day = chosenDay ?? businessToday;
+  const setDay = setChosenDay;
   const [slot, setSlot] = useState("morning");
   const [quantity, setQuantity] = useState(defaultQuantity);
   const [status, setStatus] = useState("delivered");
@@ -958,10 +946,18 @@ function GenerateInvoiceForm({
   busy: boolean;
   onGenerate: (from: string, to: string) => void;
 }) {
-  const { timezone } = useLocale();
-  const bounds = monthBounds(today(timezone));
-  const [from, setFrom] = useState(bounds.from);
-  const [to, setTo] = useState(bounds.to);
+  // The billing period defaults to the DAIRY's current month and is derived
+  // rather than captured: this form can mount before the shell knows the
+  // organization, and a stored default would freeze the UTC fallback into the
+  // period a manager is offered (DEMO-019).
+  const bounds = monthBounds(useBusinessToday());
+  const [chosen, setChosen] = useState<{ from: string; to: string } | null>(
+    null,
+  );
+  const from = chosen?.from ?? bounds.from;
+  const to = chosen?.to ?? bounds.to;
+  const setFrom = (value: string) => setChosen({ from: value, to });
+  const setTo = (value: string) => setChosen({ from, to: value });
 
   return (
     <form
@@ -1085,9 +1081,12 @@ function PlanControls({
   onPause: (from: string, to: string) => Promise<void>;
   onResume: () => Promise<void>;
 }) {
-  const { t, timezone } = useLocale();
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
-  const [from, setFrom] = useState(() => today(timezone));
+  const businessToday = useBusinessToday();
+  const [chosenFrom, setChosenFrom] = useState<string | null>(null);
+  const from = chosenFrom ?? businessToday;
+  const setFrom = setChosenFrom;
   const [to, setTo] = useState("");
 
   if (plan.paused_from) {

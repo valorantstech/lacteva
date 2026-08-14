@@ -48,7 +48,10 @@ export default function OrganizationSettingsPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [locale, who] = await Promise.all([getLocaleSettings(), getSession()]);
+      const [locale, who] = await Promise.all([
+        getLocaleSettings(),
+        getSession(),
+      ]);
       setSettings(locale);
       setSession(who);
     } catch (err) {
@@ -66,7 +69,9 @@ export default function OrganizationSettingsPage() {
 
   const mayManage = can(session, "organization.settings.manage");
   const myLanguage = session?.authenticated ? session.user.locale : "en";
-  const myTimezone = session?.authenticated ? (session.user.timezone ?? null) : null;
+  const myTimezone = session?.authenticated
+    ? (session.user.timezone ?? null)
+    : null;
 
   async function chooseMyLanguage(tag: string) {
     setSaving(true);
@@ -139,14 +144,23 @@ export default function OrganizationSettingsPage() {
       ) : (
         <div className="flex flex-col gap-8">
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Fact label={t("settings.country")} value={settings.country_name} hint={settings.country_code} />
+            <Fact
+              label={t("settings.country")}
+              value={settings.country_name}
+              hint={settings.country_code}
+            />
             <Fact
               label={t("settings.currency")}
               value={`${settings.currency_symbol} ${settings.currency_code}`}
               hint={t("field.currency")}
               testId="org-currency"
             />
-            <Fact label={t("settings.timezone")} value={settings.timezone} hint="IANA" testId="org-timezone" />
+            <Fact
+              label={t("settings.timezone")}
+              value={settings.timezone}
+              hint="IANA"
+              testId="org-timezone"
+            />
             <Fact
               label={t("settings.defaultLanguage")}
               value={settings.default_language}
@@ -154,10 +168,14 @@ export default function OrganizationSettingsPage() {
             />
           </section>
 
-          <p className="text-xs text-muted-foreground">{t("settings.countryFixed")}</p>
+          <p className="text-xs text-muted-foreground">
+            {t("settings.countryFixed")}
+          </p>
 
           <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold">{t("settings.supportedLanguages")}</h2>
+            <h2 className="text-sm font-semibold">
+              {t("settings.supportedLanguages")}
+            </h2>
             <div className="flex flex-wrap gap-2">
               {settings.languages.map((language) => (
                 <span
@@ -166,7 +184,9 @@ export default function OrganizationSettingsPage() {
                   data-testid={`org-language-${language.tag}`}
                 >
                   {language.endonym}
-                  <span className="ms-2 text-xs text-muted-foreground">{language.tag}</span>
+                  <span className="ms-2 text-xs text-muted-foreground">
+                    {language.tag}
+                  </span>
                 </span>
               ))}
             </div>
@@ -177,13 +197,19 @@ export default function OrganizationSettingsPage() {
                 onToggle={toggleOrganizationLanguage}
               />
             ) : (
-              <p className="text-xs text-muted-foreground">{t("state.noPermission")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("state.noPermission")}
+              </p>
             )}
           </section>
 
           <section className="flex flex-col gap-3 border-t border-border pt-6">
-            <h2 className="text-sm font-semibold">{t("settings.myTimezone")}</h2>
-            <p className="text-xs text-muted-foreground">{t("settings.myTimezoneHelp")}</p>
+            <h2 className="text-sm font-semibold">
+              {t("settings.myTimezone")}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.myTimezoneHelp")}
+            </p>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
@@ -194,15 +220,22 @@ export default function OrganizationSettingsPage() {
               >
                 {t("settings.useOrganizationTimezone")}
               </Button>
-              <span className="text-xs text-muted-foreground" data-testid="business-timezone">
+              <span
+                className="text-xs text-muted-foreground"
+                data-testid="business-timezone"
+              >
                 {t("settings.businessTimezone")}: {settings.timezone}
               </span>
             </div>
           </section>
 
           <section className="flex flex-col gap-3 border-t border-border pt-6">
-            <h2 className="text-sm font-semibold">{t("settings.myLanguage")}</h2>
-            <p className="text-xs text-muted-foreground">{t("settings.myLanguageHelp")}</p>
+            <h2 className="text-sm font-semibold">
+              {t("settings.myLanguage")}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.myLanguageHelp")}
+            </p>
             <div className="flex flex-wrap gap-2">
               {settings.languages.map((language) => (
                 <Button
@@ -274,7 +307,9 @@ function LanguageToggles({
           onClick={() => onToggle(language.tag, !enabled.has(language.tag))}
           data-testid={`toggle-language-${language.tag}`}
         >
-          {enabled.has(language.tag) ? `− ${language.name}` : `+ ${language.name}`}
+          {enabled.has(language.tag)
+            ? `− ${language.name}`
+            : `+ ${language.name}`}
         </Button>
       ))}
       <span className="self-center text-xs text-muted-foreground">

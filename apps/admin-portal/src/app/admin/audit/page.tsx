@@ -42,7 +42,8 @@ import {
 const PAGE_SIZE = 25;
 
 const describe = (e: unknown) => {
-  if (e instanceof ApiError) return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+  if (e instanceof ApiError)
+    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
   return e instanceof Error ? e.message : "Failed to load the audit trail";
 };
 
@@ -79,7 +80,8 @@ function humanAction(action: string): string {
  * The module path the action came from — `collection · transaction`. Kept as
  * secondary information so the precise key is still recoverable on screen.
  */
-const areaOf = (action: string) => action.split(".").slice(0, -1).join(" · ") || "platform";
+const areaOf = (action: string) =>
+  action.split(".").slice(0, -1).join(" · ") || "platform";
 
 /** `milk_collection_transaction` → "Milk collection transaction". */
 const humanResource = (t: string) =>
@@ -115,17 +117,25 @@ function resourceHref(resourceType: string, id: string | null): string | null {
 function outcomeOf(record: AuditRecord): { label: string; tone: string } {
   const action = record.action.toLowerCase();
   const detail = record.detail ?? {};
-  if (action.includes("failed") || action.includes("denied") || action.includes("rejected"))
+  if (
+    action.includes("failed") ||
+    action.includes("denied") ||
+    action.includes("rejected")
+  )
     return { label: "failed", tone: "text-destructive" };
-  if (action.includes("cancelled")) return { label: "cancelled", tone: "text-muted-foreground" };
-  if (typeof detail.state === "string") return { label: String(detail.state), tone: "" };
+  if (action.includes("cancelled"))
+    return { label: "cancelled", tone: "text-muted-foreground" };
+  if (typeof detail.state === "string")
+    return { label: String(detail.state), tone: "" };
   return { label: "recorded", tone: "text-muted-foreground" };
 }
 
 export default function AuditPage() {
   const [page, setPage] = useState<AuditPageResult | null>(null);
   const [actions, setActions] = useState<string[]>([]);
-  const [people, setPeople] = useState<Array<Member & { user: User | null }>>([]);
+  const [people, setPeople] = useState<Array<Member & { user: User | null }>>(
+    [],
+  );
 
   const [q, setQ] = useState("");
   const [action, setAction] = useState("");
@@ -187,7 +197,9 @@ export default function AuditPage() {
     {
       key: "when",
       header: "When",
-      cell: (r) => <span className="tabular-nums text-sm">{stamp(r.created_at)}</span>,
+      cell: (r) => (
+        <span className="tabular-nums text-sm">{stamp(r.created_at)}</span>
+      ),
     },
     {
       key: "actor",
@@ -210,7 +222,9 @@ export default function AuditPage() {
       cell: (r) => (
         <div className="flex flex-col">
           <span className="font-medium">{humanAction(r.action)}</span>
-          <span className="text-xs text-muted-foreground">{areaOf(r.action)}</span>
+          <span className="text-xs text-muted-foreground">
+            {areaOf(r.action)}
+          </span>
         </div>
       ),
     },
@@ -260,7 +274,9 @@ export default function AuditPage() {
         error={error}
         onRetry={() => void load()}
         empty={{
-          title: filtered ? "No record matches these filters" : "No recorded activity yet",
+          title: filtered
+            ? "No record matches these filters"
+            : "No recorded activity yet",
           description: filtered
             ? "Try a wider date range, or clear the filters."
             : "Every change made through the platform is recorded here.",

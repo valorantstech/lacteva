@@ -22,7 +22,10 @@ import TransactionDetailPage from "@/app/transactions/[id]/page";
 import TransactionsPage from "@/app/transactions/page";
 
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 
 /** The canonical demo collection: 10.000 kg at 45.0000 = 450.00 KES. */
 const TX = {
@@ -55,11 +58,36 @@ const TX = {
 };
 
 const EVENTS = [
-  { sequence: 1, event_type: "TransactionCreated", data: {}, created_at: "2026-08-10T07:30:00+00:00" },
-  { sequence: 2, event_type: "SupplierIdentified", data: {}, created_at: "2026-08-10T07:31:00+00:00" },
-  { sequence: 3, event_type: "WeightCaptured", data: {}, created_at: "2026-08-10T07:33:00+00:00" },
-  { sequence: 4, event_type: "PricingCompleted", data: {}, created_at: "2026-08-10T07:35:00+00:00" },
-  { sequence: 5, event_type: "TransactionCompleted", data: {}, created_at: "2026-08-10T07:45:00+00:00" },
+  {
+    sequence: 1,
+    event_type: "TransactionCreated",
+    data: {},
+    created_at: "2026-08-10T07:30:00+00:00",
+  },
+  {
+    sequence: 2,
+    event_type: "SupplierIdentified",
+    data: {},
+    created_at: "2026-08-10T07:31:00+00:00",
+  },
+  {
+    sequence: 3,
+    event_type: "WeightCaptured",
+    data: {},
+    created_at: "2026-08-10T07:33:00+00:00",
+  },
+  {
+    sequence: 4,
+    event_type: "PricingCompleted",
+    data: {},
+    created_at: "2026-08-10T07:35:00+00:00",
+  },
+  {
+    sequence: 5,
+    event_type: "TransactionCompleted",
+    data: {},
+    created_at: "2026-08-10T07:45:00+00:00",
+  },
 ];
 
 const CHAIN = {
@@ -128,13 +156,35 @@ function routeAll(overrides: Record<string, () => Response> = {}) {
       return json({ items: [TX], total: 1, limit: 15, offset: 0 });
     if (url.includes("/collection-centers"))
       return json({
-        items: [{ id: "c1", branch_id: "b1", name: "Kilima Hill", code: "KH-C1", status: "active", timezone: "Africa/Nairobi" }],
-        total: 1, limit: 100, offset: 0,
+        items: [
+          {
+            id: "c1",
+            branch_id: "b1",
+            name: "Kilima Hill",
+            code: "KH-C1",
+            status: "active",
+            timezone: "Africa/Nairobi",
+          },
+        ],
+        total: 1,
+        limit: 100,
+        offset: 0,
       });
     if (url.includes("/v1/suppliers"))
       return json({
-        items: [{ id: "s1", code: "S-001", status: "active", branch_id: null, full_name: "Amina Njoroge", phone: "+254700000001" }],
-        total: 1, limit: 100, offset: 0,
+        items: [
+          {
+            id: "s1",
+            code: "S-001",
+            status: "active",
+            branch_id: null,
+            full_name: "Amina Njoroge",
+            phone: "+254700000001",
+          },
+        ],
+        total: 1,
+        limit: 100,
+        offset: 0,
       });
     return json({ title: "not_found" }, 404);
   });
@@ -195,23 +245,34 @@ describe("collections list", () => {
     routeAll();
     render(<TransactionsPage />);
     await screen.findByText("2026-08-10");
-    expect(screen.queryByRole("button", { name: /clear filters/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /clear filters/i }),
+    ).not.toBeInTheDocument();
 
     await userEvent.selectOptions(screen.getByLabelText("Status"), "COMPLETED");
-    expect(await screen.findByRole("button", { name: /clear filters/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /clear filters/i }),
+    ).toBeInTheDocument();
   });
 
   it("says the filters are the reason when nothing matches", async () => {
-    routeAll({ "/milk-transactions?": () => json({ items: [], total: 0, limit: 15, offset: 0 }) });
+    routeAll({
+      "/milk-transactions?": () =>
+        json({ items: [], total: 0, limit: 15, offset: 0 }),
+    });
     render(<TransactionsPage />);
-    expect(await screen.findByText(/no collections in this period/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/no collections in this period/i),
+    ).toBeInTheDocument();
   });
 
   it("shows an error with a retry", async () => {
     routeAll({ "/milk-transactions?": () => json({ detail: "boom" }, 500) });
     render(<TransactionsPage />);
     expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /try again/i }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -226,7 +287,9 @@ describe("collection detail", () => {
     expect(await screen.findByText("10 × 45.0000")).toBeInTheDocument();
     expect(screen.getByText("= 450.00 KES")).toBeInTheDocument();
     // The band that resolved it.
-    expect(screen.getByText(/RC-2026-MAIN v1 band \[4\.0, 5\.0\)/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/RC-2026-MAIN v1 band \[4\.0, 5\.0\)/),
+    ).toBeInTheDocument();
     // Trailing zeros on a four-decimal unit price survive, in both the rate
     // row and the printed expression.
     expect(screen.getAllByText(/45\.0000/).length).toBeGreaterThanOrEqual(2);
@@ -255,11 +318,18 @@ describe("collection detail", () => {
   it("marks stages that have not happened as pending, never as done", async () => {
     routeAll({
       "/chain": () =>
-        json({ transaction_id: "tx-1", settlement: null, payment: null, receipt: null }),
+        json({
+          transaction_id: "tx-1",
+          settlement: null,
+          payment: null,
+          receipt: null,
+        }),
     });
     await renderDetail(<TransactionDetailPage params={params()} />);
 
-    expect(await screen.findByText(/has not been settled yet/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/has not been settled yet/i),
+    ).toBeInTheDocument();
     expect(screen.getByText(/payment follows settlement/i)).toBeInTheDocument();
     expect(screen.getByText(/receipt follows payment/i)).toBeInTheDocument();
     // The timeline says pending rather than inventing a completion.
@@ -272,7 +342,13 @@ describe("collection detail", () => {
     routeAll({
       "/milk-transactions/tx-1/events": () => json(EVENTS),
       "/milk-transactions/tx-1": () =>
-        json({ ...TX, state: "QUALITY_PENDING", unit_price: null, gross_amount: null, pricing_status: null }),
+        json({
+          ...TX,
+          state: "QUALITY_PENDING",
+          unit_price: null,
+          gross_amount: null,
+          pricing_status: null,
+        }),
     });
     await renderDetail(<TransactionDetailPage params={params()} />);
     expect(await screen.findByText("Not priced")).toBeInTheDocument();
@@ -282,7 +358,9 @@ describe("collection detail", () => {
     routeAll();
     await renderDetail(<TransactionDetailPage params={params()} />);
     await screen.findByText("Transaction created");
-    const links = screen.getAllByRole("link").map((a) => a.getAttribute("href"));
+    const links = screen
+      .getAllByRole("link")
+      .map((a) => a.getAttribute("href"));
     expect(links).toContain("/suppliers/s1");
     expect(links).toContain("/centers/c1");
   });
@@ -296,9 +374,15 @@ describe("collection detail", () => {
   });
 
   it("explains a collection that cannot be loaded and offers the way back", async () => {
-    routeAll({ "/milk-transactions/tx-1": () => json({ detail: "gone" }, 404) });
+    routeAll({
+      "/milk-transactions/tx-1": () => json({ detail: "gone" }, 404),
+    });
     await renderDetail(<TransactionDetailPage params={params()} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be loaded/i);
-    expect(screen.getByRole("link", { name: /back to collections/i })).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /could not be loaded/i,
+    );
+    expect(
+      screen.getByRole("link", { name: /back to collections/i }),
+    ).toBeInTheDocument();
   });
 });

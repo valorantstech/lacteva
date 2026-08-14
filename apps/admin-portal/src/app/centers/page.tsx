@@ -43,19 +43,27 @@ const PAGE_SIZE = 10;
 const STATUSES = ["", "active", "inactive", "maintenance", "archived"] as const;
 const TIMEZONE = /^[A-Za-z]+\/[A-Za-z_+-]+$/;
 
-type FormState = { mode: "closed" } | { mode: "create" } | { mode: "edit"; center: Center };
+type FormState =
+  { mode: "closed" } | { mode: "create" } | { mode: "edit"; center: Center };
 
 /** The window the activity figures cover. Long enough that a demo looks alive. */
 function activityWindow() {
   const to = new Date();
   const from = new Date(to);
   from.setUTCDate(from.getUTCDate() - 29);
-  return { date_from: from.toISOString().slice(0, 10), date_to: to.toISOString().slice(0, 10) };
+  return {
+    date_from: from.toISOString().slice(0, 10),
+    date_to: to.toISOString().slice(0, 10),
+  };
 }
 
 export default function CentersPage() {
-  const [page, setPage] = useState<{ items: Center[]; total: number } | null>(null);
-  const [activity, setActivity] = useState<Record<string, CenterSummaryRow>>({});
+  const [page, setPage] = useState<{ items: Center[]; total: number } | null>(
+    null,
+  );
+  const [activity, setActivity] = useState<Record<string, CenterSummaryRow>>(
+    {},
+  );
   const [branches, setBranches] = useState<Branch[]>([]);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("");
@@ -80,12 +88,18 @@ export default function CentersPage() {
       getCenterReport({ ...activityWindow(), limit: "100" })
         .then((report: ReportPage<CenterSummaryRow>) =>
           setActivity(
-            Object.fromEntries((report.items ?? []).map((row) => [row.center_id, row])),
+            Object.fromEntries(
+              (report.items ?? []).map((row) => [row.center_id, row]),
+            ),
           ),
         )
         .catch(() => setActivity({}));
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Could not load collection centres");
+      setError(
+        err instanceof ApiError
+          ? err.detail
+          : "Could not load collection centres",
+      );
     } finally {
       setLoading(false);
     }
@@ -117,14 +131,21 @@ export default function CentersPage() {
       header: "Centre",
       cell: (c) => (
         <div className="flex flex-col">
-          <Link className="font-medium hover:underline" href={`/centers/${c.id}`}>
+          <Link
+            className="font-medium hover:underline"
+            href={`/centers/${c.id}`}
+          >
             {c.name}
           </Link>
           <span className="text-xs text-muted-foreground">{c.code}</span>
         </div>
       ),
     },
-    { key: "status", header: "Status", cell: (c) => <StatusBadge status={c.status} /> },
+    {
+      key: "status",
+      header: "Status",
+      cell: (c) => <StatusBadge status={c.status} />,
+    },
     {
       key: "timezone",
       header: "Timezone",
@@ -136,7 +157,9 @@ export default function CentersPage() {
       header: "Collections",
       align: "end",
       cell: (c) => (
-        <span className="tabular-nums">{activity[c.id]?.transactions ?? "—"}</span>
+        <span className="tabular-nums">
+          {activity[c.id]?.transactions ?? "—"}
+        </span>
       ),
     },
     {
@@ -156,7 +179,10 @@ export default function CentersPage() {
       align: "end",
       cell: (c) =>
         activity[c.id] ? (
-          <Money amount={activity[c.id].payable_amount} currency={activity[c.id].currency} />
+          <Money
+            amount={activity[c.id].payable_amount}
+            currency={activity[c.id].currency}
+          />
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
@@ -168,7 +194,9 @@ export default function CentersPage() {
       cell: (c) => {
         const at = activity[c.id]?.last_collection_at;
         return (
-          <span className="text-muted-foreground">{at ? at.slice(0, 10) : "no activity"}</span>
+          <span className="text-muted-foreground">
+            {at ? at.slice(0, 10) : "no activity"}
+          </span>
         );
       },
     },
@@ -178,7 +206,12 @@ export default function CentersPage() {
       align: "end",
       cell: (c) => (
         <div className="flex justify-end gap-2">
-          <Button type="button" size="sm" variant="ghost" onClick={() => setForm({ mode: "edit", center: c })}>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => setForm({ mode: "edit", center: c })}
+          >
             Edit
           </Button>
           {/* A link, styled as a button. This design system is Base UI, which
@@ -208,10 +241,25 @@ export default function CentersPage() {
         }
       />
 
-      <section aria-label="Centre summary" className="grid gap-4 sm:grid-cols-3">
-        <StatTile label="Centres" value={totals.centers} icon={<Building2 className="size-4" />} />
-        <StatTile label="Active on this page" value={totals.active} hint="of the rows shown" />
-        <StatTile label="Reporting activity" value={totals.reporting} hint="last 30 days" />
+      <section
+        aria-label="Centre summary"
+        className="grid gap-4 sm:grid-cols-3"
+      >
+        <StatTile
+          label="Centres"
+          value={totals.centers}
+          icon={<Building2 className="size-4" />}
+        />
+        <StatTile
+          label="Active on this page"
+          value={totals.active}
+          hint="of the rows shown"
+        />
+        <StatTile
+          label="Reporting activity"
+          value={totals.reporting}
+          hint="last 30 days"
+        />
       </section>
 
       {form.mode !== "closed" ? (
@@ -237,7 +285,10 @@ export default function CentersPage() {
             error={error}
             onRetry={() => void load()}
             empty={{
-              title: q || status ? "No centre matches this search" : "No collection centres yet",
+              title:
+                q || status
+                  ? "No centre matches this search"
+                  : "No collection centres yet",
               description:
                 q || status
                   ? "Try a different name, code or status."
@@ -320,21 +371,28 @@ function CenterForm({
   const editing = state.mode === "edit";
   const [name, setName] = useState(editing ? state.center.name : "");
   const [code, setCode] = useState(editing ? state.center.code : "");
-  const [timezone, setTimezone] = useState(editing ? state.center.timezone : "Africa/Nairobi");
+  const [timezone, setTimezone] = useState(
+    editing ? state.center.timezone : "Africa/Nairobi",
+  );
   const [branchId, setBranchId] = useState(branches[0]?.id ?? "");
-  const [status, setStatus] = useState(editing ? state.center.status : "inactive");
+  const [status, setStatus] = useState(
+    editing ? state.center.status : "inactive",
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const validate = () => {
     const errors: Record<string, string> = {};
-    if (name.trim().length < 2) errors.name = "Give the centre a name of at least 2 characters.";
+    if (name.trim().length < 2)
+      errors.name = "Give the centre a name of at least 2 characters.";
     if (!editing && !/^[A-Za-z0-9-]{2,20}$/.test(code.trim()))
-      errors.code = "A code is 2–20 letters, digits or hyphens, and cannot be changed later.";
+      errors.code =
+        "A code is 2–20 letters, digits or hyphens, and cannot be changed later.";
     if (!TIMEZONE.test(timezone.trim()))
       errors.timezone = "Use an IANA timezone, for example Africa/Nairobi.";
-    if (!editing && !branchId) errors.branch = "Choose the branch this centre belongs to.";
+    if (!editing && !branchId)
+      errors.branch = "Choose the branch this centre belongs to.";
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -346,15 +404,25 @@ function CenterForm({
     setError(null);
     try {
       if (editing) {
-        await updateCenter(state.center.id, { name: name.trim(), timezone: timezone.trim() });
-        if (status !== state.center.status) await setCenterStatus(state.center.id, status);
+        await updateCenter(state.center.id, {
+          name: name.trim(),
+          timezone: timezone.trim(),
+        });
+        if (status !== state.center.status)
+          await setCenterStatus(state.center.id, status);
       } else {
-        await createCenter({ branch_id: branchId, name: name.trim(), code: code.trim() });
+        await createCenter({
+          branch_id: branchId,
+          name: name.trim(),
+          code: code.trim(),
+        });
       }
       onSaved();
     } catch (err) {
       // The platform's own words. It knows rules this form does not.
-      setError(err instanceof ApiError ? err.detail : "The centre could not be saved");
+      setError(
+        err instanceof ApiError ? err.detail : "The centre could not be saved",
+      );
     } finally {
       setBusy(false);
     }
@@ -391,7 +459,11 @@ function CenterForm({
               label="Code"
               required={!editing}
               error={fieldErrors.code}
-              hint={editing ? "A code cannot be changed after creation." : "Short, unique, e.g. KH-C1."}
+              hint={
+                editing
+                  ? "A code cannot be changed after creation."
+                  : "Short, unique, e.g. KH-C1."
+              }
             >
               <Input
                 id="center-code"
@@ -425,17 +497,26 @@ function CenterForm({
                   id="center-status"
                   className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                   value={status}
-                  onChange={(e) => setStatus(e.target.value as Center["status"])}
+                  onChange={(e) =>
+                    setStatus(e.target.value as Center["status"])
+                  }
                 >
-                  {["active", "inactive", "maintenance", "archived"].map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
+                  {["active", "inactive", "maintenance", "archived"].map(
+                    (s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ),
+                  )}
                 </select>
               </Field>
             ) : (
-              <Field id="center-branch" label="Branch" required error={fieldErrors.branch}>
+              <Field
+                id="center-branch"
+                label="Branch"
+                required
+                error={fieldErrors.branch}
+              >
                 <select
                   id="center-branch"
                   className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
@@ -455,16 +536,21 @@ function CenterForm({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            A new centre starts inactive and cannot receive milk until it is active, has operating
-            hours, an assigned operator and a working scale. Its readiness page explains what is
-            still missing.
+            A new centre starts inactive and cannot receive milk until it is
+            active, has operating hours, an assigned operator and a working
+            scale. Its readiness page explains what is still missing.
           </p>
 
           <div className="flex gap-2">
             <Button type="submit" disabled={busy}>
               {busy ? "Saving…" : editing ? "Save changes" : "Create centre"}
             </Button>
-            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onClose}
+              disabled={busy}
+            >
               Cancel
             </Button>
           </div>

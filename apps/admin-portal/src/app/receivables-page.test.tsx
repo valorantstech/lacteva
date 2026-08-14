@@ -83,7 +83,9 @@ describe("receivables", () => {
 
     expect(await screen.findByText("84,300.00")).toBeInTheDocument();
     expect(
-      within(screen.getByRole("region", { name: "Receivables summary" })).getByText("40"),
+      within(
+        screen.getByRole("region", { name: "Receivables summary" }),
+      ).getByText("40"),
     ).toBeInTheDocument();
     // The two visible balances add to 3,600. If that ever became the headline,
     // this page would be quietly wrong by an order of magnitude.
@@ -98,7 +100,9 @@ describe("receivables", () => {
 
     await userEvent.type(screen.getByLabelText("Search"), "njeri");
     await waitFor(() => {
-      const asked = spy.mock.calls.map(([u]) => String(u)).filter((u) => u.includes("q=njeri"));
+      const asked = spy.mock.calls
+        .map(([u]) => String(u))
+        .filter((u) => u.includes("q=njeri"));
       expect(asked.length).toBeGreaterThan(0);
     });
   });
@@ -109,11 +113,15 @@ describe("receivables", () => {
     await screen.findByText("Household 1");
 
     // The default is the collection round: only people who owe.
-    expect(spy.mock.calls.some(([u]) => String(u).includes("owing_only=true"))).toBe(true);
+    expect(
+      spy.mock.calls.some(([u]) => String(u).includes("owing_only=true")),
+    ).toBe(true);
 
     await userEvent.selectOptions(screen.getByLabelText("Show"), "all");
     await waitFor(() => {
-      expect(spy.mock.calls.some(([u]) => String(u).includes("owing_only=false"))).toBe(true);
+      expect(
+        spy.mock.calls.some(([u]) => String(u).includes("owing_only=false")),
+      ).toBe(true);
     });
   });
 
@@ -123,11 +131,15 @@ describe("receivables", () => {
     await screen.findByText("Household 1");
 
     // 40 debtors, a page of 25 — the request must say so.
-    expect(spy.mock.calls.some(([u]) => String(u).includes("limit=25"))).toBe(true);
+    expect(spy.mock.calls.some(([u]) => String(u).includes("limit=25"))).toBe(
+      true,
+    );
 
     await userEvent.click(screen.getByRole("button", { name: /next/i }));
     await waitFor(() => {
-      expect(spy.mock.calls.some(([u]) => String(u).includes("offset=25"))).toBe(true);
+      expect(
+        spy.mock.calls.some(([u]) => String(u).includes("offset=25")),
+      ).toBe(true);
     });
   });
 
@@ -138,10 +150,9 @@ describe("receivables", () => {
 
     const first = screen.getByRole("link", { name: "Household 1" });
     expect(first).toHaveAttribute("href", "/customers/cu1");
-    expect(screen.getAllByRole("link", { name: "Record payment" })[0]).toHaveAttribute(
-      "href",
-      "/customers/cu1",
-    );
+    expect(
+      screen.getAllByRole("link", { name: "Record payment" })[0],
+    ).toHaveAttribute("href", "/customers/cu1");
   });
 
   it("says a customer has never paid rather than showing an empty cell", async () => {
@@ -167,13 +178,16 @@ describe("receivables", () => {
     });
     render(<ReceivablesPage />);
 
-    expect(await screen.findByText("Every customer is settled")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Every customer is settled"),
+    ).toBeInTheDocument();
     expect(screen.getByText("0.00")).toBeInTheDocument();
   });
 
   it("reports a refusal as a refusal, with a way to try again", async () => {
     route({
-      "/reports/receivables": () => json({ title: "forbidden", detail: "Not permitted." }, 403),
+      "/reports/receivables": () =>
+        json({ title: "forbidden", detail: "Not permitted." }, 403),
     });
     render(<ReceivablesPage />);
 

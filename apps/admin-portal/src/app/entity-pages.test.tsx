@@ -23,7 +23,10 @@ import SupplierDetailPage from "@/app/suppliers/[id]/page";
 import SuppliersPage from "@/app/suppliers/page";
 
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 
 const CENTER = {
   id: "c1",
@@ -146,12 +149,19 @@ function routeAll(overrides: Record<string, () => Response> = {}) {
     for (const [fragment, handler] of Object.entries(overrides)) {
       if (url.includes(fragment)) return handler();
     }
-    if (url.includes("/reports/collection/by-center")) return json(CENTER_ACTIVITY);
-    if (url.includes("/reports/collection/by-supplier")) return json(SUPPLIER_ACTIVITY);
+    if (url.includes("/reports/collection/by-center"))
+      return json(CENTER_ACTIVITY);
+    if (url.includes("/reports/collection/by-supplier"))
+      return json(SUPPLIER_ACTIVITY);
     if (url.includes("/reports/collection/daily")) return json(DAILY);
     if (url.includes("/reports/collection/trend")) return json(TREND);
     if (url.includes("/reports/settlements"))
-      return json({ by_status: [], finalized_net_total: "0", total_settlements: 0, total_lines: 0 });
+      return json({
+        by_status: [],
+        finalized_net_total: "0",
+        total_settlements: 0,
+        total_lines: 0,
+      });
     if (url.includes("/reports/payments"))
       return json({
         by_status: [],
@@ -165,12 +175,38 @@ function routeAll(overrides: Record<string, () => Response> = {}) {
         failed_amount: "0",
         total_by_currency: {},
       });
-    if (url.includes("/collection-centers/c1/readiness")) return json(READINESS);
-    if (url.includes("/collection-centers/c1")) return json({ center: CENTER, settings: {}, operating_windows: [{ day_of_week: 1, opens: "06:00", closes: "19:00" }], calendar: [] });
-    if (url.includes("/collection-centers")) return json({ items: [CENTER], total: 1, limit: 10, offset: 0 });
-    if (url.includes("/v1/branches")) return json([{ id: "b1", workspace_id: "w1", name: "Central", code: "C" }]);
-    if (url.includes("/v1/suppliers/s1")) return json({ supplier: SUPPLIER, profile: { full_name: "Amina Njoroge", phone: "+254700000001", village: "Kilima", national_id: "" }, center_ids: [], bank_accounts: [], documents: [] });
-    if (url.includes("/v1/suppliers")) return json({ items: [SUPPLIER], total: 1, limit: 10, offset: 0 });
+    if (url.includes("/collection-centers/c1/readiness"))
+      return json(READINESS);
+    if (url.includes("/collection-centers/c1"))
+      return json({
+        center: CENTER,
+        settings: {},
+        operating_windows: [
+          { day_of_week: 1, opens: "06:00", closes: "19:00" },
+        ],
+        calendar: [],
+      });
+    if (url.includes("/collection-centers"))
+      return json({ items: [CENTER], total: 1, limit: 10, offset: 0 });
+    if (url.includes("/v1/branches"))
+      return json([
+        { id: "b1", workspace_id: "w1", name: "Central", code: "C" },
+      ]);
+    if (url.includes("/v1/suppliers/s1"))
+      return json({
+        supplier: SUPPLIER,
+        profile: {
+          full_name: "Amina Njoroge",
+          phone: "+254700000001",
+          village: "Kilima",
+          national_id: "",
+        },
+        center_ids: [],
+        bank_accounts: [],
+        documents: [],
+      });
+    if (url.includes("/v1/suppliers"))
+      return json({ items: [SUPPLIER], total: 1, limit: 10, offset: 0 });
     if (url.includes("/milk-transactions")) return json(EMPTY_PAGE);
     return json({ title: "not_found" }, 404);
   });
@@ -201,7 +237,9 @@ describe("centres list", () => {
   it("shows each centre with the activity the platform aggregated", async () => {
     routeAll();
     render(<CentersPage />);
-    expect(await screen.findByText("Kilima Hill Collection Centre")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Kilima Hill Collection Centre"),
+    ).toBeInTheDocument();
     expect(screen.getByText("KH-C1")).toBeInTheDocument();
     expect(screen.getByText("1,234.5")).toBeInTheDocument();
     expect(screen.getByText("56,789.50")).toBeInTheDocument();
@@ -233,14 +271,20 @@ describe("centres list", () => {
   it("explains an empty search rather than showing a bare 'no data'", async () => {
     routeAll({ "/v1/collection-centers?": () => json(EMPTY_PAGE) });
     render(<CentersPage />);
-    expect(await screen.findByText(/no collection centres yet/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/no collection centres yet/i),
+    ).toBeInTheDocument();
   });
 
   it("shows an error with a retry when the list fails", async () => {
-    routeAll({ "/v1/collection-centers?": () => json({ detail: "boom" }, 500) });
+    routeAll({
+      "/v1/collection-centers?": () => json({ detail: "boom" }, 500),
+    });
     render(<CentersPage />);
     expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /try again/i }),
+    ).toBeInTheDocument();
   });
 
   it("validates the form before asking the platform", async () => {
@@ -249,9 +293,13 @@ describe("centres list", () => {
     await screen.findByText("Kilima Hill Collection Centre");
 
     await userEvent.click(screen.getByRole("button", { name: /new centre/i }));
-    await userEvent.click(screen.getByRole("button", { name: /create centre/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /create centre/i }),
+    );
 
-    expect(await screen.findByText(/name of at least 2 characters/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/name of at least 2 characters/i),
+    ).toBeInTheDocument();
     // Nothing was posted: an invalid form must not reach the platform.
     const posts = spy.mock.calls.filter(([, init]) => init?.method === "POST");
     expect(posts).toHaveLength(0);
@@ -260,7 +308,9 @@ describe("centres list", () => {
   it("links each centre to its own page", async () => {
     routeAll();
     render(<CentersPage />);
-    const link = await screen.findByRole("link", { name: "Kilima Hill Collection Centre" });
+    const link = await screen.findByRole("link", {
+      name: "Kilima Hill Collection Centre",
+    });
     expect(link).toHaveAttribute("href", "/centers/c1");
   });
 });
@@ -274,7 +324,9 @@ describe("centre detail", () => {
 
     // Not a green badge inferred from the record existing.
     expect(await screen.findByText("not ready")).toBeInTheDocument();
-    expect(screen.getByText(/no active scale is assigned to this centre/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/no active scale is assigned to this centre/i),
+    ).toBeInTheDocument();
     expect(screen.getByText("active scale")).toBeInTheDocument();
   });
 
@@ -283,7 +335,9 @@ describe("centre detail", () => {
     await renderDetail(<CenterDetailPage params={params()} />);
     expect(await screen.findByText("Monday")).toBeInTheDocument();
     expect(screen.getByText("06:00 – 19:00")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText("1,234.5")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("1,234.5")).toBeInTheDocument(),
+    );
     expect(screen.getByText("56,789.50")).toBeInTheDocument();
   });
 
@@ -293,7 +347,12 @@ describe("centre detail", () => {
     routeAll({
       "/collection-centers/c1/readiness": () => json(READINESS),
       "/collection-centers/c1": () =>
-        json({ center: CENTER, settings: {}, operating_windows: [], calendar: [] }),
+        json({
+          center: CENTER,
+          settings: {},
+          operating_windows: [],
+          calendar: [],
+        }),
     });
     await renderDetail(<CenterDetailPage params={params()} />);
     expect(
@@ -342,7 +401,8 @@ describe("suppliers list", () => {
         json(
           {
             title: "conflict",
-            detail: "cannot activate a supplier without a collection center assignment",
+            detail:
+              "cannot activate a supplier without a collection center assignment",
             status: 409,
           },
           409,
@@ -373,8 +433,12 @@ describe("supplier detail", () => {
   it("shows the profile and the platform's statistics", async () => {
     routeAll();
     await renderDetail(<SupplierDetailPage params={params()} />);
-    expect(await screen.findByRole("heading", { name: "Amina Njoroge" })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText("1,234.5")).toBeInTheDocument());
+    expect(
+      await screen.findByRole("heading", { name: "Amina Njoroge" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText("1,234.5")).toBeInTheDocument(),
+    );
     expect(screen.getByText("56,789.50")).toBeInTheDocument();
   });
 
@@ -397,6 +461,8 @@ describe("supplier detail", () => {
     await renderDetail(<SupplierDetailPage params={params()} />);
     const alert = await screen.findByRole("alert");
     expect(within(alert).getByText(/could not be loaded/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /back to suppliers/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /back to suppliers/i }),
+    ).toBeInTheDocument();
   });
 });

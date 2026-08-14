@@ -78,7 +78,9 @@ export default function ResolutionPlaygroundPage() {
         }),
       );
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Resolution request failed");
+      setError(
+        err instanceof ApiError ? err.detail : "Resolution request failed",
+      );
     } finally {
       setBusy(false);
     }
@@ -87,10 +89,12 @@ export default function ResolutionPlaygroundPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 p-8">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Resolution playground</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Resolution playground
+        </h1>
         <p className="text-sm text-muted-foreground">
-          &ldquo;What pricing matrix would this transaction use?&rdquo; — selection only, no
-          amounts are calculated
+          &ldquo;What pricing matrix would this transaction use?&rdquo; —
+          selection only, no amounts are calculated
         </p>
       </header>
 
@@ -98,8 +102,8 @@ export default function ResolutionPlaygroundPage() {
         <CardHeader>
           <CardTitle>Simulated transaction</CardTitle>
           <CardDescription>
-            The engine selects exactly one published rate card, one matrix, and one price band —
-            or tells you precisely why it cannot.
+            The engine selects exactly one published rate card, one matrix, and
+            one price band — or tells you precisely why it cannot.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -173,7 +177,9 @@ export default function ResolutionPlaygroundPage() {
                 onChange={(e) => setValue(e.target.value)}
               />
             </div>
-            {error && <p className="col-span-2 text-sm text-destructive">{error}</p>}
+            {error && (
+              <p className="col-span-2 text-sm text-destructive">{error}</p>
+            )}
             <div className="col-span-2">
               <Button type="submit" disabled={busy}>
                 {busy ? "Resolving…" : "Resolve"}
@@ -197,13 +203,15 @@ export default function ResolutionPlaygroundPage() {
             <div>
               <span className="font-medium">Rate card:</span>{" "}
               <code className="rounded bg-muted px-1">
-                {outcome.result.rate_card_code} v{outcome.result.rate_card_version}
+                {outcome.result.rate_card_code} v
+                {outcome.result.rate_card_version}
               </code>{" "}
               ({String(outcome.result.metadata.effective_from)} →{" "}
               {String(outcome.result.metadata.effective_until ?? "open")})
             </div>
             <div>
-              <span className="font-medium">Matrix:</span> {outcome.result.matrix_name} ·{" "}
+              <span className="font-medium">Matrix:</span>{" "}
+              {outcome.result.matrix_name} ·{" "}
               {String(outcome.result.metadata.product_code)} ·{" "}
               {String(outcome.result.metadata.dimension_code)}
             </div>
@@ -218,7 +226,8 @@ export default function ResolutionPlaygroundPage() {
             </div>
             <div className="text-lg">
               <span className="font-medium">Unit price:</span>{" "}
-              {String(outcome.result.unit_price.amount)} {outcome.result.unit_price.currency}
+              {String(outcome.result.unit_price.amount)}{" "}
+              {outcome.result.unit_price.currency}
             </div>
             <div className="flex flex-wrap items-end gap-2 border-t border-border pt-3">
               <div className="flex flex-col gap-1">
@@ -265,7 +274,9 @@ export default function ResolutionPlaygroundPage() {
                     );
                   } catch (err) {
                     setCalcError(
-                      err instanceof ApiError ? err.detail : "Calculation failed",
+                      err instanceof ApiError
+                        ? err.detail
+                        : "Calculation failed",
                     );
                   } finally {
                     setCalcBusy(false);
@@ -274,7 +285,9 @@ export default function ResolutionPlaygroundPage() {
               >
                 {calcBusy ? "Calculating…" : "Calculate"}
               </Button>
-              {calcError && <p className="text-sm text-destructive">{calcError}</p>}
+              {calcError && (
+                <p className="text-sm text-destructive">{calcError}</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -288,9 +301,10 @@ export default function ResolutionPlaygroundPage() {
               <Badge variant="outline">{calc.rounding_policy}</Badge>
             </CardTitle>
             <CardDescription>
-              {String(calc.unit_price.amount)} {calc.currency} × {calc.quantity.value}{" "}
-              {calc.quantity.unit} · calculator v{calc.calculator_version} ·{" "}
-              {calc.resolution.rate_card_code} v{calc.resolution.rate_card_version} /{" "}
+              {String(calc.unit_price.amount)} {calc.currency} ×{" "}
+              {calc.quantity.value} {calc.quantity.unit} · calculator v
+              {calc.calculator_version} · {calc.resolution.rate_card_code} v
+              {calc.resolution.rate_card_version} /{" "}
               {calc.resolution.matrix_name}
             </CardDescription>
           </CardHeader>
@@ -302,14 +316,27 @@ export default function ResolutionPlaygroundPage() {
                   <Badge variant="secondary">{step.operation}</Badge>
                   <span>
                     {step.detail}
-                    {step.values.raw_amount && step.operation === "multiply" && (
-                      <> — raw: <code className="rounded bg-muted px-1">{step.values.raw_amount}</code></>
-                    )}
+                    {step.values.raw_amount &&
+                      step.operation === "multiply" && (
+                        <>
+                          {" "}
+                          — raw:{" "}
+                          <code className="rounded bg-muted px-1">
+                            {step.values.raw_amount}
+                          </code>
+                        </>
+                      )}
                     {step.operation === "round" && (
                       <>
                         {" "}
-                        — <code className="rounded bg-muted px-1">{step.values.raw_amount}</code> →{" "}
-                        <code className="rounded bg-muted px-1">{step.values.rounded_amount}</code>
+                        —{" "}
+                        <code className="rounded bg-muted px-1">
+                          {step.values.raw_amount}
+                        </code>{" "}
+                        →{" "}
+                        <code className="rounded bg-muted px-1">
+                          {step.values.rounded_amount}
+                        </code>
                       </>
                     )}
                   </span>
@@ -328,12 +355,19 @@ export default function ResolutionPlaygroundPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-3">
               No resolution
-              <Badge variant={outcome.failure.status === 409 ? "destructive" : "secondary"}>
-                {outcome.failure.status === 409 ? "integrity problem" : "no match"}
+              <Badge
+                variant={
+                  outcome.failure.status === 409 ? "destructive" : "secondary"
+                }
+              >
+                {outcome.failure.status === 409
+                  ? "integrity problem"
+                  : "no match"}
               </Badge>
               {outcome.failure.stage && (
                 <Badge variant="outline">
-                  failed at: {STAGE_LABELS[outcome.failure.stage] ?? outcome.failure.stage}
+                  failed at:{" "}
+                  {STAGE_LABELS[outcome.failure.stage] ?? outcome.failure.stage}
                 </Badge>
               )}
             </CardTitle>
@@ -343,8 +377,9 @@ export default function ResolutionPlaygroundPage() {
             {outcome.failure.reason && <p>{outcome.failure.reason}</p>}
             {outcome.failure.candidates && (
               <p className="text-destructive">
-                {outcome.failure.candidates.length} candidates matched where exactly one is
-                required — pricing data needs administrator attention.
+                {outcome.failure.candidates.length} candidates matched where
+                exactly one is required — pricing data needs administrator
+                attention.
               </p>
             )}
             {outcome.failure.inputs && (

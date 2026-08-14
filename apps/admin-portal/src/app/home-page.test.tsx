@@ -32,9 +32,17 @@ const USER = {
 };
 
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 
-const SESSION = { authenticated: true, user: USER, tenant_id: "org-1", permissions: ["*"] };
+const SESSION = {
+  authenticated: true,
+  user: USER,
+  tenant_id: "org-1",
+  permissions: ["*"],
+};
 
 /** A complete, realistic dashboard payload — the shape the platform sends. */
 const DASHBOARD = {
@@ -62,7 +70,9 @@ const DASHBOARD = {
     total_lines: 40,
   },
   payments: {
-    by_status: [{ status: "completed", count: 3, amount: "9000.00", currency: "KES" }],
+    by_status: [
+      { status: "completed", count: 3, amount: "9000.00", currency: "KES" },
+    ],
     total_payments: 4,
     completed_count: 3,
     processing_count: 0,
@@ -251,11 +261,15 @@ describe("dashboard", () => {
 
     // Rendering at all is the assertion: the old build threw here.
     render(<Home />);
-    expect(await screen.findByText(/sign in to see today/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/sign in to see today/i),
+    ).toBeInTheDocument();
   });
 
   it("asks for nothing tenant-scoped while signed out", async () => {
-    const spy = routeAll({ "/api/auth/session": () => json({ authenticated: false }) });
+    const spy = routeAll({
+      "/api/auth/session": () => json({ authenticated: false }),
+    });
 
     render(<Home />);
     await screen.findByText(/sign in to see today/i);
@@ -278,11 +292,15 @@ describe("dashboard", () => {
     expect(screen.getByText("24")).toBeInTheDocument();
 
     // Settlement and payment figures.
-    await waitFor(() => expect(screen.getByText("12,345.00")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("12,345.00")).toBeInTheDocument(),
+    );
     expect(screen.getByText("9,000.00")).toBeInTheDocument();
 
     // Centre, supplier and activity sections.
-    expect(screen.getByText("Kilima Hill Collection Centre")).toBeInTheDocument();
+    expect(
+      screen.getByText("Kilima Hill Collection Centre"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Amina Njoroge")).toBeInTheDocument();
     expect(screen.getByText(/settlement finalized/)).toBeInTheDocument();
   });
@@ -297,20 +315,35 @@ describe("dashboard", () => {
      */
     routeAll({
       "/v1/reports/": () =>
-        json({ title: "forbidden", detail: "You do not have permission to perform this action." }, 403),
+        json(
+          {
+            title: "forbidden",
+            detail: "You do not have permission to perform this action.",
+          },
+          403,
+        ),
     });
     render(<Home />);
 
-    expect(await screen.findByText("Reporting is not part of your access.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Reporting is not part of your access."),
+    ).toBeInTheDocument();
     // The same reassurance appears on each section that could not load.
-    expect(screen.getAllByText(/nothing here is broken/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/nothing here is broken/i).length,
+    ).toBeGreaterThan(0);
     // ...and NOT the failure wording.
     expect(screen.queryByText(/could not be loaded/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Try again" }),
+    ).not.toBeInTheDocument();
   });
 
   it("still reports a genuine failure as a failure", async () => {
-    routeAll({ "/v1/reports/dashboard": () => json({ title: "boom", detail: "boom" }, 500) });
+    routeAll({
+      "/v1/reports/dashboard": () =>
+        json({ title: "boom", detail: "boom" }, 500),
+    });
     render(<Home />);
     expect(await screen.findByText(/could not be loaded/i)).toBeInTheDocument();
   });
@@ -326,9 +359,14 @@ describe("dashboard", () => {
   });
 
   it("shows a loading state before anything has answered", () => {
-    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => {})),
+    );
     render(<Home />);
-    expect(screen.getByRole("status")).toHaveTextContent(/checking your session/i);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /checking your session/i,
+    );
   });
 
   it("shows an empty state rather than a broken chart when nothing was collected", async () => {
@@ -337,7 +375,9 @@ describe("dashboard", () => {
         json({ date_from: "2026-08-05", date_to: "2026-08-05", points: [] }),
     });
     render(<Home />);
-    expect(await screen.findByText(/no collection in this period/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/no collection in this period/i),
+    ).toBeInTheDocument();
   });
 
   it("reports 'no action required' when there are no exceptions", async () => {
@@ -363,8 +403,13 @@ describe("dashboard", () => {
         }),
     });
     render(<Home />);
-    expect(await screen.findByText(/payments failed and need retrying/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /review/i })).toHaveAttribute("href", "/payments");
+    expect(
+      await screen.findByText(/payments failed and need retrying/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /review/i })).toHaveAttribute(
+      "href",
+      "/payments",
+    );
   });
 
   it("survives a response that is 200 but missing the fields it claims", async () => {
@@ -378,15 +423,21 @@ describe("dashboard", () => {
     });
     render(<Home />);
     // The page still renders its structure instead of throwing.
-    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Dashboard" }),
+    ).toBeInTheDocument();
   });
 
   it("lets one failed widget cost only itself", async () => {
-    routeAll({ "/reports/collection/by-center": () => json({ detail: "boom" }, 500) });
+    routeAll({
+      "/reports/collection/by-center": () => json({ detail: "boom" }, 500),
+    });
     render(<Home />);
 
     // The failing card explains itself...
-    expect(await screen.findByText(/centre performance is unavailable/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/centre performance is unavailable/i),
+    ).toBeInTheDocument();
     // ...while every other region still shows its data.
     expect(screen.getByText("56,789.50")).toBeInTheDocument();
     expect(screen.getByText("Amina Njoroge")).toBeInTheDocument();
@@ -438,7 +489,9 @@ describe("dashboard", () => {
     render(<Home />);
     await screen.findByText("42");
 
-    const [url] = spy.mock.calls.map(([u]) => String(u)).filter((u) => u.includes("/receivables"));
+    const [url] = spy.mock.calls
+      .map(([u]) => String(u))
+      .filter((u) => u.includes("/receivables"));
     expect(url).toBeDefined();
     const params = new URL(url, "http://x").searchParams;
     expect(params.get("date_from")).toBeNull();
@@ -451,9 +504,13 @@ describe("dashboard", () => {
     await screen.findByText("42");
 
     // Both halves are labelled, so no figure has to be guessed at.
-    expect(await screen.findByRole("heading", { name: "Procurement" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Procurement" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Sales" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Sales summary" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Sales summary" }),
+    ).toBeInTheDocument();
 
     // The sales figures are the platform's, rendered as sent. The unit sits in
     // its own span, so the figure is asserted with the trailing zeros that

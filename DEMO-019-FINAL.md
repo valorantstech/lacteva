@@ -100,6 +100,20 @@ arithmetic — it was that the arithmetic existed twice.
 The same UTC date labelled guided-capture sessions, so a session opened at
 00:30 in Nairobi was named after the previous day.
 
+**And after deploying that fix the page still showed 14 August.** The reason is
+the more interesting defect, and it explains why DEMO-015's correction had
+never taken effect on any screen: the app shell mounts pages *before* the
+session probe answers — deliberately, for a performance reason it documents —
+so `timezone` is `null` on the first render. Every screen's default came from a
+`useState` initializer, which runs exactly once, at that moment. `resolveRange`
+was correct and **inert**.
+
+Seven screens captured a date that way, including the delivery form and the
+default billing period that DEMO-015 had gone out of its way to fix, and the
+customer page carried a **third** private copy of the helper. Defaults are now
+derived and only the reader's *choice* is stored — two different lifetimes,
+which is why they are now two values.
+
 ## 4. The fix
 
 One rule, in one place, and it now holds inside SQL as well as in Python.
@@ -151,6 +165,7 @@ when the suite runs.
 | Financial period ends | August in Bengaluru runs 31 Jul 18:30 UTC → 31 Aug 18:30 UTC; a UTC-built period would swallow 5½ hours of July and lose 5½ of August at **both ends of every period** |
 | Post-midnight collection | a collection stamped 22:30 UTC appears on the next local day's report and not on UTC's |
 | On a real engine | six PostgreSQL tests including **Europe/London**, whose August and January answers differ and which a fixed offset cannot express |
+| A late timezone | two tests that RENDER a component and re-render it once the organization is known — the default must move, and a window the reader chose must not. No pure-function test can make this assertion, and all seven below pass against the broken code |
 | In the browser | seven portal tests at frozen instants — the three zones, the exact turnover second, the month boundary, and the UTC fallback. `resolveRange` had **no test at all** before this, which is how DEMO-015's correction failed to spread |
 
 Plus the milestone's own: 10 month-end drafting tests, 5 report/statement
@@ -188,5 +203,5 @@ inside it; a fixed statement count is the property that actually matters.
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
-| 1.1 | 2026-08-15 | Platform Engineering | The portal's reports screen and guided-capture label were still on UTC; found in post-deployment browser verification. One exported `todayIn`, seven boundary tests. |
+| 1.1 | 2026-08-15 | Platform Engineering | The portal's reports screen and guided-capture label were still on UTC; found in post-deployment browser verification. Fixing it exposed that DEMO-015's correction had been inert on every screen — defaults were captured in `useState` initializers that ran before the organization was known. Defaults are now derived; nine portal boundary tests, two of which render. |
 | 1.0 | 2026-08-15 | Platform Engineering | DEMO-019: the round's intended quantity, the litres behind the money, month-end drafts that are never issued — and the business-date rule made consistent from Python into SQL after the collection report was found reading zero for a dairy that had collected milk. |

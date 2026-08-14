@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
-import { type DateRange, DateRangePicker, resolveRange } from "@/components/date-range";
+import { DateRangePicker, useDefaultRange } from "@/components/date-range";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
@@ -92,7 +92,8 @@ const STATES = [
  */
 
 const describe = (e: unknown) => {
-  if (e instanceof ApiError) return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+  if (e instanceof ApiError)
+    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
   return e instanceof Error ? e.message : "Could not load collections";
 };
 
@@ -109,14 +110,16 @@ const stamp = (iso: string | null | undefined) =>
 
 export default function TransactionsPage() {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency, timezone: orgTimezone } = useLocale();
+  const { currency: orgCurrency } = useLocale();
   const [page, setPage] = useState<MilkTransactionPage | null>(null);
   const [summary, setSummary] = useState<DailyCollectionSummary | null>(null);
   const [status, setStatus] = useState<Record<string, OperationalStatus>>({});
   const [centers, setCenters] = useState<Center[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
-  const [range, setRange] = useState<DateRange>(() => resolveRange("30d", orgTimezone));
+  // Derived until the reader chooses, so a timezone that arrives after the
+  // first render still corrects the window (DEMO-019).
+  const [range, setRange] = useDefaultRange("30d");
   const [state, setState] = useState<(typeof STATES)[number]>("");
   const [centerId, setCenterId] = useState("");
   const [supplierId, setSupplierId] = useState("");
@@ -147,7 +150,11 @@ export default function TransactionsPage() {
       const ids = (result.items ?? []).map((t) => t.id);
       getOperationalStatus(ids)
         .then((r) =>
-          setStatus(Object.fromEntries((r.items ?? []).map((s) => [s.transaction_id, s]))),
+          setStatus(
+            Object.fromEntries(
+              (r.items ?? []).map((s) => [s.transaction_id, s]),
+            ),
+          ),
         )
         .catch(() => setStatus({}));
 
@@ -199,7 +206,10 @@ export default function TransactionsPage() {
       header: "Collected",
       cell: (tx) => (
         <div className="flex flex-col">
-          <Link className="font-medium hover:underline" href={`/transactions/${tx.id}`}>
+          <Link
+            className="font-medium hover:underline"
+            href={`/transactions/${tx.id}`}
+          >
             {String(tx.created_at).slice(0, 10)}
           </Link>
           <span className="text-xs text-muted-foreground">
@@ -213,8 +223,12 @@ export default function TransactionsPage() {
       header: "Supplier",
       cell: (tx) =>
         tx.supplier_id ? (
-          <Link className="hover:underline" href={`/suppliers/${tx.supplier_id}`}>
-            {names.suppliers[tx.supplier_id] ?? `${tx.supplier_id.slice(0, 8)}…`}
+          <Link
+            className="hover:underline"
+            href={`/suppliers/${tx.supplier_id}`}
+          >
+            {names.suppliers[tx.supplier_id] ??
+              `${tx.supplier_id.slice(0, 8)}…`}
           </Link>
         ) : (
           <span className="text-muted-foreground">not identified</span>
@@ -257,22 +271,33 @@ export default function TransactionsPage() {
         <div className="flex flex-col items-end">
           <Money amount={tx.gross_amount} currency={tx.currency} />
           <span className="text-xs tabular-nums text-muted-foreground">
-            {tx.unit_price != null ? `@ ${String(tx.unit_price)}` : "not priced"}
+            {tx.unit_price != null
+              ? `@ ${String(tx.unit_price)}`
+              : "not priced"}
           </span>
         </div>
       ),
     },
-    { key: "state", header: "Status", cell: (tx) => <StatusBadge status={tx.state} /> },
+    {
+      key: "state",
+      header: "Status",
+      cell: (tx) => <StatusBadge status={tx.state} />,
+    },
     {
       key: "settlement",
       header: "Settlement",
       cell: (tx) => {
         const s = status[tx.id];
         if (!s?.settlement_id)
-          return <span className="text-xs text-muted-foreground">not settled</span>;
+          return (
+            <span className="text-xs text-muted-foreground">not settled</span>
+          );
         return (
           <div className="flex flex-col items-start gap-0.5">
-            <Link className="text-sm hover:underline" href={`/settlements/${s.settlement_id}`}>
+            <Link
+              className="text-sm hover:underline"
+              href={`/settlements/${s.settlement_id}`}
+            >
               {s.settlement_number}
             </Link>
             <StatusBadge status={s.settlement_status} />
@@ -286,10 +311,15 @@ export default function TransactionsPage() {
       cell: (tx) => {
         const s = status[tx.id];
         if (!s?.payment_id)
-          return <span className="text-xs text-muted-foreground">not paid</span>;
+          return (
+            <span className="text-xs text-muted-foreground">not paid</span>
+          );
         return (
           <div className="flex flex-col items-start gap-0.5">
-            <Link className="text-sm hover:underline" href={`/payments/${s.payment_id}`}>
+            <Link
+              className="text-sm hover:underline"
+              href={`/payments/${s.payment_id}`}
+            >
               {s.payment_number}
             </Link>
             <StatusBadge status={s.payment_status} />
@@ -303,11 +333,16 @@ export default function TransactionsPage() {
       secondary: true,
       cell: (tx) => {
         const s = status[tx.id];
-        if (!s?.last_event_type) return <span className="text-muted-foreground">—</span>;
+        if (!s?.last_event_type)
+          return <span className="text-muted-foreground">—</span>;
         return (
           <div className="flex flex-col">
-            <span className="text-sm tabular-nums">{stamp(s.last_event_at)}</span>
-            <span className="text-xs text-muted-foreground">{humanise(s.last_event_type)}</span>
+            <span className="text-sm tabular-nums">
+              {stamp(s.last_event_at)}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {humanise(s.last_event_type)}
+            </span>
           </div>
         );
       },
@@ -345,18 +380,29 @@ export default function TransactionsPage() {
 
       <DateRangePicker value={range} onChange={setRange} busy={loading} />
 
-      <section aria-label="Collection summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        aria-label="Collection summary"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
         <StatTile
           label="Collections"
           value={summary ? summary.transactions : "—"}
           hint={
-            summary ? `${summary.accepted} accepted · ${summary.rejected} rejected` : undefined
+            summary
+              ? `${summary.accepted} accepted · ${summary.rejected} rejected`
+              : undefined
           }
           icon={<Activity className="size-4" />}
         />
         <StatTile
           label="Quantity"
-          value={summary ? <Quantity value={summary.total_net_weight_kg} unit="kg" /> : "—"}
+          value={
+            summary ? (
+              <Quantity value={summary.total_net_weight_kg} unit="kg" />
+            ) : (
+              "—"
+            )
+          }
           hint={summary ? `${summary.suppliers_served} suppliers` : undefined}
           icon={<Droplets className="size-4" />}
         />
@@ -375,7 +421,11 @@ export default function TransactionsPage() {
         />
         <StatTile
           label="Average fat"
-          value={summary?.weighted_avg_fat != null ? `${summary.weighted_avg_fat}%` : "—"}
+          value={
+            summary?.weighted_avg_fat != null
+              ? `${summary.weighted_avg_fat}%`
+              : "—"
+          }
           hint="weighted by quantity"
           icon={<Percent className="size-4" />}
         />
@@ -414,7 +464,9 @@ export default function TransactionsPage() {
                   >
                     {STATES.map((s) => (
                       <option key={s || "all"} value={s}>
-                        {s ? s.toLowerCase().replace(/_/g, " ") : "All statuses"}
+                        {s
+                          ? s.toLowerCase().replace(/_/g, " ")
+                          : "All statuses"}
                       </option>
                     ))}
                   </select>

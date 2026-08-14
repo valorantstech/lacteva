@@ -13,7 +13,13 @@ import {
   issueInvoice,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
 import { ErrorState, LoadingState } from "@/components/states";
@@ -43,14 +49,19 @@ type Load<T> =
 const LOADING = { state: "loading" } as const;
 
 const describe = (e: unknown) => {
-  if (e instanceof ApiError) return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+  if (e instanceof ApiError)
+    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
   return e instanceof Error ? e.message : "Request failed";
 };
 
 const stamp = (iso: string | null | undefined) =>
   iso ? String(iso).slice(0, 16).replace("T", " ") : "—";
 
-export default function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function InvoiceDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
   const [detail, setDetail] = useState<Load<InvoiceDetail>>(LOADING);
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -76,7 +87,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     return () => clearTimeout(t);
   }, [load]);
 
-  async function run(label: string, action: () => Promise<unknown>, success: string) {
+  async function run(
+    label: string,
+    action: () => Promise<unknown>,
+    success: string,
+  ) {
     setBusy(label);
     setFailure(null);
     setNotice(null);
@@ -91,14 +106,18 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
-  if (detail.state === "loading") return <LoadingState label="Loading the bill…" />;
+  if (detail.state === "loading")
+    return <LoadingState label="Loading the bill…" />;
   if (detail.state === "error")
     return (
       <div className="mx-auto w-full max-w-5xl p-4 sm:p-6 lg:p-8">
         <ErrorState
           message={`This bill could not be loaded — ${detail.message}.`}
           action={
-            <Link className="text-sm underline underline-offset-4" href="/customers">
+            <Link
+              className="text-sm underline underline-offset-4"
+              href="/customers"
+            >
               Back to customers
             </Link>
           }
@@ -114,7 +133,9 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       <PageHeader
         breadcrumbs={[
           { label: "Customers", href: "/customers" },
-          ...(customer ? [{ label: customer.name, href: `/customers/${customer.id}` }] : []),
+          ...(customer
+            ? [{ label: customer.name, href: `/customers/${customer.id}` }]
+            : []),
           { label: invoice.invoice_number },
         ]}
         title={invoice.invoice_number}
@@ -126,7 +147,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             <StatusBadge status={invoice.status} />
             {invoice.status !== "draft" && invoice.status !== "cancelled" ? (
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <Lock aria-hidden className="size-3" /> issued {stamp(invoice.issued_at)}
+                <Lock aria-hidden className="size-3" /> issued{" "}
+                {stamp(invoice.issued_at)}
               </span>
             ) : null}
           </span>
@@ -139,7 +161,10 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         </p>
       ) : null}
       {failure ? (
-        <p role="alert" className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <p
+          role="alert"
+          className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
           The platform refused: {failure}
         </p>
       ) : null}
@@ -148,8 +173,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         <CardHeader>
           <CardTitle>Statement</CardTitle>
           <CardDescription>
-            Every figure was computed and stored by the platform from the deliveries below. This
-            page performs no arithmetic.
+            Every figure was computed and stored by the platform from the
+            deliveries below. This page performs no arithmetic.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -166,21 +191,34 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             <div>
               <dt className="text-sm text-muted-foreground">Adjustments</dt>
               <dd className="text-lg font-semibold">
-                <Money amount={invoice.adjustments} currency={invoice.currency} />
+                <Money
+                  amount={invoice.adjustments}
+                  currency={invoice.currency}
+                />
               </dd>
-              <p className="text-xs text-muted-foreground">fixed at zero for now</p>
+              <p className="text-xs text-muted-foreground">
+                fixed at zero for now
+              </p>
             </div>
             <div>
               <dt className="text-sm text-muted-foreground">Brought forward</dt>
               <dd className="text-lg font-semibold">
-                <Money amount={invoice.previous_balance} currency={invoice.currency} />
+                <Money
+                  amount={invoice.previous_balance}
+                  currency={invoice.currency}
+                />
               </dd>
-              <p className="text-xs text-muted-foreground">owed before this period</p>
+              <p className="text-xs text-muted-foreground">
+                owed before this period
+              </p>
             </div>
             <div>
               <dt className="text-sm text-muted-foreground">Amount due</dt>
               <dd className="text-lg font-semibold">
-                <Money amount={invoice.amount_due} currency={invoice.currency} />
+                <Money
+                  amount={invoice.amount_due}
+                  currency={invoice.currency}
+                />
               </dd>
             </div>
           </dl>
@@ -188,8 +226,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           {totals_match_lines ? (
             <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
               <CheckCircle2 aria-hidden className="size-4" />
-              The stored subtotal still equals the {invoice.line_count} lines below — verified by
-              the platform.
+              The stored subtotal still equals the {invoice.line_count} lines
+              below — verified by the platform.
             </p>
           ) : (
             <p
@@ -197,7 +235,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               className="inline-flex items-center gap-2 text-sm font-medium text-destructive"
             >
               <AlertTriangle aria-hidden className="size-4" />
-              The stored subtotal no longer matches the lines. Regenerate this bill.
+              The stored subtotal no longer matches the lines. Regenerate this
+              bill.
             </p>
           )}
 
@@ -235,7 +274,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         <CardContent className="flex flex-col gap-4">
           {isDraft ? (
             <div className="flex flex-wrap gap-2">
-              <Button type="button" disabled={busy !== null} onClick={() => setConfirming(true)}>
+              <Button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => setConfirming(true)}
+              >
                 Issue bill
               </Button>
               <Button
@@ -245,7 +288,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 onClick={() =>
                   void run(
                     "cancel",
-                    () => cancelInvoice(invoice.id, "cancelled from the portal"),
+                    () =>
+                      cancelInvoice(invoice.id, "cancelled from the portal"),
                     "Bill cancelled. Its deliveries are billable again.",
                   )
                 }
@@ -258,12 +302,19 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           {confirming ? (
             <div className="flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4">
               <p className="inline-flex items-start gap-2 text-sm font-medium">
-                <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+                <AlertTriangle
+                  aria-hidden
+                  className="mt-0.5 size-4 shrink-0 text-destructive"
+                />
                 <span>
-                  Issuing {invoice.invoice_number} is permanent. Once issued it cannot be edited or
-                  cancelled — a correction has to be a new bill. Its amount due of{" "}
-                  <Money amount={invoice.amount_due} currency={invoice.currency} /> becomes what the
-                  customer owes.
+                  Issuing {invoice.invoice_number} is permanent. Once issued it
+                  cannot be edited or cancelled — a correction has to be a new
+                  bill. Its amount due of{" "}
+                  <Money
+                    amount={invoice.amount_due}
+                    currency={invoice.currency}
+                  />{" "}
+                  becomes what the customer owes.
                 </span>
               </p>
               <div className="flex gap-2">
@@ -282,7 +333,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 >
                   {busy === "issue" ? "Issuing…" : "Yes, issue permanently"}
                 </Button>
-                <Button type="button" variant="ghost" onClick={() => setConfirming(false)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setConfirming(false)}
+                >
                   Keep it a draft
                 </Button>
               </div>
@@ -303,11 +358,15 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         </CardHeader>
         <CardContent>
           {lines.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing billed here.</p>
+            <p className="text-sm text-muted-foreground">
+              Nothing billed here.
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <caption className="sr-only">Deliveries billed by {invoice.invoice_number}</caption>
+                <caption className="sr-only">
+                  Deliveries billed by {invoice.invoice_number}
+                </caption>
                 <thead>
                   <tr className="border-b text-start text-muted-foreground">
                     <th className="py-2 pe-4 font-medium">Date</th>
@@ -321,17 +380,29 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 <tbody>
                   {lines.map((line) => (
                     <tr key={line.id} className="border-b last:border-0">
-                      <td className="py-2 pe-4 tabular-nums">{line.delivery_date}</td>
-                      <td className="py-2 pe-4 text-muted-foreground">{line.slot}</td>
-                      <td className="py-2 pe-4 text-muted-foreground">{line.product}</td>
+                      <td className="py-2 pe-4 tabular-nums">
+                        {line.delivery_date}
+                      </td>
+                      <td className="py-2 pe-4 text-muted-foreground">
+                        {line.slot}
+                      </td>
+                      <td className="py-2 pe-4 text-muted-foreground">
+                        {line.product}
+                      </td>
                       <td className="py-2 pe-4 text-end">
-                        <Quantity value={line.quantity} unit={line.quantity_unit} />
+                        <Quantity
+                          value={line.quantity}
+                          unit={line.quantity_unit}
+                        />
                       </td>
                       <td className="py-2 pe-4 text-end tabular-nums">
                         {String(line.unit_price)}
                       </td>
                       <td className="py-2 text-end">
-                        <Money amount={line.amount} currency={invoice.currency} />
+                        <Money
+                          amount={line.amount}
+                          currency={invoice.currency}
+                        />
                       </td>
                     </tr>
                   ))}

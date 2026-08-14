@@ -20,7 +20,10 @@ import RolesPage from "@/app/admin/roles/page";
 import UsersPage from "@/app/admin/users/page";
 
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 
 const ROLES = [
   {
@@ -54,8 +57,22 @@ const ROLES = [
 
 const CENTERS = {
   items: [
-    { id: "c1", branch_id: "b1", name: "Kilima Hill", code: "KH-C1", status: "active", timezone: "UTC" },
-    { id: "c2", branch_id: "b1", name: "Naivasha Lakeside", code: "NL-C1", status: "active", timezone: "UTC" },
+    {
+      id: "c1",
+      branch_id: "b1",
+      name: "Kilima Hill",
+      code: "KH-C1",
+      status: "active",
+      timezone: "UTC",
+    },
+    {
+      id: "c2",
+      branch_id: "b1",
+      name: "Naivasha Lakeside",
+      code: "NL-C1",
+      status: "active",
+      timezone: "UTC",
+    },
   ],
   total: 2,
   limit: 100,
@@ -103,7 +120,8 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
     for (const [fragment, handler] of Object.entries(overrides)) {
       if (url.includes(fragment)) return handler(url);
     }
-    if (init?.method === "POST" || init?.method === "DELETE") return json({ ok: true });
+    if (init?.method === "POST" || init?.method === "DELETE")
+      return json({ ok: true });
     if (path.endsWith("/v1/authz/roles")) return json(ROLES);
     if (path.endsWith("/v1/authz/permissions"))
       return json({
@@ -111,7 +129,8 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
         "settlement.finalize": "Finalize settlements (makes them immutable)",
       });
     if (path.endsWith("/v1/members")) return json(MEMBERS);
-    if (path.includes("/v1/identity/users/")) return json(USERS[path.split("/").pop()!]);
+    if (path.includes("/v1/identity/users/"))
+      return json(USERS[path.split("/").pop()!]);
     if (path.endsWith("/v1/collection-centers")) return json(CENTERS);
     return json({ title: "not_found" }, 404);
   });
@@ -122,7 +141,8 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
 beforeEach(() => vi.unstubAllGlobals());
 afterEach(() => vi.unstubAllGlobals());
 
-const urls = (spy: ReturnType<typeof routeAll>) => spy.mock.calls.map((c) => String(c[0]));
+const urls = (spy: ReturnType<typeof routeAll>) =>
+  spy.mock.calls.map((c) => String(c[0]));
 
 describe("roles page", () => {
   it("lists the roles the PLATFORM has, not a list compiled into the bundle", async () => {
@@ -130,9 +150,15 @@ describe("roles page", () => {
     render(<RolesPage />);
 
     // Scoped to the TABLE: each name also appears in the grant dropdown.
-    expect(await screen.findByRole("cell", { name: "COLLECTION_OPERATOR" })).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "FINANCE_MANAGER" })).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "weighbridge-supervisor" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("cell", { name: "COLLECTION_OPERATOR" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("cell", { name: "FINANCE_MANAGER" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("cell", { name: "weighbridge-supervisor" }),
+    ).toBeInTheDocument();
     // The role the old page offered and the backend never had.
     expect(screen.queryByText("tenant-operator")).not.toBeInTheDocument();
   });
@@ -160,7 +186,9 @@ describe("roles page", () => {
     const before = screen.getAllByText("collection.transaction.record").length;
     await userEvent.click(within(row).getByRole("button", { name: "Show" }));
     await waitFor(() =>
-      expect(screen.getAllByText("collection.transaction.record").length).toBe(before + 1),
+      expect(screen.getAllByText("collection.transaction.record").length).toBe(
+        before + 1,
+      ),
     );
     expect(screen.getByText("supplier.read")).toBeInTheDocument();
   });
@@ -171,12 +199,17 @@ describe("roles page", () => {
     await screen.findByRole("cell", { name: "COLLECTION_OPERATOR" });
 
     await userEvent.selectOptions(screen.getByLabelText("User"), "u1");
-    await userEvent.selectOptions(screen.getByLabelText("Role"), "COLLECTION_OPERATOR");
+    await userEvent.selectOptions(
+      screen.getByLabelText("Role"),
+      "COLLECTION_OPERATOR",
+    );
     await userEvent.selectOptions(screen.getByLabelText("Centre scope"), "c1");
     await userEvent.click(screen.getByRole("button", { name: "Grant" }));
 
     await waitFor(() => {
-      const call = spy.mock.calls.find(([u]) => String(u).endsWith("/v1/authz/assignments"));
+      const call = spy.mock.calls.find(([u]) =>
+        String(u).endsWith("/v1/authz/assignments"),
+      );
       expect(call).toBeDefined();
       expect(JSON.parse(String(call![1]!.body))).toEqual({
         user_id: "u1",
@@ -192,11 +225,16 @@ describe("roles page", () => {
     await screen.findByRole("cell", { name: "COLLECTION_OPERATOR" });
 
     await userEvent.selectOptions(screen.getByLabelText("User"), "u1");
-    await userEvent.selectOptions(screen.getByLabelText("Role"), "FINANCE_MANAGER");
+    await userEvent.selectOptions(
+      screen.getByLabelText("Role"),
+      "FINANCE_MANAGER",
+    );
     await userEvent.click(screen.getByRole("button", { name: "Grant" }));
 
     await waitFor(() => {
-      const call = spy.mock.calls.find(([u]) => String(u).endsWith("/v1/authz/assignments"));
+      const call = spy.mock.calls.find(([u]) =>
+        String(u).endsWith("/v1/authz/assignments"),
+      );
       expect(JSON.parse(String(call![1]!.body))).toEqual({
         user_id: "u1",
         role_name: "FINANCE_MANAGER",
@@ -242,19 +280,31 @@ describe("users page", () => {
     await userEvent.click(within(row).getByRole("button", { name: "Suspend" }));
 
     await waitFor(() => {
-      const call = spy.mock.calls.find(([u]) => String(u).endsWith("/v1/members/u1/status"));
+      const call = spy.mock.calls.find(([u]) =>
+        String(u).endsWith("/v1/members/u1/status"),
+      );
       expect(call).toBeDefined();
-      expect(JSON.parse(String(call![1]!.body))).toEqual({ status: "suspended" });
+      expect(JSON.parse(String(call![1]!.body))).toEqual({
+        status: "suspended",
+      });
     });
-    expect(await screen.findByText(/applies to their very next request/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/applies to their very next request/),
+    ).toBeInTheDocument();
   });
 
   it("offers to reinstate a member who is already suspended", async () => {
     routeAll();
     render(<UsersPage />);
     await screen.findByText("Otieno Odhiambo");
-    const row = screen.getByText("Otieno Odhiambo").closest("tr") as HTMLElement;
-    expect(within(row).getByRole("button", { name: "Reinstate" })).toBeInTheDocument();
-    expect(within(row).queryByRole("button", { name: "Suspend" })).not.toBeInTheDocument();
+    const row = screen
+      .getByText("Otieno Odhiambo")
+      .closest("tr") as HTMLElement;
+    expect(
+      within(row).getByRole("button", { name: "Reinstate" }),
+    ).toBeInTheDocument();
+    expect(
+      within(row).queryByRole("button", { name: "Suspend" }),
+    ).not.toBeInTheDocument();
   });
 });

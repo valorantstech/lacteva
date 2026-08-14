@@ -36,12 +36,27 @@ import {
   listAudit,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { type DateRange, DateRangePicker, resolveRange } from "@/components/date-range";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  type DateRange,
+  DateRangePicker,
+  useDefaultRange,
+} from "@/components/date-range";
 import { BarBreakdown, TrendChart } from "@/components/trend-chart";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader, SectionHeading, StatTile } from "@/components/page-header";
-import { EmptyState, ErrorState, LoadingState, TableSkeleton } from "@/components/states";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  TableSkeleton,
+} from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { useT, useLocale } from "@/lib/i18n";
 
@@ -89,17 +104,21 @@ function describe(error: unknown): string {
 
 export default function Home() {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency, timezone: orgTimezone } = useLocale();
+  const { currency: orgCurrency } = useLocale();
   const t = useT();
   const [session, setSession] = useState<Session | null>(null);
   const [checked, setChecked] = useState(false);
-  const [range, setRange] = useState<DateRange>(() => resolveRange("7d", orgTimezone));
+  // Derived until the reader chooses, so a timezone that arrives after the
+  // first render still corrects the window (DEMO-019).
+  const [range, setRange] = useDefaultRange("7d");
   const [metric, setMetric] = useState<"quantity" | "value">("quantity");
 
   const [dashboard, setDashboard] = useState<Load<DashboardReport>>(LOADING);
   const [trend, setTrend] = useState<Load<CollectionTrend>>(LOADING);
-  const [centers, setCenters] = useState<Load<ReportPage<CenterSummaryRow>>>(LOADING);
-  const [suppliers, setSuppliers] = useState<Load<ReportPage<SupplierSummaryRow>>>(LOADING);
+  const [centers, setCenters] =
+    useState<Load<ReportPage<CenterSummaryRow>>>(LOADING);
+  const [suppliers, setSuppliers] =
+    useState<Load<ReportPage<SupplierSummaryRow>>>(LOADING);
   const [activity, setActivity] = useState<Load<AuditRecord[]>>(LOADING);
   const [owing, setOwing] = useState<Load<ReceivablesPage>>(LOADING);
   const [busy, setBusy] = useState(false);
@@ -137,8 +156,14 @@ export default function Home() {
     await Promise.allSettled([
       getDashboardReport(params).then(ok(setDashboard), fail(setDashboard)),
       getCollectionTrend(params).then(ok(setTrend), fail(setTrend)),
-      getCenterReport({ ...params, limit: "8" }).then(ok(setCenters), fail(setCenters)),
-      getSupplierReport({ ...params, limit: "8" }).then(ok(setSuppliers), fail(setSuppliers)),
+      getCenterReport({ ...params, limit: "8" }).then(
+        ok(setCenters),
+        fail(setCenters),
+      ),
+      getSupplierReport({ ...params, limit: "8" }).then(
+        ok(setSuppliers),
+        fail(setSuppliers),
+      ),
       listAudit({ limit: 12, offset: 0 })
         .then((r) => r.items)
         .then(ok(setActivity), fail(setActivity)),
@@ -195,7 +220,12 @@ export default function Home() {
         title={t("dashboard.title")}
         description={t("dashboard.description")}
         actions={
-          <Button type="button" variant="outline" disabled={busy} onClick={() => void load(range)}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void load(range)}
+          >
             {busy ? t("dashboard.refreshing") : t("action.refresh")}
           </Button>
         }
@@ -208,9 +238,10 @@ export default function Home() {
           <CardContent className="flex flex-col gap-2 pt-6">
             <p className="font-medium">Reporting is not part of your access.</p>
             <p className="text-sm text-muted-foreground">
-              The figures on this page come from the platform&apos;s reporting module, which your
-              role does not include. Everything you do have access to is in the navigation on the
-              left — nothing here is broken.
+              The figures on this page come from the platform&apos;s reporting
+              module, which your role does not include. Everything you do have
+              access to is in the navigation on the left — nothing here is
+              broken.
             </p>
           </CardContent>
         </Card>
@@ -218,7 +249,12 @@ export default function Home() {
         <ErrorState
           message={`The summary could not be loaded — ${dashboard.message}. The sections below load separately and may still be available.`}
           action={
-            <Button type="button" size="sm" variant="outline" onClick={() => void load(range)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void load(range)}
+            >
               Try again
             </Button>
           }
@@ -235,7 +271,10 @@ export default function Home() {
         detail={t("dashboard.procurementDetail")}
       />
 
-      <section aria-label="Collection summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section
+        aria-label="Collection summary"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+      >
         <StatTile
           label={t("dashboard.collections")}
           value={collection ? collection.transactions : "—"}
@@ -248,8 +287,18 @@ export default function Home() {
         />
         <StatTile
           label={t("dashboard.quantity")}
-          value={collection ? <Quantity value={collection.total_net_weight_kg} unit="kg" /> : "—"}
-          hint={collection ? `${collection.suppliers_served} suppliers served` : undefined}
+          value={
+            collection ? (
+              <Quantity value={collection.total_net_weight_kg} unit="kg" />
+            ) : (
+              "—"
+            )
+          }
+          hint={
+            collection
+              ? `${collection.suppliers_served} suppliers served`
+              : undefined
+          }
           icon={<Droplets className="size-4" />}
         />
         <StatTile
@@ -263,12 +312,20 @@ export default function Home() {
               "—"
             )
           }
-          hint={currencies.length > 1 ? `+${currencies.length - 1} more currency` : "payable"}
+          hint={
+            currencies.length > 1
+              ? `+${currencies.length - 1} more currency`
+              : "payable"
+          }
           icon={<Banknote className="size-4" />}
         />
         <StatTile
           label={t("dashboard.averageFat")}
-          value={collection?.weighted_avg_fat != null ? `${collection.weighted_avg_fat}%` : "—"}
+          value={
+            collection?.weighted_avg_fat != null
+              ? `${collection.weighted_avg_fat}%`
+              : "—"
+          }
           hint="weighted by quantity"
           icon={<Percent className="size-4" />}
         />
@@ -281,7 +338,11 @@ export default function Home() {
         <StatTile
           label={t("dashboard.activeCentres")}
           value={report ? report.active_centers : "—"}
-          hint={report?.inactive_centers ? `${report.inactive_centers} not active` : "all active"}
+          hint={
+            report?.inactive_centers
+              ? `${report.inactive_centers} not active`
+              : "all active"
+          }
           icon={<Building2 className="size-4" />}
         />
       </section>
@@ -293,11 +354,18 @@ export default function Home() {
         hrefLabel={t("nav.receivables")}
       />
 
-      <section aria-label="Sales summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section
+        aria-label="Sales summary"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+      >
         <StatTile
           label={t("dashboard.deliveries")}
           value={sales ? sales.deliveries_in_period : "—"}
-          hint={sales ? `${sales.customers_served_in_period} customers served` : undefined}
+          hint={
+            sales
+              ? `${sales.customers_served_in_period} customers served`
+              : undefined
+          }
           icon={<PackageCheck className="size-4" />}
         />
         <StatTile
@@ -319,7 +387,10 @@ export default function Home() {
           label={t("dashboard.salesValue")}
           value={
             sales ? (
-              <Money amount={sales.sales_value_in_period} currency={sales.currency ?? orgCurrency} />
+              <Money
+                amount={sales.sales_value_in_period}
+                currency={sales.currency ?? orgCurrency}
+              />
             ) : (
               "—"
             )
@@ -330,13 +401,24 @@ export default function Home() {
         <StatTile
           label={t("dashboard.customerReceivable")}
           value={
-            sales ? <Money amount={sales.receivable} currency={sales.currency ?? orgCurrency} /> : "—"
+            sales ? (
+              <Money
+                amount={sales.receivable}
+                currency={sales.currency ?? orgCurrency}
+              />
+            ) : (
+              "—"
+            )
           }
           // Said plainly, because it is the one tile on this page that is NOT
           // narrowed by the date range — a debt is a debt whatever window you
           // are looking through, and a manager who thinks otherwise will
           // under-collect.
-          hint={sales ? `${sales.customers_owing} customers owing · all time` : undefined}
+          hint={
+            sales
+              ? `${sales.customers_owing} customers owing · all time`
+              : undefined
+          }
           icon={<Wallet className="size-4" />}
         />
         <StatTile
@@ -351,7 +433,11 @@ export default function Home() {
           hint={
             sales ? (
               <>
-                worth <Money amount={sales.unbilled_amount} currency={sales.currency ?? orgCurrency} />
+                worth{" "}
+                <Money
+                  amount={sales.unbilled_amount}
+                  currency={sales.currency ?? orgCurrency}
+                />
               </>
             ) : undefined
           }
@@ -362,7 +448,10 @@ export default function Home() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle aria-hidden className="size-4 text-muted-foreground" />
+            <AlertTriangle
+              aria-hidden
+              className="size-4 text-muted-foreground"
+            />
             Needs attention
           </CardTitle>
         </CardHeader>
@@ -380,7 +469,9 @@ export default function Home() {
             <ul className="flex flex-col gap-2">
               {(report.attention ?? []).map((item) => (
                 <li key={item.key} className="flex items-center gap-3 text-sm">
-                  <StatusBadge status={item.severity === "critical" ? "failed" : "pending"} />
+                  <StatusBadge
+                    status={item.severity === "critical" ? "failed" : "pending"}
+                  />
                   <span className="font-medium tabular-nums">{item.count}</span>
                   <span className="text-muted-foreground">{item.label}</span>
                   {item.href ? (
@@ -434,7 +525,9 @@ export default function Home() {
               description="Your role does not include reporting. Nothing here is broken."
             />
           ) : trend.state === "error" ? (
-            <ErrorState message={`The trend is unavailable — ${trend.message}.`} />
+            <ErrorState
+              message={`The trend is unavailable — ${trend.message}.`}
+            />
           ) : (
             <TrendChart
               metric={metric}
@@ -470,11 +563,16 @@ export default function Home() {
                     Settlements
                   </p>
                   {(report.settlements?.by_status ?? []).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No settlements yet.</p>
+                    <p className="text-sm text-muted-foreground">
+                      No settlements yet.
+                    </p>
                   ) : (
                     <div className="flex flex-wrap items-center gap-2">
                       {(report.settlements?.by_status ?? []).map((row) => (
-                        <span key={row.status} className="flex items-center gap-1.5">
+                        <span
+                          key={row.status}
+                          className="flex items-center gap-1.5"
+                        >
                           <StatusBadge status={row.status} />
                           <span className="text-sm tabular-nums text-muted-foreground">
                             {row.count}
@@ -485,14 +583,23 @@ export default function Home() {
                   )}
                   <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <dt className="text-muted-foreground">Finalized net total</dt>
+                      <dt className="text-muted-foreground">
+                        Finalized net total
+                      </dt>
                       <dd className="mt-0.5">
-                        <Money amount={report.settlements?.finalized_net_total} emphasis />
+                        <Money
+                          amount={report.settlements?.finalized_net_total}
+                          emphasis
+                        />
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-muted-foreground">Settlement lines</dt>
-                      <dd className="mt-0.5 tabular-nums">{report.settlements?.total_lines ?? 0}</dd>
+                      <dt className="text-muted-foreground">
+                        Settlement lines
+                      </dt>
+                      <dd className="mt-0.5 tabular-nums">
+                        {report.settlements?.total_lines ?? 0}
+                      </dd>
                     </div>
                   </dl>
                 </div>
@@ -509,8 +616,12 @@ export default function Home() {
                       { label: "Failed", value: payments.failed_count },
                     ].map((cell) => (
                       <div key={cell.label}>
-                        <p className="text-xs text-muted-foreground">{cell.label}</p>
-                        <p className="text-lg font-semibold tabular-nums">{cell.value ?? 0}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {cell.label}
+                        </p>
+                        <p className="text-lg font-semibold tabular-nums">
+                          {cell.value ?? 0}
+                        </p>
                       </div>
                     ))}
                   </div>
@@ -557,7 +668,10 @@ export default function Home() {
                   detail: (
                     <span className="flex items-center gap-2">
                       <Quantity value={band.total_net_weight_kg} unit="kg" />
-                      <Money amount={band.payable_amount} currency={band.currency} />
+                      <Money
+                        amount={band.payable_amount}
+                        currency={band.currency}
+                      />
                     </span>
                   ),
                 }))}
@@ -579,12 +693,15 @@ export default function Home() {
               Who owes money
             </CardTitle>
             <CardDescription>
-              Largest balances first, across every customer in this organization.
+              Largest balances first, across every customer in this
+              organization.
             </CardDescription>
           </div>
           {owing.state === "ready" && owing.data.total > 0 ? (
             <div className="text-end">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Total owed</p>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Total owed
+              </p>
               <p className="text-lg font-semibold">
                 <Money
                   amount={owing.data.total_outstanding}
@@ -592,7 +709,8 @@ export default function Home() {
                 />
               </p>
               <p className="text-xs text-muted-foreground">
-                {owing.data.total} {owing.data.total === 1 ? "customer" : "customers"}
+                {owing.data.total}{" "}
+                {owing.data.total === 1 ? "customer" : "customers"}
               </p>
             </div>
           ) : null}
@@ -606,7 +724,9 @@ export default function Home() {
               description="Your role does not include reporting. Nothing here is broken."
             />
           ) : owing.state === "error" ? (
-            <ErrorState message={`Receivables are unavailable — ${owing.message}.`} />
+            <ErrorState
+              message={`Receivables are unavailable — ${owing.message}.`}
+            />
           ) : (owing.data.items ?? []).length === 0 ? (
             <EmptyState
               title="Every customer is settled"
@@ -629,7 +749,9 @@ export default function Home() {
                       </Link>
                       <span className="truncate text-xs text-muted-foreground">
                         {row.code}
-                        {row.oldest_unpaid_from ? ` · unpaid since ${row.oldest_unpaid_from}` : ""}
+                        {row.oldest_unpaid_from
+                          ? ` · unpaid since ${row.oldest_unpaid_from}`
+                          : ""}
                         {row.open_invoices
                           ? ` · ${row.open_invoices} open ${
                               row.open_invoices === 1 ? "bill" : "bills"
@@ -637,7 +759,11 @@ export default function Home() {
                           : ""}
                       </span>
                     </div>
-                    <Money amount={row.outstanding} currency={row.currency} emphasis />
+                    <Money
+                      amount={row.outstanding}
+                      currency={row.currency}
+                      emphasis
+                    />
                   </li>
                 ))}
               </ul>
@@ -658,7 +784,9 @@ export default function Home() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Centre performance</CardTitle>
-            <CardDescription>Highest volume first, over the selected range.</CardDescription>
+            <CardDescription>
+              Highest volume first, over the selected range.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {centers.state === "loading" ? (
@@ -669,7 +797,9 @@ export default function Home() {
                 description="Your role does not include reporting. Nothing here is broken."
               />
             ) : centers.state === "error" ? (
-              <ErrorState message={`Centre performance is unavailable — ${centers.message}.`} />
+              <ErrorState
+                message={`Centre performance is unavailable — ${centers.message}.`}
+              />
             ) : (
               <BarBreakdown
                 emptyTitle="No centre activity in this period"
@@ -681,7 +811,10 @@ export default function Home() {
                   detail: (
                     <span className="flex items-center gap-2">
                       <Quantity value={row.total_net_weight_kg} unit="kg" />
-                      <Money amount={row.payable_amount} currency={row.currency} />
+                      <Money
+                        amount={row.payable_amount}
+                        currency={row.currency}
+                      />
                     </span>
                   ),
                 }))}
@@ -693,7 +826,9 @@ export default function Home() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Top suppliers</CardTitle>
-            <CardDescription>By quantity delivered over the selected range.</CardDescription>
+            <CardDescription>
+              By quantity delivered over the selected range.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {suppliers.state === "loading" ? (
@@ -704,7 +839,9 @@ export default function Home() {
                 description="Your role does not include reporting. Nothing here is broken."
               />
             ) : suppliers.state === "error" ? (
-              <ErrorState message={`Supplier performance is unavailable — ${suppliers.message}.`} />
+              <ErrorState
+                message={`Supplier performance is unavailable — ${suppliers.message}.`}
+              />
             ) : (
               <BarBreakdown
                 emptyTitle="No supplier deliveries in this period"
@@ -716,7 +853,10 @@ export default function Home() {
                   detail: (
                     <span className="flex items-center gap-2">
                       <Quantity value={row.total_net_weight_kg} unit="kg" />
-                      <Money amount={row.payable_amount} currency={row.currency} />
+                      <Money
+                        amount={row.payable_amount}
+                        currency={row.currency}
+                      />
                     </span>
                   ),
                 }))}
@@ -729,7 +869,9 @@ export default function Home() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Recent activity</CardTitle>
-          <CardDescription>From the platform&apos;s own audit trail.</CardDescription>
+          <CardDescription>
+            From the platform&apos;s own audit trail.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {activity.state === "loading" ? (
@@ -740,7 +882,9 @@ export default function Home() {
               description="Your role does not include reporting. Nothing here is broken."
             />
           ) : activity.state === "error" ? (
-            <ErrorState message={`Recent activity is unavailable — ${activity.message}.`} />
+            <ErrorState
+              message={`Recent activity is unavailable — ${activity.message}.`}
+            />
           ) : (activity.data ?? []).length === 0 ? (
             <EmptyState title="No recorded activity yet" />
           ) : (
@@ -750,8 +894,12 @@ export default function Home() {
                   key={record.id}
                   className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm"
                 >
-                  <span className="font-medium">{record.action.replace(/\./g, " ")}</span>
-                  <span className="text-muted-foreground">{record.resource_type}</span>
+                  <span className="font-medium">
+                    {record.action.replace(/\./g, " ")}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {record.resource_type}
+                  </span>
                   <span className="ml-auto text-xs text-muted-foreground">
                     {String(record.created_at).slice(0, 19).replace("T", " ")}
                   </span>

@@ -41,18 +41,28 @@ import { ErrorState } from "@/components/states";
 const PAGE_SIZE = 10;
 const STATUSES = ["", "draft", "active", "suspended", "archived"] as const;
 
-type FormState = { mode: "closed" } | { mode: "create" } | { mode: "edit"; supplier: Supplier };
+type FormState =
+  | { mode: "closed" }
+  | { mode: "create" }
+  | { mode: "edit"; supplier: Supplier };
 
 function activityWindow() {
   const to = new Date();
   const from = new Date(to);
   from.setUTCDate(from.getUTCDate() - 29);
-  return { date_from: from.toISOString().slice(0, 10), date_to: to.toISOString().slice(0, 10) };
+  return {
+    date_from: from.toISOString().slice(0, 10),
+    date_to: to.toISOString().slice(0, 10),
+  };
 }
 
 export default function SuppliersPage() {
-  const [page, setPage] = useState<{ items: Supplier[]; total: number } | null>(null);
-  const [activity, setActivity] = useState<Record<string, SupplierSummaryRow>>({});
+  const [page, setPage] = useState<{ items: Supplier[]; total: number } | null>(
+    null,
+  );
+  const [activity, setActivity] = useState<Record<string, SupplierSummaryRow>>(
+    {},
+  );
   const [centers, setCenters] = useState<Center[]>([]);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("");
@@ -78,12 +88,16 @@ export default function SuppliersPage() {
       getSupplierReport({ ...activityWindow(), limit: "100" })
         .then((report: ReportPage<SupplierSummaryRow>) =>
           setActivity(
-            Object.fromEntries((report.items ?? []).map((row) => [row.supplier_id, row])),
+            Object.fromEntries(
+              (report.items ?? []).map((row) => [row.supplier_id, row]),
+            ),
           ),
         )
         .catch(() => setActivity({}));
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Could not load suppliers");
+      setError(
+        err instanceof ApiError ? err.detail : "Could not load suppliers",
+      );
     } finally {
       setLoading(false);
     }
@@ -124,14 +138,21 @@ export default function SuppliersPage() {
       header: "Supplier",
       cell: (s) => (
         <div className="flex flex-col">
-          <Link className="font-medium hover:underline" href={`/suppliers/${s.id}`}>
+          <Link
+            className="font-medium hover:underline"
+            href={`/suppliers/${s.id}`}
+          >
             {s.full_name}
           </Link>
           <span className="text-xs text-muted-foreground">{s.code}</span>
         </div>
       ),
     },
-    { key: "status", header: "Status", cell: (s) => <StatusBadge status={s.status} /> },
+    {
+      key: "status",
+      header: "Status",
+      cell: (s) => <StatusBadge status={s.status} />,
+    },
     {
       key: "phone",
       header: "Phone",
@@ -142,7 +163,11 @@ export default function SuppliersPage() {
       key: "collections",
       header: "Collections",
       align: "end",
-      cell: (s) => <span className="tabular-nums">{activity[s.id]?.deliveries ?? "—"}</span>,
+      cell: (s) => (
+        <span className="tabular-nums">
+          {activity[s.id]?.deliveries ?? "—"}
+        </span>
+      ),
     },
     {
       key: "quantity",
@@ -161,7 +186,10 @@ export default function SuppliersPage() {
       align: "end",
       cell: (s) =>
         activity[s.id] ? (
-          <Money amount={activity[s.id].payable_amount} currency={activity[s.id].currency} />
+          <Money
+            amount={activity[s.id].payable_amount}
+            currency={activity[s.id].currency}
+          />
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
@@ -172,7 +200,11 @@ export default function SuppliersPage() {
       secondary: true,
       cell: (s) => {
         const at = activity[s.id]?.last_collection_at;
-        return <span className="text-muted-foreground">{at ? at.slice(0, 10) : "none"}</span>;
+        return (
+          <span className="text-muted-foreground">
+            {at ? at.slice(0, 10) : "none"}
+          </span>
+        );
       },
     },
     {
@@ -182,7 +214,12 @@ export default function SuppliersPage() {
       cell: (s) => (
         <div className="flex justify-end gap-2">
           {s.status === "draft" || s.status === "suspended" ? (
-            <Button type="button" size="sm" variant="ghost" onClick={() => void activate(s)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => void activate(s)}
+            >
               Activate
             </Button>
           ) : null}
@@ -218,11 +255,20 @@ export default function SuppliersPage() {
         }
       />
 
-      <section aria-label="Supplier summary" className="grid gap-4 sm:grid-cols-3">
-        <StatTile label="Suppliers" value={page?.total ?? 0} icon={<Truck className="size-4" />} />
+      <section
+        aria-label="Supplier summary"
+        className="grid gap-4 sm:grid-cols-3"
+      >
+        <StatTile
+          label="Suppliers"
+          value={page?.total ?? 0}
+          icon={<Truck className="size-4" />}
+        />
         <StatTile
           label="Active on this page"
-          value={(page?.items ?? []).filter((s) => s.status === "active").length}
+          value={
+            (page?.items ?? []).filter((s) => s.status === "active").length
+          }
           hint="of the rows shown"
         />
         <StatTile
@@ -233,7 +279,10 @@ export default function SuppliersPage() {
       </section>
 
       {notice ? (
-        <div role="status" className="rounded-md border border-border bg-card px-4 py-2 text-sm">
+        <div
+          role="status"
+          className="rounded-md border border-border bg-card px-4 py-2 text-sm"
+        >
           {notice}
         </div>
       ) : null}
@@ -263,7 +312,9 @@ export default function SuppliersPage() {
             onRetry={() => void load()}
             empty={{
               title:
-                q || status || centerId ? "No supplier matches this search" : "No suppliers yet",
+                q || status || centerId
+                  ? "No supplier matches this search"
+                  : "No suppliers yet",
               description:
                 q || status || centerId
                   ? "Try a different name, code, status or centre."
@@ -355,7 +406,9 @@ function SupplierForm({
   onSaved: (message: string) => void;
 }) {
   const editing = state.mode === "edit";
-  const [fullName, setFullName] = useState(editing ? state.supplier.full_name : "");
+  const [fullName, setFullName] = useState(
+    editing ? state.supplier.full_name : "",
+  );
   const [phone, setPhone] = useState(editing ? state.supplier.phone : "");
   const [centerId, setCenterId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -364,9 +417,11 @@ function SupplierForm({
 
   const validate = () => {
     const errors: Record<string, string> = {};
-    if (fullName.trim().length < 2) errors.fullName = "Enter the supplier's full name.";
+    if (fullName.trim().length < 2)
+      errors.fullName = "Enter the supplier's full name.";
     if (!/^\+?\d{7,15}$/.test(phone.trim()))
-      errors.phone = "Enter a phone number, digits only, optionally starting with +.";
+      errors.phone =
+        "Enter a phone number, digits only, optionally starting with +.";
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -384,7 +439,10 @@ function SupplierForm({
         });
         onSaved(`${fullName.trim()} updated.`);
       } else {
-        const created = await createSupplier({ full_name: fullName.trim(), phone: phone.trim() });
+        const created = await createSupplier({
+          full_name: fullName.trim(),
+          phone: phone.trim(),
+        });
         if (centerId) await assignSupplierCenter(created.id, centerId);
         onSaved(
           centerId
@@ -393,7 +451,11 @@ function SupplierForm({
         );
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "The supplier could not be saved");
+      setError(
+        err instanceof ApiError
+          ? err.detail
+          : "The supplier could not be saved",
+      );
     } finally {
       setBusy(false);
     }
@@ -411,7 +473,10 @@ function SupplierForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="supplier-name">
-                Full name<span aria-hidden className="ms-0.5 text-destructive">*</span>
+                Full name
+                <span aria-hidden className="ms-0.5 text-destructive">
+                  *
+                </span>
                 <span className="sr-only"> (required)</span>
               </Label>
               <Input
@@ -430,7 +495,10 @@ function SupplierForm({
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="supplier-phone">
-                Phone<span aria-hidden className="ms-0.5 text-destructive">*</span>
+                Phone
+                <span aria-hidden className="ms-0.5 text-destructive">
+                  *
+                </span>
                 <span className="sr-only"> (required)</span>
               </Label>
               <Input
@@ -445,7 +513,9 @@ function SupplierForm({
                   {fieldErrors.phone}
                 </p>
               ) : (
-                <p className="text-xs text-muted-foreground">Used to notify them about payments.</p>
+                <p className="text-xs text-muted-foreground">
+                  Used to notify them about payments.
+                </p>
               )}
             </div>
 
@@ -466,7 +536,8 @@ function SupplierForm({
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground">
-                  A supplier must be assigned to a centre before they can be activated.
+                  A supplier must be assigned to a centre before they can be
+                  activated.
                 </p>
               </div>
             ) : null}
@@ -476,7 +547,12 @@ function SupplierForm({
             <Button type="submit" disabled={busy}>
               {busy ? "Saving…" : editing ? "Save changes" : "Create supplier"}
             </Button>
-            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onClose}
+              disabled={busy}
+            >
               Cancel
             </Button>
           </div>

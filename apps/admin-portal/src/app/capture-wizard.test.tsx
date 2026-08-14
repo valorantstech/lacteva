@@ -19,7 +19,10 @@ vi.mock("next/navigation", () => ({
 import NewCollectionPage from "@/app/transactions/new/page";
 
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 
 const CENTER = {
   id: "c1",
@@ -43,7 +46,9 @@ const READY = {
   center_id: "c1",
   status: "READY",
   evaluated_at: "2026-08-11T09:00:00+00:00",
-  checks: [{ rule: "operating_hours", severity: "blocking", passed: true, detail: "" }],
+  checks: [
+    { rule: "operating_hours", severity: "blocking", passed: true, detail: "" },
+  ],
 };
 
 const NOT_READY = {
@@ -120,18 +125,26 @@ function routeAll(overrides: Record<string, () => Response> = {}) {
     if (url.includes("/v1/suppliers"))
       return json({ items: [SUPPLIER], total: 1, limit: 100, offset: 0 });
     if (url.includes("/collection-sessions") && method === "GET")
-      return json({ items: [{ id: "se-1", center_id: "c1", status: "open" }], total: 1 });
+      return json({
+        items: [{ id: "se-1", center_id: "c1", status: "open" }],
+        total: 1,
+      });
     // `endsWith`, not `includes`: "/milk" is a substring of
     // "/milk-transactions/tx-1/weight", and matching loosely silently answered
     // the wrong step — which is exactly how the first draft of this file failed.
-    if (url.endsWith("/milk-transactions") && method === "POST") return json(txIn("NEW"));
+    if (url.endsWith("/milk-transactions") && method === "POST")
+      return json(txIn("NEW"));
     if (url.endsWith("/identify")) return json(txIn("SUPPLIER_IDENTIFIED"));
     if (url.endsWith("/milk")) return json(txIn("MILK_RECEIVED"));
     if (url.endsWith("/weight")) return json(txIn("QUALITY_PENDING"));
     if (url.endsWith("/quality")) return json(PRICED);
     if (url.endsWith("/accept")) return json({ ...PRICED, state: "ACCEPTED" });
     if (url.endsWith("/complete"))
-      return json({ ...PRICED, state: "COMPLETED", completed_at: "2026-08-11T07:45:00+00:00" });
+      return json({
+        ...PRICED,
+        state: "COMPLETED",
+        completed_at: "2026-08-11T07:45:00+00:00",
+      });
     if (url.endsWith("/milk-transactions/tx-1")) return json(PRICED);
     return json({ title: "not_found" }, 404);
   });
@@ -164,7 +177,9 @@ describe("guided capture", () => {
     expect(
       await screen.findByText(/no active scale is assigned to this centre/i),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /start collection/i })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /start collection/i }),
+    ).toBeDisabled();
   });
 
   it("allows starting once the centre is ready", async () => {
@@ -172,7 +187,9 @@ describe("guided capture", () => {
     await renderWizard();
     await userEvent.selectOptions(await screen.findByLabelText("Centre"), "c1");
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /start collection/i })).toBeEnabled(),
+      expect(
+        screen.getByRole("button", { name: /start collection/i }),
+      ).toBeEnabled(),
     );
   });
 
@@ -182,26 +199,45 @@ describe("guided capture", () => {
 
     await userEvent.selectOptions(await screen.findByLabelText("Centre"), "c1");
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /start collection/i })).toBeEnabled(),
+      expect(
+        screen.getByRole("button", { name: /start collection/i }),
+      ).toBeEnabled(),
     );
-    await userEvent.click(screen.getByRole("button", { name: /start collection/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /start collection/i }),
+    );
 
     // The platform said NEW, so the wizard asks for a supplier.
-    await userEvent.selectOptions(await screen.findByLabelText("Supplier"), "s1");
-    await userEvent.click(screen.getByRole("button", { name: /identify supplier/i }));
+    await userEvent.selectOptions(
+      await screen.findByLabelText("Supplier"),
+      "s1",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /identify supplier/i }),
+    );
 
     // It said SUPPLIER_IDENTIFIED, so milk is next.
-    await userEvent.type(await screen.findByLabelText("Container ID"), "CAN-01");
+    await userEvent.type(
+      await screen.findByLabelText("Container ID"),
+      "CAN-01",
+    );
     await userEvent.click(screen.getByRole("button", { name: /record milk/i }));
 
-    await userEvent.type(await screen.findByLabelText("Gross weight (kg)"), "12");
+    await userEvent.type(
+      await screen.findByLabelText("Gross weight (kg)"),
+      "12",
+    );
     await userEvent.type(screen.getByLabelText("Tare weight (kg)"), "2");
-    await userEvent.click(screen.getByRole("button", { name: /record weight/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /record weight/i }),
+    );
 
     await userEvent.type(await screen.findByLabelText("Fat %"), "4.4");
     await userEvent.type(screen.getByLabelText("SNF"), "8.6");
     await userEvent.type(screen.getByLabelText("CLR"), "28.5");
-    await userEvent.click(screen.getByRole("button", { name: /record quality and price/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /record quality and price/i }),
+    );
 
     // Every step hit its own real endpoint, in order.
     const posted = spy.mock.calls
@@ -221,18 +257,37 @@ describe("guided capture", () => {
     await renderWizard();
     await userEvent.selectOptions(await screen.findByLabelText("Centre"), "c1");
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /start collection/i })).toBeEnabled(),
+      expect(
+        screen.getByRole("button", { name: /start collection/i }),
+      ).toBeEnabled(),
     );
-    await userEvent.click(screen.getByRole("button", { name: /start collection/i }));
-    await userEvent.selectOptions(await screen.findByLabelText("Supplier"), "s1");
-    await userEvent.click(screen.getByRole("button", { name: /identify supplier/i }));
-    await userEvent.type(await screen.findByLabelText("Container ID"), "CAN-01");
+    await userEvent.click(
+      screen.getByRole("button", { name: /start collection/i }),
+    );
+    await userEvent.selectOptions(
+      await screen.findByLabelText("Supplier"),
+      "s1",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /identify supplier/i }),
+    );
+    await userEvent.type(
+      await screen.findByLabelText("Container ID"),
+      "CAN-01",
+    );
     await userEvent.click(screen.getByRole("button", { name: /record milk/i }));
-    await userEvent.type(await screen.findByLabelText("Gross weight (kg)"), "12");
+    await userEvent.type(
+      await screen.findByLabelText("Gross weight (kg)"),
+      "12",
+    );
     await userEvent.type(screen.getByLabelText("Tare weight (kg)"), "2");
-    await userEvent.click(screen.getByRole("button", { name: /record weight/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /record weight/i }),
+    );
 
-    const weightCall = spy.mock.calls.find(([u]) => String(u).includes("/weight"));
+    const weightCall = spy.mock.calls.find(([u]) =>
+      String(u).includes("/weight"),
+    );
     const body = JSON.parse(String((weightCall?.[1] as RequestInit)?.body));
     expect(body.source).toBe("manual");
     expect(body.unit).toBe("kg");
@@ -245,42 +300,79 @@ describe("guided capture", () => {
     await renderWizard();
     await userEvent.selectOptions(await screen.findByLabelText("Centre"), "c1");
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /start collection/i })).toBeEnabled(),
+      expect(
+        screen.getByRole("button", { name: /start collection/i }),
+      ).toBeEnabled(),
     );
-    await userEvent.click(screen.getByRole("button", { name: /start collection/i }));
-    await userEvent.selectOptions(await screen.findByLabelText("Supplier"), "s1");
-    await userEvent.click(screen.getByRole("button", { name: /identify supplier/i }));
-    await userEvent.type(await screen.findByLabelText("Container ID"), "CAN-01");
+    await userEvent.click(
+      screen.getByRole("button", { name: /start collection/i }),
+    );
+    await userEvent.selectOptions(
+      await screen.findByLabelText("Supplier"),
+      "s1",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /identify supplier/i }),
+    );
+    await userEvent.type(
+      await screen.findByLabelText("Container ID"),
+      "CAN-01",
+    );
     await userEvent.click(screen.getByRole("button", { name: /record milk/i }));
 
     // Tare heavier than gross — the domain refuses this, and so does the form.
-    await userEvent.type(await screen.findByLabelText("Gross weight (kg)"), "2");
+    await userEvent.type(
+      await screen.findByLabelText("Gross weight (kg)"),
+      "2",
+    );
     await userEvent.type(screen.getByLabelText("Tare weight (kg)"), "12");
-    await userEvent.click(screen.getByRole("button", { name: /record weight/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /record weight/i }),
+    );
 
-    expect(await screen.findByText(/tare must be less than gross/i)).toBeInTheDocument();
-    expect(spy.mock.calls.filter(([u]) => String(u).includes("/weight"))).toHaveLength(0);
+    expect(
+      await screen.findByText(/tare must be less than gross/i),
+    ).toBeInTheDocument();
+    expect(
+      spy.mock.calls.filter(([u]) => String(u).includes("/weight")),
+    ).toHaveLength(0);
   });
 
   it("shows the platform's business reason when a step is refused", async () => {
     routeAll({
       "/identify": () =>
         json(
-          { title: "conflict", detail: "The resource already exists.", extra: "supplier is draft, not active", status: 409 },
+          {
+            title: "conflict",
+            detail: "The resource already exists.",
+            extra: "supplier is draft, not active",
+            status: 409,
+          },
           409,
         ),
     });
     await renderWizard();
     await userEvent.selectOptions(await screen.findByLabelText("Centre"), "c1");
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /start collection/i })).toBeEnabled(),
+      expect(
+        screen.getByRole("button", { name: /start collection/i }),
+      ).toBeEnabled(),
     );
-    await userEvent.click(screen.getByRole("button", { name: /start collection/i }));
-    await userEvent.selectOptions(await screen.findByLabelText("Supplier"), "s1");
-    await userEvent.click(screen.getByRole("button", { name: /identify supplier/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /start collection/i }),
+    );
+    await userEvent.selectOptions(
+      await screen.findByLabelText("Supplier"),
+      "s1",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /identify supplier/i }),
+    );
 
     // The specific reason, not "The resource already exists."
-    expect(await screen.findByText(/supplier is draft, not active/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/supplier is draft, not active/i),
+    ).toBeInTheDocument();
   });
 
   it("PRINTS the price the platform resolved and asks for confirmation", async () => {
@@ -291,11 +383,17 @@ describe("guided capture", () => {
     // Resumed straight into review, because the platform says PRICED.
     expect(await screen.findByText("10 × 45.5000")).toBeInTheDocument();
     expect(screen.getByText("= 455.00 KES")).toBeInTheDocument();
-    expect(screen.getByText(/RC-2026-MAIN v1 band \[4\.0, 5\.0\)/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/RC-2026-MAIN v1 band \[4\.0, 5\.0\)/),
+    ).toBeInTheDocument();
 
     // Acceptance is explicit — never automatic.
-    await userEvent.click(screen.getByRole("button", { name: /^accept collection$/i }));
-    expect(await screen.findByText(/the amount becomes payable/i)).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /^accept collection$/i }),
+    );
+    expect(
+      await screen.findByText(/the amount becomes payable/i),
+    ).toBeInTheDocument();
   });
 
   it("resumes from the PLATFORM's state after a refresh, not the browser's", async () => {
@@ -305,16 +403,22 @@ describe("guided capture", () => {
     await renderWizard();
 
     // MILK_RECEIVED means weight is next — the wizard did not guess.
-    expect(await screen.findByLabelText("Gross weight (kg)")).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText("Gross weight (kg)"),
+    ).toBeInTheDocument();
   });
 
   it("forgets a collection the platform has already completed", async () => {
-    routeAll({ "/milk-transactions/tx-1": () => json({ ...PRICED, state: "COMPLETED" }) });
+    routeAll({
+      "/milk-transactions/tx-1": () => json({ ...PRICED, state: "COMPLETED" }),
+    });
     sessionStorage.setItem("lacteva.collection.in-progress", "tx-1");
     await renderWizard();
 
     await waitFor(() =>
-      expect(sessionStorage.getItem("lacteva.collection.in-progress")).toBeNull(),
+      expect(
+        sessionStorage.getItem("lacteva.collection.in-progress"),
+      ).toBeNull(),
     );
     expect(await screen.findByLabelText("Centre")).toBeInTheDocument();
   });
@@ -322,7 +426,11 @@ describe("guided capture", () => {
   it("does not imply that completion means payment", async () => {
     routeAll({
       "/milk-transactions/tx-1": () =>
-        json({ ...PRICED, state: "COMPLETED", completed_at: "2026-08-11T07:45:00+00:00" }),
+        json({
+          ...PRICED,
+          state: "COMPLETED",
+          completed_at: "2026-08-11T07:45:00+00:00",
+        }),
     });
     // Render the completed state directly by resuming, then check the wording.
     sessionStorage.setItem("lacteva.collection.in-progress", "tx-1");
@@ -333,7 +441,9 @@ describe("guided capture", () => {
     await renderWizard();
     await userEvent.selectOptions(await screen.findByLabelText("Centre"), "c1");
     await waitFor(() =>
-      expect(screen.getAllByRole("button", { name: /start collection/i })[0]).toBeEnabled(),
+      expect(
+        screen.getAllByRole("button", { name: /start collection/i })[0],
+      ).toBeEnabled(),
     );
   });
 });

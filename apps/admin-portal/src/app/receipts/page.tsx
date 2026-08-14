@@ -42,7 +42,8 @@ const statusVariant = (s: string) =>
 
 // DEMO-010: through the shared formatter, so a receipt reads `1,176.00 KES`
 // like every other amount on the platform. It used to print the raw string.
-const money = (v: string | number, currency: string) => `${formatAmount(v)} ${currency}`;
+const money = (v: string | number, currency: string) =>
+  `${formatAmount(v)} ${currency}`;
 
 export default function ReceiptsPage() {
   const [page, setPage] = useState<ReceiptPageResult | null>(null);
@@ -58,7 +59,9 @@ export default function ReceiptsPage() {
       setPage(await listReceipts({ q, status, limit: PAGE_SIZE, offset }));
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load receipts");
+      setError(
+        err instanceof ApiError ? err.detail : "Failed to load receipts",
+      );
     }
   }, [q, status, offset]);
 
@@ -95,8 +98,8 @@ export default function ReceiptsPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Receipts</h1>
         <p className="text-sm text-muted-foreground">
-          Immutable proof of payment, generated automatically when a payment completes.
-          Nothing here can be edited or deleted.
+          Immutable proof of payment, generated automatically when a payment
+          completes. Nothing here can be edited or deleted.
         </p>
       </header>
 
@@ -146,7 +149,9 @@ export default function ReceiptsPage() {
             <TableBody>
               {page?.items.map((r) => (
                 <TableRow key={r.id}>
-                  <TableCell className="font-mono">{r.receipt_number}</TableCell>
+                  <TableCell className="font-mono">
+                    {r.receipt_number}
+                  </TableCell>
                   <TableCell>
                     {r.supplier_name || r.supplier_id.slice(0, 8)}
                     {r.supplier_code && (
@@ -160,7 +165,10 @@ export default function ReceiptsPage() {
                   </TableCell>
                   <TableCell className="whitespace-nowrap font-mono text-xs">
                     {/* DEMO-006: no dead ends — the receipt reaches its payment. */}
-                    <Link className="hover:underline" href={`/payments/${r.payment_id}`}>
+                    <Link
+                      className="hover:underline"
+                      href={`/payments/${r.payment_id}`}
+                    >
                       {r.payment_number}
                     </Link>
                   </TableCell>
@@ -169,16 +177,28 @@ export default function ReceiptsPage() {
                     <Badge variant={statusVariant(r.status)}>{r.status}</Badge>
                   </TableCell>
                   <TableCell className="flex justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openDetail(r.id)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openDetail(r.id)}
+                    >
                       View
                     </Button>
                     {r.status === "generated" && (
-                      <Button size="sm" variant="outline" onClick={() => act(r, "deliver")}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => act(r, "deliver")}
+                      >
                         Mark delivered
                       </Button>
                     )}
                     {r.status !== "archived" && (
-                      <Button size="sm" variant="ghost" onClick={() => act(r, "archive")}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => act(r, "archive")}
+                      >
                         Archive
                       </Button>
                     )}
@@ -187,7 +207,10 @@ export default function ReceiptsPage() {
               ))}
               {page && page.items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={7}
+                    className="text-center text-muted-foreground"
+                  >
                     No receipts yet — they appear when a payment completes.
                   </TableCell>
                 </TableRow>
@@ -197,11 +220,15 @@ export default function ReceiptsPage() {
         </CardContent>
       </Card>
 
-      {detail && <ReceiptDetailCard detail={detail} onClose={() => setDetail(null)} />}
+      {detail && (
+        <ReceiptDetailCard detail={detail} onClose={() => setDetail(null)} />
+      )}
 
       <footer className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground">
-          {page ? `${page.total} receipt${page.total === 1 ? "" : "s"}` : "Loading…"}
+          {page
+            ? `${page.total} receipt${page.total === 1 ? "" : "s"}`
+            : "Loading…"}
         </span>
         <div className="flex items-center gap-2">
           <Button
@@ -250,7 +277,9 @@ function ReceiptDetailCard({
       setPreview(await renderReceipt(r.id, next));
     } catch (err) {
       setPreview(null);
-      setError(err instanceof ApiError ? err.detail : "Could not render this format");
+      setError(
+        err instanceof ApiError ? err.detail : "Could not render this format",
+      );
     } finally {
       setBusy(false);
     }
@@ -287,8 +316,14 @@ function ReceiptDetailCard({
         </CardTitle>
         <CardDescription>
           {r.supplier_name} ({r.supplier_code}) ·{" "}
-          <span className="font-medium">{money(r.net_amount, r.currency)} paid</span> · payment{" "}
-          <Link className="underline underline-offset-4" href={`/payments/${r.payment_id}`}>
+          <span className="font-medium">
+            {money(r.net_amount, r.currency)} paid
+          </span>{" "}
+          · payment{" "}
+          <Link
+            className="underline underline-offset-4"
+            href={`/payments/${r.payment_id}`}
+          >
             {r.payment_number}
           </Link>{" "}
           ({r.payment_method.replace("_", " ").toLowerCase()})
@@ -313,14 +348,19 @@ function ReceiptDetailCard({
               {detail.lines.map((line) => (
                 <TableRow key={line.id}>
                   <TableCell className="font-mono">
-                    <Link className="hover:underline" href={`/settlements/${line.settlement_id}`}>
+                    <Link
+                      className="hover:underline"
+                      href={`/settlements/${line.settlement_id}`}
+                    >
                       {line.settlement_number}
                     </Link>
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">
                     {line.period_from} → {line.period_to}
                   </TableCell>
-                  <TableCell className="text-end">{String(line.gross_amount)}</TableCell>
+                  <TableCell className="text-end">
+                    {String(line.gross_amount)}
+                  </TableCell>
                   <TableCell className="text-end">
                     {String(line.adjustments_amount)}
                   </TableCell>
@@ -346,11 +386,18 @@ function ReceiptDetailCard({
               {f.toUpperCase()}
             </Button>
           ))}
-          <Button size="sm" variant="outline" disabled={busy} onClick={download}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={download}
+          >
             Download
           </Button>
           {preview?.placeholder && (
-            <Badge variant="secondary">placeholder — no PDF engine is integrated</Badge>
+            <Badge variant="secondary">
+              placeholder — no PDF engine is integrated
+            </Badge>
           )}
         </div>
 

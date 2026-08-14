@@ -37,11 +37,7 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
-import {
-  type DateRange,
-  DateRangePicker,
-  resolveRange,
-} from "@/components/date-range";
+import { DateRangePicker, useDefaultRange } from "@/components/date-range";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
@@ -84,16 +80,16 @@ export default function DeliveriesPage() {
 
 function DeliveriesView() {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency, timezone: orgTimezone, t } = useLocale();
+  const { currency: orgCurrency, t } = useLocale();
 
   const searchParams = useSearchParams();
   const [page, setPage] = useState<DeliveryPageResult | null>(null);
   const [report, setReport] = useState<DeliveryReport | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
 
-  const [range, setRange] = useState<DateRange>(() =>
-    resolveRange("7d", orgTimezone),
-  );
+  // Derived until the reader chooses, so a timezone that arrives after the
+  // first render still corrects the window (DEMO-019).
+  const [range, setRange] = useDefaultRange("7d");
   const [customerId, setCustomerId] = useState(
     () => searchParams.get("customer_id") ?? "",
   );

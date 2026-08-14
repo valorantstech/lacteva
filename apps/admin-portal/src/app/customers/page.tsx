@@ -12,7 +12,13 @@ import {
   listCustomers,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
@@ -35,11 +41,19 @@ import { StatusBadge } from "@/components/status-badge";
 
 const PAGE_SIZE = 15;
 
-const TYPES = ["", "household", "shop", "hotel", "institution", "distributor"] as const;
+const TYPES = [
+  "",
+  "household",
+  "shop",
+  "hotel",
+  "institution",
+  "distributor",
+] as const;
 const STATUSES = ["", "active", "inactive", "suspended"] as const;
 
 const describe = (e: unknown) => {
-  if (e instanceof ApiError) return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+  if (e instanceof ApiError)
+    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
   return e instanceof Error ? e.message : "Request failed";
 };
 
@@ -104,14 +118,22 @@ function CustomersView() {
       header: "Customer",
       cell: (c) => (
         <div className="flex flex-col">
-          <Link className="font-medium hover:underline" href={`/customers/${c.id}`}>
+          <Link
+            className="font-medium hover:underline"
+            href={`/customers/${c.id}`}
+          >
             {c.name}
           </Link>
           <span className="text-xs text-muted-foreground">{c.code}</span>
         </div>
       ),
     },
-    { key: "type", header: "Type", secondary: true, cell: (c) => c.customer_type },
+    {
+      key: "type",
+      header: "Type",
+      secondary: true,
+      cell: (c) => c.customer_type,
+    },
     {
       key: "contact",
       header: "Contact",
@@ -119,7 +141,9 @@ function CustomersView() {
       cell: (c) => (
         <div className="flex flex-col">
           <span>{c.phone || "—"}</span>
-          <span className="max-w-56 truncate text-xs text-muted-foreground">{c.address}</span>
+          <span className="max-w-56 truncate text-xs text-muted-foreground">
+            {c.address}
+          </span>
         </div>
       ),
     },
@@ -130,11 +154,17 @@ function CustomersView() {
       cell: (c) => (
         <span className="text-sm">
           {c.billing_mode}
-          <span className="ms-1 text-xs text-muted-foreground">day {c.billing_day}</span>
+          <span className="ms-1 text-xs text-muted-foreground">
+            day {c.billing_day}
+          </span>
         </span>
       ),
     },
-    { key: "status", header: "Status", cell: (c) => <StatusBadge status={c.status} /> },
+    {
+      key: "status",
+      header: "Status",
+      cell: (c) => <StatusBadge status={c.status} />,
+    },
     {
       key: "actions",
       header: <span className="sr-only">Actions</span>,
@@ -163,7 +193,10 @@ function CustomersView() {
         }
       />
 
-      <section aria-label="Customer summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section
+        aria-label="Customer summary"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+      >
         <StatTile
           label="Customers"
           value={page ? page.total : "—"}
@@ -200,7 +233,9 @@ function CustomersView() {
             error={error}
             onRetry={() => void load()}
             empty={{
-              title: filtered ? "No customer matches these filters" : "No customers yet",
+              title: filtered
+                ? "No customer matches these filters"
+                : "No customers yet",
               description: filtered
                 ? "Try a different type or status, or clear the filters."
                 : "Register the first household or shop on the delivery round.",
@@ -339,8 +374,8 @@ function CreateCustomerCard({
       <CardHeader>
         <CardTitle>New customer</CardTitle>
         <CardDescription>
-          The daily quantity and rate are the standing order. A delivery uses them unless the
-          operator records something different.
+          The daily quantity and rate are the standing order. A delivery uses
+          them unless the operator records something different.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -374,7 +409,11 @@ function CreateCustomerCard({
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="nc-phone">Phone</Label>
-              <Input id="nc-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              <Input
+                id="nc-phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
             </div>
             <div className="flex flex-col gap-1.5 sm:col-span-2">
               <Label htmlFor="nc-address">Address</Label>
@@ -406,7 +445,8 @@ function CreateCustomerCard({
                 placeholder="e.g. 60.00"
               />
               <p className="text-xs text-muted-foreground">
-                The agreed selling price. Every delivery is priced from it by the platform.
+                The agreed selling price. Every delivery is priced from it by
+                the platform.
               </p>
             </div>
           </div>

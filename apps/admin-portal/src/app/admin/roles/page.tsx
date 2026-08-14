@@ -57,7 +57,9 @@ import {
 export default function RolesPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Record<string, string>>({});
-  const [people, setPeople] = useState<Array<Member & { user: User | null }>>([]);
+  const [people, setPeople] = useState<Array<Member & { user: User | null }>>(
+    [],
+  );
   const [centers, setCenters] = useState<Center[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -110,7 +112,10 @@ export default function RolesPage() {
     }
   }
 
-  const permissionKeys = useMemo(() => Object.keys(permissions).sort(), [permissions]);
+  const permissionKeys = useMemo(
+    () => Object.keys(permissions).sort(),
+    [permissions],
+  );
 
   return (
     <AdminPage
@@ -158,14 +163,20 @@ export default function RolesPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-end tabular-nums">
-                      {role.permissions.includes("*") ? "all" : role.permissions.length}
+                      {role.permissions.includes("*")
+                        ? "all"
+                        : role.permissions.length}
                     </TableCell>
-                    <TableCell className="text-end tabular-nums">{role.assignments}</TableCell>
+                    <TableCell className="text-end tabular-nums">
+                      {role.assignments}
+                    </TableCell>
                     <TableCell className="text-end">
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setExpanded(expanded === role.id ? null : role.id)}
+                        onClick={() =>
+                          setExpanded(expanded === role.id ? null : role.id)
+                        }
                       >
                         {expanded === role.id ? "Hide" : "Show"}
                       </Button>
@@ -263,8 +274,9 @@ export default function RolesPage() {
             variant="destructive"
             disabled={!userId || !roleName}
             onClick={() =>
-              void run(`Revoked ${roleName}. It stops applying immediately.`, () =>
-                revokeRole(userId, roleName),
+              void run(
+                `Revoked ${roleName}. It stops applying immediately.`,
+                () => revokeRole(userId, roleName),
               )
             }
           >
@@ -272,15 +284,17 @@ export default function RolesPage() {
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          A centre scope narrows the grant to one collection centre: the holder may act there and
-          nowhere else. Leave it on &ldquo;whole organization&rdquo; for roles that are not
-          centre-specific.
+          A centre scope narrows the grant to one collection centre: the holder
+          may act there and nowhere else. Leave it on &ldquo;whole
+          organization&rdquo; for roles that are not centre-specific.
         </p>
       </section>
 
       {/* --- define a role --------------------------------------------------- */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold">Define a role for this organization</h2>
+        <h2 className="text-sm font-semibold">
+          Define a role for this organization
+        </h2>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="new-role">Name</Label>
@@ -294,11 +308,14 @@ export default function RolesPage() {
           <Button
             disabled={!newRole || selected.length === 0}
             onClick={() =>
-              void run(`Created ${newRole} with ${selected.length} permissions.`, async () => {
-                await createRole(newRole, selected);
-                setNewRole("");
-                setSelected([]);
-              })
+              void run(
+                `Created ${newRole} with ${selected.length} permissions.`,
+                async () => {
+                  await createRole(newRole, selected);
+                  setNewRole("");
+                  setSelected([]);
+                },
+              )
             }
           >
             Create role
@@ -313,13 +330,17 @@ export default function RolesPage() {
                 checked={selected.includes(key)}
                 onChange={(e) =>
                   setSelected((current) =>
-                    e.target.checked ? [...current, key] : current.filter((k) => k !== key),
+                    e.target.checked
+                      ? [...current, key]
+                      : current.filter((k) => k !== key),
                   )
                 }
               />
               <span>
                 <span className="font-mono text-xs">{key}</span>
-                <span className="block text-xs text-muted-foreground">{permissions[key]}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {permissions[key]}
+                </span>
               </span>
             </label>
           ))}

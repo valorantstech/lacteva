@@ -24,6 +24,8 @@
  * what a missing setting means.
  */
 
+import { useMemo, useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -48,6 +50,40 @@ export function todayIn(timezone: string | null): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+}
+
+/**
+ * The dairy's today, as a hook.
+ *
+ * Read it during render and never copy it into `useState`. That distinction is
+ * the whole point of this hook existing, and DEMO-019 learned it the hard way:
+ * the app shell deliberately mounts pages BEFORE the session probe answers
+ * (see its own PERF note), so on the very first render `timezone` is still
+ * `null` and every one of these helpers means UTC. A `useState` initializer
+ * runs exactly once, at that moment, and keeps the UTC answer forever — which
+ * is why the previous milestone's correction was live for months without
+ * changing what anyone saw.
+ */
+export function useBusinessToday(): string {
+  return todayIn(useLocale().timezone);
+}
+
+/**
+ * A screen's default window, and a setter for when the reader picks another.
+ *
+ * The default is DERIVED rather than stored, so it is recomputed when the
+ * organization's timezone arrives late; the reader's own choice is stored, so
+ * it survives. Two different lifetimes, which is why they are two values.
+ */
+export function useDefaultRange(
+  key: Exclude<RangeKey, "custom">,
+): [DateRange, (range: DateRange) => void] {
+  const { timezone } = useLocale();
+  const [chosen, setChosen] = useState<DateRange | null>(null);
+  // Memoized so the identity is stable per zone: callers put this in effect
+  // dependency lists, and a fresh object every render would refetch forever.
+  const fallback = useMemo(() => resolveRange(key, timezone), [key, timezone]);
+  return [chosen ?? fallback, setChosen];
 }
 
 /** `days` before that date, on the calendar rather than the clock. */

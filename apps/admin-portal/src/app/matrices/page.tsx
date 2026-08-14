@@ -59,7 +59,9 @@ export default function MatricesPage() {
       setPage(await listMatrices({ q, status, limit: PAGE_SIZE, offset }));
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load matrices");
+      setError(
+        err instanceof ApiError ? err.detail : "Failed to load matrices",
+      );
     }
   }, [q, status, offset]);
 
@@ -93,10 +95,12 @@ export default function MatricesPage() {
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 p-8">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Pricing matrices</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Pricing matrices
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Quality-banded price definitions per rate card and product — data only, no
-            calculations yet
+            Quality-banded price definitions per rate card and product — data
+            only, no calculations yet
           </p>
         </div>
         <Button onClick={() => setShowCreate(true)}>New matrix</Button>
@@ -162,17 +166,27 @@ export default function MatricesPage() {
                     {m.rate_card_code} v{m.version}
                   </TableCell>
                   <TableCell>{m.product_name || m.product_code}</TableCell>
-                  <TableCell className="font-mono">{m.dimension_code}</TableCell>
+                  <TableCell className="font-mono">
+                    {m.dimension_code}
+                  </TableCell>
                   <TableCell>{m.row_count}</TableCell>
                   <TableCell>
                     <Badge variant={statusVariant(m.status)}>{m.status}</Badge>
                   </TableCell>
                   <TableCell className="flex justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openDetail(m.id)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openDetail(m.id)}
+                    >
                       Detail
                     </Button>
                     {m.status === "draft" && (
-                      <Button size="sm" variant="ghost" onClick={() => removeMatrix(m)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removeMatrix(m)}
+                      >
                         Delete
                       </Button>
                     )}
@@ -181,7 +195,10 @@ export default function MatricesPage() {
               ))}
               {page && page.items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={7}
+                    className="text-center text-muted-foreground"
+                  >
                     No pricing matrices match.
                   </TableCell>
                 </TableRow>
@@ -205,7 +222,9 @@ export default function MatricesPage() {
 
       <footer className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground">
-          {page ? `${page.total} matri${page.total === 1 ? "x" : "ces"}` : "Loading…"}
+          {page
+            ? `${page.total} matri${page.total === 1 ? "x" : "ces"}`
+            : "Loading…"}
         </span>
         <div className="flex items-center gap-2">
           <Button
@@ -277,8 +296,9 @@ function MatrixDetailCard({
           <Badge variant={statusVariant(matrix.status)}>{matrix.status}</Badge>
         </CardTitle>
         <CardDescription>
-          {matrix.rate_card_code} v{matrix.version} · {matrix.product_name || matrix.product_code}{" "}
-          · {dimension.name} ({dimension.code}
+          {matrix.rate_card_code} v{matrix.version} ·{" "}
+          {matrix.product_name || matrix.product_code} · {dimension.name} (
+          {dimension.code}
           {dimension.unit ? `, ${dimension.unit}` : ""}
           {dimension.min_value !== null && dimension.max_value !== null
             ? `, ${dimension.min_value}–${dimension.max_value}`
@@ -300,7 +320,12 @@ function MatrixDetailCard({
           <TableBody>
             {rows.map((r) =>
               editable ? (
-                <EditableRow key={r.id} row={r} onSave={saveRow} onDelete={removeRow} />
+                <EditableRow
+                  key={r.id}
+                  row={r}
+                  onSave={saveRow}
+                  onDelete={removeRow}
+                />
               ) : (
                 <TableRow key={r.id} className={r.active ? "" : "opacity-50"}>
                   <TableCell>{r.from_value}</TableCell>
@@ -312,7 +337,10 @@ function MatrixDetailCard({
             )}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell
+                  colSpan={5}
+                  className="text-center text-muted-foreground"
+                >
                   No price bands yet.
                 </TableCell>
               </TableRow>
@@ -335,7 +363,8 @@ function MatrixDetailCard({
           />
         ) : (
           <p className="text-muted-foreground">
-            Read-only — this matrix follows its rate card and is no longer draft.
+            Read-only — this matrix follows its rate card and is no longer
+            draft.
           </p>
         )}
         <div>
@@ -364,13 +393,25 @@ function EditableRow({
   return (
     <TableRow className={row.active ? "" : "opacity-50"}>
       <TableCell>
-        <Input className="h-7 w-24" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <Input
+          className="h-7 w-24"
+          value={from}
+          onChange={(e) => setFrom(e.target.value)}
+        />
       </TableCell>
       <TableCell>
-        <Input className="h-7 w-24" value={to} onChange={(e) => setTo(e.target.value)} />
+        <Input
+          className="h-7 w-24"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+        />
       </TableCell>
       <TableCell>
-        <Input className="h-7 w-28" value={price} onChange={(e) => setPrice(e.target.value)} />
+        <Input
+          className="h-7 w-28"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+        />
       </TableCell>
       <TableCell>
         <Button
@@ -440,15 +481,27 @@ function NewRowForm({
     <div className="flex items-end gap-2">
       <div className="flex flex-col gap-1">
         <Label>From</Label>
-        <Input className="h-8 w-24" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <Input
+          className="h-8 w-24"
+          value={from}
+          onChange={(e) => setFrom(e.target.value)}
+        />
       </div>
       <div className="flex flex-col gap-1">
         <Label>To (excl.)</Label>
-        <Input className="h-8 w-24" value={to} onChange={(e) => setTo(e.target.value)} />
+        <Input
+          className="h-8 w-24"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+        />
       </div>
       <div className="flex flex-col gap-1">
         <Label>Unit price</Label>
-        <Input className="h-8 w-28" value={price} onChange={(e) => setPrice(e.target.value)} />
+        <Input
+          className="h-8 w-28"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+        />
       </div>
       <Button size="sm" disabled={busy || !from || !to || !price} onClick={add}>
         Add band
@@ -511,7 +564,8 @@ function MatrixCreateForm({
       <CardHeader>
         <CardTitle>New pricing matrix</CardTitle>
         <CardDescription>
-          Matrices attach to a draft rate card; the product must be in the card&apos;s scope.
+          Matrices attach to a draft rate card; the product must be in the
+          card&apos;s scope.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -580,7 +634,9 @@ function MatrixCreateForm({
                 ))}
             </select>
           </div>
-          {error && <p className="col-span-2 text-sm text-destructive">{error}</p>}
+          {error && (
+            <p className="col-span-2 text-sm text-destructive">{error}</p>
+          )}
           <div className="col-span-2 flex gap-2">
             <Button type="submit" disabled={busy}>
               {busy ? "Creating…" : "Create"}
