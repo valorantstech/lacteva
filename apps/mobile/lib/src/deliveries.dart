@@ -179,6 +179,7 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
                         return _CustomerRow(
                           customer: c,
                           delivered: _doneToday[id],
+                          t: t,
                           onTap: canRecord ? () => _open(c) : null,
                         );
                       },
@@ -320,11 +321,13 @@ class _CustomerRow extends StatelessWidget {
   const _CustomerRow({
     required this.customer,
     required this.delivered,
+    required this.t,
     required this.onTap,
   });
 
   final Map<String, dynamic> customer;
   final Map<String, dynamic>? delivered;
+  final L10n t;
   final VoidCallback? onTap;
 
   @override
@@ -355,8 +358,11 @@ class _CustomerRow extends StatelessWidget {
       ),
       subtitle: Text(
         status == null
-            ? '${customer['code'] ?? ''} · not yet recorded'
-            : '${customer['code'] ?? ''} · $status'
+            ? '${customer['code'] ?? ''} · ${t.t('round.notRecorded')}'
+            // The status arrives as a CODE and is translated here. It used to
+            // be printed raw, so a Hindi-speaking rider read the English word
+            // the database happens to store (DEMO-016).
+            : '${customer['code'] ?? ''} · ${t.t('status.$status')}'
                   '${delivered?['quantity'] != null ? ' ${delivered!['quantity']} ${delivered!['quantity_unit'] ?? 'L'}' : ''}',
       ),
       trailing: onTap == null

@@ -156,6 +156,29 @@ void main() {
       }
     });
 
+    test('a generated round reads in the rider\'s language', () {
+      // DEMO-016: the round screen printed the raw status the API sends, so a
+      // Hindi-speaking rider read the English word the database happens to
+      // store. The API sends a CODE; the catalog decides the word.
+      final hi = L10n.of(_session(locale: 'hi-IN'));
+      expect(hi.t('status.scheduled'), 'निर्धारित');
+      expect(hi.t('status.delivered'), 'वितरित');
+      for (final code in [
+        'scheduled',
+        'delivered',
+        'skipped',
+        'returned',
+        'cancelled',
+      ]) {
+        for (final locale in ['en', 'hi', 'ar']) {
+          expect(
+            L10n.of(_session(locale: locale)).t('status.$code'),
+            isNot('status.$code'),
+          );
+        }
+      }
+    });
+
     test('Hindi covers every key English defines', () {
       final missing = catalogs['en']!.keys
           .where((k) => !catalogs['hi']!.containsKey(k))
