@@ -28,14 +28,16 @@ from platform_core.core.tenancy import enforce_customer_scope, require_current_t
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.customer.service import CustomerName, CustomerService
-from platform_core.modules.delivery.generation import GenerationResult, generate_for_day
+from platform_core.modules.delivery.generation import GenerationResult
 from platform_core.modules.delivery.models import (
     BILLABLE_STATUSES,
     DELIVERY_SLOTS,
     DELIVERY_STATUSES,
     PENDING_STATUSES,
+    DeliveryGenerationRun,
     MilkDelivery,
 )
+from platform_core.modules.delivery.scheduler import record_run
 
 #: Wire names, mapped from the domain name — the platform's convention.
 BUS_EVENTS = {
@@ -261,6 +263,27 @@ class DeliveryExport(BaseModel):
     truncated: bool
 
 
+class GenerationRunView(BaseModel):
+    """What the scheduler did, in the terms §5 asks for."""
+
+    id: uuid.UUID
+    business_date: date
+    status: str
+    trigger: str
+    plans_due: int
+    created: int
+    already_present: int
+    not_due: int
+    inactive_customers: int
+    attempts: int
+    error: str
+    started_at: object
+    finished_at: object | None
+    duration_ms: int
+
+    model_config = {"from_attributes": True}
+
+
 class DeliveryService:
     def __init__(self, session: AsyncSession, bus, audit: AuditService):
         self._session = session
@@ -428,6 +451,24 @@ class DeliveryService:
         )
         return delivery
 
+    async def generation_runs(self, *, limit: int = 14) -> list[GenerationRunView]:
+        """The recent runs, newest first (DEMO-017 §10).
+
+        Fourteen by default: a fortnight is enough to see a pattern and short
+        enough that the answer is one indexed read. This is an operational
+        record, not an analytics surface.
+        """
+        tenant_id = require_current_tenant()
+        rows = (
+            await self._session.scalars(
+                select(DeliveryGenerationRun)
+                .where(DeliveryGenerationRun.tenant_id == tenant_id)
+                .order_by(DeliveryGenerationRun.business_date.desc())
+                .limit(max(1, min(limit, 60)))
+            )
+        ).all()
+        return [GenerationRunView.model_validate(r) for r in rows]
+
     async def generate(
         self, *, for_date: date | None = None, actor_id: uuid.UUID
     ) -> GenerationResult:
@@ -441,8 +482,18 @@ class DeliveryService:
         """
         tenant_id = require_current_tenant()
         day = for_date or business_today(await tenant_timezone(self._session))
-        result = await generate_for_day(
-            self._session, tenant_id=tenant_id, day=day, actor_id=actor_id
+        # DEMO-017: the SAME path the scheduler uses, so a manual run is
+        # recorded exactly as an automatic one and the two cannot drift. The
+        # work order forbids a second generation implementation and this is
+        # what honouring that looks like at the call site.
+        run = await record_run(self._session, tenant_id=tenant_id, day=day, trigger="manual")
+        result = GenerationResult(
+            business_date=run.business_date,
+            due=run.plans_due,
+            created=run.created,
+            already_present=run.already_present,
+            not_due=run.not_due,
+            inactive_customers=run.inactive_customers,
         )
         await self._audit.record(
             action="sales.delivery.generated",

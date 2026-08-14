@@ -754,9 +754,22 @@ async def test_generation_uses_the_dairys_day_not_utcs(client):
     assert r.status_code == 201, r.text
 
     # 20:00 UTC on the 13th is 01:30 IST on the 14th.
+    #
+    # DEMO-017 found this patch INERT. It targeted
+    # `business_time.datetime`, and `business_today` calls `utcnow()` — so the
+    # mock changed nothing and the assertion was answered by the real clock,
+    # which happened to agree. It passed for a day and a half and then failed
+    # the moment real UTC crossed Indian midnight, which is the only reason
+    # anyone found out. The `sanity` assertion below now proves the mock is
+    # doing something before the real one is trusted.
     instant = datetime(2026, 8, 13, 20, 0, tzinfo=ZoneInfo("UTC"))
-    with patch("platform_core.core.business_time.datetime") as clock:
-        clock.now.return_value = instant
+    with patch("platform_core.core.business_time.utcnow", return_value=instant):
+        from platform_core.core.business_time import business_today
+
+        sanity = business_today("Asia/Kolkata")
+        assert sanity == date(2026, 8, 14), (
+            f"the clock patch is inert — business_today returned {sanity}"
+        )
         generated = await client.post("/v1/deliveries/generate", json={}, headers=admin)
     assert generated.status_code == 200, generated.text
     assert generated.json()["business_date"] == "2026-08-14", (

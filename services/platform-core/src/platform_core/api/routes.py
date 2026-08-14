@@ -80,6 +80,7 @@ from platform_core.modules.delivery.service import (
     DeliveryReport,
     DeliveryService,
     DeliveryView,
+    GenerationRunView,
     RecordDeliveryCommand,
 )
 from platform_core.modules.event_relay.consumers import (
@@ -3346,6 +3347,19 @@ async def generate_deliveries(
     what a rider does all morning, and this creates a whole dairy's day.
     """
     return await service.generate(for_date=body.for_date, actor_id=p.id)
+
+
+@delivery_router.get("/deliveries/generation-runs", response_model=list[GenerationRunView])
+async def delivery_generation_runs(
+    service: DeliverySvc, _: DeliveryRead, limit: int = Query(14, ge=1, le=60)
+) -> Any:
+    """What the scheduler has been doing (DEMO-017 §10).
+
+    Newest first. `sales.delivery.read` rather than the generate grant: seeing
+    whether this morning's round went out is something anyone who can read the
+    round should be able to check, including the person who cannot run it.
+    """
+    return await service.generation_runs(limit=limit)
 
 
 @delivery_router.get("/deliveries/report.csv")

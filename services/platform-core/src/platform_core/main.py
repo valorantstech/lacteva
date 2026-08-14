@@ -110,6 +110,32 @@ async def _health_loop() -> None:
         await workers.sleep(settings.health_sample_seconds)
 
 
+async def _delivery_scheduler_loop() -> None:
+    """Generate each dairy's round once its own morning arrives (DEMO-017).
+
+    A fifth loop rather than a cron container, a systemd timer or an AWS
+    schedule — see `modules/delivery/scheduler.py` for why. It polls because a
+    single timer cannot be 05:00 in Bengaluru and 05:00 in Nairobi at the same
+    moment, and asking each tenant about its own clock makes per-tenant
+    timezones fall out for free.
+
+    Registered in `core.workers` like the others, so a scheduler that dies is
+    reported by the `background_workers` health probe instead of being noticed
+    when a dairy has no round.
+    """
+    from platform_core.modules.delivery.scheduler import run_once
+
+    settings = get_settings()
+    while not workers.stopping():
+        try:
+            await run_once(generation_hour=settings.scheduler_generation_hour)
+        except Exception:
+            # Never fatal to the loop: tomorrow is another business date, and
+            # a scheduler that exits on one bad pass is a dairy with no round.
+            log.exception("delivery_scheduler_error")
+        await workers.sleep(settings.scheduler_poll_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -162,6 +188,16 @@ async def lifespan(app: FastAPI):
 
         health_task = asyncio.create_task(_health_loop())
         workers.register("health", health_task)
+    scheduler_task = None
+    # DEMO-017. Off in tests by construction — a background loop generating a
+    # dairy's round would race every delivery test in the suite — and
+    # switchable in production, so an operator can stop automatic generation
+    # without stopping the platform.
+    if settings.env != "test" and settings.scheduler_enabled:
+        import asyncio
+
+        scheduler_task = asyncio.create_task(_delivery_scheduler_loop())
+        workers.register("delivery-scheduler", scheduler_task)
     tracing_active = setup_tracing()
     log.info(
         "startup_complete",

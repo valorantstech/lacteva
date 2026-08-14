@@ -94,6 +94,21 @@ class Settings(BaseSettings):
     # depends on.
     idempotency_sweep_seconds: float = 300.0
 
+    # --- the delivery scheduler (DEMO-017) --------------------------------
+    #: Off in tests, on everywhere else. A test suite that generated a dairy's
+    #: round in the background would race every delivery test it has.
+    scheduler_enabled: bool = True
+    #: How often the loop asks each tenant whether its day is due. A minute is
+    #: chosen so that a round appears within a minute of the generation hour
+    #: rather than up to an hour late, and the question is two cheap indexed
+    #: reads per tenant — not the generation itself, which happens once.
+    scheduler_poll_seconds: float = 60.0
+    #: LOCAL hour, in each tenant's own timezone. Five in the morning, because
+    #: a dairy's first round leaves around six and the deliveries have to be on
+    #: the operator's phone before the van does. NOT a UTC hour — see
+    #: `modules/delivery/scheduler.py`.
+    scheduler_generation_hour: int = 5
+
     # Row Level Security (PostgreSQL only; SQLite has no equivalent).
     rls_enabled: bool = True
 
