@@ -28,10 +28,12 @@ from platform_core.core.tenancy import enforce_customer_scope, require_current_t
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.customer.service import CustomerName, CustomerService
+from platform_core.modules.delivery.generation import GenerationResult, generate_for_day
 from platform_core.modules.delivery.models import (
     BILLABLE_STATUSES,
     DELIVERY_SLOTS,
     DELIVERY_STATUSES,
+    PENDING_STATUSES,
     MilkDelivery,
 )
 
@@ -212,6 +214,14 @@ class DeliveryReport(BaseModel):
     total_quantity: Decimal
     total_amount: Decimal
     skipped: int
+    #: Generated from a standing order and not yet acted on (DEMO-016 §13).
+    #: The operator's "how many are left?" — and the reason `deliveries`
+    #: counts only completed ones: a round that has been generated but not
+    #: delivered is work outstanding, not milk sold.
+    scheduled: int
+    #: Generated + completed + skipped: the size of the day's round, whether
+    #: it came from standing orders or was typed.
+    planned: int
     by_day: list[DeliveryDayRow]
     by_customer: list[DeliveryCustomerRow]
 
@@ -285,6 +295,15 @@ class DeliveryService:
                 MilkDelivery.slot == cmd.slot,
             )
         )
+        if existing is not None and existing.status in PENDING_STATUSES:
+            # DEMO-016. The round was generated from a standing order and this
+            # is the operator confirming it. Recording over a SCHEDULED row
+            # fills it in rather than colliding with it — which is what lets
+            # §11 be true: an operator does not need to know, and cannot tell
+            # from the call they make, whether the delivery was generated or
+            # typed. One code path serves the portal, the phone and the
+            # offline queue replaying a call made in a village with no signal.
+            return await self._confirm(existing, cmd, plan=plan, actor_id=actor_id)
         if existing is not None:
             raise ConflictError(
                 f"{customer.code} already has a {cmd.slot} delivery on {cmd.delivery_date}"
@@ -343,6 +362,106 @@ class DeliveryService:
             )
         )
         return delivery
+
+    async def _confirm(
+        self,
+        delivery: MilkDelivery,
+        cmd: RecordDeliveryCommand,
+        *,
+        plan,
+        actor_id: uuid.UUID,
+    ) -> MilkDelivery:
+        """An operator acting on a delivery the generator produced.
+
+        The quantity is the operator's when they gave one and the scheduled
+        quantity otherwise, because the common case on a round is "yes, the
+        usual" and making somebody retype it is how a round gets slower rather
+        than faster.
+
+        The RATE is not re-resolved. It is the one the plan carried when the
+        round was generated, already sitting on the row — re-reading the plan
+        here would let a rate agreed at lunchtime reprice a delivery made at
+        six in the morning. The amount is then computed exactly as `record`
+        computes it, from `Decimal`, by the domain.
+        """
+        if cmd.quantity is not None:
+            delivery.quantity = cmd.quantity
+        if cmd.status == "delivered" and Decimal(delivery.quantity) <= 0:
+            raise ConflictError("a delivered quantity must be greater than zero")
+        delivery.status = cmd.status
+        if cmd.notes:
+            delivery.notes = cmd.notes
+        delivery.amount = (
+            money(Decimal(delivery.quantity) * Decimal(delivery.unit_price), delivery.currency)
+            if delivery.status in BILLABLE_STATUSES
+            else Decimal("0.00")
+        )
+        await self._session.flush()
+
+        await self._audit.record(
+            action="sales.delivery.confirmed",
+            resource_type="milk_delivery",
+            resource_id=delivery.id,
+            actor_id=actor_id,
+            detail={
+                "date": str(delivery.delivery_date),
+                "slot": delivery.slot,
+                "status": delivery.status,
+                "quantity": str(delivery.quantity),
+                "amount": str(delivery.amount),
+                "from_plan": str(delivery.plan_id) if delivery.plan_id else "",
+            },
+        )
+        await self._bus.publish(
+            EventEnvelope.new(
+                BUS_EVENTS["DeliveryRecorded"],
+                {
+                    "delivery_id": str(delivery.id),
+                    "customer_id": str(delivery.customer_id),
+                    "delivery_date": str(delivery.delivery_date),
+                    "quantity": str(delivery.quantity),
+                    "amount": str(delivery.amount),
+                    "currency": delivery.currency,
+                },
+                actor_id=actor_id,
+            )
+        )
+        return delivery
+
+    async def generate(
+        self, *, for_date: date | None = None, actor_id: uuid.UUID
+    ) -> GenerationResult:
+        """Run today's round from the standing orders (DEMO-016 §4).
+
+        `for_date` is optional and defaults to the ORGANIZATION's today, for
+        the same reason the daily report's dates do: a caller cannot compute an
+        IANA calendar date without a timezone database, and a scheduler firing
+        at 00:30 IST must produce the Indian day that has just begun rather
+        than the UTC day that is still yesterday (§6).
+        """
+        tenant_id = require_current_tenant()
+        day = for_date or business_today(await tenant_timezone(self._session))
+        result = await generate_for_day(
+            self._session, tenant_id=tenant_id, day=day, actor_id=actor_id
+        )
+        await self._audit.record(
+            action="sales.delivery.generated",
+            resource_type="milk_delivery",
+            resource_id=None,
+            actor_id=actor_id,
+            detail={
+                "date": str(result.business_date),
+                "due": result.due,
+                "created": result.created,
+                # Recorded because §18 asks for it by name, and because a run
+                # that created nothing is the interesting one: it means the
+                # round was already there, not that the generator failed.
+                "already_present": result.already_present,
+                "not_due": result.not_due,
+                "inactive_customers": result.inactive_customers,
+            },
+        )
+        return result
 
     async def amend(
         self, delivery_id: uuid.UUID, cmd: AmendDeliveryCommand, *, actor_id: uuid.UUID
@@ -526,6 +645,11 @@ class DeliveryService:
             .select_from(MilkDelivery)
             .where(*billable, MilkDelivery.status == "skipped")
         )
+        scheduled = await self._session.scalar(
+            select(func.count())
+            .select_from(MilkDelivery)
+            .where(*billable, MilkDelivery.status == "scheduled")
+        )
         by_day = (
             await self._session.execute(
                 select(
@@ -598,6 +722,8 @@ class DeliveryService:
             total_quantity=litres(headline[2]),
             total_amount=money(Decimal(headline[3] or 0)),
             skipped=skipped or 0,
+            scheduled=scheduled or 0,
+            planned=(headline[0] or 0) + (skipped or 0) + (scheduled or 0),
             by_customer=[
                 DeliveryCustomerRow(
                     customer_id=row[0],

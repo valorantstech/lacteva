@@ -74,6 +74,12 @@ PERMISSIONS: dict[str, str] = {
     "sales.customer.manage": "Register and administer customers and their delivery plans",
     "sales.delivery.read": "Read milk deliveries and delivery reports",
     "sales.delivery.record": "Record, amend and cancel daily milk deliveries",
+    # DEMO-016. Generating a round is a SEPARATE grant from recording one.
+    # Recording is what a rider does all morning; generation creates the whole
+    # dairy's day in one call and belongs to whoever runs the round — a
+    # scheduler, or a manager before the vans leave. Folding it into
+    # `record` would have given every delivery operator that button.
+    "sales.delivery.generate": "Generate the day's deliveries from standing orders",
     "sales.invoice.read": "Read customer invoices and statements",
     "sales.invoice.manage": "Generate customer invoices for a billing period",
     "sales.invoice.issue": "Issue an invoice (makes it immutable and payable)",
@@ -145,6 +151,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "sales.customer.manage",
         "sales.delivery.read",
         "sales.delivery.record",
+        "sales.delivery.generate",
         "sales.invoice.read",
         "sales.invoice.manage",
         "sales.invoice.issue",
@@ -285,6 +292,7 @@ NAMED_ROLES: dict[str, list[str]] = {
         "sales.customer.read",
         "sales.delivery.read",
         "sales.delivery.record",
+        "sales.delivery.generate",
         "sales.invoice.read",
         "sales.payment.read",
         "sales.receipt.read",
@@ -331,6 +339,7 @@ NAMED_ROLES: dict[str, list[str]] = {
         "sales.customer.manage",
         "sales.delivery.read",
         "sales.delivery.record",
+        "sales.delivery.generate",
         "sales.invoice.read",
         "sales.invoice.manage",
         "sales.payment.read",

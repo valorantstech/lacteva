@@ -20,6 +20,14 @@ from platform_core.modules.customer.models import (
     Customer,
     DeliveryPlan,
 )
+from platform_core.modules.customer.schedule import (
+    EVERY_DAY,
+    WEEK,
+    describe,
+    next_due,
+    normalise_weekdays,
+)
+from platform_core.modules.delivery.models import DELIVERY_SLOTS
 
 # --- commands ----------------------------------------------------------------
 
@@ -85,6 +93,56 @@ class DeliveryPlanInput(BaseModel):
     unit_price: Decimal = Field(gt=0)
     effective_from: date | None = None
 
+    # --- the schedule (DEMO-016) ------------------------------------------
+    #: Null means ongoing, which is what a standing order usually is.
+    effective_to: date | None = None
+    #: Seven characters, Monday first. Defaults to every day.
+    weekdays: str = Field(default=EVERY_DAY)
+    slot: str = Field(default="morning")
+    center_id: uuid.UUID | None = None
+    #: `{"5": "30.000"}` — thirty litres on Saturday. Sparse by design.
+    quantity_overrides: dict[str, Decimal] | None = None
+
+    @field_validator("weekdays")
+    @classmethod
+    def _seven_days(cls, v: str) -> str:
+        try:
+            return normalise_weekdays(v)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @field_validator("slot")
+    @classmethod
+    def _known_slot(cls, v: str) -> str:
+        if v not in DELIVERY_SLOTS:
+            raise ValueError(f"slot must be one of {', '.join(DELIVERY_SLOTS)}")
+        return v
+
+    @field_validator("quantity_overrides")
+    @classmethod
+    def _plausible_overrides(cls, v: dict | None) -> dict | None:
+        """Refuse a key that is not a weekday.
+
+        `quantity_for` falls back to the standing quantity for a key it does
+        not recognise — which is right at generation time, where the round has
+        to go out regardless. It is wrong HERE: a manager typing `{"7": ...}`
+        meaning Sunday should be told, not silently given the default every
+        week until somebody notices the bill.
+        """
+        if not v:
+            return None
+        for key in v:
+            if key not in {str(i) for i in range(WEEK)}:
+                raise ValueError(f"weekday key {key!r} must be '0' (Monday) to '6' (Sunday)")
+        return v
+
+
+class PausePlanCommand(BaseModel):
+    """A holiday. Both ends inclusive; no end means until further notice."""
+
+    paused_from: date
+    paused_to: date | None = None
+
 
 # --- views -------------------------------------------------------------------
 
@@ -99,6 +157,23 @@ class DeliveryPlanView(BaseModel):
     currency: str
     effective_from: date
     active: bool
+
+    # --- the schedule (DEMO-016) ------------------------------------------
+    effective_to: date | None = None
+    weekdays: str = EVERY_DAY
+    slot: str = "morning"
+    center_id: uuid.UUID | None = None
+    quantity_overrides: dict | None = None
+    paused_from: date | None = None
+    paused_to: date | None = None
+
+    #: A translation KEY for the mask — `schedule.daily`, `schedule.mon_sat`,
+    #: `schedule.weekdays`, `schedule.custom`. Never a sentence: the platform
+    #: does not decide what a Hindi-speaking manager reads (DEMO-013).
+    schedule_key: str = "schedule.daily"
+    #: When this plan next delivers, or null if not within the year. The one
+    #: thing a plan screen must say that cannot be read off the row (§9).
+    next_delivery: date | None = None
 
     model_config = {"from_attributes": True}
 
@@ -259,6 +334,9 @@ class CustomerService:
         ).all()
         for old in existing:
             old.active = False
+        effective_from = plan.effective_from or await self._today()
+        if plan.effective_to is not None and plan.effective_to < effective_from:
+            raise ConflictError("a plan cannot end before it begins")
         row = DeliveryPlan(
             tenant_id=tenant_id,
             customer_id=customer.id,
@@ -267,8 +345,21 @@ class CustomerService:
             quantity_unit=plan.quantity_unit,
             unit_price=plan.unit_price,
             currency=customer.currency,
-            effective_from=plan.effective_from or await self._today(),
+            effective_from=effective_from,
+            effective_to=plan.effective_to,
+            weekdays=plan.weekdays,
+            slot=plan.slot,
+            center_id=plan.center_id,
+            # Decimals are not JSON, and the column is. Stored as the exact
+            # strings they arrived as, which is also how `quantity_for` reads
+            # them back — the value never becomes a float in between.
+            quantity_overrides=(
+                {k: str(v) for k, v in plan.quantity_overrides.items()}
+                if plan.quantity_overrides
+                else None
+            ),
             active=True,
+            created_by=actor_id,
         )
         self._session.add(row)
         await self._session.flush()
@@ -281,9 +372,76 @@ class CustomerService:
                 "customer": customer.code,
                 "product": row.product,
                 "unit_price": str(row.unit_price),
+                "weekdays": row.weekdays,
+                "quantity": str(row.default_quantity),
+                "effective_from": str(row.effective_from),
+                "superseded": [str(old.id) for old in existing],
             },
         )
         return row
+
+    async def pause_plan(
+        self, plan_id: uuid.UUID, cmd: PausePlanCommand, *, actor_id: uuid.UUID
+    ) -> DeliveryPlan:
+        """Send a standing order on holiday (DEMO-016 §7).
+
+        Pausing does NOT deactivate the plan and does not touch a single
+        delivery that has already happened: the household is coming back, and
+        their August is still their August. It only stops the generator from
+        producing new instances inside the window.
+        """
+        plan = await self.get_plan(plan_id)
+        if cmd.paused_to is not None and cmd.paused_to < cmd.paused_from:
+            raise ConflictError("a pause cannot end before it begins")
+        plan.paused_from = cmd.paused_from
+        plan.paused_to = cmd.paused_to
+        await self._audit.record(
+            action="sales.customer.plan_paused",
+            resource_type="delivery_plan",
+            resource_id=plan.id,
+            actor_id=actor_id,
+            detail={"from": str(cmd.paused_from), "to": str(cmd.paused_to or "")},
+        )
+        return plan
+
+    async def resume_plan(self, plan_id: uuid.UUID, *, actor_id: uuid.UUID) -> DeliveryPlan:
+        """Back from holiday.
+
+        Clearing the window rather than setting `paused_to` to yesterday: a
+        plan that is running should say it is running, and a reader should not
+        have to compare a date against today to find out.
+
+        Generation resumes from the next day the schedule is due — which may
+        be today. It does NOT backfill the pause: milk that was not delivered
+        is not delivered later, and inventing those rows would put a fortnight
+        of holiday on the customer's next bill.
+        """
+        plan = await self.get_plan(plan_id)
+        plan.paused_from = None
+        plan.paused_to = None
+        await self._audit.record(
+            action="sales.customer.plan_resumed",
+            resource_type="delivery_plan",
+            resource_id=plan.id,
+            actor_id=actor_id,
+            detail={"plan": str(plan.id)},
+        )
+        return plan
+
+    async def business_today(self) -> date:
+        """The dairy's today, for anything that has to date a plan view."""
+        return await self._today()
+
+    async def get_plan(self, plan_id: uuid.UUID) -> DeliveryPlan:
+        tenant_id = require_current_tenant()
+        plan = await self._session.scalar(
+            select(DeliveryPlan).where(
+                DeliveryPlan.id == plan_id, DeliveryPlan.tenant_id == tenant_id
+            )
+        )
+        if plan is None:
+            raise NotFoundError("delivery plan not found")
+        return plan
 
     # --- queries -----------------------------------------------------------
 
@@ -344,10 +502,39 @@ class CustomerService:
                 .order_by(DeliveryPlan.active.desc(), DeliveryPlan.effective_from.desc())
             )
         ).all()
+        today = await self._today()
         return CustomerDetailView(
             customer=CustomerView.model_validate(customer),
-            plans=[DeliveryPlanView.model_validate(p) for p in plans],
+            plans=[self.plan_view(p, today=today) for p in plans],
         )
+
+    @staticmethod
+    def plan_view(plan: DeliveryPlan, *, today: date) -> DeliveryPlanView:
+        """A plan, plus the two things that are computed rather than stored.
+
+        `schedule_key` and `next_delivery` are derived on every read instead of
+        being columns, because both are functions of the row and of today —
+        a stored `next_delivery` is a cache that goes stale overnight, silently,
+        on the one screen whose whole job is to say when the milk is coming.
+
+        A superseded plan reports no next delivery whatever its dates say. It
+        is not going to deliver anything: the generator only reads active ones.
+        """
+        view = DeliveryPlanView.model_validate(plan)
+        view.schedule_key = describe(plan.weekdays)
+        view.next_delivery = (
+            next_due(
+                today,
+                weekdays=plan.weekdays,
+                effective_from=plan.effective_from,
+                effective_to=plan.effective_to,
+                paused_from=plan.paused_from,
+                paused_to=plan.paused_to,
+            )
+            if plan.active
+            else None
+        )
+        return view
 
     async def search(
         self,

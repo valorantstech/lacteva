@@ -68,10 +68,12 @@ from platform_core.modules.customer.service import (
     CustomerView,
     DeliveryPlanInput,
     DeliveryPlanView,
+    PausePlanCommand,
     UpdateCustomerCommand,
 )
 from platform_core.modules.delivery.export import filename as export_filename
 from platform_core.modules.delivery.export import to_csv
+from platform_core.modules.delivery.generation import GenerationResult
 from platform_core.modules.delivery.service import (
     AmendDeliveryCommand,
     DeliveryPage,
@@ -3225,17 +3227,41 @@ async def set_customer_status(
 async def set_delivery_plan(
     customer_id: uuid.UUID, body: DeliveryPlanInput, service: CustomerSvc, p: CustomerManage
 ) -> Any:
-    """Agree what this customer takes and at what rate.
+    """Agree what this customer takes, at what rate, and on which days.
 
     Supersedes the previous plan rather than editing it, so a delivery priced
-    last week remains explainable.
+    last week remains explainable — and so DEMO-016 §8 holds for free: changing
+    a schedule creates a new row and history keeps pointing at the plan that
+    generated it.
     """
-    return await service.set_plan(customer_id, body, actor_id=p.id)
+    plan = await service.set_plan(customer_id, body, actor_id=p.id)
+    return service.plan_view(plan, today=await service.business_today())
+
+
+@customer_router.post("/plans/{plan_id}/pause", response_model=DeliveryPlanView)
+async def pause_delivery_plan(
+    plan_id: uuid.UUID, body: PausePlanCommand, service: CustomerSvc, p: CustomerManage
+) -> Any:
+    """Send a standing order on holiday. Generates nothing inside the window.
+
+    Historical deliveries are untouched: the customer is coming back, and
+    their August is still their August (§7).
+    """
+    plan = await service.pause_plan(plan_id, body, actor_id=p.id)
+    return service.plan_view(plan, today=await service.business_today())
+
+
+@customer_router.post("/plans/{plan_id}/resume", response_model=DeliveryPlanView)
+async def resume_delivery_plan(plan_id: uuid.UUID, service: CustomerSvc, p: CustomerManage) -> Any:
+    """Back from holiday. Does NOT backfill the days that were paused."""
+    plan = await service.resume_plan(plan_id, actor_id=p.id)
+    return service.plan_view(plan, today=await service.business_today())
 
 
 delivery_router = APIRouter(tags=["sales-delivery"], route_class=IdempotentRoute)
 DeliveryRead = Annotated[Principal, Depends(require_permission("sales.delivery.read"))]
 DeliveryRecord = Annotated[Principal, Depends(require_permission("sales.delivery.record"))]
+DeliveryGenerate = Annotated[Principal, Depends(require_permission("sales.delivery.generate"))]
 DeliverySvc = Annotated[DeliveryService, Depends(deps.get_delivery_service)]
 
 
@@ -3297,6 +3323,29 @@ async def delivery_report(
     with the day it actually got.
     """
     return await service.report(date_from=date_from, date_to=date_to, customer_id=customer_id)
+
+
+class GenerateDeliveriesRequest(BaseModel):
+    """Optional. Omit the date and the platform uses the dairy's own today."""
+
+    for_date: date | None = None
+
+
+@delivery_router.post("/deliveries/generate", response_model=GenerationResult)
+async def generate_deliveries(
+    body: GenerateDeliveriesRequest, service: DeliverySvc, p: DeliveryGenerate
+) -> Any:
+    """Turn today's standing orders into the day's round (DEMO-016).
+
+    Safe to run more than once, and safe to run concurrently: idempotency is a
+    unique constraint in the database, not a check in this process, so a second
+    call returns `created: 0, already_present: N` rather than a duplicated
+    round.
+
+    Its own permission, separate from `sales.delivery.record`: recording is
+    what a rider does all morning, and this creates a whole dairy's day.
+    """
+    return await service.generate(for_date=body.for_date, actor_id=p.id)
 
 
 @delivery_router.get("/deliveries/report.csv")

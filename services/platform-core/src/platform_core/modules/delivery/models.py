@@ -26,6 +26,7 @@ from platform_core.core.db import Base, IdMixin, utcnow
 DELIVERY_SLOTS = ("morning", "evening")
 
 DELIVERY_STATUSES = (
+    "scheduled",  # generated from a standing order; not yet been anywhere
     "delivered",  # milk handed over — the normal case, and billable
     "skipped",  # customer away or declined; nothing delivered, nothing billed
     "returned",  # delivered then returned (spoiled, wrong product); not billed
@@ -33,7 +34,19 @@ DELIVERY_STATUSES = (
 )
 
 #: Only a delivery that actually happened is worth money.
+#:
+#: `scheduled` is deliberately absent, and that single omission is what makes
+#: DEMO-016 safe to deploy. A generator that produced BILLABLE rows would
+#: invoice a dairy's whole round every morning whether the milk arrived or not
+#: — so a generated delivery is worth 0.00 until somebody says it happened,
+#: and every report, balance and invoice already filters on this tuple.
 BILLABLE_STATUSES = ("delivered",)
+
+#: A delivery that has been generated and not yet acted on. Recording over one
+#: of these FILLS IT IN rather than colliding with it (see `DeliveryService.
+#: record`), which is what lets an operator work without knowing or caring
+#: whether the round was typed or generated.
+PENDING_STATUSES = ("scheduled",)
 
 
 class MilkDelivery(Base, IdMixin):

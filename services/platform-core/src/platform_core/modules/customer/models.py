@@ -20,7 +20,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Numeric, String, UniqueConstraint, Uuid
+from sqlalchemy import JSON, Boolean, Date, DateTime, Index, Numeric, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.core.db import Base, IdMixin, utcnow
@@ -84,9 +84,43 @@ class DeliveryPlan(Base, IdMixin):
     One active plan per customer and product. Changing the rate supersedes the
     plan rather than editing it, so a delivery priced last week can still be
     explained.
+
+    **DEMO-016 made it a standing order** by adding a schedule. Until then a
+    plan said what a customer takes and at what price, and somebody still had
+    to type six hundred deliveries a day. The schedule is the smallest thing
+    that removes that:
+
+        weekdays          a seven-character mask, Monday first
+        effective_from    the plan already had one; still the first day
+        effective_to      null means ongoing, which is the ordinary case
+        paused_from/_to   one holiday window, because a household goes away
+        quantity_overrides  optional per-weekday litres
+
+    Deliberately NOT a scheduling engine. No recurrence rules, no calendars,
+    no nth-weekday-of-the-month — the work order says so in as many words, and
+    a dairy round is a weekly rhythm with holidays, not a cron expression.
+
+    Superseding still applies, and it is what makes §8 true for free: editing a
+    plan's schedule creates a new row and deactivates the old one, so
+    yesterday's deliveries still point at the plan that generated them and no
+    history is rewritten.
     """
 
     __tablename__ = "delivery_plan"
+    __table_args__ = (
+        # The generator's own query, and the only one that runs against every
+        # plan a dairy has: "which active plans in this tenant are in date
+        # today?" Tenant first because RLS filters on it before anything else,
+        # then `active` because most of a mature dairy's plans are superseded
+        # ones, then the date bounds.
+        Index(
+            "ix_delivery_plan_generation",
+            "tenant_id",
+            "active",
+            "effective_from",
+            "effective_to",
+        ),
+    )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     customer_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
@@ -102,5 +136,47 @@ class DeliveryPlan(Base, IdMixin):
     #: supplies it from the customer, which gets it from the organization.
     currency: Mapped[str] = mapped_column(String(3))
     effective_from: Mapped[date] = mapped_column(Date)
+    #: Null means ongoing. A dairy's standing order does not usually have an
+    #: end; the ones that do are contracts and seasonal supplies.
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    #: Which days the round visits, Monday first: `"1111111"` is every day,
+    #: `"1111110"` is Monday to Saturday, `"1111100"` is weekdays only.
+    #:
+    #: A string of seven characters rather than seven booleans or a bitmask.
+    #: Seven columns is a schema change every time somebody wants a different
+    #: question answered; a bitmask is unreadable in a psql session at 6am,
+    #: when the question is "why did this household get no milk on Tuesday?".
+    #: This is greppable, sorts, and reads correctly in a backup.
+    weekdays: Mapped[str] = mapped_column(String(7), default="1111111")
+
+    #: A holiday. Inclusive at both ends, and null when the plan is running.
+    #: One window, not a list: two overlapping holidays is a calendar, and a
+    #: calendar is the engine §3 says not to build. A second holiday is set by
+    #: superseding the plan, like every other change.
+    paused_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    paused_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    #: Per-weekday litres, keyed by the same Monday-first index as `weekdays`
+    #: (`{"5": "30.000"}` is "thirty litres on Saturday"). Null — the ordinary
+    #: case — means every delivery day takes `default_quantity`.
+    #:
+    #: Stored as JSON rather than six more columns because it is genuinely
+    #: sparse: a hotel that takes more at the weekend sets one key, and every
+    #: household sets none.
+    quantity_overrides: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    #: Which centre serves this round, when a dairy runs more than one. Null
+    #: means the organization at large, which is what every household means.
+    center_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
+
+    #: The slot this plan generates into. A customer taking milk twice a day
+    #: has two plans, which is also how they have two rates if they need them.
+    slot: Mapped[str] = mapped_column(String(10), default="morning")
+
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
