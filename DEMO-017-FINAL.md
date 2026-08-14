@@ -198,9 +198,12 @@ of failing, which is precisely the shape §4 exists to prevent.
   the row stays `running` and the day is skipped until tomorrow; the manual
   endpoint remains available and cannot duplicate. Detecting and reclaiming a
   stale claim is a lease, and a lease is a bigger idea than this needs.
-* **One scheduler per process.** With several API replicas each would poll;
-  the claim and the delivery constraint make that safe but wasteful. A single
-  replica runs today.
+* ~~**One scheduler per process.** … A single replica runs today.~~
+  **Corrected by DEMO-018:** production runs uvicorn with `--workers 4`, so
+  four scheduler loops have always existed. They raced on the first real run
+  and the last writer blanked the day's record. The claim is now atomic
+  (`INSERT … ON CONFLICT DO NOTHING`, then a CAS re-claim) and the counts
+  accumulate. See DEMO-018-FINAL §Defects.
 * **No push alert on failure.** §11 permits this: the failure is in the logs,
   in the run record, on the portal line, and — if the loop itself dies — in the
   `background_workers` health probe.
