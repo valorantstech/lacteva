@@ -40,6 +40,7 @@ import os
 import pathlib
 import sys
 import uuid
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
@@ -109,6 +110,7 @@ CUSTOMERS = [
     ("Mutindi Household", "household", "+254701000116", "31 Church Street", "1.500", "62.00", "unbilled", False),
 ]
 
+
 #: Days of delivery history. Enough for a monthly bill to be a real month.
 DELIVERY_DAYS = 30
 
@@ -117,6 +119,43 @@ DELIVERY_DAYS = 30
 # Kenyan cooperative names, because the platform's currency is KES and its
 # demo receipts already read "Amina Njoroge". A believable dairy beats a
 # clever one: nobody is persuaded by "Test Supplier 1".
+
+# --- markets (DEMO-013) -------------------------------------------------------
+#
+# A demo tenant used to BE Kenya: the centres, the farmers, the households, the
+# rates and the country code were module constants, and `make_org` posted
+# `country_code: "ke"` outright. Demonstrating the platform to an Indian dairy
+# would have meant either showing them shillings or forking the seeder.
+#
+# So a market is now DATA. Kenya is one value of it and India is another, and
+# the builders below take one as a parameter — there is no branch anywhere that
+# asks which country it is building. Adding a third market is a third profile.
+#
+# The names are real-looking on purpose. Nobody is persuaded by "Test Supplier
+# 1", and a dairy manager reading a demo bill should recognise the world it
+# describes.
+
+
+@dataclass(frozen=True)
+class Market:
+    """One demonstrable dairy, in one country."""
+
+    key: str
+    org_name: str
+    org_slug: str
+    #: ISO 3166-1 alpha-2. The platform resolves currency, timezone and
+    #: languages from it — the seeder never states them, which is the point.
+    country_code: str
+    email_domain: str
+    centers: list
+    supplier_names: list
+    customers: list
+    #: (fat_min, fat_max, rate) — the money is per-market because a litre is
+    #: not worth the same number in two currencies.
+    fat_bands: list
+    staff: dict
+    currency_hint: str  # for the seed SUMMARY only; the platform is the truth
+
 
 CENTERS = [
     ("Kilima Hill Collection Centre", "KH-C1"),
@@ -186,6 +225,109 @@ FAT_BY_SUPPLIER = [
 # is how `pricing/resolution.py` reads them.
 FAT_BANDS = [(3.0, 4.0, 42.0), (4.0, 5.0, 45.5), (5.0, 6.0, 49.0)]
 
+
+KENYA = Market(
+    key="kenya",
+    org_name=DEMO_ORG,
+    org_slug=DEMO_ORG_SLUG,
+    country_code="KE",
+    email_domain="lacteva-demo.example.com",
+    centers=CENTERS,
+    supplier_names=SUPPLIER_NAMES,
+    customers=CUSTOMERS,
+    fat_bands=FAT_BANDS,
+    staff={
+        "manager": "Wanjiku Mbugua",
+        "viewer": "Otieno Odhiambo",
+        "operations": "Kipchoge Rutto",
+        "operator": "Naliaka Simiyu",
+        "sales": "Zawadi Mwakio",
+        "household": "Njeri Mwangi",
+    },
+    currency_hint="KES",
+)
+
+#: DEMO-013 §10 — a SEPARATE Indian tenant, not a converted Kenyan one.
+#:
+#: Converting the existing records would have destroyed the evidence that the
+#: platform runs two countries at once, which is the whole claim. Rates are
+#: rupees per litre at plausible Indian levels; the households and the dairies
+#: are the kind a Bengaluru co-operative actually serves.
+INDIA_CENTERS = [
+    ("Yelahanka Collection Centre", "YL-C1"),
+    ("Hoskote Collection Centre", "HK-C1"),
+    ("Devanahalli Collection Centre", "DV-C1"),
+]
+
+INDIA_SUPPLIERS = [
+    "Ramesh Gowda",
+    "Lakshmi Devi",
+    "Suresh Patil",
+    "Anjali Reddy",
+    "Venkatesh Rao",
+    "Meena Kumari",
+    "Prakash Shetty",
+    "Savitha Nayak",
+    "Manjunath Hegde",
+    "Kavitha Iyer",
+    "Basavaraj Kulkarni",
+    "Shobha Rani",
+]
+
+#: (name, type, phone, address, litres/day, rate, state, evening)
+INDIA_CUSTOMERS = [
+    ("Sharma Household", "household", "+919845000101", "12 Jayanagar 4th Block", "1.000", "56.00", "partial", False),
+    ("Iyengar Bakery", "shop", "+919845000102", "MG Road", "6.000", "52.00", "paid", False),
+    ("Hotel Sagar Deluxe", "hotel", "+919845000103", "Residency Road", "18.000", "50.00", "partial", True),
+    ("St. Joseph's School", "institution", "+919845000104", "Museum Road", "30.000", "48.00", "paid", False),
+    ("Nandini Distributors", "distributor", "+919845000105", "Peenya Industrial Area", "50.000", "46.00", "unpaid", True),
+    ("Reddy Household", "household", "+919845000106", "8 Indiranagar 100ft Road", "1.500", "56.00", "paid", False),
+    ("Krishnan Household", "household", "+919845000107", "24 Malleswaram", "2.000", "56.00", "unpaid", False),
+    ("Desai Household", "household", "+919845000108", "5 Basavanagudi", "1.000", "56.00", "paid", False),
+    ("Kamath Household", "household", "+919845000109", "17 Rajajinagar", "2.500", "56.00", "partial", False),
+    ("Adiga Tiffin Room", "shop", "+919845000110", "Gandhi Bazaar", "10.000", "52.00", "paid", False),
+    ("Sri Ganesh Sweets", "shop", "+919845000111", "Chickpet", "14.000", "51.00", "unpaid", False),
+    ("Taj Residency Annexe", "hotel", "+919845000112", "Ulsoor Road", "16.000", "50.00", "paid", True),
+    ("Manipal Clinic", "institution", "+919845000113", "Old Airport Road", "22.000", "48.00", "partial", False),
+    ("Bengaluru Grocers", "distributor", "+919845000114", "KR Market", "40.000", "47.00", "paid", False),
+    ("Pillai Household", "household", "+919845000115", "9 Koramangala 5th Block", "1.000", "56.00", "unbilled", False),
+    ("Nair Household", "household", "+919845000116", "31 Whitefield", "1.500", "56.00", "unbilled", False),
+]
+
+#: Rupees per litre by fat band. Indian co-operatives pay on fat and SNF; this
+#: keeps the platform's existing single-dimension band and prices it plausibly.
+INDIA_FAT_BANDS = [(3.0, 4.0, 34.0), (4.0, 5.0, 38.5), (5.0, 6.0, 43.0)]
+
+INDIA = Market(
+    key="india",
+    org_name="Lacteva India Demo",
+    org_slug="lacteva-india-demo",
+    country_code="IN",
+    email_domain="lacteva-india.example.com",
+    centers=INDIA_CENTERS,
+    supplier_names=INDIA_SUPPLIERS,
+    customers=INDIA_CUSTOMERS,
+    fat_bands=INDIA_FAT_BANDS,
+    staff={
+        "manager": "Priya Raghavan",
+        "viewer": "Arun Menon",
+        "operations": "Deepak Shenoy",
+        "operator": "Sunita Bhat",
+        "sales": "Rahul Verma",
+        "household": "Anita Sharma",
+    },
+    currency_hint="INR",
+)
+
+MARKETS = {market.key: market for market in (KENYA, INDIA)}
+
+#: Every organization this seeder owns. DEMO-013: derived from the markets
+#: rather than listed, so adding a market cannot leave a tenant that `purge`
+#: does not remove and `verify` does not check — which would be a demo dairy
+#: nobody was maintaining, quietly rotting in the database.
+DEMO_SLUGS = [m.org_slug for m in MARKETS.values()] + [ISOLATION_ORG_SLUG]
+
+
 PRODUCT = "RAW-COW-MILK"
 
 # Gross/tare pairs, cycled by index. Net weights land between 8 and 42 kg,
@@ -218,6 +360,36 @@ async def expect(response, *codes: int, what: str):
             f"demo seed failed at {what}: {response.status_code} {response.text[:400]}"
         )
     return response.json() if response.content else {}
+
+
+async def retrying(send, *codes: int, what: str):
+    """Do the thing, and WAIT if the platform says to (DEMO-013).
+
+    Seeding a second market pushed the invitation-accept rule past its ten in
+    fifteen minutes and the run died at the eleventh — correctly. The limit is
+    protecting a real endpoint from a real abuse, and a seeder is not special
+    enough to be exempt from it; a bypass here would be a bypass that outlives
+    this script.
+
+    So it does what any well-behaved client does: reads `retry_after_seconds`
+    and comes back. That makes the seeder correct at any number of markets
+    rather than lucky at one.
+    """
+    for attempt in range(4):
+        response = await send()
+        if response.status_code != 429:
+            return await expect(response, *codes, what=what)
+        try:
+            wait = int(response.json()["extra"]["retry_after_seconds"]) + 2
+        except Exception:
+            wait = 60
+        print(
+            f"  rate limited on {what}; waiting {wait}s "
+            f"(attempt {attempt + 1}/4)",
+            flush=True,
+        )
+        await asyncio.sleep(wait)
+    raise SeedError(f"demo seed failed at {what}: still rate limited after four waits")
 
 
 # --- a client with no dependencies -------------------------------------------
@@ -438,8 +610,8 @@ ADMIN_EMAIL = "demo-admin@lacteva.example.com"
 
 async def refresh_member(client, headers: dict, email: str, org_id: str) -> dict:
     """The same re-authentication for a tenant member. See `refresh_admin`."""
-    fresh = await expect(
-        await client.post(
+    fresh = await retrying(
+        lambda: client.post(
             "/v1/auth/token",
             json={"email": email, "password": PASSWORD, "tenant_id": org_id},
         ),
@@ -463,8 +635,8 @@ async def refresh_admin(client, admin: dict) -> dict:
     Mutating the dict rather than returning a new one keeps every caller
     holding the same object, so there is no way to keep using the stale one.
     """
-    fresh = await expect(
-        await client.post(
+    fresh = await retrying(
+        lambda: client.post(
             "/v1/auth/token", json={"email": ADMIN_EMAIL, "password": PASSWORD}
         ),
         200,
@@ -486,8 +658,8 @@ async def platform_admin(client) -> dict:
             f"demo seed failed at register admin: {r.status_code} {r.text[:300]}"
         )
     await grant_platform_admin(email)
-    tokens = await expect(
-        await client.post(
+    tokens = await retrying(
+        lambda: client.post(
             "/v1/auth/token", json={"email": email, "password": PASSWORD}
         ),
         200,
@@ -496,11 +668,18 @@ async def platform_admin(client) -> dict:
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
-async def make_org(client, admin: dict, name: str, slug: str) -> dict:
+async def make_org(client, admin: dict, name: str, slug: str, country_code: str) -> dict:
+    """DEMO-013: the country is supplied, never assumed.
+
+    Nothing else is: the platform resolves currency, timezone and languages
+    from it (`core/locales.py`), so this seeder states no money and no clock
+    anywhere. If it did, it would be a second source of truth that could
+    disagree with the tenant it just created.
+    """
     org = await expect(
         await client.post(
             "/v1/organizations",
-            json={"name": name, "slug": slug, "country_code": "ke"},
+            json={"name": name, "slug": slug, "country_code": country_code},
             headers=admin,
         ),
         201,
@@ -568,16 +747,16 @@ async def make_member(
     token = await invite_and_capture_token(
         client, headers=acting(admin, org_id), email=email, role_name=role_name
     )
-    user = await expect(
-        await client.post(
+    user = await retrying(
+        lambda: client.post(
             "/v1/invitations/accept",
             json={"token": token, "password": PASSWORD, "full_name": full_name},
         ),
         201,
         what=f"accept invitation {email}",
     )
-    tokens = await expect(
-        await client.post(
+    tokens = await retrying(
+        lambda: client.post(
             "/v1/auth/token",
             json={"email": email, "password": PASSWORD, "tenant_id": org_id},
         ),
@@ -713,7 +892,6 @@ async def make_rate_card(
             json={
                 "code": code,
                 "name": name,
-                "currency": "KES",
                 "effective_from": effective_from,
                 "effective_until": effective_until,
                 "description": "Quality-banded rate for raw cow milk",
@@ -932,7 +1110,6 @@ async def settle(
                 "center_id": center_id,
                 "period_from": period_from.isoformat(),
                 "period_to": period_to.isoformat(),
-                "currency": "KES",
             },
             headers=h,
         ),
@@ -982,7 +1159,6 @@ async def pay(
             "/v1/payments",
             json={
                 "supplier_id": supplier_id,
-                "currency": "KES",
                 "method": method,
                 "allocations": [{"settlement_id": settlement_id}],
                 "idempotency_key": f"demo-{settlement_id}",
@@ -1045,7 +1221,7 @@ HISTORY_DAYS = 21
 OPEN_SETTLEMENTS = 3
 
 
-async def build_demo_org(client, admin: dict, org: dict) -> dict:
+async def build_demo_org(client, admin: dict, org: dict, market: Market) -> dict:
     """The full dairy: users, centres, suppliers, rates, collections, money."""
     today = utc_today()
     summary: dict = {"organization": org["name"], "organization_id": org["id"]}
@@ -1054,16 +1230,16 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
         client,
         admin,
         org["id"],
-        email="manager@lacteva-demo.example.com",
-        full_name="Wanjiku Mbugua",
+        email=f"manager@{market.email_domain}",
+        full_name=market.staff["manager"],
         role_name="tenant-admin",
     )
     viewer = await make_member(
         client,
         admin,
         org["id"],
-        email="viewer@lacteva-demo.example.com",
-        full_name="Otieno Odhiambo",
+        email=f"viewer@{market.email_domain}",
+        full_name=market.staff["viewer"],
         role_name="tenant-viewer",
     )
     # DEMO-010 §6: "how do different users see different things" is one of the
@@ -1076,24 +1252,24 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
         client,
         admin,
         org["id"],
-        email="operations@lacteva-demo.example.com",
-        full_name="Kipchoge Rutto",
+        email=f"operations@{market.email_domain}",
+        full_name=market.staff["operations"],
         role_name="ORGANIZATION_MANAGER",
     )
     operator = await make_member(
         client,
         admin,
         org["id"],
-        email="operator@lacteva-demo.example.com",
-        full_name="Naliaka Simiyu",
+        email=f"operator@{market.email_domain}",
+        full_name=market.staff["operator"],
         role_name="COLLECTION_OPERATOR",
     )
     sales = await make_member(
         client,
         admin,
         org["id"],
-        email="sales@lacteva-demo.example.com",
-        full_name="Zawadi Mwakio",
+        email=f"sales@{market.email_domain}",
+        full_name=market.staff["sales"],
         role_name="SALES_OFFICER",
     )
     summary["users"] = [
@@ -1126,7 +1302,7 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
 
     centers = [
         await make_center(client, h, branch["id"], name, code, admin_user_id)
-        for name, code in CENTERS
+        for name, code in market.centers
     ]
     summary["centers"] = [c["code"] for c in centers]
 
@@ -1140,7 +1316,10 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
         effective_from=(today - timedelta(days=365)).isoformat(),
         effective_until=(today - timedelta(days=HISTORY_DAYS + 1)).isoformat(),
         center_ids=[c["id"] for c in centers],
-        bands=[(3.0, 4.0, 39.0), (4.0, 5.0, 42.5), (5.0, 6.0, 46.0)],
+        # Last season, derived from this market's own rates rather than
+        # stated: a demo with a Kenyan legacy card and Indian current rates
+        # would show a co-operative a pay rise nobody gave.
+        bands=[(lo, hi, round(rate - 3.0, 2)) for lo, hi, rate in market.fat_bands],
         publish=True,
     )
     current = await make_rate_card(
@@ -1151,7 +1330,7 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
         effective_from=(today - timedelta(days=HISTORY_DAYS)).isoformat(),
         effective_until=None,
         center_ids=[c["id"] for c in centers],
-        bands=FAT_BANDS,
+        bands=market.fat_bands,
         publish=True,
     )
     # A draft card as well: rate cards under review are a real state, and a
@@ -1164,13 +1343,13 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
         effective_from=(today + timedelta(days=90)).isoformat(),
         effective_until=None,
         center_ids=[c["id"] for c in centers],
-        bands=[(3.0, 4.0, 44.0), (4.0, 5.0, 47.5), (5.0, 6.0, 51.0)],
+        bands=[(lo, hi, round(rate + 2.0, 2)) for lo, hi, rate in market.fat_bands],
         publish=False,
     )
     summary["rate_cards"] = ["RC-2025-LEGACY", "RC-2026-MAIN", "RC-2027-DRAFT"]
 
     suppliers = []
-    for i, name in enumerate(SUPPLIER_NAMES):
+    for i, name in enumerate(market.supplier_names):
         center = centers[i % len(centers)]
         suppliers.append(
             {**await make_supplier(client, h, name, i, center["id"]), "_center": center}
@@ -1256,6 +1435,9 @@ async def build_demo_org(client, admin: dict, org: dict) -> dict:
         # platform admin and the organization the invitation belongs to.
         "admin": admin,
         "org": org,
+        # DEMO-013: which market this tenant is, so the later phases build the
+        # right households without asking what country they are in.
+        "market": market,
     }
 
 
@@ -1362,6 +1544,7 @@ async def build_sales(client, built: dict) -> dict:
     a total.
     """
     h, today = built["headers"], built["today"]
+    market: Market = built["market"]
     summary = {
         "customers": 0,
         "deliveries": 0,
@@ -1374,7 +1557,7 @@ async def build_sales(client, built: dict) -> dict:
     records = []
 
     for index, (name, kind, phone, address, litres, rate, pattern, evening) in enumerate(
-        CUSTOMERS
+        market.customers
     ):
         customer = await expect(
             await client.post(
@@ -1529,7 +1712,8 @@ async def make_customer_login(client, built: dict, *, customer: dict) -> dict:
     or an operator with database access would do. The limitation is recorded
     in DEMO-012-FINAL.md rather than worked around with a hidden endpoint.
     """
-    email = "household@lacteva-demo.example.com"
+    market: Market = built["market"]
+    email = f"household@{market.email_domain}"
     # This runs at the very end of the sales phase, twenty minutes after the
     # admin signed in. DEMO-010 already found what that costs: a long job
     # holding a short-lived credential fails with a bare 401 after twenty
@@ -1540,7 +1724,7 @@ async def make_customer_login(client, built: dict, *, customer: dict) -> dict:
         built["admin"],
         built["org"]["id"],
         email=email,
-        full_name="Njeri Mwangi",
+        full_name=market.staff["household"],
         role_name="CUSTOMER_PORTAL",
     )
 
@@ -1648,7 +1832,7 @@ async def demonstrate_br_0027(client, built: dict) -> dict:
     return built
 
 
-async def build_isolation_org(client, admin: dict, org: dict) -> dict:
+async def build_isolation_org(client, admin: dict, org: dict, market: Market = KENYA) -> dict:
     """A second, deliberately small organization.
 
     Its whole job is to make tenant isolation demonstrable: sign in here and the
@@ -1692,7 +1876,7 @@ async def build_isolation_org(client, admin: dict, org: dict) -> dict:
         effective_from=(today - timedelta(days=30)).isoformat(),
         effective_until=None,
         center_ids=[center["id"]],
-        bands=FAT_BANDS,
+        bands=market.fat_bands,
         publish=True,
     )
     suppliers = [
@@ -1746,7 +1930,7 @@ async def demo_org_ids() -> list[str]:
     async with platform_factory("demo seed: locate demo organizations")() as session:
         rows = await session.scalars(
             select(Organization.id).where(
-                Organization.slug.in_([DEMO_ORG_SLUG, ISOLATION_ORG_SLUG])
+                Organization.slug.in_(DEMO_SLUGS)
             )
         )
         return [str(x) for x in rows.all()]
@@ -1785,7 +1969,7 @@ async def purge() -> dict:
         # The organization row itself is platform-global, not tenant-owned.
         result = await session.execute(
             delete(Organization).where(
-                Organization.slug.in_([DEMO_ORG_SLUG, ISOLATION_ORG_SLUG])
+                Organization.slug.in_(DEMO_SLUGS)
             )
         )
         await session.commit()
@@ -2033,31 +2217,49 @@ async def seed() -> dict:
     client = AsgiClient(create_app())
 
     admin = await platform_admin(client)
-    demo = await make_org(client, admin, DEMO_ORG, DEMO_ORG_SLUG)
-    isolation = await make_org(client, admin, ISOLATION_ORG, ISOLATION_ORG_SLUG)
-
-    built = await build_demo_org(client, admin, demo)
-    built = await build_money(client, built)
-    built = await demonstrate_br_0027(client, built)
-    # Same reason as below: the sales phase is the last and longest thing the
-    # manager does, and it starts a long way from their login.
-    await refresh_member(
-        client,
-        built["headers"],
-        "manager@lacteva-demo.example.com",
-        built["summary"]["organization_id"],
+    isolation = await make_org(
+        client, admin, ISOLATION_ORG, ISOLATION_ORG_SLUG, KENYA.country_code
     )
-    built = await build_sales(client, built)
-    # Receipts and notifications are consumer work, exactly as in production.
-    await run_consumers()
 
-    # The demo tenant took the better part of twenty minutes to build. The
-    # admin token that created the organizations is older than that.
-    await refresh_admin(client, admin)
+    # DEMO-013: one loop, two countries, and no branch inside it. Each market
+    # is built by the same code from a different profile — which is the claim
+    # the Indian demo exists to make. Kenya first, so a partial run still
+    # leaves the older demo whole.
+    summaries: dict = {}
+    for market in (KENYA, INDIA):
+        org = await make_org(
+            client, admin, market.org_name, market.org_slug, market.country_code
+        )
+        built = await build_demo_org(client, admin, org, market)
+        built = await build_money(client, built)
+        built = await demonstrate_br_0027(client, built)
+        # The sales phase is the last and longest thing the manager does, and
+        # it starts a long way from their login.
+        await refresh_member(
+            client,
+            built["headers"],
+            f"manager@{market.email_domain}",
+            built["summary"]["organization_id"],
+        )
+        built = await build_sales(client, built)
+        # Receipts and notifications are consumer work, exactly as in production.
+        await run_consumers()
+        summaries[market.key] = built["summary"]
+        # Each market takes the better part of twenty minutes. The admin token
+        # that created the organizations is older than that by the end of it.
+        await refresh_admin(client, admin)
+
     isolation_summary = await build_isolation_org(client, admin, isolation)
     await run_consumers()
 
-    return {"demo": built["summary"], "isolation": isolation_summary}
+    return {
+        # `demo` stays the Kenyan tenant under its old key: DEMO-010 and
+        # DEMO-011 evidence refers to it, and renaming it in the summary would
+        # break every script that reads this output.
+        "demo": summaries["kenya"],
+        "india": summaries["india"],
+        "isolation": isolation_summary,
+    }
 
 
 def main() -> int:

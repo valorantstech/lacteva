@@ -525,3 +525,166 @@ async def test_neither_dairy_can_read_the_others_locale_settings(client):
     # PostgreSQL feature and does not exist on the SQLite this suite runs on.
     # Asserting it here would be a green that proves nothing — see
     # `test_rls_postgres.py::test_one_dairys_locale_is_invisible_to_another`.
+
+
+# --- reporting and billing use the dairy's calendar --------------------------
+
+
+async def test_a_daily_report_defaults_to_the_organizations_today(client):
+    """DEMO-013 §9. The dates are optional precisely so a client can ask for
+    "today" without owning a timezone database — and the platform answers with
+    ITS today, echoing the dates it used."""
+    from datetime import timedelta
+
+    _org, headers = await _tenant_admin_for(
+        client, country="IN", slug="report-in", email="report@india.example"
+    )
+    r = await client.get("/v1/deliveries/report", headers=headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    expected = business_today("Asia/Kolkata")
+    assert body["date_from"] == str(expected)
+    assert body["date_to"] == str(expected)
+
+    # And a Kenyan dairy gets Kenya's today, from the same endpoint.
+    _ke, kenya = await _tenant_admin_for(
+        client, country="KE", slug="report-ke", email="report@kenya.example"
+    )
+    ke_body = (await client.get("/v1/deliveries/report", headers=kenya)).json()
+    assert ke_body["date_from"] == str(business_today("Africa/Nairobi"))
+    # The two answers differ for five and a half hours out of every
+    # twenty-four; asserting they are equal would be asserting the bug.
+    assert abs(
+        date.fromisoformat(body["date_from"]) - date.fromisoformat(ke_body["date_from"])
+    ) <= timedelta(days=1)
+
+
+async def test_a_monthly_bill_covers_the_dairys_month(client):
+    """A bill for August is August in the dairy's calendar. The period is what
+    the caller asked for, and the platform stores it verbatim — this asserts
+    the round trip, so a future change that shifted the period by a timezone
+    would be visible."""
+    _org, headers = await _tenant_admin_for(
+        client, country="IN", slug="bill-in", email="bill@india.example"
+    )
+    customer = (
+        await client.post(
+            "/v1/customers",
+            json={
+                "name": "Monthly Household",
+                "customer_type": "household",
+                "plan": {
+                    "product": "RAW-COW-MILK",
+                    "default_quantity": "1.000",
+                    "quantity_unit": "L",
+                    "unit_price": "56.0000",
+                },
+            },
+            headers=headers,
+        )
+    ).json()
+    for day in ("2026-07-01", "2026-07-15", "2026-07-31"):
+        r = await client.post(
+            "/v1/deliveries",
+            json={
+                "customer_id": customer["id"],
+                "delivery_date": day,
+                "slot": "morning",
+                "status": "delivered",
+            },
+            headers=headers,
+        )
+        assert r.status_code == 201, r.text
+
+    invoice = (
+        await client.post(
+            "/v1/invoices",
+            json={
+                "customer_id": customer["id"],
+                "period_from": "2026-07-01",
+                "period_to": "2026-07-31",
+            },
+            headers=headers,
+        )
+    ).json()
+    assert invoice["period_from"] == "2026-07-01"
+    assert invoice["period_to"] == "2026-07-31"
+    assert invoice["currency"] == "INR"
+    assert invoice["line_count"] == 3
+    assert Decimal(invoice["subtotal"]) == Decimal("168.00")  # 3 x 1.000 x 56
+
+
+async def test_a_notification_defaults_to_the_organizations_language(client):
+    """DEMO-013 §14 — not the literal "en". An event carries no language of
+    its own; whose language it is written in is a fact about the dairy."""
+    import uuid as _uuid
+
+    from platform_core.core import db, tenancy
+    from platform_core.modules.notification.service import (
+        NotificationRequest,
+        NotificationService,
+    )
+
+    _org, headers = await _tenant_admin_for(
+        client, country="IN", slug="notify-in", email="notify@india.example"
+    )
+    me = (await client.get("/v1/auth/me", headers=headers)).json()
+    tenant_id = _uuid.UUID(me["tenant_id"])
+
+    tenancy.set_current_tenant(tenant_id)
+    try:
+        async with db.get_session_factory()() as session:
+            notification = await NotificationService(session).dispatch(
+                NotificationRequest(
+                    tenant_id=tenant_id,
+                    event_id=_uuid.uuid4(),
+                    event_name="sales.invoice-issued.v1",
+                    template_key="invoice_issued",
+                    channel="push",
+                    recipient_ref=_uuid.uuid4(),  # nobody registered: no device
+                    variables={"number": "INV-1", "period": "2026-08"},
+                )
+            )
+            assert notification is not None
+            assert notification.language == "en-IN"
+            await session.commit()
+    finally:
+        tenancy.set_current_tenant(None)
+
+
+async def test_the_whole_procurement_chain_uses_the_organizations_currency(client):
+    """DEMO-013, found by looking at the Indian dashboard in a browser.
+
+    The sales side reported rupees while procurement reported **KES** — the
+    rate card, the settlement and the payment all REQUIRED a currency from the
+    caller, and the demo seeder had been stating "KES" since there was only
+    one country. Requiring it is the defect: every caller then has to know,
+    and one of them will be wrong.
+    """
+    _org, headers = await _tenant_admin_for(
+        client, country="IN", slug="procure-in", email="procure@india.example"
+    )
+    r = await client.post(
+        "/v1/rate-cards",
+        json={
+            "code": "RC-IN-1",
+            "name": "Season rates",
+            "effective_from": "2026-01-01",
+            "description": "no currency stated",
+        },
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["currency"] == "INR", "a rate card in the wrong money"
+
+    # And a Kenyan dairy is unaffected by the same omission.
+    _ke, kenya = await _tenant_admin_for(
+        client, country="KE", slug="procure-ke", email="procure@kenya.example"
+    )
+    ke = await client.post(
+        "/v1/rate-cards",
+        json={"code": "RC-KE-1", "name": "Season rates", "effective_from": "2026-01-01"},
+        headers=kenya,
+    )
+    assert ke.status_code == 201, ke.text
+    assert ke.json()["currency"] == "KES"

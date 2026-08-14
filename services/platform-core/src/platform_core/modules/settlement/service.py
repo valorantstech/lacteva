@@ -31,6 +31,7 @@ from platform_core.core.metrics import (
     SETTLEMENTS_CREATED,
     SETTLEMENTS_FINALIZED,
 )
+from platform_core.core.org_context import tenant_currency
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money
 from platform_core.infrastructure.events import EventBus, EventEnvelope
@@ -63,11 +64,19 @@ class CreateSettlementCommand(BaseModel):
     center_id: uuid.UUID
     period_from: date
     period_to: date
-    currency: str = Field(min_length=3, max_length=3)
+    #: DEMO-013: optional, defaulting to the ORGANIZATION's currency. It was
+    #: required, which meant every caller stated a currency — and the demo
+    #: seeder stated "KES", so an Indian dairy's procurement side reported its
+    #: collection value in Kenyan shillings while its sales side reported
+    #: rupees. Still overridable: a rate card in another currency is a real
+    #: arrangement, and the column has always carried one.
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
 
     @field_validator("currency")
     @classmethod
-    def _iso_currency(cls, v: str) -> str:
+    def _iso_currency(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
         if not v.isalpha():
             raise ValueError("currency must be a 3-letter ISO 4217 code")
         return v.upper()
@@ -161,7 +170,7 @@ class SettlementService:
             settlement_number=await self._generate_number(tenant_id),
             period_from=cmd.period_from,
             period_to=cmd.period_to,
-            currency=cmd.currency,
+            currency=cmd.currency or await tenant_currency(self._session),
         )
         self._session.add(settlement)
         await self._session.flush()

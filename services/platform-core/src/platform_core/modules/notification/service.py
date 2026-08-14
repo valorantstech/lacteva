@@ -32,6 +32,7 @@ from platform_core.core.metrics import (
     NOTIFICATIONS_FAILED,
     NOTIFICATIONS_SENT,
 )
+from platform_core.core.org_context import tenant_locale
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.event_relay.consumers import MAX_CONSUMER_ATTEMPTS
 from platform_core.modules.event_relay.service import backoff_delay
@@ -240,7 +241,15 @@ class NotificationService:
             event_name=request.event_name,
             template_key=request.template_key,
             channel=request.channel,
-            language=(request.language or "en"),
+            # DEMO-013 §14: the ORGANIZATION's default, not the literal "en".
+            # An event carries no language of its own; whose language it is
+            # written in is a fact about the dairy receiving it, and later
+            # about the person — `_resolve_recipient` narrows it to the
+            # recipient's own choice when the directory or the device knows one.
+            language=(
+                request.language
+                or (await tenant_locale(self._session, request.tenant_id)).default_language
+            ),
             recipient_ref=request.recipient_ref,
             recipient=request.recipient,
             payload=_jsonable(request.variables),
@@ -583,7 +592,7 @@ class NotificationService:
         if entry is None:
             return None
         if not notification.language or notification.language == "en":
-            notification.language = entry.language or "en"
+            notification.language = entry.language or notification.language or "en"
         return entry.phone if notification.channel == "sms" else entry.email
 
     async def _resolve_device_token(self, notification: Notification) -> str | None:
@@ -623,7 +632,7 @@ class NotificationService:
         if device is None:
             return None
         if not notification.language or notification.language == "en":
-            notification.language = device.language or "en"
+            notification.language = device.language or notification.language or "en"
         return device.token
 
     async def _recipient_name(self, notification: Notification) -> str:

@@ -33,6 +33,7 @@ from platform_core.core.metrics import (
     PAYMENTS_CREATED,
     PAYMENTS_FAILED,
 )
+from platform_core.core.org_context import tenant_currency
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money
 from platform_core.infrastructure.events import EventBus, EventEnvelope
@@ -75,7 +76,13 @@ class PaymentAllocationInput(BaseModel):
 
 class CreatePaymentCommand(BaseModel):
     supplier_id: uuid.UUID
-    currency: str = Field(min_length=3, max_length=3)
+    #: DEMO-013: optional, defaulting to the ORGANIZATION's currency. It was
+    #: required, which meant every caller stated a currency — and the demo
+    #: seeder stated "KES", so an Indian dairy's procurement side reported its
+    #: collection value in Kenyan shillings while its sales side reported
+    #: rupees. Still overridable: a rate card in another currency is a real
+    #: arrangement, and the column has always carried one.
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
     method: str
     allocations: list[PaymentAllocationInput] = Field(min_length=1)
     reference: str | None = None
@@ -87,7 +94,9 @@ class CreatePaymentCommand(BaseModel):
 
     @field_validator("currency")
     @classmethod
-    def _iso_currency(cls, v: str) -> str:
+    def _iso_currency(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
         if not v.isalpha():
             raise ValueError("currency must be a 3-letter ISO 4217 code")
         return v.upper()
@@ -229,9 +238,15 @@ class PaymentService:
         if supplier is None or supplier.tenant_id != tenant_id:
             raise NotFoundError("supplier not found")
 
+        # DEMO-013: resolved ONCE, here, so every Money built below shares it.
+        # Resolving per construction would let a settings change mid-request
+        # produce a payment whose total is in a different currency from its
+        # own lines.
+        currency = cmd.currency or await tenant_currency(self._session)
+
         seen: set[uuid.UUID] = set()
         resolved: list[tuple[Settlement, Decimal]] = []
-        total = Money(amount=Decimal("0.00"), currency=cmd.currency)
+        total = Money(amount=Decimal("0.00"), currency=currency)
         # ARCH-FINAL-001: take the row locks in a deterministic GLOBAL order,
         # never the client's.
         #
@@ -256,7 +271,7 @@ class PaymentService:
             )
             amount = await self._resolve_allocation(settlement, allocation.amount)
             resolved.append((settlement, amount))
-            total = total.plus(Money(amount=amount, currency=cmd.currency))
+            total = total.plus(Money(amount=amount, currency=currency))
 
         if total.amount <= 0:
             raise ConflictError("a payment must move a positive amount")
@@ -265,7 +280,7 @@ class PaymentService:
             tenant_id=tenant_id,
             supplier_id=cmd.supplier_id,
             payment_number=await self._generate_number(tenant_id),
-            currency=cmd.currency,
+            currency=currency,
             method=cmd.method,
             amount=total.amount,
             reference=cmd.reference,

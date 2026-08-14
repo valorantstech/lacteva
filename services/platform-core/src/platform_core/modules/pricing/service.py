@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.org_context import tenant_currency
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
@@ -53,14 +54,22 @@ PRODUCT_CODE_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9-]{1,38}$"
 class RateCardInput(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     description: str = Field(default="", max_length=500)
-    currency: str = Field(min_length=3, max_length=3)
+    #: DEMO-013: optional, defaulting to the ORGANIZATION's currency. It was
+    #: required, which meant every caller stated a currency — and the demo
+    #: seeder stated "KES", so an Indian dairy's procurement side reported its
+    #: collection value in Kenyan shillings while its sales side reported
+    #: rupees. Still overridable: a rate card in another currency is a real
+    #: arrangement, and the column has always carried one.
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
     effective_from: date
     effective_until: date | None = None
     branch_id: uuid.UUID | None = None
 
     @field_validator("currency")
     @classmethod
-    def _iso_currency(cls, v: str) -> str:
+    def _iso_currency(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
         if not v.isalpha():
             raise ValueError("currency must be a 3-letter ISO 4217 code")
         return v.upper()
@@ -157,7 +166,7 @@ class RateCardService:
             code=code,
             name=cmd.name,
             description=cmd.description,
-            currency=cmd.currency,
+            currency=cmd.currency or await tenant_currency(self._session),
             effective_from=cmd.effective_from,
             effective_until=cmd.effective_until,
         )

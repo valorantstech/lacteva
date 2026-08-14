@@ -8,6 +8,54 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Rep
 
 ### Added
 
+- DEMO-013 "Globalization: country, currency, timezone & language" — the
+  context guide's own rule 9.6, *do not hardcode country- or market-specific
+  rules*, had been written since the foundation and was **false**: the sales
+  chain defaulted to the literal `"KES"`, business dates were UTC's dates,
+  `user.locale` was a column nothing validated, and the demo seeder posted
+  `country_code: "ke"` outright. An organization now resolves country →
+  currency + timezone + languages **once, at onboarding**, and everything else
+  reads the organization.
+- **`core/locales.py` is the only place that knows one country from another.**
+  A registry in code, like permissions and BUS_EVENTS, because this is
+  reference data — it changes when the world changes, not when a tenant does.
+  Adding a country is a data entry; a country it has never met is still
+  onboardable, provided the caller says what the money and the clock are. It
+  is never guessed: a guess about somebody's money is wrong silently and
+  discovered on the first bill.
+- **Storage stays UTC; interpretation became the tenant's.** A 05:00 round in
+  Bengaluru is 23:30 UTC *the day before*, so UTC dates filed it under
+  yesterday and, at a month boundary, billed it in the previous month. Nairobi
+  is UTC+3, which is exactly why the Kenyan demo never showed this. The same
+  clock decides which rate card prices a collection — the old behaviour would
+  have paid an Indian farmer yesterday's rate for milk poured at dawn, with
+  nothing anywhere looking wrong.
+- **Money never guesses.** `default="KES"` came off five columns and
+  `tenant_currency()` raises for an unconfigured organization: a report in the
+  wrong timezone is a wrong report, but an invoice in a currency nobody chose
+  is worse than no invoice. No FX conversion — this milestone determines a
+  currency, it does not convert one.
+- **Language is two decisions.** The organization enables languages; a person
+  chooses one from that list, needing no permission. Narrowing the
+  organization's list deliberately does not rewrite anybody's stored
+  preference. `organization.settings.manage` is a new registry entry, separate
+  from the platform's authority to create organizations at all.
+- **Portal and mobile got dictionary-and-hook i18n (English + Hindi)** with no
+  framework, no build step, and no `if (country === …)` anywhere; navigation
+  holds keys rather than sentences, and both clients read currency, timezone
+  and language from `/v1/auth/me` rather than holding a copy.
+- **A second demo tenant** — Lacteva India Demo, INR, Asia/Kolkata, en-IN and
+  hi-IN — built by the same seeder code from a different `Market` profile,
+  with the Kenyan tenant untouched. The seeder now waits when the platform
+  rate-limits it rather than being exempted from a control that protects a
+  real endpoint.
+- Also: `ValidationError` (422), because the error hierarchy had no home for a
+  value wrong in domain terms and a bad IANA zone was answering 500; and a
+  latent DEMO-012 defect where the mobile session read the person from the top
+  level of `/v1/auth/me`, where they are not, so the signed-in address had
+  been rendering blank. See
+  [LOCALIZATION](docs/03-architecture/04-technology-layer/LOCALIZATION.md) and
+  [DEMO-013-FINAL.md](DEMO-013-FINAL.md).
 - DEMO-012 "Mobile Applications & Field Operations" — the app already
   authenticated, held a durable offline queue and built. What it did not do
   was know **who** had signed in: every account landed on the collection
