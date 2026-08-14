@@ -24,8 +24,16 @@ import {
   openCollectionSession,
 } from "@/lib/api";
 import { Stamp } from "@/components/datetime";
+import { todayIn } from "@/components/date-range";
+import { useLocale } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Money, Quantity } from "@/components/money";
@@ -73,7 +81,8 @@ const LIMITS = {
 
 const MILK_TYPES = ["cow", "buffalo", "goat", "mixed"] as const;
 
-type StepKey = "centre" | "supplier" | "milk" | "weight" | "quality" | "review" | "done";
+type StepKey =
+  "centre" | "supplier" | "milk" | "weight" | "quality" | "review" | "done";
 
 const STEPS: { key: StepKey; label: string }[] = [
   { key: "centre", label: "Centre" },
@@ -129,12 +138,17 @@ export default function NewCollectionPage() {
   const [checkingReadiness, setCheckingReadiness] = useState(false);
 
   const [tx, setTx] = useState<MilkTransaction | null>(null);
+  const { timezone: orgTimezone } = useLocale();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resuming, setResuming] = useState(true);
 
   const [supplierId, setSupplierId] = useState("");
-  const [milk, setMilk] = useState({ milk_type: "cow", container_type: "can", container_identifier: "" });
+  const [milk, setMilk] = useState({
+    milk_type: "cow",
+    container_type: "can",
+    container_identifier: "",
+  });
   const [weight, setWeight] = useState({ gross: "", tare: "" });
   const [quality, setQuality] = useState({ fat: "", snf: "", clr: "" });
   const [fieldError, setFieldError] = useState<Record<string, string>>({});
@@ -228,10 +242,18 @@ export default function NewCollectionPage() {
     try {
       // Join the centre's open session if there is one; a centre permits only
       // one, and taking someone else's shift is not this screen's business.
-      const open = await listCollectionSessions({ center_id: centerId, status: "open" });
+      const open = await listCollectionSessions({
+        center_id: centerId,
+        status: "open",
+      });
       const session =
         open.items?.[0] ??
-        (await openCollectionSession(centerId, `Guided capture ${new Date().toISOString().slice(0, 10)}`));
+        // The DAIRY's date. A session opened at 00:30 in Nairobi belongs to
+        // that day's collection, and a UTC label named it after yesterday.
+        (await openCollectionSession(
+          centerId,
+          `Guided capture ${todayIn(orgTimezone)}`,
+        ));
       const created = await createMilkTransaction(session.id);
       setTx(created);
       sessionStorage.setItem(STORAGE_KEY, created.id);
@@ -252,8 +274,11 @@ export default function NewCollectionPage() {
   };
 
   const centre = centers.find((c) => c.id === (tx?.center_id ?? centerId));
-  const supplier = suppliers.find((s) => s.id === (tx?.supplier_id ?? supplierId));
-  const ready = readiness?.status === "READY" || readiness?.status === "WARNING";
+  const supplier = suppliers.find(
+    (s) => s.id === (tx?.supplier_id ?? supplierId),
+  );
+  const ready =
+    readiness?.status === "READY" || readiness?.status === "WARNING";
 
   if (resuming) {
     return (
@@ -266,12 +291,20 @@ export default function NewCollectionPage() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
-        breadcrumbs={[{ label: "Collections", href: "/transactions" }, { label: "New collection" }]}
+        breadcrumbs={[
+          { label: "Collections", href: "/transactions" },
+          { label: "New collection" },
+        ]}
         title="Record a collection"
         description="Each step is a real operation on the platform. The platform decides what comes next."
         actions={
           tx ? (
-            <Button type="button" variant="ghost" onClick={abandon} disabled={busy}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={abandon}
+              disabled={busy}
+            >
               Start over
             </Button>
           ) : undefined
@@ -301,7 +334,8 @@ export default function NewCollectionPage() {
           <CardHeader>
             <CardTitle className="text-base">1 · Collection centre</CardTitle>
             <CardDescription>
-              Milk can only be received at a centre the platform considers ready.
+              Milk can only be received at a centre the platform considers
+              ready.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -322,7 +356,9 @@ export default function NewCollectionPage() {
               </select>
             </div>
 
-            {checkingReadiness ? <LoadingState label="Checking readiness…" /> : null}
+            {checkingReadiness ? (
+              <LoadingState label="Checking readiness…" />
+            ) : null}
 
             {readiness ? (
               <div className="rounded-lg border border-border p-3">
@@ -336,20 +372,29 @@ export default function NewCollectionPage() {
                   {(readiness.checks ?? []).map((check) => (
                     <li key={check.rule} className="flex items-start gap-2">
                       {check.passed ? (
-                        <Check aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                        <Check
+                          aria-hidden
+                          className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                        />
                       ) : (
                         <AlertTriangle
                           aria-hidden
                           className={cn(
                             "mt-0.5 size-3.5 shrink-0",
-                            check.severity === "blocking" ? "text-destructive" : "text-muted-foreground",
+                            check.severity === "blocking"
+                              ? "text-destructive"
+                              : "text-muted-foreground",
                           )}
                         />
                       )}
-                      <span className={check.passed ? "text-muted-foreground" : ""}>
+                      <span
+                        className={check.passed ? "text-muted-foreground" : ""}
+                      >
                         {check.rule.replace(/[_.]/g, " ")}
                         {!check.passed && check.detail ? (
-                          <span className="block text-xs text-muted-foreground">{check.detail}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {check.detail}
+                          </span>
                         ) : null}
                       </span>
                     </li>
@@ -357,14 +402,19 @@ export default function NewCollectionPage() {
                 </ul>
                 {!ready ? (
                   <p role="alert" className="mt-3 text-sm text-destructive">
-                    This centre cannot receive milk until the blocking checks above pass.
+                    This centre cannot receive milk until the blocking checks
+                    above pass.
                   </p>
                 ) : null}
               </div>
             ) : null}
 
             <div>
-              <Button type="button" disabled={!centerId || !ready || busy} onClick={() => void startCollection()}>
+              <Button
+                type="button"
+                disabled={!centerId || !ready || busy}
+                onClick={() => void startCollection()}
+              >
                 {busy ? "Starting…" : "Start collection"}
               </Button>
             </div>
@@ -377,7 +427,8 @@ export default function NewCollectionPage() {
           <CardHeader>
             <CardTitle className="text-base">2 · Supplier</CardTitle>
             <CardDescription>
-              Only an active supplier may deliver. The platform refuses the rest.
+              Only an active supplier may deliver. The platform refuses the
+              rest.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -401,7 +452,9 @@ export default function NewCollectionPage() {
               <Button
                 type="button"
                 disabled={!supplierId || busy}
-                onClick={() => void run(() => identifySupplier(tx!.id, supplierId))}
+                onClick={() =>
+                  void run(() => identifySupplier(tx!.id, supplierId))
+                }
               >
                 {busy ? "Identifying…" : "Identify supplier"}
               </Button>
@@ -423,7 +476,9 @@ export default function NewCollectionPage() {
                   id="w-milk"
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                   value={milk.milk_type}
-                  onChange={(e) => setMilk({ ...milk, milk_type: e.target.value })}
+                  onChange={(e) =>
+                    setMilk({ ...milk, milk_type: e.target.value })
+                  }
                 >
                   {MILK_TYPES.map((m) => (
                     <option key={m} value={m}>
@@ -438,7 +493,9 @@ export default function NewCollectionPage() {
                   id="w-container"
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                   value={milk.container_type}
-                  onChange={(e) => setMilk({ ...milk, container_type: e.target.value })}
+                  onChange={(e) =>
+                    setMilk({ ...milk, container_type: e.target.value })
+                  }
                 >
                   {["can", "drum", "tanker"].map((c) => (
                     <option key={c} value={c}>
@@ -453,7 +510,9 @@ export default function NewCollectionPage() {
                   id="w-container-id"
                   value={milk.container_identifier}
                   placeholder="CAN-01"
-                  onChange={(e) => setMilk({ ...milk, container_identifier: e.target.value })}
+                  onChange={(e) =>
+                    setMilk({ ...milk, container_identifier: e.target.value })
+                  }
                   aria-invalid={Boolean(fieldError.container)}
                 />
                 {fieldError.container ? (
@@ -469,12 +528,17 @@ export default function NewCollectionPage() {
                 disabled={busy}
                 onClick={() => {
                   if (!milk.container_identifier.trim()) {
-                    setFieldError({ container: "Give the container an identifier." });
+                    setFieldError({
+                      container: "Give the container an identifier.",
+                    });
                     return;
                   }
                   setFieldError({});
                   void run(() =>
-                    captureMilk(tx!.id, { ...milk, container_identifier: milk.container_identifier.trim() }),
+                    captureMilk(tx!.id, {
+                      ...milk,
+                      container_identifier: milk.container_identifier.trim(),
+                    }),
                   );
                 }}
               >
@@ -491,7 +555,8 @@ export default function NewCollectionPage() {
             <CardTitle className="text-base">4 · Weight</CardTitle>
             <CardDescription className="flex items-center gap-1.5">
               <PenLine aria-hidden className="size-3.5" />
-              Manual demo capture — entered by an operator, not read from a scale.
+              Manual demo capture — entered by an operator, not read from a
+              scale.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -503,7 +568,9 @@ export default function NewCollectionPage() {
                   inputMode="decimal"
                   value={weight.gross}
                   placeholder="12.000"
-                  onChange={(e) => setWeight({ ...weight, gross: e.target.value })}
+                  onChange={(e) =>
+                    setWeight({ ...weight, gross: e.target.value })
+                  }
                   aria-invalid={Boolean(fieldError.gross)}
                 />
                 {fieldError.gross ? (
@@ -511,7 +578,9 @@ export default function NewCollectionPage() {
                     {fieldError.gross}
                   </p>
                 ) : (
-                  <p className="text-xs text-muted-foreground">Up to {LIMITS.maxGross} kg.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Up to {LIMITS.maxGross} kg.
+                  </p>
                 )}
               </div>
               <div className="flex flex-col gap-1.5">
@@ -521,7 +590,9 @@ export default function NewCollectionPage() {
                   inputMode="decimal"
                   value={weight.tare}
                   placeholder="2.000"
-                  onChange={(e) => setWeight({ ...weight, tare: e.target.value })}
+                  onChange={(e) =>
+                    setWeight({ ...weight, tare: e.target.value })
+                  }
                   aria-invalid={Boolean(fieldError.tare)}
                 />
                 {fieldError.tare ? (
@@ -529,7 +600,9 @@ export default function NewCollectionPage() {
                     {fieldError.tare}
                   </p>
                 ) : (
-                  <p className="text-xs text-muted-foreground">The empty container.</p>
+                  <p className="text-xs text-muted-foreground">
+                    The empty container.
+                  </p>
                 )}
               </div>
             </div>
@@ -589,7 +662,9 @@ export default function NewCollectionPage() {
                     inputMode="decimal"
                     value={quality[key]}
                     placeholder={placeholder}
-                    onChange={(e) => setQuality({ ...quality, [key]: e.target.value })}
+                    onChange={(e) =>
+                      setQuality({ ...quality, [key]: e.target.value })
+                    }
                     aria-invalid={Boolean(fieldError[key])}
                   />
                   {fieldError[key] ? (
@@ -605,8 +680,8 @@ export default function NewCollectionPage() {
               ))}
             </div>
             <p className="text-xs text-muted-foreground">
-              Recording quality asks the pricing engine for a rate. The next screen shows what it
-              returned.
+              Recording quality asks the pricing engine for a rate. The next
+              screen shows what it returned.
             </p>
             <div>
               <Button
@@ -623,7 +698,8 @@ export default function NewCollectionPage() {
                     if (!quality[key] || !Number.isFinite(value))
                       errors[key] = "Enter a reading.";
                     else if (value < range[0] || value > range[1])
-                      errors[key] = `The platform accepts ${range[0]}–${range[1]}.`;
+                      errors[key] =
+                        `The platform accepts ${range[0]}–${range[1]}.`;
                   }
                   setFieldError(errors);
                   if (Object.keys(errors).length) return;
@@ -654,7 +730,9 @@ export default function NewCollectionPage() {
         />
       ) : null}
 
-      {step === "done" && tx ? <DoneStep tx={tx} centre={centre} supplier={supplier} /> : null}
+      {step === "done" && tx ? (
+        <DoneStep tx={tx} centre={centre} supplier={supplier} />
+      ) : null}
     </div>
   );
 }
@@ -664,7 +742,8 @@ function Stepper({ current }: { current: StepKey }) {
   return (
     <ol className="flex flex-wrap gap-2" aria-label="Progress">
       {STEPS.map((s, i) => {
-        const state = i < index ? "completed" : i === index ? "current" : "pending";
+        const state =
+          i < index ? "completed" : i === index ? "current" : "pending";
         return (
           <li
             key={s.key}
@@ -673,10 +752,13 @@ function Stepper({ current }: { current: StepKey }) {
               "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs",
               state === "completed" && "border-border text-muted-foreground",
               state === "current" && "border-primary bg-primary/5 font-medium",
-              state === "pending" && "border-dashed border-border text-muted-foreground",
+              state === "pending" &&
+                "border-dashed border-border text-muted-foreground",
             )}
           >
-            {state === "completed" ? <Check aria-hidden className="size-3" /> : null}
+            {state === "completed" ? (
+              <Check aria-hidden className="size-3" />
+            ) : null}
             {s.label}
             <span className="sr-only"> — {state}</span>
           </li>
@@ -718,11 +800,15 @@ function ReviewStep({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">6 · Review</CardTitle>
-          <CardDescription>Everything below came back from the platform.</CardDescription>
+          <CardDescription>
+            Everything below came back from the platform.
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-6 sm:grid-cols-2">
           <dl className="flex flex-col gap-2.5 text-sm">
-            <Row label="Supplier">{supplier?.full_name ?? tx.supplier_id?.slice(0, 8) ?? "—"}</Row>
+            <Row label="Supplier">
+              {supplier?.full_name ?? tx.supplier_id?.slice(0, 8) ?? "—"}
+            </Row>
             <Row label="Centre">{centre?.name ?? tx.center_id.slice(0, 8)}</Row>
             <Row label="Milk">{tx.milk_type ?? "—"}</Row>
             <Row label="Quantity">
@@ -734,13 +820,20 @@ function ReviewStep({
           </dl>
 
           {!priced ? (
-            <EmptyState title="Awaiting a price" description="The pricing engine has not answered yet." />
+            <EmptyState
+              title="Awaiting a price"
+              description="The pricing engine has not answered yet."
+            />
           ) : (
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Pricing</p>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Pricing
+              </p>
               <dl className="flex flex-col gap-2 text-sm">
                 <Row label="Rate card">
-                  <span className="text-end text-muted-foreground">{tx.pricing_detail ?? "—"}</span>
+                  <span className="text-end text-muted-foreground">
+                    {tx.pricing_detail ?? "—"}
+                  </span>
                 </Row>
                 <Row label="Rate">
                   <span className="tabular-nums">
@@ -762,8 +855,14 @@ function ReviewStep({
                 </div>
               </div>
               <div className="flex items-baseline justify-between border-t border-border pt-2">
-                <span className="text-sm text-muted-foreground">Collection value</span>
-                <Money amount={tx.gross_amount} currency={tx.currency} emphasis />
+                <span className="text-sm text-muted-foreground">
+                  Collection value
+                </span>
+                <Money
+                  amount={tx.gross_amount}
+                  currency={tx.currency}
+                  emphasis
+                />
               </div>
             </div>
           )}
@@ -774,14 +873,16 @@ function ReviewStep({
         <CardHeader>
           <CardTitle className="text-base">7 · Accept and complete</CardTitle>
           <CardDescription>
-            Acceptance and completion are separate decisions, as they are in the domain.
+            Acceptance and completion are separate decisions, as they are in the
+            domain.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {rejected ? (
             <p role="status" className="text-sm">
-              This collection was rejected{tx.rejected_reason ? `: ${tx.rejected_reason}` : ""}. It
-              still needs completing to close the paperwork.
+              This collection was rejected
+              {tx.rejected_reason ? `: ${tx.rejected_reason}` : ""}. It still
+              needs completing to close the paperwork.
             </p>
           ) : null}
 
@@ -796,17 +897,30 @@ function ReviewStep({
                   ? The amount becomes payable to the supplier.
                 </p>
                 <div className="flex gap-2">
-                  <Button type="button" disabled={busy || !priced} onClick={onAccept}>
+                  <Button
+                    type="button"
+                    disabled={busy || !priced}
+                    onClick={onAccept}
+                  >
                     {busy ? "Accepting…" : "Yes, accept"}
                   </Button>
-                  <Button type="button" variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setConfirming(false)}
+                    disabled={busy}
+                  >
                     Cancel
                   </Button>
                 </div>
               </div>
             ) : (
               <div>
-                <Button type="button" disabled={busy || !priced} onClick={() => setConfirming(true)}>
+                <Button
+                  type="button"
+                  disabled={busy || !priced}
+                  onClick={() => setConfirming(true)}
+                >
                   Accept collection
                 </Button>
               </div>
@@ -842,7 +956,9 @@ function DoneStep({
           <Check aria-hidden className="size-4 text-primary" />
           Collection {tx.state.toLowerCase()}
         </CardTitle>
-        <CardDescription>The collection is recorded. What follows is separate business.</CardDescription>
+        <CardDescription>
+          The collection is recorded. What follows is separate business.
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
         <dl className="grid gap-2.5 text-sm sm:grid-cols-2">
@@ -852,7 +968,9 @@ function DoneStep({
           <Row label="Status">
             <StatusBadge status={tx.state} />
           </Row>
-          <Row label="Supplier">{supplier?.full_name ?? tx.supplier_id?.slice(0, 8) ?? "—"}</Row>
+          <Row label="Supplier">
+            {supplier?.full_name ?? tx.supplier_id?.slice(0, 8) ?? "—"}
+          </Row>
           <Row label="Centre">{centre?.name ?? tx.center_id.slice(0, 8)}</Row>
           <Row label="Quantity">
             <Quantity value={tx.net_weight} unit={tx.weight_unit ?? "kg"} />
@@ -863,20 +981,25 @@ function DoneStep({
           <Row label="Value">
             <Money amount={tx.gross_amount} currency={tx.currency} emphasis />
           </Row>
-          <Row label="Completed"><Stamp value={tx.completed_at ?? tx.created_at} /></Row>
+          <Row label="Completed">
+            <Stamp value={tx.completed_at ?? tx.created_at} />
+          </Row>
         </dl>
 
         {/* Completion is NOT payment. Saying so plainly is the point. */}
         <div className="rounded-lg border border-dashed border-border p-4">
           <p className="mb-2 text-sm font-medium">Still to happen</p>
           <ul className="flex flex-col gap-1.5 text-sm text-muted-foreground">
-            <li>○ Settlement — this collection becomes payable when a settlement period collects it</li>
+            <li>
+              ○ Settlement — this collection becomes payable when a settlement
+              period collects it
+            </li>
             <li>○ Payment — raised against a finalized settlement</li>
             <li>○ Receipt — generated once the payment completes</li>
           </ul>
           <p className="mt-2 text-xs text-muted-foreground">
-            Collection completion is not settlement, and settlement is not payment. Each is a
-            separate business stage.
+            Collection completion is not settlement, and settlement is not
+            payment. Each is a separate business stage.
           </p>
         </div>
 
@@ -900,7 +1023,13 @@ function DoneStep({
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-4">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>

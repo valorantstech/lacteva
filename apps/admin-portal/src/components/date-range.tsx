@@ -32,8 +32,15 @@ export type RangeKey = "today" | "yesterday" | "7d" | "30d" | "custom";
 
 export type DateRange = { key: RangeKey; from: string; to: string };
 
-/** The calendar date it is *right now* in a given IANA zone. */
-function todayIn(timezone: string | null): string {
+/** The calendar date it is *right now* in a given IANA zone.
+ *
+ * Exported because it is the platform's rule, not this component's: DEMO-019
+ * found the reports screen defaulting its window with
+ * `new Date().toISOString()`, which is UTC, so a Kenyan dairy after local
+ * midnight opened its collection report on yesterday. One helper means the
+ * next screen cannot get it wrong in a new way.
+ */
+export function todayIn(timezone: string | null): string {
   // `en-CA` formats as YYYY-MM-DD, which is the ISO date the API wants.
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone ?? "UTC",

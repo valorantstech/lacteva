@@ -3,7 +3,7 @@ id: DEMO-019-FINAL
 title: DEMO-019 — Dairy Customer Operations, Daily Reports & Monthly Billing Readiness
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Platform Engineering
 created: 2026-08-15
 last-updated: 2026-08-15
@@ -23,8 +23,10 @@ red for three hours — nineteen failures, none of them caused by this
 milestone's code, proven by stashing the change and watching them fail on the
 previous commit.
 
-**Two defects, both about the same thing: which day a dairy's work belongs
-to.** **AWS cost: none.**
+**Three defects, all about the same thing: which day a dairy's work belongs
+to.** The third was found in the browser *after* deployment, which is the
+argument for §11 of the work order being a step and not a formality.
+**AWS cost: none.**
 
 ---
 
@@ -87,6 +89,17 @@ it since; procurement was never converted.
 window was already local**, so a collection recorded after local midnight was
 counted in a total it was not drawn in.
 
+**And the portal's reports screen defaulted its own window with
+`new Date().toISOString()`** — UTC. This one was found by looking at it: the
+deployed page opened on **14 August while Nairobi was on the 15th**. DEMO-015
+had corrected exactly this in the dashboard's date picker and this screen kept
+its own copy, so the fix never reached it. `todayIn` is now exported from
+`date-range.tsx` and both screens call it, because the defect was not the
+arithmetic — it was that the arithmetic existed twice.
+
+The same UTC date labelled guided-capture sessions, so a session opened at
+00:30 in Nairobi was named after the previous day.
+
 ## 4. The fix
 
 One rule, in one place, and it now holds inside SQL as well as in Python.
@@ -101,7 +114,8 @@ One rule, in one place, and it now holds inside SQL as well as in Python.
 
 Every procurement window now uses `range_bounds` with the tenant's zone,
 threaded through a `_timezone()` helper so a report's bounds and its notion of
-"today" come from one clock.
+"today" come from one clock. In the portal there is now one exported `todayIn`
+rather than a copy per screen.
 
 **The PostgreSQL test caught my own first draft.** I wrote `timezone(tz,
 timezone('UTC', col))`, which looks symmetrical and is wrong in its second
@@ -137,6 +151,7 @@ when the suite runs.
 | Financial period ends | August in Bengaluru runs 31 Jul 18:30 UTC → 31 Aug 18:30 UTC; a UTC-built period would swallow 5½ hours of July and lose 5½ of August at **both ends of every period** |
 | Post-midnight collection | a collection stamped 22:30 UTC appears on the next local day's report and not on UTC's |
 | On a real engine | six PostgreSQL tests including **Europe/London**, whose August and January answers differ and which a fixed offset cannot express |
+| In the browser | seven portal tests at frozen instants — the three zones, the exact turnover second, the month boundary, and the UTC fallback. `resolveRange` had **no test at all** before this, which is how DEMO-015's correction failed to spread |
 
 Plus the milestone's own: 10 month-end drafting tests, 5 report/statement
 tests, and a reconciliation and performance pair.
@@ -173,4 +188,5 @@ inside it; a fixed statement count is the property that actually matters.
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-15 | Platform Engineering | The portal's reports screen and guided-capture label were still on UTC; found in post-deployment browser verification. One exported `todayIn`, seven boundary tests. |
 | 1.0 | 2026-08-15 | Platform Engineering | DEMO-019: the round's intended quantity, the litres behind the money, month-end drafts that are never issued — and the business-date rule made consistent from Python into SQL after the collection report was found reading zero for a dairy that had collected milk. |

@@ -3,6 +3,9 @@
 import Link from "next/link";
 
 import { useCallback, useEffect, useState } from "react";
+
+import { todayIn } from "@/components/date-range";
+import { useLocale } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,7 +44,9 @@ import {
 
 type SortKey = "weight" | "payable" | "count";
 
-const bySort = <T extends { total_net_weight_kg: number; payable_amount: string | number }>(
+const bySort = <
+  T extends { total_net_weight_kg: number; payable_amount: string | number },
+>(
   rows: T[],
   key: SortKey,
   count: (row: T) => number,
@@ -55,7 +60,11 @@ const bySort = <T extends { total_net_weight_kg: number; payable_amount: string 
   );
 
 export default function ReportsPage() {
-  const today = new Date().toISOString().slice(0, 10);
+  // The DAIRY's today. `new Date().toISOString()` is UTC, so a Kenyan
+  // cooperative after local midnight opened this report on yesterday and an
+  // Indian one did for five and a half hours of every day (DEMO-019).
+  const { timezone: orgTimezone } = useLocale();
+  const today = todayIn(orgTimezone);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
   const [centerId, setCenterId] = useState("");
@@ -201,7 +210,8 @@ export default function ReportsPage() {
         <p className="text-sm text-amber-600 dark:text-amber-500">
           {daily.unpriced_accepted > 0 &&
             `${daily.unpriced_accepted} accepted transaction(s) without pricing. `}
-          {daily.in_progress > 0 && `${daily.in_progress} transaction(s) still in progress.`}
+          {daily.in_progress > 0 &&
+            `${daily.in_progress} transaction(s) still in progress.`}
         </p>
       )}
 
@@ -234,28 +244,42 @@ export default function ReportsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {bySort(centerRows, centerSort, (r) => r.transactions).map((row) => (
-                <TableRow key={row.center_id}>
-                  <TableCell>
-                    <Link
-                      className="text-primary hover:underline"
-                      href={`/centers/${row.center_id}`}
-                    >
-                      {row.center_code} — {row.center_name}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-end">{row.transactions}</TableCell>
-                  <TableCell className="text-end">{row.accepted}</TableCell>
-                  <TableCell className="text-end">{row.total_net_weight_kg}</TableCell>
-                  <TableCell className="text-end whitespace-nowrap">
-                    <Money amount={row.payable_amount} currency={row.currency} />
-                  </TableCell>
-                  <TableCell className="text-end">{row.weighted_avg_fat ?? "—"}</TableCell>
-                </TableRow>
-              ))}
+              {bySort(centerRows, centerSort, (r) => r.transactions).map(
+                (row) => (
+                  <TableRow key={row.center_id}>
+                    <TableCell>
+                      <Link
+                        className="text-primary hover:underline"
+                        href={`/centers/${row.center_id}`}
+                      >
+                        {row.center_code} — {row.center_name}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-end">
+                      {row.transactions}
+                    </TableCell>
+                    <TableCell className="text-end">{row.accepted}</TableCell>
+                    <TableCell className="text-end">
+                      {row.total_net_weight_kg}
+                    </TableCell>
+                    <TableCell className="text-end whitespace-nowrap">
+                      <Money
+                        amount={row.payable_amount}
+                        currency={row.currency}
+                      />
+                    </TableCell>
+                    <TableCell className="text-end">
+                      {row.weighted_avg_fat ?? "—"}
+                    </TableCell>
+                  </TableRow>
+                ),
+              )}
               {centerRows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={6}
+                    className="text-center text-muted-foreground"
+                  >
                     No collection recorded in this range.
                   </TableCell>
                 </TableRow>
@@ -294,28 +318,40 @@ export default function ReportsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {bySort(supplierRows, supplierSort, (r) => r.deliveries).map((row) => (
-                <TableRow key={row.supplier_id}>
-                  <TableCell>
-                    <Link
-                      className="text-primary hover:underline"
-                      href={`/suppliers/${row.supplier_id}`}
-                    >
-                      {row.supplier_code} — {row.supplier_name}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-end">{row.deliveries}</TableCell>
-                  <TableCell className="text-end">{row.accepted}</TableCell>
-                  <TableCell className="text-end">{row.total_net_weight_kg}</TableCell>
-                  <TableCell className="text-end whitespace-nowrap">
-                    <Money amount={row.payable_amount} currency={row.currency} />
-                  </TableCell>
-                  <TableCell className="text-end">{row.weighted_avg_fat ?? "—"}</TableCell>
-                </TableRow>
-              ))}
+              {bySort(supplierRows, supplierSort, (r) => r.deliveries).map(
+                (row) => (
+                  <TableRow key={row.supplier_id}>
+                    <TableCell>
+                      <Link
+                        className="text-primary hover:underline"
+                        href={`/suppliers/${row.supplier_id}`}
+                      >
+                        {row.supplier_code} — {row.supplier_name}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-end">{row.deliveries}</TableCell>
+                    <TableCell className="text-end">{row.accepted}</TableCell>
+                    <TableCell className="text-end">
+                      {row.total_net_weight_kg}
+                    </TableCell>
+                    <TableCell className="text-end whitespace-nowrap">
+                      <Money
+                        amount={row.payable_amount}
+                        currency={row.currency}
+                      />
+                    </TableCell>
+                    <TableCell className="text-end">
+                      {row.weighted_avg_fat ?? "—"}
+                    </TableCell>
+                  </TableRow>
+                ),
+              )}
               {supplierRows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={6}
+                    className="text-center text-muted-foreground"
+                  >
                     No deliveries recorded in this range.
                   </TableCell>
                 </TableRow>
@@ -330,7 +366,10 @@ export default function ReportsPage() {
           <CardHeader>
             <CardTitle>Settlements</CardTitle>
             <CardDescription>
-              <Link className="text-primary hover:underline" href="/settlements">
+              <Link
+                className="text-primary hover:underline"
+                href="/settlements"
+              >
                 Open settlements →
               </Link>
             </CardDescription>
@@ -351,12 +390,14 @@ export default function ReportsPage() {
                   <Money amount={settlements.finalized_net_total} emphasis />
                 </div>
                 <p className="text-muted-foreground">
-                  {settlements.total_settlements} settlement(s), {settlements.total_lines}{" "}
-                  line(s)
+                  {settlements.total_settlements} settlement(s),{" "}
+                  {settlements.total_lines} line(s)
                 </p>
               </>
             ) : (
-              <p className="text-muted-foreground">No settlements in this range.</p>
+              <p className="text-muted-foreground">
+                No settlements in this range.
+              </p>
             )}
           </CardContent>
         </Card>
@@ -376,21 +417,26 @@ export default function ReportsPage() {
                 <div className="flex justify-between">
                   <span>Priced / unpriced transactions</span>
                   <span>
-                    {pricing.priced_transactions} / {pricing.unpriced_transactions}
+                    {pricing.priced_transactions} /{" "}
+                    {pricing.unpriced_transactions}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Unit price (min · avg · max)</span>
                   <span>
                     {String(pricing.min_unit_price ?? "—")} ·{" "}
-                    {pricing.avg_unit_price ?? "—"} · {String(pricing.max_unit_price ?? "—")}
+                    {pricing.avg_unit_price ?? "—"} ·{" "}
+                    {String(pricing.max_unit_price ?? "—")}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Gross priced</span>
                   <span>
                     {Object.entries(pricing.gross_by_currency)
-                      .map(([currency, amount]) => `${formatAmount(amount)} ${currency}`)
+                      .map(
+                        ([currency, amount]) =>
+                          `${formatAmount(amount)} ${currency}`,
+                      )
                       .join(" · ") || "0"}
                   </span>
                 </div>
