@@ -149,7 +149,7 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
       ),
       body: Column(
         children: [
-          _SyncBanner(pending: _pending, onSync: _sync),
+          _SyncBanner(pending: _pending, onSync: _sync, t: t),
           if (_report != null) _DayTotals(report: _report!),
           if (_error != null)
             Padding(
@@ -225,10 +225,15 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
 /// Always present. A rider must never have to guess whether the last twenty
 /// minutes of work is on the phone or on the platform.
 class _SyncBanner extends StatelessWidget {
-  const _SyncBanner({required this.pending, required this.onSync});
+  const _SyncBanner({
+    required this.pending,
+    required this.onSync,
+    required this.t,
+  });
 
   final int pending;
   final Future<void> Function() onSync;
+  final L10n t;
 
   @override
   Widget build(BuildContext context) {
@@ -254,15 +259,15 @@ class _SyncBanner extends StatelessWidget {
               Expanded(
                 child: Text(
                   offline
-                      ? '$pending delivery(s) saved on this phone — tap to send'
-                      : 'All deliveries sent',
+                      ? t.t('round.waiting', {'count': pending})
+                      : t.t('round.allSent'),
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
               if (offline)
-                const Text(
-                  'SEND',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                Text(
+                  t.t('round.sync'),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
             ],
           ),
@@ -417,12 +422,11 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
       if (!mounted) return;
       setState(() => _queued = result['_queued'] == true);
       Navigator.of(context).pop(true);
+      final t = L10n.of(widget.session);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _queued
-                ? 'Saved on this phone — it will send when there is signal'
-                : 'Recorded',
+            _queued ? t.t('record.queued') : t.t('record.recorded'),
           ),
         ),
       );
@@ -437,8 +441,9 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
   @override
   Widget build(BuildContext context) {
     final c = widget.customer;
+    final t = L10n.of(widget.session);
     return Scaffold(
-      appBar: AppBar(title: Text(c['name']?.toString() ?? 'Delivery')),
+      appBar: AppBar(title: Text(c['name']?.toString() ?? t.t('record.title'))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -472,9 +477,15 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
             ),
             const SizedBox(height: 16),
             SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'morning', label: Text('Morning')),
-                ButtonSegment(value: 'evening', label: Text('Evening')),
+              segments: [
+                ButtonSegment(
+                  value: 'morning',
+                  label: Text(t.t('slot.morning')),
+                ),
+                ButtonSegment(
+                  value: 'evening',
+                  label: Text(t.t('slot.evening')),
+                ),
               ],
               selected: {_slot},
               onSelectionChanged: (s) => setState(() => _slot = s.first),
@@ -486,12 +497,12 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
                 decimal: true,
               ),
               style: const TextStyle(fontSize: 22),
-              decoration: const InputDecoration(
-                labelText: 'Quantity (leave blank for the standing order)',
-                border: OutlineInputBorder(),
-                helperText:
-                    'The amount is calculated by the platform from the '
-                    'agreed rate — it is never entered here.',
+              decoration: InputDecoration(
+                labelText: t.t('record.quantityHint'),
+                border: const OutlineInputBorder(),
+                // The note is not decoration. An operator who believes they
+                // are typing a price will eventually type one.
+                helperText: t.t('record.amountNote'),
                 helperMaxLines: 3,
               ),
             ),
@@ -505,21 +516,21 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
                 ),
               ),
             _BigButton(
-              label: 'DELIVERED',
+              label: t.t('record.delivered'),
               icon: Icons.check_circle_outline,
               color: Colors.green.shade700,
               onPressed: _busy ? null : () => _record('delivered'),
             ),
             const SizedBox(height: 12),
             _BigButton(
-              label: 'NOT DELIVERED',
+              label: t.t('record.notDelivered'),
               icon: Icons.cancel_outlined,
               color: Colors.orange.shade800,
               onPressed: _busy ? null : () => _record('skipped'),
             ),
             const SizedBox(height: 12),
             _BigButton(
-              label: 'RETURNED',
+              label: t.t('record.returned'),
               icon: Icons.undo,
               color: Colors.blueGrey.shade700,
               onPressed: _busy ? null : () => _record('returned'),

@@ -35,6 +35,10 @@ const Catalog _en = {
   'round.sync': 'Send now',
   'round.refresh': 'Refresh',
 
+  'slot.morning': 'Morning',
+  'slot.evening': 'Evening',
+  'record.title': 'Delivery',
+  'record.recorded': 'Recorded',
   'record.delivered': 'DELIVERED',
   'record.notDelivered': 'NOT DELIVERED',
   'record.returned': 'RETURNED',
@@ -91,6 +95,10 @@ const Catalog _hi = {
   'round.sync': 'अभी भेजें',
   'round.refresh': 'ताज़ा करें',
 
+  'slot.morning': 'सुबह',
+  'slot.evening': 'शाम',
+  'record.title': 'वितरण',
+  'record.recorded': 'दर्ज किया गया',
   'record.delivered': 'वितरित',
   'record.notDelivered': 'वितरित नहीं',
   'record.returned': 'वापस',
@@ -147,6 +155,10 @@ const Catalog _ar = {
   'round.sync': 'أرسل الآن',
   'round.refresh': 'تحديث',
 
+  'slot.morning': 'صباحًا',
+  'slot.evening': 'مساءً',
+  'record.title': 'تسليم',
+  'record.recorded': 'تم التسجيل',
   'record.delivered': 'مُسلَّم',
   'record.notDelivered': 'غير مُسلَّم',
   'record.returned': 'مُرتجع',

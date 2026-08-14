@@ -124,6 +124,38 @@ void main() {
       expect(L10n.of(_session()).t('round.doesNotExist'), 'round.doesNotExist');
     });
 
+    test('the delivery screen an operator uses most speaks Hindi', () {
+      // DEMO-015: these keys existed in all three catalogs from DEMO-014 and
+      // the screen used none of them — every string on the record-delivery
+      // screen was an English literal. That is the screen a Bengaluru operator
+      // touches six hundred times a day.
+      final hi = L10n.of(_session(locale: 'hi-IN'));
+      expect(hi.t('record.delivered'), 'वितरित');
+      expect(hi.t('record.notDelivered'), 'वितरित नहीं');
+      expect(hi.t('record.returned'), 'वापस');
+      expect(hi.t('slot.morning'), 'सुबह');
+      expect(hi.t('slot.evening'), 'शाम');
+      expect(hi.t('record.recorded'), 'दर्ज किया गया');
+    });
+
+    test('no record-screen key falls through to its own name', () {
+      // A key with no entry comes back as the key, which is greppable and also
+      // exactly what a rider would then read on the phone.
+      for (final key in [
+        'record.title',
+        'record.recorded',
+        'record.queued',
+        'record.quantityHint',
+        'record.amountNote',
+        'slot.morning',
+        'slot.evening',
+      ]) {
+        for (final locale in ['en', 'hi', 'ar']) {
+          expect(L10n.of(_session(locale: locale)).t(key), isNot(key));
+        }
+      }
+    });
+
     test('Hindi covers every key English defines', () {
       final missing = catalogs['en']!.keys
           .where((k) => !catalogs['hi']!.containsKey(k))
