@@ -15,6 +15,8 @@
 import { Suspense } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /** The URL the page is being deep-linked to; reset before each test. */
@@ -665,10 +667,32 @@ describe("the delivery report as a file (DEMO-015)", () => {
     expect(href).toContain("date_to=");
   });
 
+  it("takes every label from the catalog, including the ones it once hard-coded", () => {
+    // Not a rendering assertion — a source one. The failure mode this guards
+    // is a string that LOOKS translated because the catalog has the key,
+    // while the page renders a literal beside it (DEMO-015, found in a
+    // browser with the page half in Hindi).
+    const source = readFileSync(
+      resolve(process.cwd(), "src/app/deliveries/page.tsx"),
+      "utf8",
+    );
+    for (const literal of [
+      'title="Deliveries"',
+      'label="Quantity"',
+      'label="Value"',
+      'label="Customers served"',
+      'aria-label="Delivery summary"',
+    ]) {
+      expect(source).not.toContain(literal);
+    }
+  });
+
   it("shows who the milk went to, with the platform's own rate", async () => {
     routeAll();
     render(<DeliveriesPage />);
-    expect((await screen.findAllByText("By customer")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("By customer")).length).toBeGreaterThan(
+      0,
+    );
     expect(screen.getByText("Adiga Tiffin Room")).toBeInTheDocument();
     expect(screen.getByText("6,720.00")).toBeInTheDocument();
     // A customer whose rate changed inside the window: the platform sent null

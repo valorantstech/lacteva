@@ -18,7 +18,13 @@ vi.mock("next/navigation", () => ({
 }));
 
 import SettingsPage from "@/app/admin/settings/page";
-import { LocaleProvider, baseLanguage, translatorFor, useLocale, useT } from "@/lib/i18n";
+import {
+  LocaleProvider,
+  baseLanguage,
+  translatorFor,
+  useLocale,
+  useT,
+} from "@/lib/i18n";
 import { CATALOGS, KEYS, isRtl } from "@/lib/messages";
 
 function routeFetch(routes: Record<string, unknown>) {
@@ -26,10 +32,13 @@ function routeFetch(routes: Record<string, unknown>) {
     const url = String(input);
     const match = Object.keys(routes).find((key) => url.includes(key));
     if (!match) {
-      return new Response(JSON.stringify({ title: "not_found", detail: "No route." }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ title: "not_found", detail: "No route." }),
+        {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
     return new Response(JSON.stringify(routes[match]), {
       status: 200,
@@ -62,7 +71,9 @@ const KENYA_SETTINGS = {
   timezone: "Africa/Nairobi",
   default_language: "en-KE",
   supported_languages: ["en-KE"],
-  languages: [{ tag: "en-KE", name: "English", endonym: "English", rtl: false }],
+  languages: [
+    { tag: "en-KE", name: "English", endonym: "English", rtl: false },
+  ],
 };
 
 function session(overrides: Record<string, unknown> = {}) {
@@ -70,8 +81,19 @@ function session(overrides: Record<string, unknown> = {}) {
     authenticated: true,
     acting_tenant_id: null,
     tenant_id: "t-1",
-    user: { id: "u-1", email: "a@b.example", full_name: "A", locale: "en-IN", is_active: true },
-    organization: { id: "t-1", name: "Lacteva India Demo", slug: "india", ...INDIA_SETTINGS },
+    user: {
+      id: "u-1",
+      email: "a@b.example",
+      full_name: "A",
+      locale: "en-IN",
+      is_active: true,
+    },
+    organization: {
+      id: "t-1",
+      name: "Lacteva India Demo",
+      slug: "india",
+      ...INDIA_SETTINGS,
+    },
     membership: null,
     roles: [],
     center_scope: null,
@@ -91,7 +113,9 @@ describe("the catalogs", () => {
     // that has quietly stopped keeping up is worth knowing about, and this is
     // cheaper than noticing on a screen.
     const missing = KEYS.filter((key) => !(key in CATALOGS[language]));
-    expect(missing, `${language} is missing: ${missing.join(", ")}`).toEqual([]);
+    expect(missing, `${language} is missing: ${missing.join(", ")}`).toEqual(
+      [],
+    );
   });
 
   it("defines no key English does not", () => {
@@ -99,8 +123,12 @@ describe("the catalogs", () => {
     // string no screen can ask for, and it hides the fact that somebody
     // translated something that then got deleted.
     for (const language of ["hi", "ar"]) {
-      const orphans = Object.keys(CATALOGS[language]).filter((k) => !KEYS.includes(k));
-      expect(orphans, `${language} has orphans: ${orphans.join(", ")}`).toEqual([]);
+      const orphans = Object.keys(CATALOGS[language]).filter(
+        (k) => !KEYS.includes(k),
+      );
+      expect(orphans, `${language} has orphans: ${orphans.join(", ")}`).toEqual(
+        [],
+      );
     }
   });
 
@@ -110,12 +138,62 @@ describe("the catalogs", () => {
     // shows up here rather than in front of a dairy manager.
     const areas = new Set(KEYS.map((k) => k.split(".")[0]));
     for (const area of [
-      "nav", "dashboard", "supplier", "center", "transaction", "customer",
-      "delivery", "billing", "payment", "receipt", "report", "settlement",
-      "notification", "settings", "auth", "validation", "state", "error",
-      "action", "role",
+      "nav",
+      "dashboard",
+      "supplier",
+      "center",
+      "transaction",
+      "customer",
+      "delivery",
+      "billing",
+      "payment",
+      "receipt",
+      "report",
+      "settlement",
+      "notification",
+      "settings",
+      "auth",
+      "validation",
+      "state",
+      "error",
+      "action",
+      "role",
     ]) {
       expect(areas.has(area), `no keys for ${area}`).toBe(true);
+    }
+  });
+
+  it("has a key for every string the delivery report puts on screen", () => {
+    // DEMO-015. The mobile app shipped a full Hindi catalog and a screen that
+    // used none of it, and nothing failed — a catalog nobody calls is silently
+    // correct. The portal's delivery report had the same shape: `delivery.title`
+    // and `delivery.subtitle` existed while the page rendered English literals.
+    // This asserts the keys exist; `sales-pages.test.tsx` asserts the page
+    // actually calls them.
+    for (const key of [
+      "delivery.title",
+      "delivery.subtitle",
+      "delivery.summary",
+      "delivery.value",
+      "delivery.customersServed",
+      "delivery.skippedCount",
+      "delivery.byCustomer",
+      "delivery.byCustomerHint",
+      "delivery.rate",
+      "delivery.mixedRate",
+      "delivery.downloadCsv",
+      "statement.title",
+      "statement.opening",
+      "statement.closing",
+      "range.today",
+      "range.yesterday",
+    ]) {
+      for (const language of ["en", "hi", "ar"]) {
+        expect(
+          CATALOGS[language][key],
+          `${language} is missing ${key}`,
+        ).toBeTruthy();
+      }
     }
   });
 
@@ -127,8 +205,6 @@ describe("the catalogs", () => {
     expect(isRtl(null)).toBe(false);
   });
 
-
-
   it("falls back to English rather than showing a blank", () => {
     const t = translatorFor("hi-IN");
     expect(t("nav.customers")).toBe("ग्राहक");
@@ -139,7 +215,9 @@ describe("the catalogs", () => {
 
   it("reads the catalog by language, ignoring the region", () => {
     expect(baseLanguage("hi-IN")).toBe("hi");
-    expect(translatorFor("hi-IN")("action.save")).toBe(translatorFor("hi")("action.save"));
+    expect(translatorFor("hi-IN")("action.save")).toBe(
+      translatorFor("hi")("action.save"),
+    );
   });
 
   it("treats an unknown language as English rather than failing", () => {
@@ -219,9 +297,13 @@ describe("organization settings", () => {
         <SettingsPage />
       </LocaleProvider>,
     );
-    await waitFor(() => expect(screen.getByTestId("org-currency")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("org-currency")).toBeInTheDocument(),
+    );
     expect(screen.getByTestId("org-currency")).toHaveTextContent("₹ INR");
-    expect(screen.getByTestId("org-timezone")).toHaveTextContent("Asia/Kolkata");
+    expect(screen.getByTestId("org-timezone")).toHaveTextContent(
+      "Asia/Kolkata",
+    );
     expect(screen.getByText("India")).toBeInTheDocument();
   });
 
@@ -229,7 +311,12 @@ describe("organization settings", () => {
     routeFetch({
       "/v1/organizations/settings/locale": KENYA_SETTINGS,
       "/api/auth/session": session({
-        organization: { id: "t-2", name: "Kilima", slug: "kilima", ...KENYA_SETTINGS },
+        organization: {
+          id: "t-2",
+          name: "Kilima",
+          slug: "kilima",
+          ...KENYA_SETTINGS,
+        },
       }),
     });
     render(
@@ -237,9 +324,13 @@ describe("organization settings", () => {
         <SettingsPage />
       </LocaleProvider>,
     );
-    await waitFor(() => expect(screen.getByTestId("org-currency")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("org-currency")).toBeInTheDocument(),
+    );
     expect(screen.getByTestId("org-currency")).toHaveTextContent("KSh KES");
-    expect(screen.getByTestId("org-timezone")).toHaveTextContent("Africa/Nairobi");
+    expect(screen.getByTestId("org-timezone")).toHaveTextContent(
+      "Africa/Nairobi",
+    );
   });
 
   it("offers only the languages the organization enabled", async () => {
@@ -252,7 +343,9 @@ describe("organization settings", () => {
         <SettingsPage />
       </LocaleProvider>,
     );
-    await waitFor(() => expect(screen.getByTestId("choose-language-en-KE")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("choose-language-en-KE")).toBeInTheDocument(),
+    );
     // Hindi is a language the platform speaks and this dairy has not enabled.
     // Offering it would be a control that leads to a refusal.
     expect(screen.queryByTestId("choose-language-hi-IN")).toBeNull();
@@ -268,7 +361,9 @@ describe("organization settings", () => {
         <SettingsPage />
       </LocaleProvider>,
     );
-    await waitFor(() => expect(screen.getByTestId("org-currency")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("org-currency")).toBeInTheDocument(),
+    );
     expect(screen.queryByTestId("toggle-language-hi-IN")).toBeNull();
     // ...but a person may always choose their OWN language.
     expect(screen.getByTestId("choose-language-hi-IN")).toBeInTheDocument();
@@ -291,7 +386,9 @@ describe("organization settings", () => {
         <SettingsPage />
       </LocaleProvider>,
     );
-    await waitFor(() => expect(screen.getByTestId("choose-language-hi-IN")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("choose-language-hi-IN")).toBeInTheDocument(),
+    );
     await userEvent.click(screen.getByTestId("choose-language-hi-IN"));
 
     await waitFor(() => {

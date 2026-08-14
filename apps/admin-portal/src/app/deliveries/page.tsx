@@ -218,8 +218,8 @@ function DeliveriesView() {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Deliveries"
-        description="Milk leaving for customers — what went out, to whom, and what it is worth."
+        title={t("delivery.title")}
+        description={t("delivery.subtitle")}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -245,17 +245,21 @@ function DeliveriesView() {
       </div>
 
       <section
-        aria-label="Delivery summary"
+        aria-label={t("delivery.summary")}
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
         <StatTile
-          label="Deliveries"
+          label={t("delivery.title")}
           value={report ? report.deliveries : "—"}
-          hint={report ? `${report.skipped} skipped` : undefined}
+          hint={
+            report
+              ? t("delivery.skippedCount", { count: report.skipped })
+              : undefined
+          }
           icon={<Truck className="size-4" />}
         />
         <StatTile
-          label="Quantity"
+          label={t("field.quantity")}
           value={
             report ? (
               <Quantity
@@ -269,7 +273,7 @@ function DeliveriesView() {
           icon={<Droplets className="size-4" />}
         />
         <StatTile
-          label="Value"
+          label={t("delivery.value")}
           value={
             report ? (
               <Money amount={report.total_amount} currency={report.currency} />
@@ -280,7 +284,7 @@ function DeliveriesView() {
           icon={<Banknote className="size-4" />}
         />
         <StatTile
-          label="Customers served"
+          label={t("delivery.customersServed")}
           value={report ? report.customers_served : "—"}
           icon={<Users className="size-4" />}
         />

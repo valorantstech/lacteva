@@ -26,6 +26,10 @@
 export type Catalog = Record<string, string>;
 
 const en: Catalog = {
+  "delivery.summary": "Delivery summary",
+  "delivery.value": "Value",
+  "delivery.customersServed": "Customers served",
+  "delivery.skippedCount": "{count} skipped",
   // --- DEMO-015: date ranges, the delivery report, the statement ------
   "range.label": "Date range",
   "range.today": "Today",
@@ -373,6 +377,10 @@ const en: Catalog = {
 };
 
 const hi: Catalog = {
+  "delivery.summary": "वितरण सारांश",
+  "delivery.value": "मूल्य",
+  "delivery.customersServed": "सेवा प्राप्त ग्राहक",
+  "delivery.skippedCount": "{count} छोड़ा गया",
   // --- DEMO-015: date ranges, the delivery report, the statement ------
   "range.label": "तिथि सीमा",
   "range.today": "आज",
@@ -721,6 +729,10 @@ const hi: Catalog = {
 };
 
 const ar: Catalog = {
+  "delivery.summary": "ملخّص التسليم",
+  "delivery.value": "القيمة",
+  "delivery.customersServed": "العملاء المخدومون",
+  "delivery.skippedCount": "{count} متخطّى",
   // --- DEMO-015: date ranges, the delivery report, the statement ------
   "range.label": "النطاق الزمني",
   "range.today": "اليوم",
