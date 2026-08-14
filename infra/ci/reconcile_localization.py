@@ -66,6 +66,18 @@ def check(condition: bool, ok: str, bad: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--database", default=os.environ.get("PGDATABASE", "lacteva"))
+    parser.add_argument(
+        "--legacy-currency",
+        action="append",
+        default=[],
+        metavar="SLUG",
+        help=(
+            "A tenant whose EXISTING money predates its current currency. The rows "
+            "are still listed; they stop being a failure. Use it for a tenant that "
+            "traded before its currency was set — never to silence new rows, which "
+            "is what the count in the output is for."
+        ),
+    )
     args = parser.parse_args()
     db = args.database
 
@@ -128,10 +140,22 @@ def main() -> int:
             f"WHERE t.currency IS DISTINCT FROM o.currency_code "
             f"GROUP BY 1, 2",
         )
+        unexpected = [r for r in rows if r[0] not in args.legacy_currency]
+        for slug, currency, count in rows:
+            if slug in args.legacy_currency:
+                # Reported, never hidden. Historical financial records are not
+                # converted: each row carries the currency it was written in,
+                # which is the whole reason the column exists, and rewriting
+                # them would be an exchange rate nobody agreed at a date
+                # nobody recorded.
+                notes.append(
+                    f"  {table}: {count} row(s) in {currency} for {slug} — "
+                    "accepted as history predating its current currency"
+                )
         check(
-            not rows,
+            not unexpected,
             f"  {table}: every row in its tenant's currency",
-            f"  {table}: {rows} — rows in a currency the tenant does not use",
+            f"  {table}: {unexpected} — rows in a currency the tenant does not use",
         )
 
     # --- 3. every user's language is one their organization enabled ------------

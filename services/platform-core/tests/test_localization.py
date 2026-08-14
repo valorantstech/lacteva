@@ -714,3 +714,37 @@ async def test_a_new_member_starts_in_the_organizations_language(client):
     )
     ke_me = (await client.get("/v1/auth/me", headers=kenya)).json()
     assert ke_me["user"]["locale"] == "en-KE"
+
+
+async def test_an_organization_can_always_change_its_own_settings(client):
+    """The failure `b8d41f7e2a95` repairs, stated as a rule.
+
+    `update_locale_settings` validates through the same `resolve` onboarding
+    uses, and `resolve` refuses a default language that is not among the
+    supported ones. So an organization whose two fields disagree cannot change
+    ANY of its settings — currency, timezone or languages — and the error
+    names a value the administrator never set.
+
+    The DEMO-013 migration created exactly that state on every pre-existing
+    tenant: it back-filled `supported_languages` from the country and left
+    `default_locale` at the bare `en` it already held. Found by reconciling
+    production, not by testing.
+
+    A settings update that changes only the timezone must therefore work
+    without the caller restating their languages.
+    """
+    _org, headers = await _tenant_admin_for(
+        client, country="IN", slug="settings-selfconsistent", email="self@india.example"
+    )
+    before = (await client.get("/v1/organizations/settings/locale", headers=headers)).json()
+    assert before["default_language"] in before["supported_languages"], (
+        "a freshly created organization already contradicts itself"
+    )
+
+    r = await client.put(
+        "/v1/organizations/settings/locale",
+        json={"timezone": "Asia/Kolkata"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["default_language"] in r.json()["supported_languages"]
