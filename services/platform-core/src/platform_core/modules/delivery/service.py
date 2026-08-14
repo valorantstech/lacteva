@@ -224,6 +224,24 @@ class DeliveryReport(BaseModel):
     #: Generated + completed + skipped: the size of the day's round, whether
     #: it came from standing orders or was typed.
     planned: int
+    #: **How much milk was SUPPOSED to go out** (DEMO-019 §5) — the headline
+    #: question of this report and the one it could not answer in litres.
+    #:
+    #: Every row the round intended, whatever became of it: still scheduled,
+    #: delivered, skipped because the household was away, or returned. Only
+    #: `cancelled` is excluded, because that status means "recorded in error"
+    #: — milk nobody ever intended to send.
+    #:
+    #: A dairy compares this with `total_quantity` to see the shortfall, which
+    #: is why they are separate figures rather than one with a caveat.
+    planned_quantity: Decimal
+    #: Delivered and then returned — spoiled, or the wrong product. Not
+    #: billed, and distinct from `skipped`: the van went, and the milk came
+    #: back.
+    returned: int
+    #: Recorded in error and struck out. Reported so that a round whose count
+    #: does not add up has somewhere to be explained from.
+    cancelled: int
     by_day: list[DeliveryDayRow]
     by_customer: list[DeliveryCustomerRow]
 
@@ -698,6 +716,25 @@ class DeliveryService:
             .select_from(MilkDelivery)
             .where(*billable, MilkDelivery.status == "scheduled")
         )
+        # One grouped query for every other status, rather than one query per
+        # status. The round is a handful of rows per day per dairy; the point
+        # is that this stays a fixed number of queries as statuses are added.
+        by_status = dict(
+            (
+                await self._session.execute(
+                    select(MilkDelivery.status, func.count())
+                    .where(*billable)
+                    .group_by(MilkDelivery.status)
+                )
+            ).all()
+        )
+        # What the round INTENDED, in litres: everything except what was
+        # struck out as an error.
+        intended = await self._session.scalar(
+            select(func.coalesce(func.sum(cast(MilkDelivery.quantity, Numeric)), 0)).where(
+                *billable, MilkDelivery.status != "cancelled"
+            )
+        )
         by_day = (
             await self._session.execute(
                 select(
@@ -772,6 +809,9 @@ class DeliveryService:
             skipped=skipped or 0,
             scheduled=scheduled or 0,
             planned=(headline[0] or 0) + (skipped or 0) + (scheduled or 0),
+            planned_quantity=litres(intended),
+            returned=by_status.get("returned", 0),
+            cancelled=by_status.get("cancelled", 0),
             by_customer=[
                 DeliveryCustomerRow(
                     customer_id=row[0],

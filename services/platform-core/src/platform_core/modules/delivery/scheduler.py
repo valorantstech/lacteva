@@ -464,4 +464,41 @@ async def run_once(
             continue
         if run is not None:
             runs.append(run)
+        # DEMO-019 §8: the month's bills are DRAFTED on the same pass, in the
+        # same tenant loop, rather than by a second scheduler. One loop that
+        # asks each tenant "is anything due for you?" is the shape this
+        # platform already has; a second one would be a second place to look
+        # when a dairy's bills did not appear.
+        try:
+            await draft_month_end_for_tenant(tenant, now=now, generation_hour=generation_hour)
+        except Exception:
+            log.exception("month_end_drafting_error", tenant=tenant.slug)
     return runs
+
+
+async def draft_month_end_for_tenant(
+    tenant: Tenant, *, now: datetime | None = None, generation_hour: int
+) -> None:
+    """Draft last month's bills, once, on the first of the dairy's month.
+
+    The same two questions the delivery round asks — is it past your
+    generation hour, and has this already been done? — with the month's
+    boundary in place of the day's. Idempotency comes from
+    `generate_invoice` itself: a customer with a live invoice for the period
+    is refused, so a second pass on the 1st drafts nothing and a pass on the
+    5th drafts nothing.
+
+    Deliberately only on the 1st. Drafting on any day of the month would mean
+    the previous month's bill is redrafted every morning for a customer whose
+    first attempt found nothing to bill, which is thirty pointless passes.
+    """
+    from platform_core.modules.billing.month_end import draft_month_end
+
+    now = now or utcnow()
+    today, hour = business_date_and_hour(now, tenant.timezone)
+    if today.day != 1 or hour < generation_hour:
+        return
+    async with get_session_factory()() as session:
+        await rebind_tenant(session, tenant.id)
+        await draft_month_end(session, tenant_id=tenant.id, timezone=tenant.timezone)
+        await session.commit()

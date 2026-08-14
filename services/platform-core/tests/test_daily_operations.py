@@ -465,3 +465,125 @@ async def test_another_tenants_statement_does_not_exist(client):
     other = await _second_tenant(client)
     r = await client.get(f"/v1/customers/{customer['id']}/statement", headers=other)
     assert r.status_code == 404
+
+
+# --- what a dairy manager asks at the end of the day (DEMO-019 §5) -----------
+
+
+async def test_the_report_says_how_much_milk_was_supposed_to_go_out(client):
+    """The headline question of §5, which the report could not answer in
+    litres: a count of planned deliveries is not a quantity of milk."""
+    _org, admin = await _tenant_admin(client)
+    customer = await _customer(
+        client, admin, name="Planned Household", quantity="2.000", price="56.0000"
+    )
+    # Three days: one delivered, one skipped, one still to go.
+    await _deliver(client, admin, customer["id"], TODAY, status="delivered")
+    await _deliver(client, admin, customer["id"], TODAY - timedelta(days=1), status="skipped")
+    third = await client.post(
+        "/v1/deliveries",
+        json={
+            "customer_id": customer["id"],
+            "delivery_date": str(TODAY - timedelta(days=2)),
+            "status": "scheduled",
+        },
+        headers=admin,
+    )
+    assert third.status_code == 201, third.text
+
+    report = (
+        await client.get(
+            "/v1/deliveries/report",
+            params={"date_from": str(TODAY - timedelta(days=2)), "date_to": str(TODAY)},
+            headers=admin,
+        )
+    ).json()
+
+    # Six litres were intended; two arrived.
+    assert Decimal(report["planned_quantity"]) == Decimal("6.000")
+    assert Decimal(report["total_quantity"]) == Decimal("2.000")
+    assert report["planned"] == 3
+    assert report["deliveries"] == 1
+    assert report["skipped"] == 1
+    assert report["scheduled"] == 1
+
+
+async def test_a_delivery_struck_out_in_error_is_not_milk_anybody_planned(client):
+    """`cancelled` means recorded in error, so it is the one status excluded
+    from the planned quantity — and it is reported so a count that does not
+    add up has somewhere to be explained from."""
+    _org, admin = await _tenant_admin(client)
+    customer = await _customer(
+        client, admin, name="Cancelled Household", quantity="3.000", price="50.0000"
+    )
+    await _deliver(client, admin, customer["id"], TODAY, status="delivered")
+    mistake = await client.post(
+        "/v1/deliveries",
+        json={
+            "customer_id": customer["id"],
+            "delivery_date": str(TODAY - timedelta(days=1)),
+            "status": "cancelled",
+        },
+        headers=admin,
+    )
+    assert mistake.status_code == 201, mistake.text
+
+    report = (
+        await client.get(
+            "/v1/deliveries/report",
+            params={"date_from": str(TODAY - timedelta(days=1)), "date_to": str(TODAY)},
+            headers=admin,
+        )
+    ).json()
+    assert Decimal(report["planned_quantity"]) == Decimal("3.000")
+    assert report["cancelled"] == 1
+
+
+async def test_returned_milk_is_told_apart_from_a_skipped_household(client):
+    """The van went and the milk came back — a different fact from a customer
+    who was away, and §5 asks for both."""
+    _org, admin = await _tenant_admin(client)
+    customer = await _customer(
+        client, admin, name="Returned Household", quantity="1.000", price="60.0000"
+    )
+    await _deliver(client, admin, customer["id"], TODAY, status="returned")
+    await _deliver(client, admin, customer["id"], TODAY - timedelta(days=1), status="skipped")
+
+    report = (
+        await client.get(
+            "/v1/deliveries/report",
+            params={"date_from": str(TODAY - timedelta(days=1)), "date_to": str(TODAY)},
+            headers=admin,
+        )
+    ).json()
+    assert report["returned"] == 1
+    assert report["skipped"] == 1
+    assert Decimal(report["total_amount"]) == Decimal("0.00"), "returned milk was billed"
+
+
+async def test_the_export_carries_the_planned_figure_too(client):
+    """§6: an accountant reading the file asks the shortfall question, and a
+    totals row with only the achieved figure makes them add up a column."""
+    admin, _ = await _round(client, None)
+    text = (
+        await client.get(
+            "/v1/deliveries/report.csv",
+            params={"date_from": str(TODAY - timedelta(days=2)), "date_to": str(TODAY)},
+            headers=admin,
+        )
+    ).text
+    total_row = next(row for row in csv.reader(io.StringIO(text)) if row and row[0] == "TOTAL")
+    assert any(cell.startswith("planned ") for cell in total_row)
+    assert "delivered" in total_row[4]
+
+
+async def test_the_statement_says_how_much_milk_the_money_is_for(client):
+    """§7's one sentence: 124 L, billed, paid, outstanding — on one screen."""
+    _org, admin = await _tenant_admin(client)
+    customer, invoice = await _billed_customer(client, admin)
+    statement = (
+        await client.get(f"/v1/customers/{customer['id']}/statement", headers=admin)
+    ).json()
+    assert Decimal(statement["delivered_quantity"]) == Decimal("14.000")  # 7 x 2L
+    assert statement["quantity_unit"] == "L"
+    assert Decimal(statement["billed"]) == Decimal(invoice["total"])

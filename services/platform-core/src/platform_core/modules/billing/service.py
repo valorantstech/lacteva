@@ -247,6 +247,15 @@ class CustomerStatement(BaseModel):
     billed: Decimal
     paid: Decimal
     closing_balance: Decimal
+    #: How much milk this customer actually took in the window (DEMO-019 §7).
+    #:
+    #: On the statement rather than only on the delivery report because the
+    #: question a dairy is answering here is "124 L, ₹7,440 billed, ₹5,000
+    #: paid, ₹2,440 outstanding" — one sentence, and until now the litres came
+    #: from a different screen. Counted over BILLABLE deliveries, so it is the
+    #: milk the money refers to.
+    delivered_quantity: Decimal
+    quantity_unit: str
     entries: list[StatementEntry]
 
 
@@ -775,6 +784,23 @@ class BillingService:
             )
         ).all()
 
+        # The milk behind the money, over the same window. One aggregate; the
+        # deliveries themselves are the delivery module's to list.
+        volume = (
+            await self._session.execute(
+                select(
+                    func.coalesce(func.sum(cast(MilkDelivery.quantity, Numeric)), 0),
+                    func.min(MilkDelivery.quantity_unit),
+                ).where(
+                    MilkDelivery.tenant_id == tenant_id,
+                    MilkDelivery.customer_id == customer_id,
+                    MilkDelivery.status.in_(BILLABLE_STATUSES),
+                    MilkDelivery.delivery_date >= date_from,
+                    MilkDelivery.delivery_date <= date_to,
+                )
+            )
+        ).one()
+
         movements: list[tuple[date, int, StatementEntry]] = []
         for invoice in invoices:
             movements.append(
@@ -832,6 +858,8 @@ class BillingService:
             billed=money(billed),
             paid=money(paid),
             closing_balance=running,
+            delivered_quantity=Decimal(volume[0] or 0).quantize(Decimal("0.001")),
+            quantity_unit=volume[1] or "L",
             entries=entries,
         )
 

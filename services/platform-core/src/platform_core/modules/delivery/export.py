@@ -85,13 +85,17 @@ def to_csv(export: DeliveryExport) -> str:
             f"{export.report.customers_served} customers",
             f"{export.report.date_from} — {export.report.date_to}",
             "",
-            f"{export.report.deliveries} deliveries",
+            f"{export.report.deliveries} of {export.report.planned} delivered",
             str(export.report.total_quantity),
             export.report.quantity_unit,
-            "",
+            # DEMO-019 §6: what the round INTENDED, beside what it achieved.
+            # An accountant reading this file asks the shortfall question, and
+            # a totals row that carries only the achieved figure makes them
+            # add up a column to answer it.
+            f"planned {export.report.planned_quantity}",
             str(export.report.total_amount),
             export.report.currency,
-            f"{export.report.skipped} skipped",
+            f"{export.report.skipped} skipped, {export.report.scheduled} pending",
             "",
         ]
     )
