@@ -26,6 +26,7 @@ from contextvars import ContextVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.errors import ValidationError
 from platform_core.core.locales import CURRENCIES, LocaleSettings
 from platform_core.core.tenancy import get_current_tenant
 
@@ -104,7 +105,10 @@ async def tenant_currency(session: AsyncSession, tenant_id: uuid.UUID | None = N
     """
     settings = await tenant_locale(session, tenant_id)
     if settings.currency_code not in CURRENCIES:
-        raise ValueError(
+        # A 422, not a bare ValueError: this is the CALLER's to fix (an
+        # administrator sets the currency in organization settings), and a
+        # ValueError would surface as a 500 telling them the platform broke.
+        raise ValidationError(
             "this organization has no usable currency "
             f"({settings.currency_code or 'unset'!r}) — set it in organization settings "
             "before recording money"

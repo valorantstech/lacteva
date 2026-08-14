@@ -170,4 +170,122 @@ void main() {
       expect(money('', _session(org: _india)), '—');
     });
   });
+
+  group('the session resolves the real /v1/auth/me (DEMO-013 §4)', () {
+    /// The payload below is the SHAPE THE PLATFORM ACTUALLY RETURNS, captured
+    /// from a live `GET /v1/auth/me` rather than written from memory. That is
+    /// the whole point of this test: DEMO-012's parser was written from
+    /// memory, read `id`/`email`/`full_name` from the top level where they
+    /// are not, and rendered a blank address for two milestones.
+    Map<String, dynamic> realPayload() => {
+      'user': {
+        'id': '11111111-1111-1111-1111-111111111111',
+        'tenant_id': '94340405-0918-4f8b-939c-a9205a9ead4b',
+        'email': 'priya@lacteva-india.example.com',
+        'full_name': 'Priya Raghavan',
+        'locale': 'hi-IN',
+        'is_active': true,
+        'last_login_at': '2026-08-14T05:42:49.835392Z',
+        'created_at': '2026-08-01T00:00:00Z',
+      },
+      'tenant_id': '94340405-0918-4f8b-939c-a9205a9ead4b',
+      'organization': {
+        'id': '94340405-0918-4f8b-939c-a9205a9ead4b',
+        'name': 'Lacteva India Demo',
+        'slug': 'lacteva-india-demo',
+        'country_code': 'IN',
+        'currency_code': 'INR',
+        'currency_symbol': '₹',
+        'timezone': 'Asia/Kolkata',
+        'default_language': 'en-IN',
+        'supported_languages': ['en-IN', 'hi-IN'],
+        'languages': [
+          {
+            'tag': 'en-IN',
+            'name': 'English',
+            'endonym': 'English',
+            'rtl': false,
+          },
+          {'tag': 'hi-IN', 'name': 'Hindi', 'endonym': 'हिन्दी', 'rtl': false},
+        ],
+      },
+      'membership': {
+        'status': 'active',
+        'joined_at': '2026-08-14T05:42:49.835392Z',
+      },
+      'roles': [
+        {
+          'name': 'tenant-admin',
+          'description': 'System role tenant-admin',
+          'center_id': null,
+        },
+      ],
+      'center_scope': null,
+      'permissions': ['sales.delivery.record', 'organization.read'],
+      'customer_id': null,
+    };
+
+    test('identifies the authenticated user', () {
+      final s = Session.fromJson(realPayload());
+      expect(s.userId, '11111111-1111-1111-1111-111111111111');
+      expect(s.email, 'priya@lacteva-india.example.com');
+      expect(s.fullName, 'Priya Raghavan');
+      expect(s.locale, 'hi-IN');
+    });
+
+    test('identifies the organization and its locale context', () {
+      final s = Session.fromJson(realPayload());
+      expect(s.tenantId, '94340405-0918-4f8b-939c-a9205a9ead4b');
+      expect(s.organizationId, s.tenantId);
+      expect(s.organization?.name, 'Lacteva India Demo');
+      expect(s.organization?.currencyCode, 'INR');
+      expect(s.organization?.timezone, 'Asia/Kolkata');
+    });
+
+    test('identifies membership and effective permissions', () {
+      final s = Session.fromJson(realPayload());
+      expect(s.membershipStatus, 'active');
+      expect(s.can('sales.delivery.record'), isTrue);
+      expect(s.can('sales.invoice.issue'), isFalse);
+    });
+
+    test('carries role names but never decides with them', () {
+      // DEMO-008 made roles editable rows. The role is readable for a support
+      // call; the EXPERIENCE comes from capabilities, so a principal with the
+      // permission and no recognisable role name still gets the round.
+      final s = Session.fromJson(realPayload());
+      expect(s.roleNames, contains('tenant-admin'));
+
+      final renamed = realPayload()
+        ..['roles'] = [
+          {'name': 'Milk Round Supervisor (Bengaluru)', 'center_id': null},
+        ];
+      expect(experienceFor(Session.fromJson(renamed)), Experience.delivery);
+    });
+
+    test('a null centre scope is the whole organization', () {
+      final s = Session.fromJson(realPayload());
+      expect(s.centerScope, isNull);
+      expect(s.coversCenter('any-centre-at-all'), isTrue);
+    });
+
+    test('a centre-scoped operator is confined to their centres', () {
+      // Null and empty are different: null is everywhere, a list is exactly
+      // those centres.
+      final scoped = realPayload()..['center_scope'] = ['centre-a', 'centre-b'];
+      final s = Session.fromJson(scoped);
+      expect(s.coversCenter('centre-a'), isTrue);
+      expect(s.coversCenter('centre-z'), isFalse);
+    });
+
+    test('a customer-scoped login is recognised as one', () {
+      final household = realPayload()
+        ..['customer_id'] = 'cus-42'
+        ..['permissions'] = ['sales.invoice.read'];
+      final s = Session.fromJson(household);
+      expect(s.isCustomer, isTrue);
+      expect(s.customerId, 'cus-42');
+      expect(experienceFor(s), Experience.customer);
+    });
+  });
 }

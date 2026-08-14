@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import utcnow
 from platform_core.core.document_numbers import next_document_number
-from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.errors import ConflictError, NotFoundError, ValidationError
 from platform_core.core.metrics import (
     PAYMENTS_CANCELLED,
     PAYMENTS_COMPLETED,
@@ -708,6 +708,20 @@ class PaymentService:
         if settlement.supplier_id != supplier_id:
             raise ConflictError(
                 f"settlement {settlement.settlement_number} belongs to a different supplier"
+            )
+        # DEMO-013: explicit, and never a comparison against None.
+        #
+        # This guard was handed `cmd.currency` — the REQUEST's value — after
+        # currency became optional, so an omitted currency made every
+        # settlement look like a mismatch and refused every payment with
+        # "is in KES, not None". It now receives the RESOLVED currency, and
+        # says so plainly if it somehow does not: a missing currency is a
+        # validation failure the caller can act on, not a mismatch report
+        # about a value nobody supplied.
+        if not currency:
+            raise ValidationError(
+                "a payment needs a currency and this organization has none — "
+                "set it in organization settings"
             )
         if settlement.currency != currency:
             raise ConflictError(

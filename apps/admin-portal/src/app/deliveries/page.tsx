@@ -22,6 +22,7 @@ import { type DateRange, DateRangePicker, resolveRange } from "@/components/date
 import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { useLocale } from "@/lib/i18n";
 
 /**
  * Daily deliveries and the delivery report (DEMO-009).
@@ -58,6 +59,9 @@ export default function DeliveriesPage() {
 }
 
 function DeliveriesView() {
+  // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
+  const { currency: orgCurrency } = useLocale();
+
   const searchParams = useSearchParams();
   const [page, setPage] = useState<DeliveryPageResult | null>(null);
   const [report, setReport] = useState<DeliveryReport | null>(null);
@@ -206,7 +210,7 @@ function DeliveriesView() {
         />
         <StatTile
           label="Value"
-          value={report ? <Money amount={report.total_amount} currency="KES" /> : "—"}
+          value={report ? <Money amount={report.total_amount} currency={orgCurrency} /> : "—"}
           icon={<Banknote className="size-4" />}
         />
         <StatTile
@@ -247,7 +251,7 @@ function DeliveriesView() {
                         <Quantity value={day.quantity} unit="L" />
                       </td>
                       <td className="py-2 text-right">
-                        <Money amount={day.amount} currency="KES" />
+                        <Money amount={day.amount} currency={orgCurrency} />
                       </td>
                     </tr>
                   ))}
@@ -358,7 +362,7 @@ function DeliveriesView() {
               <span className="text-muted-foreground">Across all {page.total} matching deliveries: </span>
               <Quantity value={page.total_quantity} unit="L" />
               <span className="text-muted-foreground"> · </span>
-              <Money amount={page.total_amount} currency="KES" />
+              <Money amount={page.total_amount} currency={orgCurrency} />
             </p>
           ) : null}
         </CardContent>

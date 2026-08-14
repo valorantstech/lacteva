@@ -49,16 +49,50 @@ depends_on = None
 
 #: Snapshot of `core/locales.COUNTRIES` as it stood at this migration.
 #: Intentionally a copy: see the module docstring.
+#:
+#: The languages are a PYTHON LIST, not a pre-serialized JSON string. That
+#: distinction is what broke this migration the first time it met a real
+#: database — see `_organization` below.
 COUNTRY_LOCALES = {
-    "IN": ("INR", "Asia/Kolkata", '["en-IN", "hi-IN"]'),
-    "KE": ("KES", "Africa/Nairobi", '["en-KE", "sw-KE"]'),
-    "AE": ("AED", "Asia/Dubai", '["en-AE", "ar-AE"]'),
-    "SA": ("SAR", "Asia/Riyadh", '["en-SA", "ar-SA"]'),
-    "UG": ("UGX", "Africa/Kampala", '["en-UG", "sw-UG"]'),
-    "TZ": ("TZS", "Africa/Dar_es_Salaam", '["en-TZ", "sw-TZ"]'),
-    "GB": ("GBP", "Europe/London", '["en-GB"]'),
-    "US": ("USD", "America/New_York", '["en-US"]'),
+    "IN": ("INR", "Asia/Kolkata", ["en-IN", "hi-IN"]),
+    "KE": ("KES", "Africa/Nairobi", ["en-KE", "sw-KE"]),
+    "AE": ("AED", "Asia/Dubai", ["en-AE", "ar-AE"]),
+    "SA": ("SAR", "Asia/Riyadh", ["en-SA", "ar-SA"]),
+    "UG": ("UGX", "Africa/Kampala", ["en-UG", "sw-UG"]),
+    "TZ": ("TZS", "Africa/Dar_es_Salaam", ["en-TZ", "sw-TZ"]),
+    "GB": ("GBP", "Europe/London", ["en-GB"]),
+    "US": ("USD", "America/New_York", ["en-US"]),
 }
+
+#: The table as this migration needs to see it, with the REAL column types.
+#:
+#: The backfill was originally hand-written SQL with string bind parameters:
+#:
+#:     sa.text("UPDATE organization SET supported_languages = :languages ...")
+#:            .bindparams(languages='["en-KE", "sw-KE"]')
+#:
+#: That works on SQLite, where a JSON column is TEXT and a string is exactly
+#: what belongs in it. PostgreSQL refuses it at PARSE time:
+#:
+#:     column "supported_languages" is of type json
+#:     but expression is of type character varying
+#:
+#: — because asyncpg sends the parameter as `text` and PostgreSQL will not
+#: implicitly cast text to json in an assignment. It failed on an EMPTY
+#: database, so it was never about the data.
+#:
+#: Declaring the column as `sa.JSON` and using a Core `update()` lets
+#: SQLAlchemy render the statement for whichever dialect is actually running:
+#: the JSON type's bind processor serializes the list, and the PostgreSQL
+#: dialect emits the cast that PostgreSQL requires. One statement, correct on
+#: both, with no dialect branch in this file.
+_organization = sa.table(
+    "organization",
+    sa.column("country_code", sa.String),
+    sa.column("currency_code", sa.String),
+    sa.column("timezone", sa.String),
+    sa.column("supported_languages", sa.JSON),
+)
 
 
 def upgrade() -> None:
@@ -69,15 +103,19 @@ def upgrade() -> None:
     # Backfill before the NOT NULL, so no row is ever without a currency.
     for code, (currency, timezone, languages) in COUNTRY_LOCALES.items():
         op.execute(
-            sa.text(
-                "UPDATE organization SET currency_code = :currency, timezone = :timezone, "
-                "supported_languages = :languages WHERE upper(country_code) = :code"
-            ).bindparams(currency=currency, timezone=timezone, languages=languages, code=code)
+            _organization.update()
+            .where(sa.func.upper(_organization.c.country_code) == code)
+            .values(
+                currency_code=currency,
+                timezone=timezone,
+                supported_languages=languages,
+            )
         )
     # A country this snapshot does not know: no currency, and no guess.
     op.execute(
-        "UPDATE organization SET currency_code = 'XXX', timezone = 'UTC', "
-        "supported_languages = '[\"en\"]' WHERE currency_code IS NULL"
+        _organization.update()
+        .where(_organization.c.currency_code.is_(None))
+        .values(currency_code="XXX", timezone="UTC", supported_languages=["en"])
     )
 
     with op.batch_alter_table("organization") as batch:

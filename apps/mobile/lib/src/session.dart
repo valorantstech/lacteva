@@ -30,6 +30,10 @@ class Session {
     this.customerId,
     this.locale = 'en',
     this.organization,
+    this.organizationId,
+    this.membershipStatus,
+    this.roleNames = const <String>[],
+    this.centerScope,
   });
 
   final String userId;
@@ -66,7 +70,34 @@ class Session {
   /// rider in a valley still has to see amounts and dates.
   final OrgLocale? organization;
 
+  /// The organization's id, distinct from `tenantId` only in that the platform
+  /// nests it under `organization` — they are the same value.
+  final String? organizationId;
+
+  /// `active`, `suspended`, … as the platform reports it. Carried so the app
+  /// can say something true when a member has been suspended, rather than
+  /// showing a wall of refusals.
+  final String? membershipStatus;
+
+  /// Role names, for DISPLAY AND DIAGNOSTICS ONLY (DEMO-013 §4).
+  ///
+  /// **Nothing in this app may branch on them.** DEMO-008 made roles editable
+  /// rows, so a client that switched on a role name would be wrong the moment
+  /// an administrator created a role doing the same job under another name.
+  /// `permissions` is the authority; this exists so a support call can ask
+  /// "what does it say you are?".
+  final List<String> roleNames;
+
+  /// The centres this principal may act at, or null for the whole
+  /// organization. A centre-scoped operator must not be offered another
+  /// centre's work.
+  final List<String>? centerScope;
+
   bool get isCustomer => customerId != null;
+
+  /// May this principal act at this centre? Null scope means everywhere.
+  bool coversCenter(String centerId) =>
+      centerScope == null || centerScope!.contains(centerId);
 
   /// Wildcard included, because the platform's own registry uses it for
   /// platform administrators and a client that ignored it would hide
@@ -91,6 +122,14 @@ class Session {
             (json['organization'] as Map).cast<String, dynamic>(),
           )
         : null;
+    final orgJson = json['organization'] is Map
+        ? (json['organization'] as Map).cast<String, dynamic>()
+        : const <String, dynamic>{};
+    final membership = json['membership'] is Map
+        ? (json['membership'] as Map).cast<String, dynamic>()
+        : const <String, dynamic>{};
+    final roles = json['roles'] is List ? json['roles'] as List : const [];
+    final scope = json['center_scope'];
     return Session(
       userId: (user['id'] ?? json['id'] ?? '').toString(),
       email: (user['email'] ?? json['email'] ?? '').toString(),
@@ -99,6 +138,17 @@ class Session {
       customerId: json['customer_id']?.toString(),
       locale: (user['locale'] ?? json['locale'] ?? 'en').toString(),
       organization: org,
+      organizationId: orgJson['id']?.toString(),
+      membershipStatus: membership['status']?.toString(),
+      roleNames: roles
+          .map((r) => r is Map ? (r['name'] ?? '').toString() : r.toString())
+          .where((name) => name.isNotEmpty)
+          .toList(),
+      // Null and empty are DIFFERENT: null is "the whole organization",
+      // an empty list would be "no centre at all".
+      centerScope: scope is List
+          ? scope.map((e) => e.toString()).toList()
+          : null,
       permissions: raw is List
           ? raw.map((e) => e.toString()).toSet()
           : const <String>{},

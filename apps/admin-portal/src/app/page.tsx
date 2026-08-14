@@ -43,7 +43,7 @@ import { Money, Quantity } from "@/components/money";
 import { PageHeader, SectionHeading, StatTile } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState, TableSkeleton } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
-import { useT } from "@/lib/i18n";
+import { useT, useLocale } from "@/lib/i18n";
 
 /**
  * The customer dashboard (DEMO-002).
@@ -88,6 +88,8 @@ function describe(error: unknown): string {
 }
 
 export default function Home() {
+  // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
+  const { currency: orgCurrency } = useLocale();
   const t = useT();
   const [session, setSession] = useState<Session | null>(null);
   const [checked, setChecked] = useState(false);
@@ -256,7 +258,7 @@ export default function Home() {
             primary ? (
               <Money amount={primary[1]} currency={primary[0]} />
             ) : collection ? (
-              <Money amount="0.00" currency="KES" />
+              <Money amount="0.00" currency={orgCurrency} />
             ) : (
               "—"
             )
@@ -317,7 +319,7 @@ export default function Home() {
           label={t("dashboard.salesValue")}
           value={
             sales ? (
-              <Money amount={sales.sales_value_in_period} currency={sales.currency ?? "KES"} />
+              <Money amount={sales.sales_value_in_period} currency={sales.currency ?? orgCurrency} />
             ) : (
               "—"
             )
@@ -328,7 +330,7 @@ export default function Home() {
         <StatTile
           label={t("dashboard.customerReceivable")}
           value={
-            sales ? <Money amount={sales.receivable} currency={sales.currency ?? "KES"} /> : "—"
+            sales ? <Money amount={sales.receivable} currency={sales.currency ?? orgCurrency} /> : "—"
           }
           // Said plainly, because it is the one tile on this page that is NOT
           // narrowed by the date range — a debt is a debt whatever window you
@@ -349,7 +351,7 @@ export default function Home() {
           hint={
             sales ? (
               <>
-                worth <Money amount={sales.unbilled_amount} currency={sales.currency ?? "KES"} />
+                worth <Money amount={sales.unbilled_amount} currency={sales.currency ?? orgCurrency} />
               </>
             ) : undefined
           }
@@ -586,7 +588,7 @@ export default function Home() {
               <p className="text-lg font-semibold">
                 <Money
                   amount={owing.data.total_outstanding}
-                  currency={owing.data.currency ?? "KES"}
+                  currency={owing.data.currency ?? orgCurrency}
                 />
               </p>
               <p className="text-xs text-muted-foreground">

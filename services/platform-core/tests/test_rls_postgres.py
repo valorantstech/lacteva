@@ -547,9 +547,13 @@ async def test_a_tenant_sees_only_its_own_organization(live):
         for org, slug in ((a, f"alpha-{a.hex[:8]}"), (b, f"beta-{b.hex[:8]}")):
             await s.execute(
                 text(
+                    # DEMO-013 added currency, timezone and languages as NOT
+                    # NULL. A raw INSERT here has to supply them; the
+                    # application never writes this table directly.
                     "INSERT INTO organization (id, name, slug, country_code, org_type, status,"
-                    " default_locale, created_at) VALUES (:i, 'X', :s, 'KE', 'cooperative',"
-                    " 'active', 'en', now())"
+                    " default_locale, currency_code, timezone, supported_languages,"
+                    " created_at) VALUES (:i, 'X', :s, 'KE', 'cooperative',"
+                    " 'active', 'en', 'KES', 'Africa/Nairobi', '[\"en-KE\"]', now())"
                 ),
                 {"i": org, "s": slug},
             )
@@ -567,8 +571,10 @@ async def test_a_tenant_sees_only_its_own_organization(live):
                 await s.execute(
                     text(
                         "INSERT INTO organization (id, name, slug, country_code, org_type,"
-                        " status, default_locale, created_at) VALUES (:i, 'Y', :s, 'KE',"
-                        " 'cooperative', 'active', 'en', now())"
+                        " status, default_locale, currency_code, timezone,"
+                        " supported_languages, created_at) VALUES (:i, 'Y', :s, 'KE',"
+                        " 'cooperative', 'active', 'en', 'KES', 'Africa/Nairobi',"
+                        " '[\"en-KE\"]', now())"
                     ),
                     {"i": uuid.uuid4(), "s": f"sneak-{uuid.uuid4().hex[:8]}"},
                 )

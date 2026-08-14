@@ -24,6 +24,7 @@ import { type Column, DataTable } from "@/components/data-table";
 import { Money } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { useLocale } from "@/lib/i18n";
 
 /**
  * Settlements (DEMO-006).
@@ -58,6 +59,8 @@ const describe = (e: unknown) => {
 };
 
 export default function SettlementsPage() {
+  // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
+  const { currency: orgCurrency } = useLocale();
   const [page, setPage] = useState<SettlementPageResult | null>(null);
   const [report, setReport] = useState<SettlementReport | null>(null);
   const [centers, setCenters] = useState<Center[]>([]);
@@ -237,7 +240,7 @@ export default function SettlementsPage() {
         />
         <StatTile
           label="Finalized value"
-          value={report ? <Money amount={report.finalized_net_total} currency="KES" /> : "—"}
+          value={report ? <Money amount={report.finalized_net_total} currency={orgCurrency} /> : "—"}
           icon={<Banknote className="size-4" />}
         />
       </section>
@@ -395,7 +398,7 @@ function CreateSettlementCard({
   const [center, setCenter] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [currency, setCurrency] = useState("KES");
+  const [currency, setCurrency] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLocale } from "@/lib/i18n";
 import {
   Table,
   TableBody,
@@ -415,7 +416,9 @@ function RateCardForm({
   const [name, setName] = useState(card?.name ?? "");
   const [code, setCode] = useState("");
   const [description, setDescription] = useState(card?.description ?? "");
-  const [currency, setCurrency] = useState(card?.currency ?? "KES");
+  // DEMO-013: a new rate card starts in the ORGANIZATION's currency.
+  const { currency: orgCurrency } = useLocale();
+  const [currency, setCurrency] = useState(card?.currency ?? orgCurrency ?? "");
   const [effectiveFrom, setEffectiveFrom] = useState(card?.effective_from ?? "");
   const [effectiveUntil, setEffectiveUntil] = useState(card?.effective_until ?? "");
   const [branchId, setBranchId] = useState(card?.branch_id ?? "");

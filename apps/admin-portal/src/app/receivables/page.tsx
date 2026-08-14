@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
 import { Money } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
+import { useLocale } from "@/lib/i18n";
 
 /**
  * Who owes money (DEMO-010).
@@ -38,6 +39,8 @@ const describe = (e: unknown) => {
 const day = (iso: string | null) => (iso ? String(iso).slice(0, 10) : null);
 
 export default function ReceivablesPage_() {
+  // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
+  const { currency: orgCurrency } = useLocale();
   const [page, setPage] = useState<ReceivablesPage | null>(null);
   const [q, setQ] = useState("");
   const [owingOnly, setOwingOnly] = useState(true);
@@ -171,7 +174,7 @@ export default function ReceivablesPage_() {
         <StatTile
           label="Total outstanding"
           value={
-            page ? <Money amount={page.total_outstanding} currency={page.currency ?? "KES"} /> : "—"
+            page ? <Money amount={page.total_outstanding} currency={page.currency ?? orgCurrency} /> : "—"
           }
           // Spelled out because it is the whole point of the page: this is
           // every match, not the rows below it.

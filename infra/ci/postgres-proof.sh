@@ -43,6 +43,13 @@ APP_PASSWORD="${APP_PASSWORD:-lacteva_app_proof}"
 
 SOURCE_DB="${SOURCE_DB:-lacteva_proof}"
 RESTORE_DB="${RESTORE_DB:-lacteva_restore}"
+# DEMO-013: its own database, because it must start at an OLDER revision than
+# the others and would otherwise contaminate the source the proof restores.
+BACKFILL_DB="${BACKFILL_DB:-lacteva_backfill}"
+#: The revision immediately before DEMO-013 — the state production was in when
+#: the migration met it. Pinned rather than computed: this step is about one
+#: specific backfill, and a moving target would silently stop testing it.
+BACKFILL_FROM="${BACKFILL_FROM:-e91b6c47a2d8}"
 # Step 3's suites get a database of their OWN. They are tests: they fabricate
 # settlements with no lines and payments that are meant to lose a race, and
 # they commit that residue. Run them in ${SOURCE_DB} and step 8's deep
@@ -100,6 +107,7 @@ cleanup() {
     psql_do postgres "DROP DATABASE IF EXISTS ${SOURCE_DB}" >/dev/null 2>&1 || true
     psql_do postgres "DROP DATABASE IF EXISTS ${RESTORE_DB}" >/dev/null 2>&1 || true
     psql_do postgres "DROP DATABASE IF EXISTS ${TESTS_DB}" >/dev/null 2>&1 || true
+    psql_do postgres "DROP DATABASE IF EXISTS ${BACKFILL_DB}" >/dev/null 2>&1 || true
   else
     printf '\nKEEP_DATABASES=1 — %s, %s and %s left in place for inspection.\n' \
       "${SOURCE_DB}" "${RESTORE_DB}" "${TESTS_DB}"
@@ -140,6 +148,45 @@ TABLES="$(psql_do "${SOURCE_DB}" \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")"
 echo "    ${TABLES} tables created"
 [ "${TABLES}" -gt 40 ] || fail "only ${TABLES} tables after migration — expected the full schema"
+
+# DEMO-013: migrations meeting EXISTING DATA, which step 1 cannot show.
+#
+# An empty database proves a migration parses and its DDL applies. It says
+# nothing about a BACKFILL, because there is nothing to back-fill — and the
+# production case is always the other one. DEMO-013's migration passed every
+# SQLite test and every empty-database run, then failed on the real deployment
+# with
+#
+#     column "supported_languages" is of type json
+#     but expression is of type character varying
+#
+# because a hand-written UPDATE bound a pre-serialized JSON string, which is
+# exactly right for SQLite's TEXT column and refused by PostgreSQL at parse
+# time. This step migrates to the revision BEFORE, inserts organizations, then
+# upgrades — so a backfill is proved against rows rather than against nothing.
+step "1b/9  migrations back-fill EXISTING rows (${BACKFILL_DB})"
+psql_do postgres "DROP DATABASE IF EXISTS ${BACKFILL_DB}" >/dev/null
+psql_do postgres "CREATE DATABASE ${BACKFILL_DB}" >/dev/null
+BACKFILL_URL="$(url_for "${BACKFILL_DB}")"
+LACTEVA_DATABASE_URL="${BACKFILL_URL}" ${RUN} alembic upgrade "${BACKFILL_FROM}" >/dev/null   || fail "could not migrate to ${BACKFILL_FROM}"
+# Lower case on purpose: the column has always held whatever was posted, and
+# the backfill matches on upper(country_code).
+psql_do "${BACKFILL_DB}" "
+  INSERT INTO organization (id, name, slug, country_code, org_type, status, default_locale, created_at)
+  VALUES (gen_random_uuid(), 'Proof Kenya', 'proof-ke', 'ke', 'cooperative', 'active', 'en', now()),
+         (gen_random_uuid(), 'Proof Unlisted', 'proof-zz', 'ZZ', 'cooperative', 'active', 'en', now())" >/dev/null
+LACTEVA_DATABASE_URL="${BACKFILL_URL}" ${RUN} alembic upgrade head >/dev/null   || fail "migrations failed against existing rows — the production case"
+BACKFILLED="$(psql_do "${BACKFILL_DB}"   "SELECT currency_code || ' ' || timezone || ' ' || supported_languages::text
+     FROM organization WHERE slug = 'proof-ke'")"
+[ "${BACKFILLED}" = 'KES Africa/Nairobi ["en-KE", "sw-KE"]' ]   || fail "Kenya back-filled as '${BACKFILLED}'"
+# An unlisted country gets ISO 4217's "no currency", never a guess at somebody
+# else's money.
+UNLISTED="$(psql_do "${BACKFILL_DB}"   "SELECT currency_code || ' ' || timezone FROM organization WHERE slug = 'proof-zz'")"
+[ "${UNLISTED}" = "XXX UTC" ] || fail "an unlisted country back-filled as '${UNLISTED}'"
+NULLS="$(psql_do "${BACKFILL_DB}"   "SELECT count(*) FROM organization
+    WHERE currency_code IS NULL OR timezone IS NULL OR supported_languages IS NULL")"
+[ "${NULLS}" = "0" ] || fail "${NULLS} organizations left without a locale"
+echo "    back-filled 2 pre-existing organizations, 0 nulls"
 
 # VER-001: create the unprivileged role the isolation proof runs as, and
 # prove it is unprivileged. Everything after this point that reads or writes

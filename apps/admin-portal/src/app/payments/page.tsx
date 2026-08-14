@@ -26,6 +26,7 @@ import { type Column, DataTable } from "@/components/data-table";
 import { Money } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { useLocale } from "@/lib/i18n";
 
 /**
  * Payments (DEMO-006).
@@ -61,6 +62,8 @@ const stamp = (iso: string | null | undefined) =>
   iso ? String(iso).slice(0, 16).replace("T", " ") : "—";
 
 export default function PaymentsPage() {
+  // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
+  const { currency: orgCurrency } = useLocale();
   const [page, setPage] = useState<PaymentPageResult | null>(null);
   const [report, setReport] = useState<PaymentReport | null>(null);
   const [balances, setBalances] = useState<BalancePageResult | null>(null);
@@ -203,7 +206,7 @@ export default function PaymentsPage() {
           hint={
             report ? (
               <>
-                <Money amount={report.completed_amount} currency="KES" /> paid
+                <Money amount={report.completed_amount} currency={orgCurrency} /> paid
               </>
             ) : undefined
           }
@@ -223,7 +226,7 @@ export default function PaymentsPage() {
           hint={
             report ? (
               <>
-                <Money amount={report.failed_amount} currency="KES" /> to retry
+                <Money amount={report.failed_amount} currency={orgCurrency} /> to retry
               </>
             ) : undefined
           }
@@ -231,7 +234,7 @@ export default function PaymentsPage() {
         />
         <StatTile
           label="Outstanding"
-          value={report ? <Money amount={report.outstanding_amount} currency="KES" /> : "—"}
+          value={report ? <Money amount={report.outstanding_amount} currency={orgCurrency} /> : "—"}
           hint="finalized but unpaid"
           icon={<Banknote className="size-4" />}
         />

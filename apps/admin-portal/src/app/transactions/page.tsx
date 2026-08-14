@@ -25,6 +25,7 @@ import { type DateRange, DateRangePicker, resolveRange } from "@/components/date
 import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { useLocale } from "@/lib/i18n";
 
 /**
  * Transactions — the operational view (DEMO-004, rebuilt in DEMO-007).
@@ -107,6 +108,8 @@ const stamp = (iso: string | null | undefined) =>
   iso ? String(iso).slice(0, 16).replace("T", " ") : "—";
 
 export default function TransactionsPage() {
+  // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
+  const { currency: orgCurrency } = useLocale();
   const [page, setPage] = useState<MilkTransactionPage | null>(null);
   const [summary, setSummary] = useState<DailyCollectionSummary | null>(null);
   const [status, setStatus] = useState<Record<string, OperationalStatus>>({});
@@ -363,7 +366,7 @@ export default function TransactionsPage() {
             primary ? (
               <Money amount={primary[1]} currency={primary[0]} />
             ) : summary ? (
-              <Money amount="0.00" currency="KES" />
+              <Money amount="0.00" currency={orgCurrency} />
             ) : (
               "—"
             )

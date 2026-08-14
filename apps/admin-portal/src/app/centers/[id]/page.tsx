@@ -28,6 +28,7 @@ import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState, TableSkeleton } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
+import { useLocale } from "@/lib/i18n";
 
 /**
  * One collection centre (DEMO-003).
@@ -54,6 +55,8 @@ const describe = (e: unknown) =>
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export default function CenterDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
+  const { currency: orgCurrency } = useLocale();
   const { id } = use(params);
   const [range, setRange] = useState<DateRange>(() => resolveRange("30d"));
 
@@ -145,7 +148,7 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
         />
         <StatTile
           label="Collection value"
-          value={primary ? <Money amount={primary[1]} currency={primary[0]} /> : stats ? <Money amount="0.00" currency="KES" /> : "—"}
+          value={primary ? <Money amount={primary[1]} currency={primary[0]} /> : stats ? <Money amount="0.00" currency={orgCurrency} /> : "—"}
           hint="payable in this period"
         />
         <StatTile

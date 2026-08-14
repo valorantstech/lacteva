@@ -33,6 +33,7 @@ import { Money, Quantity, sameAmount } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
+import { useLocale } from "@/lib/i18n";
 
 /**
  * One collection, end to end (DEMO-004).
@@ -475,12 +476,15 @@ function SourceTag({ source }: { source: string | null }) {
  * screen that says so instead of the screen that hides it.
  */
 function MoneyTrail({ tx, chain }: { tx: MilkTransaction; chain: Load<CollectionChain> }) {
+  // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
+  const { currency: orgCurrency } = useLocale();
+
   if (chain.state === "loading") return <LoadingState label="Following the money…" />;
   if (chain.state === "error")
     return <ErrorState message={`The financial trail is unavailable — ${chain.message}.`} />;
 
   const links = chain.data;
-  const currency = tx.currency ?? links.settlement?.currency ?? "KES";
+  const currency = tx.currency ?? links.settlement?.currency ?? orgCurrency;
   const collected = tx.gross_amount == null ? null : String(tx.gross_amount);
   const contributed = links.settlement ? String(links.settlement.line_amount) : null;
 

@@ -867,3 +867,122 @@ async def test_a_payment_with_no_currency_takes_the_organizations(client):
     r = await client.post("/v1/payments", json=body, headers=headers)
     assert r.status_code == 201, r.text
     assert r.json()["currency"] == settlement["currency"]
+
+
+# --- DEMO-013: the currency guard, in every direction -------------------------
+
+
+async def test_a_payment_in_the_settlements_currency_is_allowed(client):
+    """KES against a KES settlement. The ordinary case, stated explicitly so
+    the four refusals below cannot pass by refusing everything."""
+    headers, _center, supplier, settlement = await _payable(client)
+    assert settlement["currency"] == "KES"
+    r = await _create_payment(
+        client,
+        headers,
+        supplier["id"],
+        [{"settlement_id": settlement["id"]}],
+        currency="KES",
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["currency"] == "KES"
+
+
+async def test_a_payment_in_another_currency_is_refused(client):
+    """INR against a KES settlement.
+
+    Converting between them is not something a payment does — the amount owed
+    was fixed in the settlement's money, and a payment that silently changed
+    it would be an exchange rate nobody agreed applied at a date nobody
+    recorded.
+    """
+    headers, _center, supplier, settlement = await _payable(client)
+    r = await _create_payment(
+        client,
+        headers,
+        supplier["id"],
+        [{"settlement_id": settlement["id"]}],
+        currency="INR",
+    )
+    assert r.status_code == 409, r.text
+    assert "currency conversion is not a payment operation" in r.text
+
+
+async def test_a_rupee_settlement_takes_rupees_and_refuses_shillings(client):
+    """The same two rules with the currencies swapped.
+
+    A guard that only ever saw KES settlements could pass by accident — by
+    comparing nothing, or by comparing against a constant. This settlement is
+    in INR, so "allowed" and "refused" swap sides.
+
+    The settlement states its currency explicitly here because this test is
+    about the GUARD. That an Indian organization resolves INR without anyone
+    stating it is a different claim, proved in
+    `test_localization.py::test_the_whole_procurement_chain_uses_the_organizations_currency`.
+    """
+    headers, center, supplier, _kes = await _with_lines(client)
+    inr = await _create_settlement(
+        client,
+        headers,
+        supplier["id"],
+        center["id"],
+        currency="INR",
+        period_from="2026-12-01",
+        period_to="2026-12-31",
+    )
+    calc_id = await _calculation_id(client, headers, center["id"], quantity=10.0)
+    assert (await _add_calculation(client, headers, inr["id"], calc_id)).status_code == 201
+    await _post(client, headers, inr["id"], "calculate")
+    finalized = await _post(client, headers, inr["id"], "finalize")
+    assert finalized.status_code == 200, finalized.text
+    assert finalized.json()["currency"] == "INR"
+
+    good = await _create_payment(
+        client, headers, supplier["id"], [{"settlement_id": inr["id"]}], currency="INR"
+    )
+    assert good.status_code == 201, good.text
+    assert good.json()["currency"] == "INR"
+
+    bad = await _create_payment(
+        client,
+        headers,
+        supplier["id"],
+        [{"settlement_id": inr["id"]}],
+        currency="KES",
+        idempotency_key="mismatch-the-other-way",
+    )
+    assert bad.status_code == 409, bad.text
+    assert "currency conversion is not a payment operation" in bad.text
+
+
+async def test_a_payment_needs_a_currency_it_can_resolve(client):
+    """The fifth case: neither stated nor resolvable.
+
+    An organization whose currency is unset or `XXX` — ISO 4217's own "no
+    currency involved", which the DEMO-013 migration assigns to a country the
+    registry had never met — must not be able to move money. It gets a 422 it
+    can act on ("set it in organization settings"), not a 500 and not a
+    mismatch report about a value nobody supplied.
+    """
+    from sqlalchemy import select
+
+    from platform_core.core import db
+    from platform_core.core.org_context import reset_locale_cache
+    from platform_core.modules.organization.models import Organization
+
+    headers, _center, supplier, settlement = await _payable(client)
+    async with db.get_session_factory()() as session:
+        org = (await session.scalars(select(Organization))).first()
+        org.currency_code = "XXX"
+        await session.commit()
+    reset_locale_cache()
+
+    r = await _create_payment(
+        client,
+        headers,
+        supplier["id"],
+        [{"settlement_id": settlement["id"]}],
+        currency=None,
+    )
+    assert r.status_code == 422, r.text
+    assert "organization settings" in r.text
