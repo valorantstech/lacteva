@@ -1,0 +1,176 @@
+/// Words, money and dates for the field app (DEMO-013 §13).
+///
+/// **No configuration of its own.** There is no map from India to rupees in
+/// this file. The platform resolved that when the dairy was onboarded and
+/// sends it with the session; a second copy here would be a second answer, and
+/// the two would disagree the first time somebody changed a setting.
+///
+/// **No `flutter_localizations` codegen.** The standard stack solves problems
+/// this app does not have — locale-resolved asset bundles, plural rule
+/// engines, a `.arb` toolchain — and would add a build step to render a few
+/// dozen short strings. This is a map and a lookup, deliberately the same
+/// shape as the portal's, so a translator sees one vocabulary rather than two.
+///
+/// **The rule that matters more than the mechanism:** strings are fetched by
+/// KEY. Nothing here or anywhere in the app asks what country it is in.
+library;
+
+import 'session.dart';
+
+typedef Catalog = Map<String, String>;
+
+const Catalog _en = {
+  'round.title': "Today's round",
+  'round.empty': 'No customers on this round',
+  'round.emptyDetail': 'Customers appear here once the dairy registers them.',
+  'round.delivered': 'Delivered',
+  'round.customers': 'Customers',
+  'round.quantity': 'Quantity',
+  'round.value': 'Value',
+  'round.notRecorded': 'not yet recorded',
+  'round.allSent': 'All deliveries sent',
+  'round.waiting': '{count} waiting to send',
+  'round.sync': 'Send now',
+  'round.refresh': 'Refresh',
+
+  'record.delivered': 'DELIVERED',
+  'record.notDelivered': 'NOT DELIVERED',
+  'record.returned': 'RETURNED',
+  'record.quantityHint': 'Quantity (leave blank for the standing order)',
+  'record.amountNote':
+      'The amount is calculated by the platform from the agreed rate — it is never entered here.',
+  'record.queued': 'Saved on this phone. It will be sent when there is signal.',
+
+  'customer.today': 'Today',
+  'customer.noDeliveryToday': 'No delivery recorded yet today.',
+  'customer.owe': 'What I owe',
+  'customer.billed': 'Billed {billed} · paid {paid}',
+  'customer.thisMonth': 'This month',
+  'customer.deliveries': '{count} deliveries',
+  'customer.bills': 'My bills',
+  'customer.receipts': 'My receipts',
+  'customer.noReceipts': 'A receipt appears here after each payment.',
+  'customer.history': 'Delivery history',
+  'customer.bill': 'Bill',
+  'customer.amountDue': 'Amount due',
+  'customer.paid': 'Paid',
+  'customer.outstanding': 'Outstanding',
+  'customer.subtotal': 'Subtotal',
+  'customer.adjustments': 'Adjustments',
+  'customer.broughtForward': 'Brought forward',
+  'customer.everyDelivery': 'Every delivery on this bill',
+  'customer.checked':
+      'Checked by the dairy: this bill matches the deliveries below.',
+  'customer.mismatch':
+      'This bill no longer matches its deliveries. Contact the dairy.',
+
+  'auth.signIn': 'Sign in',
+  'auth.email': 'Email',
+  'auth.password': 'Password',
+  'auth.signingIn': 'Signing in…',
+
+  'common.retry': 'Try again',
+  'common.loading': 'Loading…',
+  'common.offline': 'No signal',
+  'common.nothingHere': 'Nothing for this account on mobile',
+};
+
+const Catalog _hi = {
+  'round.title': 'आज का राउंड',
+  'round.empty': 'इस राउंड में कोई ग्राहक नहीं',
+  'round.emptyDetail': 'डेयरी द्वारा पंजीकृत होने पर ग्राहक यहाँ दिखेंगे।',
+  'round.delivered': 'वितरित',
+  'round.customers': 'ग्राहक',
+  'round.quantity': 'मात्रा',
+  'round.value': 'मूल्य',
+  'round.notRecorded': 'अभी दर्ज नहीं',
+  'round.allSent': 'सभी वितरण भेजे गए',
+  'round.waiting': '{count} भेजने के लिए शेष',
+  'round.sync': 'अभी भेजें',
+  'round.refresh': 'ताज़ा करें',
+
+  'record.delivered': 'वितरित',
+  'record.notDelivered': 'वितरित नहीं',
+  'record.returned': 'वापस',
+  'record.quantityHint': 'मात्रा (नियमित आदेश हेतु खाली छोड़ें)',
+  'record.amountNote':
+      'राशि की गणना प्लेटफ़ॉर्म तय दर से करता है — यहाँ कभी दर्ज नहीं की जाती।',
+  'record.queued': 'इस फ़ोन में सहेजा गया। सिग्नल मिलने पर भेजा जाएगा।',
+
+  'customer.today': 'आज',
+  'customer.noDeliveryToday': 'आज अभी कोई वितरण दर्ज नहीं हुआ।',
+  'customer.owe': 'मुझ पर बकाया',
+  'customer.billed': 'बिल {billed} · भुगतान {paid}',
+  'customer.thisMonth': 'इस महीने',
+  'customer.deliveries': '{count} वितरण',
+  'customer.bills': 'मेरे बिल',
+  'customer.receipts': 'मेरी रसीदें',
+  'customer.noReceipts': 'प्रत्येक भुगतान के बाद रसीद यहाँ दिखेगी।',
+  'customer.history': 'वितरण इतिहास',
+  'customer.bill': 'बिल',
+  'customer.amountDue': 'देय राशि',
+  'customer.paid': 'भुगतान किया',
+  'customer.outstanding': 'बकाया',
+  'customer.subtotal': 'उप-योग',
+  'customer.adjustments': 'समायोजन',
+  'customer.broughtForward': 'पिछला शेष',
+  'customer.everyDelivery': 'इस बिल का प्रत्येक वितरण',
+  'customer.checked':
+      'डेयरी द्वारा जाँचा गया: यह बिल नीचे के वितरणों से मेल खाता है।',
+  'customer.mismatch':
+      'यह बिल अब अपने वितरणों से मेल नहीं खाता। डेयरी से संपर्क करें।',
+
+  'auth.signIn': 'साइन इन करें',
+  'auth.email': 'ईमेल',
+  'auth.password': 'पासवर्ड',
+  'auth.signingIn': 'साइन इन हो रहा है…',
+
+  'common.retry': 'पुनः प्रयास करें',
+  'common.loading': 'लोड हो रहा है…',
+  'common.offline': 'सिग्नल नहीं',
+  'common.nothingHere': 'इस खाते के लिए मोबाइल पर कुछ नहीं',
+};
+
+const Map<String, Catalog> catalogs = {'en': _en, 'hi': _hi};
+
+/// `hi-IN` → `hi`. The catalog key for a BCP-47 tag: the region carries the
+/// money and the clock, which live on the organization, not in the words.
+String baseLanguage(String? tag) =>
+    (tag ?? 'en').split('-').first.toLowerCase();
+
+/// Look a string up for a session, falling back language → English → the key.
+///
+/// A missing translation shows an English sentence, which a rider can act on.
+/// A missing key shows the key, which an engineer can grep for. Neither is a
+/// blank space on a phone at 5 a.m.
+class L10n {
+  const L10n(this.language);
+
+  factory L10n.of(Session? session) => L10n(baseLanguage(session?.locale));
+
+  final String language;
+
+  String t(String key, [Map<String, Object?> vars = const {}]) {
+    final catalog = catalogs[language] ?? _en;
+    var text = catalog[key] ?? _en[key] ?? key;
+    vars.forEach((name, value) {
+      text = text.replaceAll('{$name}', '${value ?? ''}');
+    });
+    return text;
+  }
+}
+
+/// Money as the ORGANIZATION counts it.
+///
+/// The amount arrives as an exact decimal STRING and leaves as one: no
+/// `double.parse`, no arithmetic. The symbol and code come from the session,
+/// so an Indian dairy shows ₹ and a Kenyan one KSh without this function
+/// knowing either country exists.
+String money(String? amount, Session? session, {bool symbol = true}) {
+  if (amount == null || amount.isEmpty) return '—';
+  final org = session?.organization;
+  if (org == null) return amount;
+  return symbol && org.currencySymbol.isNotEmpty
+      ? '${org.currencySymbol}$amount'
+      : '$amount ${org.currencyCode}';
+}

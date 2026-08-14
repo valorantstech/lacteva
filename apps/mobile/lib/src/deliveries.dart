@@ -20,9 +20,18 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'offline/offline_client.dart';
+import 'l10n.dart';
 import 'session.dart';
 
-String _today() => DateTime.now().toUtc().toIso8601String().substring(0, 10);
+/// The device's own UTC date — a LAST RESORT only (DEMO-013).
+///
+/// The round asks the platform which day it is by omitting the dates, because
+/// a phone cannot compute an IANA calendar date without shipping a timezone
+/// database and its own clock is not the dairy's. This is used only when the
+/// platform's answer is unavailable (the reporting grant is missing, or the
+/// phone is offline), where a plausible date beats no round at all.
+String _deviceDate() =>
+    DateTime.now().toUtc().toIso8601String().substring(0, 10);
 
 String _money(Object? v) => v == null ? '—' : v.toString();
 
@@ -45,6 +54,9 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
   List<Map<String, dynamic>> _customers = const [];
   Map<String, Map<String, dynamic>> _doneToday = {};
   Map<String, dynamic>? _report;
+
+  /// The dairy's today, as the platform reported it on the last load.
+  String _businessDate = _deviceDate();
   bool _loading = true;
   String? _error;
   int _pending = 0;
@@ -66,7 +78,17 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
       _error = null;
     });
     try {
-      final today = _today();
+      // Ask the PLATFORM what day it is, by not telling it. It answers for
+      // the dairy's timezone and echoes the dates it used, which the round
+      // then uses for everything else — so a rider at 05:00 in Bengaluru gets
+      // this morning's round rather than yesterday's.
+      Map<String, dynamic>? report;
+      try {
+        report = await widget.client.deliveryReport();
+      } on ApiException {
+        report = null; // reporting is a separate grant; the round still works
+      }
+      final today = (report?['date_from'] ?? _deviceDate()).toString();
       final customers = await widget.client.listCustomers(
         status: 'active',
         limit: 100,
@@ -76,15 +98,6 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
         dateTo: today,
         limit: 200,
       );
-      Map<String, dynamic>? report;
-      try {
-        report = await widget.client.deliveryReport(
-          dateFrom: today,
-          dateTo: today,
-        );
-      } on ApiException {
-        report = null; // reporting is a separate grant; the round still works
-      }
       final done = <String, Map<String, dynamic>>{};
       for (final d in (delivered['items'] as List? ?? const [])) {
         final row = d as Map<String, dynamic>;
@@ -96,6 +109,7 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
             .cast<Map<String, dynamic>>();
         _doneToday = done;
         _report = report;
+        _businessDate = today;
         _pending = widget.client.pendingCount;
         _loading = false;
       });
@@ -121,12 +135,13 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
   @override
   Widget build(BuildContext context) {
     final canRecord = widget.session.can('sales.delivery.record');
+    final t = L10n.of(widget.session);
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Today's round"),
+        title: Text(t.t('round.title')),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: t.t('round.refresh'),
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.refresh),
           ),
@@ -148,11 +163,10 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _customers.isEmpty
-                ? const _Empty(
+                ? _Empty(
                     icon: Icons.people_outline,
-                    title: 'No customers on this round',
-                    detail:
-                        'Customers appear here once the dairy registers them.',
+                    title: t.t('round.empty'),
+                    detail: t.t('round.emptyDetail'),
                   )
                 : RefreshIndicator(
                     onRefresh: _load,
@@ -198,6 +212,7 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
           client: widget.client,
           session: widget.session,
           customer: customer,
+          businessDate: _businessDate,
         ),
       ),
     );
@@ -354,11 +369,18 @@ class RecordDeliveryScreen extends StatefulWidget {
     required this.client,
     required this.session,
     required this.customer,
+    required this.businessDate,
   });
 
   final OfflineApiClient client;
   final Session session;
   final Map<String, dynamic> customer;
+
+  /// The dairy's own date for this round, as the PLATFORM reported it
+  /// (DEMO-013). Passed down rather than recomputed here: the phone's clock
+  /// is not the dairy's, and a delivery filed under the wrong day lands on
+  /// the wrong month's bill.
+  final String businessDate;
 
   @override
   State<RecordDeliveryScreen> createState() => _RecordDeliveryScreenState();
@@ -385,7 +407,7 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
     try {
       final result = await widget.client.recordDeliveryOffline(
         customerId: widget.customer['id'].toString(),
-        deliveryDate: _today(),
+        deliveryDate: widget.businessDate,
         slot: _slot,
         status: status,
         // Empty means "the standing order", which the platform reads from the

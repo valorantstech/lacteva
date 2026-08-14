@@ -3254,11 +3254,23 @@ async def search_deliveries(
 async def delivery_report(
     service: DeliverySvc,
     _: DeliveryRead,
-    date_from: date,
-    date_to: date,
+    date_from: date | None = None,
+    date_to: date | None = None,
     customer_id: uuid.UUID | None = None,
 ) -> DeliveryReport:
-    """ "What was delivered, and what is it worth?" — aggregated in SQL."""
+    """ "What was delivered, and what is it worth?" — aggregated in SQL.
+
+    DEMO-013: the dates became OPTIONAL, defaulting to the organization's
+    today. That is not a convenience — it is the only way a client can ask for
+    "today" correctly. A phone cannot compute an IANA calendar date without
+    shipping a timezone database, and if it used its own clock a rider who had
+    crossed a border, or whose handset was on the wrong setting, would file the
+    round under the wrong day. The platform knows the dairy's zone; asking it
+    is cheaper and right.
+
+    The response echoes the dates it used, so a client can label the screen
+    with the day it actually got.
+    """
     return await service.report(date_from=date_from, date_to=date_to, customer_id=customer_id)
 
 

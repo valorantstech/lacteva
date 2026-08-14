@@ -723,14 +723,24 @@ class ApiClient {
   /// per-day breakdown exactly as they arrive. It must never total the rows
   /// it happens to have fetched: that would be a page total wearing a
   /// report's name, and it would disagree with the portal.
+  /// The day's totals, aggregated by the platform.
+  ///
+  /// DEMO-013: the dates are OPTIONAL and omitting them is the CORRECT way to
+  /// ask for today. A phone cannot work out an IANA calendar date without
+  /// shipping a timezone database, and using its own clock would file a
+  /// rider's round under the wrong day the moment they crossed a border or
+  /// the handset was set wrong. The platform knows the dairy's zone and
+  /// echoes back the dates it used.
   Future<Map<String, dynamic>> deliveryReport({
-    required String dateFrom,
-    required String dateTo,
+    String? dateFrom,
+    String? dateTo,
     String? customerId,
   }) async {
     final query = <String, String>{
-      'date_from': dateFrom,
-      'date_to': dateTo,
+      // Omitted entirely when null: the platform then answers for its OWN
+      // today, which is the point.
+      if (dateFrom != null && dateFrom.isNotEmpty) 'date_from': dateFrom,
+      if (dateTo != null && dateTo.isNotEmpty) 'date_to': dateTo,
       if (customerId != null && customerId.isNotEmpty)
         'customer_id': customerId,
     };

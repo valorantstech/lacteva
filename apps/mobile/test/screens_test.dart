@@ -105,8 +105,8 @@ class _FakeClient extends OfflineApiClient {
 
   @override
   Future<Map<String, dynamic>> deliveryReport({
-    required String dateFrom,
-    required String dateTo,
+    String? dateFrom,
+    String? dateTo,
     String? customerId,
   }) async {
     calls.add('deliveryReport');

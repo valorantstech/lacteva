@@ -20,7 +20,9 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Numeric, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.business_time import business_today
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.org_context import tenant_timezone
 from platform_core.core.tenancy import enforce_customer_scope, require_current_tenant
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.audit.service import AuditService
@@ -388,8 +390,8 @@ class DeliveryService:
     async def report(
         self,
         *,
-        date_from: date,
-        date_to: date,
+        date_from: date | None = None,
+        date_to: date | None = None,
         customer_id: uuid.UUID | None = None,
     ) -> DeliveryReport:
         """ "What was delivered, and what is it worth?" — answered in SQL.
@@ -398,6 +400,13 @@ class DeliveryService:
         pulled the deliveries into a browser to total them would be wrong at
         the page boundary and slow everywhere else.
         """
+        # DEMO-013: "today" is the ORGANIZATION's today. A dairy at UTC+5:30
+        # asking for today at 04:00 local is asking about a day UTC has not
+        # begun; answering in UTC would show them yesterday's round.
+        today = business_today(await tenant_timezone(self._session))
+        date_from = date_from or today
+        date_to = date_to or today
+
         tenant_id = require_current_tenant()
         billable = self._conditions(
             tenant_id,

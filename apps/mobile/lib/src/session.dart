@@ -28,6 +28,8 @@ class Session {
     required this.tenantId,
     required this.permissions,
     this.customerId,
+    this.locale = 'en',
+    this.organization,
   });
 
   final String userId;
@@ -49,6 +51,21 @@ class Session {
   /// which screen opens, never what the platform returns.
   final String? customerId;
 
+  /// DEMO-013 — the language THIS PERSON chose, as a BCP-47 tag.
+  ///
+  /// From their account, not from the handset: a phone left in the wrong
+  /// language, or lent to a colleague, must not decide what a dairy's staff
+  /// read. The organization decides which languages exist; this is the one
+  /// they picked from that list.
+  final String locale;
+
+  /// DEMO-013 — the organization's money, clock and languages.
+  ///
+  /// Carried on the session rather than fetched separately, which is what
+  /// makes it available offline: the app already caches the session, and a
+  /// rider in a valley still has to see amounts and dates.
+  final OrgLocale? organization;
+
   bool get isCustomer => customerId != null;
 
   /// Wildcard included, because the platform's own registry uses it for
@@ -61,17 +78,86 @@ class Session {
 
   static Session fromJson(Map<String, dynamic> json) {
     final raw = json['permissions'];
+    // `/v1/auth/me` nests the person under `user` and keeps permissions,
+    // tenant and customer at the top level. DEMO-012 read `id`/`email` from
+    // the top level, where they are not — so the signed-in address rendered
+    // blank on the dead-end screen and in the push-device label. Both shapes
+    // are accepted because the unit tests construct the flat one directly.
+    final user = json['user'] is Map
+        ? (json['user'] as Map).cast<String, dynamic>()
+        : json;
+    final org = json['organization'] is Map
+        ? OrgLocale.fromJson(
+            (json['organization'] as Map).cast<String, dynamic>(),
+          )
+        : null;
     return Session(
-      userId: (json['id'] ?? '').toString(),
-      email: (json['email'] ?? '').toString(),
-      fullName: (json['full_name'] ?? '').toString(),
+      userId: (user['id'] ?? json['id'] ?? '').toString(),
+      email: (user['email'] ?? json['email'] ?? '').toString(),
+      fullName: (user['full_name'] ?? json['full_name'] ?? '').toString(),
       tenantId: json['tenant_id']?.toString(),
       customerId: json['customer_id']?.toString(),
+      locale: (user['locale'] ?? json['locale'] ?? 'en').toString(),
+      organization: org,
       permissions: raw is List
           ? raw.map((e) => e.toString()).toSet()
           : const <String>{},
     );
   }
+}
+
+/// The organization's locale context, exactly as the platform describes it
+/// (DEMO-013 §13).
+///
+/// The app holds NO country configuration of its own. There is no map from
+/// India to rupees in this codebase — the platform resolved that when the
+/// dairy was onboarded, and a second copy here would be a second answer that
+/// disagrees the first time somebody changes a setting.
+class OrgLocale {
+  const OrgLocale({
+    required this.name,
+    required this.countryCode,
+    required this.currencyCode,
+    required this.currencySymbol,
+    required this.timezone,
+    required this.defaultLanguage,
+    required this.supportedLanguages,
+  });
+
+  final String name;
+  final String countryCode;
+  final String currencyCode;
+  final String currencySymbol;
+
+  /// IANA. Authoritative for what "today" means to this dairy — never the
+  /// handset's zone, which changes when a rider crosses a border.
+  final String timezone;
+  final String defaultLanguage;
+  final List<String> supportedLanguages;
+
+  static OrgLocale fromJson(Map<String, dynamic> json) => OrgLocale(
+    name: (json['name'] ?? '').toString(),
+    countryCode: (json['country_code'] ?? '').toString(),
+    currencyCode: (json['currency_code'] ?? '').toString(),
+    currencySymbol: (json['currency_symbol'] ?? '').toString(),
+    timezone: (json['timezone'] ?? 'UTC').toString(),
+    defaultLanguage: (json['default_language'] ?? 'en').toString(),
+    supportedLanguages:
+        (json['supported_languages'] as List?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const ['en'],
+  );
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'country_code': countryCode,
+    'currency_code': currencyCode,
+    'currency_symbol': currencySymbol,
+    'timezone': timezone,
+    'default_language': defaultLanguage,
+    'supported_languages': supportedLanguages,
+  };
 }
 
 /// Which experience this session opens on.

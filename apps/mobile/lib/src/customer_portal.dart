@@ -19,9 +19,17 @@ library;
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'l10n.dart';
 import 'session.dart';
 
-String _today() => DateTime.now().toUtc().toIso8601String().substring(0, 10);
+/// The device's own UTC date — a fallback only (DEMO-013).
+///
+/// The account screen asks the platform which day and which month it is by
+/// omitting the dates from the report call; this stands in when that answer
+/// is unavailable. A phone cannot compute an IANA date without a timezone
+/// database, and its own clock is not the dairy's.
+String _deviceDate() =>
+    DateTime.now().toUtc().toIso8601String().substring(0, 10);
 
 String _monthStart() {
   final now = DateTime.now().toUtc();
@@ -74,10 +82,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       final bills = await widget.client.listInvoices(limit: 12);
       Map<String, dynamic>? month;
       try {
-        month = await widget.client.deliveryReport(
-          dateFrom: _monthStart(),
-          dateTo: _today(),
-        );
+        // The month, in the DAIRY's calendar. `date_to` is omitted so the
+        // platform supplies its own today; `date_from` is that month's first
+        // day, which the platform's answer then confirms.
+        month = await widget.client.deliveryReport(dateFrom: _monthStart());
       } on ApiException {
         month = null;
       }
@@ -120,7 +128,9 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final today = _today();
+    final today = (_month?['date_to'] ?? _deviceDate()).toString();
+    // DEMO-013: this person's language, from the session the platform sent.
+    final t = L10n.of(widget.session);
     final todays = _recent.where((d) => d['delivery_date'] == today).toList();
     return Scaffold(
       appBar: AppBar(
@@ -149,11 +159,12 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                     ),
                   _TodayCard(deliveries: todays),
                   const SizedBox(height: 12),
-                  _BalanceCard(balance: _balance),
+                  _BalanceCard(balance: _balance, t: t),
                   const SizedBox(height: 12),
-                  if (_month != null) _MonthCard(report: _month!),
+                  if (_month != null) _MonthCard(report: _month!, t: t),
                   const SizedBox(height: 12),
                   _BillsCard(
+                    t: t,
                     bills: _bills,
                     onOpen: (bill) => Navigator.of(context).push(
                       MaterialPageRoute(
@@ -165,7 +176,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _ReceiptsCard(receipts: _receipts),
+                  _ReceiptsCard(receipts: _receipts, t: t),
                   const SizedBox(height: 12),
                   _HistoryCard(deliveries: _recent),
                 ],
@@ -223,9 +234,10 @@ class _TodayCard extends StatelessWidget {
 }
 
 class _BalanceCard extends StatelessWidget {
-  const _BalanceCard({required this.balance});
+  const _BalanceCard({required this.balance, required this.t});
 
   final Map<String, dynamic>? balance;
+  final L10n t;
 
   @override
   Widget build(BuildContext context) {
@@ -236,7 +248,10 @@ class _BalanceCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('What I owe', style: Theme.of(context).textTheme.labelLarge),
+            Text(
+              t.t('customer.owe'),
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
             const SizedBox(height: 8),
             Text(
               '${b?['outstanding'] ?? '—'} ${b?['currency'] ?? ''}',
@@ -262,9 +277,10 @@ class _BalanceCard extends StatelessWidget {
 
 /// Consumption this month, aggregated by the database (§6).
 class _MonthCard extends StatelessWidget {
-  const _MonthCard({required this.report});
+  const _MonthCard({required this.report, required this.t});
 
   final Map<String, dynamic> report;
+  final L10n t;
 
   @override
   Widget build(BuildContext context) {
@@ -274,7 +290,10 @@ class _MonthCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('This month', style: Theme.of(context).textTheme.labelLarge),
+            Text(
+              t.t('customer.thisMonth'),
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
             const SizedBox(height: 8),
             Text(
               '${report['total_quantity'] ?? 0} ${report['quantity_unit'] ?? 'L'}',
@@ -292,7 +311,13 @@ class _MonthCard extends StatelessWidget {
 }
 
 class _BillsCard extends StatelessWidget {
-  const _BillsCard({required this.bills, required this.onOpen});
+  const _BillsCard({
+    required this.bills,
+    required this.onOpen,
+    required this.t,
+  });
+
+  final L10n t;
 
   final List<Map<String, dynamic>> bills;
   final void Function(Map<String, dynamic>) onOpen;
@@ -306,7 +331,7 @@ class _BillsCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
             child: Text(
-              'My bills',
+              t.t('customer.bills'),
               style: Theme.of(context).textTheme.labelLarge,
             ),
           ),
@@ -335,9 +360,10 @@ class _BillsCard extends StatelessWidget {
 }
 
 class _ReceiptsCard extends StatelessWidget {
-  const _ReceiptsCard({required this.receipts});
+  const _ReceiptsCard({required this.receipts, required this.t});
 
   final List<Map<String, dynamic>> receipts;
+  final L10n t;
 
   @override
   Widget build(BuildContext context) {
@@ -348,14 +374,14 @@ class _ReceiptsCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
             child: Text(
-              'My receipts',
+              t.t('customer.receipts'),
               style: Theme.of(context).textTheme.labelLarge,
             ),
           ),
           if (receipts.isEmpty)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: Text('A receipt appears here after each payment.'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Text(t.t('customer.noReceipts')),
             )
           else
             for (final r in receipts)
