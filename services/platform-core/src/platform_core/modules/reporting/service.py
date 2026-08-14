@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy import Numeric, case, cast, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from platform_core.core.business_time import range_bounds
+from platform_core.core.business_time import local_date_sql, range_bounds
 from platform_core.core.db import as_utc
 from platform_core.core.money import quantize_money
 from platform_core.core.tenancy import require_current_tenant
@@ -1101,21 +1101,14 @@ class ReportingService:
             center_id=center_id,
             supplier_id=supplier_id,
         )
-        # Bucketed by UTC's day, which is a KNOWN INACCURACY (DEMO-019).
-        #
-        # The window above is now correctly the dairy's; this grouping is not,
-        # so a collection recorded after local midnight sits one point to the
-        # left of where it belongs. It affects where a bar is drawn, never a
-        # figure anyone is paid on — the daily summary, the settlements and
-        # the bills all read the corrected window.
-        #
-        # Attempted and reverted: `func.date(created_at + offset)`. Adding a
-        # `timedelta` to a datetime column is fine on PostgreSQL and produces
-        # nonsense on SQLite, where datetimes are strings and the `+` is
-        # numeric — `Invalid isoformat string: '-4702-11-0'`. The portable fix
-        # is a dialect-specific `AT TIME ZONE`, which is a larger change than
-        # a misplaced chart point justifies today. See DEMO-019-FINAL.
-        day = func.date(Tx.created_at)
+        # Bucketed by the DAIRY's day, through the one expression that knows
+        # how (DEMO-019). PostgreSQL gets the native `AT TIME ZONE`; the
+        # window above and this grouping now answer the same question, so a
+        # collection recorded after local midnight sits on the point its own
+        # total is counted in.
+        day = local_date_sql(
+            Tx.created_at, await self._timezone(), self._session.get_bind().dialect.name
+        )
         rows = (
             await self._session.execute(
                 select(

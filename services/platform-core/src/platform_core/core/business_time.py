@@ -28,6 +28,8 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import func
+
 from platform_core.core.db import as_utc, utcnow
 
 #: What a tenant gets when it has no timezone: the storage timezone. Behaves
@@ -115,3 +117,53 @@ def format_in_zone(instant: datetime, timezone_name: str | None) -> str:
     23:00Z are the same moment rather than having to trust it.
     """
     return as_utc(instant).astimezone(zone(timezone_name)).isoformat()
+
+
+# --- the same rule, inside SQL (DEMO-019) ------------------------------------
+
+
+def local_date_sql(column, timezone_name: str | None, dialect: str):
+    """A stored UTC timestamp, bucketed by the ORGANIZATION's calendar date.
+
+    Everything above answers "which local day is this instant?" in Python. A
+    report that GROUPS BY day has to ask the same question inside SQL, and
+    until DEMO-019 the reporting module asked a different one — `date(col)`,
+    which truncates in UTC. Its window was already local, so a collection
+    recorded after local midnight fell inside the range and landed on the
+    wrong bucket: the chart disagreed with the total above it.
+
+    **PostgreSQL gets the native operation.** `timezone(tz, timezone('UTC',
+    col))` is SQLAlchemy's spelling of `col AT TIME ZONE 'UTC' AT TIME ZONE
+    tz`, which reads the IANA database the server ships with — so it is
+    correct across DST transitions and for any zone, not just the fixed-offset
+    ones this platform happens to support today.
+
+    **SQLite gets a fixed offset**, because SQLite has no timezone database at
+    all. That is a real difference and it is confined to the test stack, so
+    the guarantee is proven where it runs: `test_business_date_sql_postgres.py`
+    asserts the PostgreSQL expression against a real engine, including a zone
+    that observes DST. This is the same split the platform already makes for
+    RLS, which SQLite cannot express either.
+
+    The offset is resolved for `now`, which is exact for every fixed-offset
+    zone and can be an hour out for a DST zone inside a window that spans a
+    transition — on SQLite only, in tests only.
+    """
+    if dialect == "postgresql":
+        # ONE conversion, not two. `timezone(tz, tstz)` renders the instant in
+        # `tz` and returns a naive local timestamp, which is what the date is
+        # then taken from.
+        #
+        # The first draft was `timezone(tz, timezone('UTC', col))`, which looks
+        # symmetrical and is wrong in its second step: applied to a NAIVE
+        # timestamp, `timezone(tz, ...)` INTERPRETS it as local and converts
+        # the other way. It was caught by `test_business_date_sql_postgres.py`
+        # on a real engine and by nothing else — SQLite takes a different
+        # branch entirely, so the whole suite would have stayed green.
+        return func.date(func.timezone(timezone_name or "UTC", column))
+
+    offset = utcnow().astimezone(zone(timezone_name)).utcoffset() or timedelta(0)
+    seconds = int(offset.total_seconds())
+    # SQLite's `date()` takes modifiers; seconds keeps half-hour zones like
+    # Asia/Kolkata exact rather than rounding them to an hour.
+    return func.date(column, f"{seconds} seconds")

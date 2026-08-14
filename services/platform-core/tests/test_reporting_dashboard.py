@@ -19,6 +19,7 @@ import uuid
 from datetime import timedelta
 from decimal import Decimal
 
+from platform_core.core.business_time import business_today
 from platform_core.core.db import utcnow
 from tests.conftest import count_statements
 from tests.test_payments import _action, _pay, _payable, _second_tenant
@@ -117,7 +118,14 @@ async def test_trend_returns_one_point_per_day_including_empty_days(client):
     tx = await _run_collection(client, headers, session["id"], supplier)
     await _accept_complete(client, headers, tx["id"])
 
-    today = utcnow().date()
+    # The DAIRY's today, which is what a trend point is bucketed by. Deriving
+    # it from `utcnow()` asked for a window ending on UTC's day, and for the
+    # hours when a Nairobi cooperative has already turned the page those are
+    # different dates — so the collection sat one day beyond the window that
+    # claimed to end "today". The rule itself is pinned in
+    # `test_business_date_boundaries.py` and, on a real engine, in
+    # `test_business_date_sql_postgres.py`.
+    today = business_today("Africa/Nairobi")
     start = today - timedelta(days=6)
     body = await _get(
         client,
@@ -358,7 +366,11 @@ async def test_chain_follows_a_collection_to_its_receipt(client):
     tx = await _accept_complete(client, headers, tx["id"])
     assert Decimal(str(tx["gross_amount"])) == Decimal("1125.00")
 
-    today = utcnow().date()
+    # A settlement period is a range of BUSINESS dates, and a collection's
+    # business date is the dairy's — so a period built from UTC's today asks
+    # for days the milk was not collected on. The domain is right; this line
+    # was not.
+    today = business_today("Africa/Nairobi")
     settlement = (
         await client.post(
             "/v1/settlements",
