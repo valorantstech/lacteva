@@ -58,7 +58,11 @@ class Customer(Base, IdMixin):
     #: Day of month the customer expects their bill. Reporting only — the
     #: invoice period is chosen when it is generated, not by this field.
     billing_day: Mapped[int] = mapped_column(default=1)
-    currency: Mapped[str] = mapped_column(String(3), default="KES")
+    #: ISO 4217. NO DEFAULT, deliberately (DEMO-013): it was `"KES"`, which
+    #: meant a code path that forgot to pass a currency minted Kenyan
+    #: shillings in an Indian dairy and said nothing. Every construction
+    #: supplies it from the customer, which gets it from the organization.
+    currency: Mapped[str] = mapped_column(String(3))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -92,7 +96,11 @@ class DeliveryPlan(Base, IdMixin):
     default_quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("0"))
     quantity_unit: Mapped[str] = mapped_column(String(8), default="L")
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4))
-    currency: Mapped[str] = mapped_column(String(3), default="KES")
+    #: ISO 4217. NO DEFAULT, deliberately (DEMO-013): it was `"KES"`, which
+    #: meant a code path that forgot to pass a currency minted Kenyan
+    #: shillings in an Indian dairy and said nothing. Every construction
+    #: supplies it from the customer, which gets it from the organization.
+    currency: Mapped[str] = mapped_column(String(3))
     effective_from: Mapped[date] = mapped_column(Date)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

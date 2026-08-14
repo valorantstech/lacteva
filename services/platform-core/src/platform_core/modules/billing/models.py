@@ -74,7 +74,11 @@ class CustomerInvoice(Base, IdMixin):
     invoice_number: Mapped[str] = mapped_column(String(32), index=True)
     period_from: Mapped[date] = mapped_column(Date)
     period_to: Mapped[date] = mapped_column(Date)
-    currency: Mapped[str] = mapped_column(String(3), default="KES")
+    #: ISO 4217. NO DEFAULT, deliberately (DEMO-013): it was `"KES"`, which
+    #: meant a code path that forgot to pass a currency minted Kenyan
+    #: shillings in an Indian dairy and said nothing. Every construction
+    #: supplies it from the customer, which gets it from the organization.
+    currency: Mapped[str] = mapped_column(String(3))
 
     #: Sum of the lines, computed by the domain in Decimal.
     subtotal: Mapped[Decimal] = mapped_column(Numeric(16, 2), default=Decimal("0.00"))
@@ -145,7 +149,11 @@ class CustomerPayment(Base, IdMixin):
     customer_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     payment_number: Mapped[str] = mapped_column(String(32), index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(16, 2))
-    currency: Mapped[str] = mapped_column(String(3), default="KES")
+    #: ISO 4217. NO DEFAULT, deliberately (DEMO-013): it was `"KES"`, which
+    #: meant a code path that forgot to pass a currency minted Kenyan
+    #: shillings in an Indian dairy and said nothing. Every construction
+    #: supplies it from the customer, which gets it from the organization.
+    currency: Mapped[str] = mapped_column(String(3))
     method: Mapped[str] = mapped_column(String(20), default="CASH")
     reference: Mapped[str] = mapped_column(String(80), default="")
     status: Mapped[str] = mapped_column(String(16), default="recorded", index=True)
@@ -197,7 +205,11 @@ class CustomerReceipt(Base, IdMixin):
     customer_name: Mapped[str] = mapped_column(String(200), default="")
     customer_code: Mapped[str] = mapped_column(String(24), default="")
     amount: Mapped[Decimal] = mapped_column(Numeric(16, 2))
-    currency: Mapped[str] = mapped_column(String(3), default="KES")
+    #: ISO 4217. NO DEFAULT, deliberately (DEMO-013): it was `"KES"`, which
+    #: meant a code path that forgot to pass a currency minted Kenyan
+    #: shillings in an Indian dairy and said nothing. Every construction
+    #: supplies it from the customer, which gets it from the organization.
+    currency: Mapped[str] = mapped_column(String(3))
     method: Mapped[str] = mapped_column(String(20), default="CASH")
     reference: Mapped[str] = mapped_column(String(80), default="")
     #: The invoices this money was applied to, as text, so the receipt is

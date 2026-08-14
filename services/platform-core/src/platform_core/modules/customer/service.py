@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from platform_core.core.db import utcnow
 from platform_core.core.document_numbers import next_document_number
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.org_context import tenant_currency
 from platform_core.core.tenancy import enforce_customer_scope, require_current_tenant
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.customer.models import (
@@ -33,7 +33,14 @@ class CreateCustomerCommand(BaseModel):
     notes: str = Field(default="", max_length=500)
     billing_mode: str = "credit"
     billing_day: int = Field(default=1, ge=1, le=28)
-    currency: str = Field(default="KES", min_length=3, max_length=3)
+    #: DEMO-013: absent means "this organization's currency", resolved at
+    #: creation. It was `"KES"`, which made every dairy on the platform Kenyan
+    #: by default — including an Indian one, whose first customer would have
+    #: been billed in shillings by a field nobody filled in.
+    #:
+    #: Still overridable per customer, because the column already existed and
+    #: a customer paying in another currency is a real, if rare, arrangement.
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
     #: Optional: give the customer their standing order in the same request,
     #: because a customer without one cannot receive a delivery.
     plan: "DeliveryPlanInput | None" = None
@@ -54,8 +61,8 @@ class CreateCustomerCommand(BaseModel):
 
     @field_validator("currency")
     @classmethod
-    def _upper(cls, v: str) -> str:
-        return v.upper()
+    def _upper(cls, v: str | None) -> str | None:
+        return v.upper() if v else v
 
 
 class UpdateCustomerCommand(BaseModel):
@@ -132,6 +139,19 @@ class CustomerService:
         self._session = session
         self._audit = audit
 
+    async def _today(self):
+        """Today, as the ORGANIZATION reckons it (DEMO-013 §8).
+
+        Not UTC's today. A report asked for "today" at 04:00 in Bengaluru is
+        asking about a day that began four hours ago locally and does not
+        start in UTC for another twenty; answering with UTC's date would show
+        a dairy manager yesterday's round and call it today.
+        """
+        from platform_core.core.business_time import business_today
+        from platform_core.core.org_context import tenant_timezone
+
+        return business_today(await tenant_timezone(self._session))
+
     # --- commands ----------------------------------------------------------
 
     async def create(self, cmd: CreateCustomerCommand, *, actor_id: uuid.UUID) -> Customer:
@@ -149,7 +169,7 @@ class CustomerService:
             notes=cmd.notes,
             billing_mode=cmd.billing_mode,
             billing_day=cmd.billing_day,
-            currency=cmd.currency,
+            currency=cmd.currency or await tenant_currency(self._session),
         )
         self._session.add(customer)
         await self._session.flush()
@@ -233,7 +253,7 @@ class CustomerService:
             quantity_unit=plan.quantity_unit,
             unit_price=plan.unit_price,
             currency=customer.currency,
-            effective_from=plan.effective_from or utcnow().date(),
+            effective_from=plan.effective_from or await self._today(),
             active=True,
         )
         self._session.add(row)

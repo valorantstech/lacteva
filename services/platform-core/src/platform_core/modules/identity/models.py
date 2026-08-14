@@ -24,7 +24,14 @@ class User(Base, IdMixin):
     email: Mapped[str] = mapped_column(String(320), index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     full_name: Mapped[str] = mapped_column(String(200))
-    locale: Mapped[str] = mapped_column(String(8), default="en")
+    #: The user's own language, as a BCP-47 tag (DEMO-013 §5). Widened from
+    #: String(8) to hold a tag like `hi-IN`.
+    #:
+    #: Constrained by the ORGANIZATION's `supported_languages`, not by this
+    #: column: what a person may read is a decision their dairy makes, and a
+    #: column cannot express "one of whatever that tenant enabled". The
+    #: enforcement is in `IdentityService.set_language`.
+    locale: Mapped[str] = mapped_column(String(16), default="en")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     #: DEMO-008 §9 — when this account last authenticated successfully.
     #: Written by `AuthService.login`; never by a client. An administrator

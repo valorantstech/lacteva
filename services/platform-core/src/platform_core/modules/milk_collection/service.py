@@ -18,8 +18,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.business_time import business_date_of
 from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.org_context import tenant_timezone
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.infrastructure.hardware import (
@@ -537,7 +539,14 @@ class MilkCollectionService:
         tx.state = "PRICING_PENDING"
         await self._record(tx, "PricingRequested", {"dimension": PRICING_DIMENSION}, actor_id)
         product_code = product_code_for(tx.milk_type)
-        tx_date = as_utc(tx.created_at).date()
+        # DEMO-013: which DAY this collection happened on decides which rate
+        # card prices it, and a day belongs to the dairy's calendar rather
+        # than to UTC's. A 05:00 collection in India is 23:30 UTC the day
+        # before, so a card that took effect this morning would not have
+        # applied to milk poured after it — the farmer paid yesterday's rate,
+        # and nothing anywhere would look wrong. Nairobi is UTC+3, which is
+        # why the Kenyan demo never showed it.
+        tx_date = business_date_of(tx.created_at, await tenant_timezone(self._session))
         try:
             if product_code is None:
                 raise PricingResolutionError(
@@ -660,7 +669,6 @@ class MilkCollectionService:
             tenant_id=tx.tenant_id, transaction_id=tx.id, data=self._freeze(tx, decision)
         )
         self._session.add(snapshot)
-        from platform_core.core.db import as_utc
 
         duration = (as_utc(tx.completed_at) - as_utc(tx.created_at)).total_seconds()
         self._session.add(

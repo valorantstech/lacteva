@@ -8,7 +8,7 @@ business — ETE.ONB.01 at business level).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, UniqueConstraint, Uuid
+from sqlalchemy import JSON, DateTime, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.core.db import Base, IdMixin, utcnow
@@ -25,7 +25,26 @@ class Organization(Base, IdMixin):
     # operational data is gone and only anonymized financial records remain
     # (PROD-001, core/tenant_lifecycle.py).
     status: Mapped[str] = mapped_column(String(20), default="active")
-    default_locale: Mapped[str] = mapped_column(String(8), default="en")
+    #: DEMO-013. The organization's locale context: what it counts money in,
+    #: what clock its business days run on, and what languages its people may
+    #: work in. Resolved from `country_code` at onboarding via
+    #: `core/locales.resolve`, and overridable afterwards — a country proposes,
+    #: an organization decides.
+    #:
+    #: These are COLUMNS rather than lookups through `country_code` because an
+    #: organization's settings must not move when the world does. If a country
+    #: redenominates, or the registry's principal timezone is corrected, every
+    #: historical report of every tenant in that country would silently change
+    #: meaning. The country is where they are; these are what they agreed to.
+    currency_code: Mapped[str] = mapped_column(String(3))  # ISO 4217; resolved at creation
+    #: IANA. Authoritative for this organization's business dates — see
+    #: `core/business_time.py`. Never the server's zone, never the browser's.
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    #: BCP-47 tags this organization has enabled. A user may choose any of
+    #: these and nothing else (DEMO-013 §5).
+    supported_languages: Mapped[list] = mapped_column(JSON, default=lambda: ["en"])
+    #: BCP-47. Widened from the pre-DEMO-013 `en` to hold `en-IN`.
+    default_locale: Mapped[str] = mapped_column(String(16), default="en")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     #: When the tenant was offboarded. The tombstone's timestamp — retained
     #: financial records point at a tenant_id that must still resolve to

@@ -1622,7 +1622,20 @@ export type User = {
   created_at?: string;
 };
 
-export type MeOrganization = { id: string; name: string; slug: string };
+/** DEMO-013: the organization's locale context travels with the session, so
+ *  no screen has to ask separately what money or clock it is rendering in. */
+export type MeOrganization = {
+  id: string;
+  name: string;
+  slug: string;
+  country_code: string;
+  currency_code: string;
+  currency_symbol: string;
+  timezone: string;
+  default_language: string;
+  supported_languages: string[];
+  languages: { tag: string; name: string; endonym: string; rtl: boolean }[];
+};
 export type MeMembership = { status: string; joined_at: string };
 export type MeRole = { name: string; description: string; center_id: string | null };
 
@@ -1650,6 +1663,52 @@ export type Me = {
  *  a plain "am I signed in?": it answers 200 either way and leaves nothing in
  *  the browser console. */
 export const getMe = () => api<Me>("/v1/auth/me", undefined, { redirectOn401: false });
+
+/** DEMO-013 — organization locale settings. */
+export type LocaleSettings = {
+  country_code: string;
+  country_name: string;
+  currency_code: string;
+  currency_symbol: string;
+  timezone: string;
+  default_language: string;
+  supported_languages: string[];
+  languages: { tag: string; name: string; endonym: string; rtl: boolean }[];
+};
+
+export const getLocaleSettings = () =>
+  api<LocaleSettings>("/v1/organizations/settings/locale");
+
+export const updateLocaleSettings = (body: {
+  currency_code?: string;
+  timezone?: string;
+  default_language?: string;
+  supported_languages?: string[];
+}) =>
+  api<LocaleSettings>("/v1/organizations/settings/locale", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+/** A person's own language. Not an administrative act — see the route. */
+export const setMyLanguage = (language: string) =>
+  api<User>("/v1/auth/me/language", {
+    method: "PUT",
+    body: JSON.stringify({ language }),
+  });
+
+export type CountryChoice = {
+  code: string;
+  name: string;
+  currency_code: string;
+  currency_symbol: string;
+  timezone: string;
+  default_language: string;
+  supported_languages: string[];
+};
+
+export const listCountries = () =>
+  api<{ countries: CountryChoice[] }>("/v1/locales/countries");
 
 export type Session =
   | { authenticated: false; unreachable?: boolean }

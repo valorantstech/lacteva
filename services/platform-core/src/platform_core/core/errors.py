@@ -59,6 +59,24 @@ class AmbiguousTenantError(UnauthorizedError):
         )
 
 
+class ValidationError(AppError):
+    """A request the platform understood and will not accept (DEMO-013).
+
+    The hierarchy had no 422 of its own: FastAPI produces one for a body that
+    fails its schema, but a value that is only wrong in DOMAIN terms — an IANA
+    zone that does not exist, a currency the platform has no profile for — had
+    nowhere to go. Raising a bare `ValueError` meant a 500, which tells the
+    caller the platform broke when in fact they did.
+
+    Reserved for values that are the CALLER's to fix. A `ValueError` from
+    somewhere that should never see bad input remains a 500, because it is one.
+    """
+
+    status_code = 422
+    code = "validation_failed"
+    message_key = "error.validation"
+
+
 class ForbiddenError(AppError):
     status_code = 403
     code = "forbidden"

@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy import Numeric, case, cast, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from platform_core.core.db import as_utc, utcnow
+from platform_core.core.db import as_utc
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.billing.models import (
     PAYABLE_INVOICE_STATUSES,
@@ -445,6 +445,19 @@ class ReportingService:
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    async def _today(self):
+        """Today, as the ORGANIZATION reckons it (DEMO-013 §8).
+
+        Not UTC's today. A report asked for "today" at 04:00 in Bengaluru is
+        asking about a day that began four hours ago locally and does not
+        start in UTC for another twenty; answering with UTC's date would show
+        a dairy manager yesterday's round and call it today.
+        """
+        from platform_core.core.business_time import business_today
+        from platform_core.core.org_context import tenant_timezone
+
+        return business_today(await tenant_timezone(self._session))
+
     # --- daily collection summary -----------------------------------------
 
     async def daily_summary(
@@ -457,7 +470,7 @@ class ReportingService:
         supplier_id: uuid.UUID | None = None,
     ) -> DailyCollectionSummary:
         tenant_id = require_current_tenant()
-        date_from = date_from or utcnow().date()
+        date_from = date_from or await self._today()
         date_to = date_to or date_from
         conditions = self._tx_conditions(
             tenant_id, date_from, date_to, center_id=center_id, supplier_id=supplier_id
@@ -541,7 +554,7 @@ class ReportingService:
         offset: int = 0,
     ) -> SummaryPage:
         tenant_id = require_current_tenant()
-        date_from = date_from or utcnow().date()
+        date_from = date_from or await self._today()
         date_to = date_to or date_from
         limit = max(1, min(limit, 100))
         conditions = self._tx_conditions(tenant_id, date_from, date_to)
@@ -616,7 +629,7 @@ class ReportingService:
         offset: int = 0,
     ) -> SummaryPage:
         tenant_id = require_current_tenant()
-        date_from = date_from or utcnow().date()
+        date_from = date_from or await self._today()
         date_to = date_to or date_from
         limit = max(1, min(limit, 100))
         conditions = self._tx_conditions(tenant_id, date_from, date_to, center_id=center_id)
@@ -1048,7 +1061,7 @@ class ReportingService:
         a chart shows a gap in supply as a gap rather than silently closing it.
         """
         tenant_id = require_current_tenant()
-        date_to = date_to or utcnow().date()
+        date_to = date_to or await self._today()
         date_from = date_from or date_to
         conditions = self._tx_conditions(
             tenant_id, date_from, date_to, center_id=center_id, supplier_id=supplier_id
@@ -1115,7 +1128,7 @@ class ReportingService:
         center_id: uuid.UUID | None = None,
     ) -> list[RateBandRow]:
         tenant_id = require_current_tenant()
-        date_to = date_to or utcnow().date()
+        date_to = date_to or await self._today()
         date_from = date_from or date_to
         conditions = self._tx_conditions(tenant_id, date_from, date_to, center_id=center_id)
         rows = (
@@ -1161,7 +1174,7 @@ class ReportingService:
         once, at the end, not per row.
         """
         tenant_id = require_current_tenant()
-        date_to = date_to or utcnow().date()
+        date_to = date_to or await self._today()
         date_from = date_from or date_to
 
         # 1. What went out in the period. `BILLABLE_STATUSES` is the delivery
@@ -1472,7 +1485,7 @@ class ReportingService:
         to keep true.
         """
         tenant_id = require_current_tenant()
-        date_to = date_to or utcnow().date()
+        date_to = date_to or await self._today()
         date_from = date_from or date_to
 
         collection = await self.daily_summary(date_from=date_from, date_to=date_to)
@@ -1611,7 +1624,7 @@ class ReportingService:
         center_id: uuid.UUID | None = None,
     ) -> PricingSummary:
         tenant_id = require_current_tenant()
-        date_from = date_from or utcnow().date()
+        date_from = date_from or await self._today()
         date_to = date_to or date_from
         conditions = self._tx_conditions(tenant_id, date_from, date_to, center_id=center_id)
         row = (

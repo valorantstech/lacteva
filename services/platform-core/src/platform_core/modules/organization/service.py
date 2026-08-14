@@ -15,7 +15,15 @@ from platform_core.core.errors import (
     ForbiddenError,
     InvalidTokenError,
     NotFoundError,
+    ValidationError,
 )
+from platform_core.core.locales import (
+    COUNTRIES,
+    currency_symbol,
+    language_choices,
+    resolve,
+)
+from platform_core.core.org_context import reset_locale_cache
 from platform_core.core.tenancy import (
     get_current_tenant,
     require_current_tenant,
@@ -36,11 +44,53 @@ from platform_core.modules.organization.models import (
 
 
 class CreateOrganizationCommand(BaseModel):
+    """Onboarding asks ONE locale question: where are you? (DEMO-013 §4)
+
+    Everything else is proposed from `core/locales.py` and may be overridden
+    by whoever is onboarding — a country proposes, an organization decides.
+    Leaving all four unset is the ordinary path, and is why a dairy signing up
+    from Bengaluru does not have to know what IANA is.
+    """
+
     name: str = Field(min_length=2, max_length=200)
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,78}[a-z0-9]$")
     country_code: str = Field(min_length=2, max_length=2)
     org_type: str = "cooperative"
-    default_locale: str = "en"
+    #: Overrides. `None` means "use what the country implies" — distinct from
+    #: a supplied value, which is why `default_locale` is no longer `"en"`:
+    #: that string was silently overriding India's `en-IN`.
+    currency_code: str | None = Field(default=None, min_length=3, max_length=3)
+    timezone: str | None = None
+    default_locale: str | None = None
+    supported_languages: list[str] | None = None
+
+
+class LocaleSettingsView(BaseModel):
+    """An organization's locale context, and what it may be changed to."""
+
+    country_code: str
+    country_name: str
+    currency_code: str
+    currency_symbol: str
+    timezone: str
+    default_language: str
+    supported_languages: list[str]
+    languages: list[dict]
+
+
+class UpdateLocaleSettingsCommand(BaseModel):
+    """A partial update: absent means unchanged, not "reset to the country's".
+
+    Country is deliberately NOT here. Moving an organization between countries
+    changes what its money means and which calendar its closed periods were
+    measured in; it is a migration, not a setting, and doing it silently under
+    a settings form is how a dairy's history changes meaning overnight.
+    """
+
+    currency_code: str | None = Field(default=None, min_length=3, max_length=3)
+    timezone: str | None = None
+    default_language: str | None = None
+    supported_languages: list[str] | None = None
 
 
 class OrganizationView(BaseModel):
@@ -51,6 +101,9 @@ class OrganizationView(BaseModel):
     org_type: str
     status: str
     default_locale: str
+    currency_code: str
+    timezone: str
+    supported_languages: list[str]
 
     model_config = {"from_attributes": True}
 
@@ -81,12 +134,25 @@ class OrganizationService:
         )
         if existing is not None:
             raise ConflictError("slug already taken")
+        # DEMO-013: country in, locale context out. `resolve` refuses a
+        # country it does not know unless the caller supplies the currency and
+        # timezone, so an unlisted country is onboardable but never guessed at.
+        locale = resolve(
+            cmd.country_code,
+            currency_code=cmd.currency_code,
+            timezone=cmd.timezone,
+            default_language=cmd.default_locale,
+            supported_languages=cmd.supported_languages,
+        )
         org = Organization(
             name=cmd.name,
             slug=cmd.slug,
-            country_code=cmd.country_code.upper(),
+            country_code=locale.country_code,
             org_type=cmd.org_type,
-            default_locale=cmd.default_locale,
+            default_locale=locale.default_language,
+            currency_code=locale.currency_code,
+            timezone=locale.timezone,
+            supported_languages=list(locale.supported_languages),
         )
         self._session.add(org)
         await self._session.flush()
@@ -99,10 +165,95 @@ class OrganizationService:
         await self._bus.publish(
             EventEnvelope.new(
                 "organization.organization-created.v1",
-                {"organization_id": str(org.id), "slug": org.slug, "country": org.country_code},
+                {
+                    "organization_id": str(org.id),
+                    "slug": org.slug,
+                    "country": org.country_code,
+                    "currency": org.currency_code,
+                    "timezone": org.timezone,
+                },
                 actor_id=actor_id,
             )
         )
+        return org
+
+    # --- locale settings (DEMO-013 §2, §12) ----------------------------------
+
+    async def locale_settings(self) -> LocaleSettingsView:
+        """What this organization operates in. Readable by anyone who may read
+        the organization — a person cannot use a currency they cannot see."""
+        org = await self._require_current_organization()
+        return _locale_view(org)
+
+    async def update_locale_settings(
+        self, cmd: UpdateLocaleSettingsCommand, *, actor_id: uuid.UUID | None
+    ) -> LocaleSettingsView:
+        """Change the money, the clock or the languages.
+
+        Validated through the SAME resolver that onboarding uses, so a setting
+        an administrator types has to satisfy exactly what a country proposes
+        would have satisfied: a real ISO 4217 code the platform knows, a real
+        IANA zone, and a default language that is actually among the supported
+        ones. There is no second, laxer path into these columns.
+
+        Narrowing `supported_languages` is allowed and deliberately does NOT
+        rewrite the users who had chosen a language that is going away: their
+        stored preference stays, and language negotiation falls back to the
+        organization default at render time. Rewriting user rows from a
+        settings form would be an administrator silently editing other
+        people's preferences, and it is not recoverable when the language is
+        switched back on.
+        """
+        org = await self._require_current_organization()
+        before = {
+            "currency_code": org.currency_code,
+            "timezone": org.timezone,
+            "default_locale": org.default_locale,
+            "supported_languages": list(org.supported_languages or []),
+        }
+        try:
+            resolved = resolve(
+                org.country_code,
+                currency_code=cmd.currency_code or org.currency_code,
+                timezone=cmd.timezone or org.timezone,
+                default_language=cmd.default_language or org.default_locale,
+                supported_languages=cmd.supported_languages or list(org.supported_languages or []),
+            )
+        except ValueError as exc:
+            # The resolver speaks in ValueError because it is pure and knows
+            # nothing about HTTP. Here is the boundary, so here is where a bad
+            # value becomes the caller's 422 rather than the platform's 500.
+            raise ValidationError(str(exc)) from exc
+        org.currency_code = resolved.currency_code
+        org.timezone = resolved.timezone
+        org.default_locale = resolved.default_language
+        org.supported_languages = list(resolved.supported_languages)
+        await self._session.flush()
+        # The memo is per-request, but this request may still go on to render
+        # money in the currency it just changed.
+        reset_locale_cache()
+        await self._audit.record(
+            action="organization.locale-settings.updated",
+            resource_type="organization",
+            resource_id=org.id,
+            actor_id=actor_id,
+            detail={
+                "before": before,
+                "after": {
+                    "currency_code": org.currency_code,
+                    "timezone": org.timezone,
+                    "default_locale": org.default_locale,
+                    "supported_languages": list(org.supported_languages),
+                },
+            },
+        )
+        return _locale_view(org)
+
+    async def _require_current_organization(self) -> Organization:
+        tenant_id = require_current_tenant()
+        org = await self._session.get(Organization, tenant_id)
+        if org is None:
+            raise NotFoundError("organization not found")
         return org
 
     async def get_organization(self, org_id: uuid.UUID) -> Organization:
@@ -475,3 +626,18 @@ class InvitationService:
             )
         )
         return user
+
+
+def _locale_view(org: Organization) -> LocaleSettingsView:
+    country = COUNTRIES.get((org.country_code or "").upper())
+    supported = list(org.supported_languages or ["en"])
+    return LocaleSettingsView(
+        country_code=org.country_code,
+        country_name=country.name if country else org.country_code,
+        currency_code=org.currency_code,
+        currency_symbol=currency_symbol(org.currency_code),
+        timezone=org.timezone,
+        default_language=org.default_locale,
+        supported_languages=supported,
+        languages=language_choices(supported),
+    )

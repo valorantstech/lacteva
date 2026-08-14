@@ -5,7 +5,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.errors import ConflictError, ForbiddenError, NotFoundError
+from platform_core.core.org_context import tenant_locale
 from platform_core.core.security import hash_password
 from platform_core.core.tenancy import get_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
@@ -19,6 +20,39 @@ class IdentityService:
         self._session = session
         self._bus = bus
         self._audit = audit
+
+    async def set_language(self, user_id: uuid.UUID, tag: str) -> User:
+        """A person chooses their own language (DEMO-013 §5).
+
+        From what their ORGANIZATION has enabled, and nothing else. The
+        organization decides which languages it operates in — a dairy that has
+        not translated its process into Hindi does not want a supervisor's
+        screen in Hindi and their manager's in English — and this is where
+        that is enforced, because it is the only place the choice is made.
+
+        The refusal is a 403 rather than a 404: the language exists, this
+        organization has not enabled it, and telling the person that is useful
+        rather than dangerous. It leaks nothing about another tenant.
+        """
+        user = await self._session.get(User, user_id)
+        if user is None:
+            raise NotFoundError("user not found")
+        settings = await tenant_locale(self._session, user.tenant_id)
+        if tag not in settings.supported_languages:
+            raise ForbiddenError(
+                f"{tag!r} is not one of this organization's languages "
+                f"({', '.join(settings.supported_languages)})"
+            )
+        user.locale = tag
+        await self._session.flush()
+        await self._audit.record(
+            action="identity.language.changed",
+            resource_type="user",
+            resource_id=user.id,
+            actor_id=user_id,
+            detail={"locale": tag},
+        )
+        return user
 
     async def register_user(
         self, cmd: RegisterUserCommand, *, tenant_id: uuid.UUID | None = None

@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from platform_core.core.db import utcnow
 from platform_core.core.document_numbers import next_document_number
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.org_context import tenant_currency
 from platform_core.core.tenancy import enforce_customer_scope, require_current_tenant
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.audit.service import AuditService
@@ -739,7 +740,12 @@ class BillingService:
             customer_name=data.get("customer_name", ""),
             customer_code=data.get("customer_code", ""),
             amount=Decimal(str(data["amount"])),
-            currency=data.get("currency", "KES"),
+            # DEMO-013: the event always carries the currency the payment was
+            # taken in, and THAT is what the receipt must say — a receipt is a
+            # record of what happened, not of what this tenant usually does.
+            # The fallback is for a malformed event and is the organization's
+            # currency rather than the literal "KES" it used to be.
+            currency=data.get("currency") or await tenant_currency(self._session),
             method=data.get("method", "CASH"),
             reference=data.get("reference", ""),
             applied_to=data.get("applied_to", ""),

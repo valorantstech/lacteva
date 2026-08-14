@@ -14,6 +14,17 @@ PERMISSIONS: dict[str, str] = {
     "organization.structure.manage": "Create and administer workspaces and branches",
     "organization.member.read": "Read members and invitations",
     "organization.member.manage": "Invite and administer members",
+    # DEMO-013. Deliberately SEPARATE from `organization.manage`, which is the
+    # PLATFORM's authority to create and administer organizations at all. A
+    # dairy setting its own currency, clock and languages is self-service
+    # administration of its own tenant, and requiring the platform grant would
+    # have meant every locale change went through Phoenix Software.
+    #
+    # Separate from `configuration.write` too: these settings decide what money
+    # means and where a business day begins, and a deployment may reasonably
+    # let an operations lead edit configuration without letting them redenominate
+    # the books.
+    "organization.settings.manage": ("Change the organization's currency, timezone and languages"),
     # PROD-001 tenant lifecycle. Deliberately SEPARATE from organization.manage:
     # exporting every record the platform holds, and irreversibly offboarding a
     # tenant, are not the same authority as renaming a branch. A deployment can
@@ -95,6 +106,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "organization.structure.manage",
         "organization.member.read",
         "organization.member.manage",
+        "organization.settings.manage",
         "authz.role.read",
         "authz.role.manage",
         "configuration.read",

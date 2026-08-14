@@ -35,6 +35,7 @@ import {
   Cog,
   FileText,
   Gauge,
+  Globe,
   Grid3x3,
   Handshake,
   KeyRound,
@@ -62,17 +63,31 @@ import {
   setActingTenant,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { LocaleProvider, translatorFor } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-type Entry = { href: string; label: string; permission: string; icon: React.ElementType };
+/**
+ * DEMO-013: `labelKey` rather than `label`.
+ *
+ * The navigation used to hold English sentences. A menu is the most visible
+ * text in the product, so it is the first thing that has to stop being written
+ * in one language — and a key is also what makes adding a language a catalog
+ * entry rather than an edit here.
+ */
+type Entry = {
+  href: string;
+  labelKey: string;
+  permission: string;
+  icon: React.ElementType;
+};
 
 const OPERATIONS: Entry[] = [
-  { href: "/", label: "Dashboard", permission: "*dashboard", icon: Gauge },
-  { href: "/centers", label: "Centers", permission: "collection.center.read", icon: Building2 },
-  { href: "/suppliers", label: "Suppliers", permission: "supplier.read", icon: Truck },
+  { href: "/", labelKey: "nav.dashboard", permission: "*dashboard", icon: Gauge },
+  { href: "/centers", labelKey: "nav.centers", permission: "collection.center.read", icon: Building2 },
+  { href: "/suppliers", labelKey: "nav.suppliers", permission: "supplier.read", icon: Truck },
   {
     href: "/transactions",
-    label: "Transactions",
+    labelKey: "nav.transactions",
     permission: "collection.transaction.read",
     icon: ClipboardList,
   },
@@ -81,60 +96,69 @@ const OPERATIONS: Entry[] = [
 // DEMO-009 — the customer side. Permission-gated like every other entry, so a
 // collection operator (who has no sales.* grant) never sees it.
 const SALES: Entry[] = [
-  { href: "/customers", label: "Customers", permission: "sales.customer.read", icon: UserRound },
-  { href: "/deliveries", label: "Deliveries", permission: "sales.delivery.read", icon: Truck },
-  { href: "/billing", label: "Billing", permission: "sales.invoice.read", icon: FileText },
+  { href: "/customers", labelKey: "nav.customers", permission: "sales.customer.read", icon: UserRound },
+  { href: "/deliveries", labelKey: "nav.deliveries", permission: "sales.delivery.read", icon: Truck },
+  { href: "/billing", labelKey: "nav.billing", permission: "sales.invoice.read", icon: FileText },
   // DEMO-010. `reporting.read`, not a sales permission — it is a report, and
   // an auditor with reporting access should reach it without being granted
   // anything on the sales module itself.
-  { href: "/receivables", label: "Who owes money", permission: "reporting.read", icon: Wallet },
+  { href: "/receivables", labelKey: "nav.receivables", permission: "reporting.read", icon: Wallet },
 ];
 
 const PRICING: Entry[] = [
-  { href: "/rate-cards", label: "Rate cards", permission: "pricing.ratecard.read", icon: Tags },
-  { href: "/matrices", label: "Matrices", permission: "pricing.ratecard.read", icon: Grid3x3 },
-  { href: "/resolve", label: "Playground", permission: "pricing.ratecard.read", icon: Boxes },
+  { href: "/rate-cards", labelKey: "nav.rateCards", permission: "pricing.ratecard.read", icon: Tags },
+  { href: "/matrices", labelKey: "nav.matrices", permission: "pricing.ratecard.read", icon: Grid3x3 },
+  { href: "/resolve", labelKey: "nav.playground", permission: "pricing.ratecard.read", icon: Boxes },
 ];
 
 const FINANCE: Entry[] = [
-  { href: "/settlements", label: "Settlements", permission: "settlement.read", icon: Handshake },
-  { href: "/payments", label: "Payments", permission: "payment.read", icon: Banknote },
-  { href: "/receipts", label: "Receipts", permission: "receipt.read", icon: Receipt },
-  { href: "/reports", label: "Reports", permission: "reporting.read", icon: FileText },
+  { href: "/settlements", labelKey: "nav.settlements", permission: "settlement.read", icon: Handshake },
+  { href: "/payments", labelKey: "nav.payments", permission: "payment.read", icon: Banknote },
+  { href: "/receipts", labelKey: "nav.receipts", permission: "receipt.read", icon: Receipt },
+  { href: "/reports", labelKey: "nav.reports", permission: "reporting.read", icon: FileText },
 ];
 
 const PLATFORM: Entry[] = [
-  { href: "/notifications", label: "Notifications", permission: "notification.read", icon: Bell },
-  { href: "/sync", label: "Sync", permission: "sync.read", icon: RefreshCw },
-  { href: "/admin/users", label: "Users", permission: "identity.user.read", icon: Users },
-  { href: "/admin/roles", label: "Roles", permission: "authz.role.read", icon: KeyRound },
+  { href: "/notifications", labelKey: "nav.notifications", permission: "notification.read", icon: Bell },
+  { href: "/sync", labelKey: "nav.sync", permission: "sync.read", icon: RefreshCw },
+  { href: "/admin/users", labelKey: "nav.users", permission: "identity.user.read", icon: Users },
+  { href: "/admin/roles", labelKey: "nav.roles", permission: "authz.role.read", icon: KeyRound },
   {
     href: "/admin/organizations",
-    label: "Organizations",
+    labelKey: "nav.organizations",
     permission: "organization.read",
     icon: Landmark,
   },
-  { href: "/admin/audit", label: "Audit", permission: "audit.read", icon: ScrollText },
+  { href: "/admin/audit", labelKey: "nav.audit", permission: "audit.read", icon: ScrollText },
   {
     href: "/admin/configuration",
-    label: "Configuration",
+    labelKey: "nav.configuration",
     permission: "configuration.read",
     icon: Cog,
   },
   {
     href: "/admin/operations",
-    label: "Operations",
+    labelKey: "nav.operations",
     permission: "platform.relay.manage",
     icon: Server,
   },
+  // DEMO-013. `organization.read`, not the manage grant: seeing what currency
+  // and clock your dairy runs on is not an administrative act, and the page
+  // itself hides the controls that would be refused.
+  {
+    href: "/admin/settings",
+    labelKey: "nav.settings",
+    permission: "organization.read",
+    icon: Globe,
+  },
 ];
 
-const GROUPS: { title: string; entries: Entry[] }[] = [
-  { title: "Operations", entries: OPERATIONS },
-  { title: "Sales", entries: SALES },
-  { title: "Pricing", entries: PRICING },
-  { title: "Finance", entries: FINANCE },
-  { title: "Platform", entries: PLATFORM },
+const GROUPS: { titleKey: string; entries: Entry[] }[] = [
+  { titleKey: "nav.operations", entries: OPERATIONS },
+  { titleKey: "nav.sales", entries: SALES },
+  { titleKey: "nav.pricing", entries: PRICING },
+  { titleKey: "nav.finance", entries: FINANCE },
+  { titleKey: "nav.platform", entries: PLATFORM },
 ];
 
 /** The dashboard needs a session but no particular permission. */
@@ -168,6 +192,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signedIn = checked && session?.authenticated === true;
+  // DEMO-013: the person's own language, from the session. Not the browser's
+  // — a shared machine in a dairy office would otherwise flip a supervisor's
+  // screen because of what the last person's laptop was set to.
+  const locale = session?.authenticated ? session.user.locale : "en";
+  const org = session?.authenticated ? session.organization : null;
+  const t = translatorFor(locale);
   const scoped = actingTenant(session);
   const needsTenant =
     signedIn && session?.authenticated === true && session.tenant_id === null && !scoped;
@@ -205,9 +235,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const nav = (
     <nav aria-label="Main" className="flex flex-col gap-6 px-3 py-4">
       {groups.map((group) => (
-        <div key={group.title} className="flex flex-col gap-1">
+        <div key={group.titleKey} className="flex flex-col gap-1">
           <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {group.title}
+            {t(group.titleKey)}
           </p>
           {group.entries.map((entry) => {
             const Icon = entry.icon;
@@ -232,7 +262,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 )}
               >
                 <Icon aria-hidden className="size-4 shrink-0" />
-                {entry.label}
+                {t(entry.labelKey)}
               </Link>
             );
           })}
@@ -370,7 +400,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* One position, both states — see the note above `signedOutHeader`. */}
         <main className={signedIn ? "min-w-0 flex-1 bg-muted/20" : "min-w-0 flex-1"}>
-          {children}
+          {/*
+            DEMO-013: every page below renders in this person's language and
+            this organization's currency and timezone. Provided once, here,
+            because the shell is the only component that already holds the
+            session — a page fetching `/v1/auth/me` again just to learn what
+            language to speak would be a second answer to a question already
+            answered, and one request per page to ask it.
+          */}
+          <LocaleProvider
+            locale={locale}
+            currency={org?.currency_code ?? null}
+            timezone={org?.timezone ?? null}
+          >
+            {children}
+          </LocaleProvider>
         </main>
       </div>
     </div>

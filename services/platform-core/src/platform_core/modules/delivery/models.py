@@ -61,7 +61,11 @@ class MilkDelivery(Base, IdMixin):
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3))
     quantity_unit: Mapped[str] = mapped_column(String(8), default="L")
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4))
-    currency: Mapped[str] = mapped_column(String(3), default="KES")
+    #: ISO 4217. NO DEFAULT, deliberately (DEMO-013): it was `"KES"`, which
+    #: meant a code path that forgot to pass a currency minted Kenyan
+    #: shillings in an Indian dairy and said nothing. Every construction
+    #: supplies it from the customer, which gets it from the organization.
+    currency: Mapped[str] = mapped_column(String(3))
     #: quantity multiplied by unit_price, computed by the domain in Decimal
     #: and stored. Nothing downstream recomputes it.
     amount: Mapped[Decimal] = mapped_column(Numeric(16, 2))

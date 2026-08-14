@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from platform_core.core.backup.service import BackupService
 from platform_core.core.db import get_session
 from platform_core.core.errors import ForbiddenError, UnauthorizedError
+from platform_core.core.i18n import set_locale
 from platform_core.core.metrics import AUTH_FAILURES, AUTHZ_DENIALS, JWT_VERIFICATION_FAILURES
 from platform_core.core.rls import platform_factory
 from platform_core.core.security import decode_token
@@ -340,6 +341,13 @@ async def get_current_principal(
     # Staff accounts have NULL and are unaffected: the narrowing only ever
     # removes rows, so a scope that fails to apply cannot widen access.
     set_current_customer(user.customer_id)
+    # DEMO-013 §5: the person's OWN language wins, and it is read from their
+    # row rather than from a header — `Accept-Language` is a device setting,
+    # and a phone left in the wrong language must not decide what a dairy's
+    # staff read. The middleware's negotiation from the header stands only for
+    # requests that never authenticate.
+    if user.locale:
+        set_locale(user.locale)
     return Principal(
         user=user,
         tenant_id=principal_tenant,

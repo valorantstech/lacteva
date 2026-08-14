@@ -77,7 +77,15 @@ _current_locale: ContextVar[str] = ContextVar("current_locale", default="en")
 
 
 def negotiate_locale(request: Request) -> str:
-    """Pick the best supported locale from Accept-Language (simple prefix match)."""
+    """The browser's preference, as a STARTING point.
+
+    DEMO-013 makes this the weakest of three signals, and it runs earliest:
+    this is middleware, before anything has authenticated. Once a principal is
+    resolved, `api/deps.py` overrides it with the person's own stored language
+    (`user.locale`), which is the only one they actually chose. A device
+    left on the wrong setting must not decide what language a dairy's staff
+    read.
+    """
     settings = get_settings()
     header = request.headers.get("Accept-Language", "")
     for part in header.split(","):
@@ -96,5 +104,19 @@ def get_locale() -> str:
 
 
 def translate(key: str, locale: str | None = None) -> str:
-    loc = locale or get_locale()
+    """A message in the best language available, never a blank.
+
+    DEMO-013: accepts a BCP-47 tag. Catalogs are keyed by LANGUAGE (`hi`), not
+    by locale (`hi-IN`), because "Hindi as spoken in India" and "Hindi" are
+    the same words — the region carries the money and the calendar, which live
+    on the organization. Splitting catalogs per region would double the
+    translation work to say the same sentences.
+
+    Falls back language → English → the key itself. A missing translation
+    shows an English sentence, which a person can act on; a missing key shows
+    the key, which an engineer can find.
+    """
+    from platform_core.core.locales import base_language
+
+    loc = base_language(locale or get_locale())
     return CATALOGS.get(loc, {}).get(key) or CATALOGS["en"].get(key, key)

@@ -26,6 +26,7 @@ from platform_core.core.db import as_utc
 from platform_core.core.errors import AppError, ForbiddenError
 from platform_core.core.http_security import client_ip
 from platform_core.core.keys import get_key_registry
+from platform_core.core.locales import country_choices, currency_symbol, language_choices
 from platform_core.core.security_audit import record_security_event
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.tenant_lifecycle import TenantLifecycleService
@@ -135,10 +136,12 @@ from platform_core.modules.organization.service import (
     BranchView,
     CreateOrganizationCommand,
     InvitationService,
+    LocaleSettingsView,
     MembershipService,
     OrganizationService,
     OrganizationView,
     StructureService,
+    UpdateLocaleSettingsCommand,
     WorkspaceView,
 )
 from platform_core.modules.payment.service import (
@@ -420,9 +423,30 @@ async def confirm_password_reset(
 
 
 class MeOrganization(BaseModel):
+    """The organization, INCLUDING its locale context (DEMO-013).
+
+    Carried on `/v1/auth/me` deliberately: every client — the portal, the
+    mobile app, anything later — needs the currency to render money, the
+    timezone to render a date, and the language list to offer a choice. Any
+    client holding its own copy of those would be a second answer to a
+    question the platform has already answered, and the two would disagree the
+    first time a dairy changed one.
+
+    It also means the mobile app caches localization with the session it
+    already caches (§13), rather than needing a separate call it cannot make
+    offline.
+    """
+
     id: uuid.UUID
     name: str
     slug: str
+    country_code: str
+    currency_code: str
+    currency_symbol: str
+    timezone: str
+    default_language: str
+    supported_languages: list[str]
+    languages: list[dict]
 
 
 class MeMembership(BaseModel):
@@ -468,6 +492,32 @@ class MeView(BaseModel):
     customer_id: uuid.UUID | None = None
 
 
+class SetLanguageRequest(BaseModel):
+    """A BCP-47 tag the organization has enabled."""
+
+    language: str = Field(min_length=2, max_length=16)
+
+
+@auth.put("/me/language", response_model=UserView)
+async def set_my_language(
+    body: SetLanguageRequest,
+    principal: CurrentPrincipal,
+    identity: deps.Identity,
+) -> Any:
+    """Choose your own language (DEMO-013 §5).
+
+    Any authenticated principal may change their OWN language and nobody
+    else's — the user id comes from the token, never from the body. It needs
+    no permission: a language is a personal preference, and gating it behind
+    an administrative grant would mean a collection operator had to file a
+    ticket to read their own screen in Hindi.
+
+    The organization still decides which languages exist; the service refuses
+    anything outside `supported_languages` with a 403.
+    """
+    return await identity.set_language(principal.id, body.language)
+
+
 @auth.get("/me", response_model=MeView)
 async def me(
     principal: CurrentPrincipal,
@@ -484,7 +534,18 @@ async def me(
     if principal.tenant_id is not None:
         org = await session.get(Organization, principal.tenant_id)
         if org is not None:
-            organization = MeOrganization(id=org.id, name=org.name, slug=org.slug)
+            organization = MeOrganization(
+                id=org.id,
+                name=org.name,
+                slug=org.slug,
+                country_code=org.country_code,
+                currency_code=org.currency_code,
+                currency_symbol=currency_symbol(org.currency_code),
+                timezone=org.timezone,
+                default_language=org.default_locale,
+                supported_languages=list(org.supported_languages or ["en"]),
+                languages=language_choices(list(org.supported_languages or ["en"])),
+            )
         row = await session.scalar(
             select(Membership).where(
                 Membership.tenant_id == principal.tenant_id,
@@ -587,6 +648,52 @@ async def get_organization(
     _: Annotated[Principal, Depends(require_permission("organization.read"))],
 ) -> Any:
     return await service.get_organization(org_id)
+
+
+# --- Organization locale settings (DEMO-013 §2, §12) -------------------------
+#
+# Guarded by the permissions DEMO-008 already registered: `organization.read`
+# to see the settings, `organization.manage` to change them. No new
+# authorization mechanism — the whole point of a registry is that a new screen
+# is a new grant, not a new gate.
+
+
+@org_router.get("/settings/locale", response_model=LocaleSettingsView)
+async def get_locale_settings(
+    service: Annotated[OrganizationService, Depends(deps.get_organization_service)],
+    _: Annotated[Principal, Depends(require_permission("organization.read"))],
+) -> Any:
+    """This organization's country, currency, timezone and languages."""
+    return await service.locale_settings()
+
+
+@org_router.put("/settings/locale", response_model=LocaleSettingsView)
+async def update_locale_settings(
+    cmd: UpdateLocaleSettingsCommand,
+    service: Annotated[OrganizationService, Depends(deps.get_organization_service)],
+    principal: Annotated[Principal, Depends(require_permission("organization.settings.manage"))],
+) -> Any:
+    """Change the money, the clock or the languages. Country is not settable
+    here — see `UpdateLocaleSettingsCommand`."""
+    return await service.update_locale_settings(cmd, actor_id=principal.id)
+
+
+# --- Locale reference data ---------------------------------------------------
+
+
+locale_router = APIRouter(prefix="/locales", tags=["locales"])
+
+
+@locale_router.get("/countries")
+async def list_countries(_: CurrentPrincipal) -> Any:
+    """What each country implies, for an onboarding form to propose from.
+
+    Served rather than shipped so the portal and the mobile app offer the same
+    countries without either holding a copy that can drift. Authenticated
+    because it is not public information about this deployment, and free of
+    anything tenant-specific.
+    """
+    return {"countries": country_choices()}
 
 
 # --- Organization structure (workspaces, branches) ------------------------
@@ -3303,5 +3410,6 @@ for sub in (
     customer_router,
     delivery_router,
     billing_router,
+    locale_router,
 ):
     router.include_router(sub)

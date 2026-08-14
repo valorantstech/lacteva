@@ -1153,3 +1153,56 @@ async def test_a_role_that_bypasses_rls_is_refused(live):
             "security. Every isolation assertion in this file would pass vacuously."
         )
         await assert_rls_is_enforceable(s)  # must not raise
+
+
+async def test_one_dairys_locale_is_invisible_to_another(live):
+    """DEMO-013, and the reason this assertion lives HERE.
+
+    An Indian dairy must not be able to read a Kenyan one's row — including
+    the currency and timezone DEMO-013 added to it, which say what a
+    competitor counts in and when their day closes.
+
+    Nothing in the application enforces that. `organization` is isolated by
+    IDENTITY (`id = current tenant`), so the only thing standing between one
+    dairy and another's settings is the database policy. On SQLite there is no
+    policy and the row comes back, which is exactly why the SQLite suite
+    deliberately does not assert it: a guarantee tested only where it cannot
+    fail is a guarantee nobody has tested.
+    """
+    india, kenya = uuid.uuid4(), uuid.uuid4()
+    async with live() as s:
+        await bind_platform_context(s, reason="test: seed two dairies")
+        for tenant, name, currency, tz in (
+            (india, "India Dairy", "INR", "Asia/Kolkata"),
+            (kenya, "Kenya Dairy", "KES", "Africa/Nairobi"),
+        ):
+            await s.execute(
+                text(
+                    "INSERT INTO organization (id, name, slug, country_code, org_type, status, "
+                    "default_locale, currency_code, timezone, supported_languages, created_at) "
+                    "VALUES (:id, :name, :slug, :cc, 'cooperative', 'active', 'en', "
+                    ":currency, :tz, :langs, now())"
+                ),
+                {
+                    "id": tenant,
+                    "name": name,
+                    "slug": f"rls-{tenant}",
+                    "cc": "IN" if currency == "INR" else "KE",
+                    "currency": currency,
+                    "tz": tz,
+                    "langs": '["en"]',
+                },
+            )
+        await s.commit()
+
+    async with live() as s:
+        await bind_tenant(s, india)
+        mine = (await s.execute(text("SELECT currency_code, timezone FROM organization"))).all()
+    assert mine == [("INR", "Asia/Kolkata")], (
+        f"an Indian dairy saw {mine} — another tenant's currency and business clock"
+    )
+
+    async with live() as s:
+        await bind_tenant(s, kenya)
+        theirs = (await s.execute(text("SELECT currency_code, timezone FROM organization"))).all()
+    assert theirs == [("KES", "Africa/Nairobi")]
