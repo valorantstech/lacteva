@@ -2210,23 +2210,33 @@ async def verify() -> dict:
 # --- entry point -------------------------------------------------------------
 
 
-async def seed() -> dict:
+async def seed(markets: tuple[Market, ...] = (KENYA, INDIA)) -> dict:
+    """Build the demo tenants.
+
+    DEMO-013: which markets is a parameter, because a deployment that already
+    carries one of them must be able to add another without recreating it —
+    slugs are unique, so `seed` on a host that already has the Kenyan demo
+    would fail at the first organization and leave nothing.
+    """
     from platform_core.main import create_app
 
     await bootstrap()
     client = AsgiClient(create_app())
 
     admin = await platform_admin(client)
-    isolation = await make_org(
-        client, admin, ISOLATION_ORG, ISOLATION_ORG_SLUG, KENYA.country_code
-    )
+    # Only where it does not exist yet, for the same reason.
+    isolation = None
+    if KENYA in markets:
+        isolation = await make_org(
+            client, admin, ISOLATION_ORG, ISOLATION_ORG_SLUG, KENYA.country_code
+        )
 
     # DEMO-013: one loop, two countries, and no branch inside it. Each market
     # is built by the same code from a different profile — which is the claim
     # the Indian demo exists to make. Kenya first, so a partial run still
     # leaves the older demo whole.
     summaries: dict = {}
-    for market in (KENYA, INDIA):
+    for market in markets:
         org = await make_org(
             client, admin, market.org_name, market.org_slug, market.country_code
         )
@@ -2249,16 +2259,18 @@ async def seed() -> dict:
         # that created the organizations is older than that by the end of it.
         await refresh_admin(client, admin)
 
-    isolation_summary = await build_isolation_org(client, admin, isolation)
-    await run_consumers()
+    isolation_summary = None
+    if isolation is not None:
+        isolation_summary = await build_isolation_org(client, admin, isolation)
+        await run_consumers()
 
     return {
         # `demo` stays the Kenyan tenant under its old key: DEMO-010 and
         # DEMO-011 evidence refers to it, and renaming it in the summary would
         # break every script that reads this output.
-        "demo": summaries["kenya"],
-        "india": summaries["india"],
-        "isolation": isolation_summary,
+        **({"demo": summaries["kenya"]} if "kenya" in summaries else {}),
+        **({"india": summaries["india"]} if "india" in summaries else {}),
+        **({"isolation": isolation_summary} if isolation_summary else {}),
     }
 
 
@@ -2267,7 +2279,16 @@ def main() -> int:
     import json
 
     if command == "seed":
-        print(json.dumps(asyncio.run(seed()), indent=2))
+        # `seed` builds every market; `seed india` builds one. The second form
+        # is how a deployment that already carries the Kenyan demo gains the
+        # Indian one without touching it.
+        names = sys.argv[2:] or list(MARKETS)
+        unknown = [n for n in names if n not in MARKETS]
+        if unknown:
+            print(f"unknown market(s) {unknown} — known: {sorted(MARKETS)}", file=sys.stderr)
+            return 2
+        chosen = tuple(MARKETS[n] for n in names)
+        print(json.dumps(asyncio.run(seed(chosen)), indent=2))
         return 0
     if command == "purge":
         print(json.dumps(asyncio.run(purge()), indent=2))
