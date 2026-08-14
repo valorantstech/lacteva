@@ -26,6 +26,34 @@
 export type Catalog = Record<string, string>;
 
 const en: Catalog = {
+  // --- DEMO-015: date ranges, the delivery report, the statement ------
+  "range.label": "Date range",
+  "range.today": "Today",
+  "range.yesterday": "Yesterday",
+  "range.last_7_days": "Last 7 days",
+  "range.last_30_days": "Last 30 days",
+  "range.from": "From",
+  "range.to": "To",
+  "delivery.byCustomer": "By customer",
+  "delivery.byCustomerHint":
+    "Who took the milk, grouped by the database over this period",
+  "delivery.rate": "Rate",
+  "delivery.mixedRate": "Mixed",
+  "delivery.downloadCsv": "Download CSV",
+  "delivery.downloadFailed": "Could not download the report",
+  "statement.title": "Statement",
+  "statement.subtitle": "How this balance came about",
+  "statement.opening": "Opening balance",
+  "statement.closing": "Closing balance",
+  "statement.billed": "Billed",
+  "statement.paid": "Paid",
+  "statement.entry": "Entry",
+  "statement.debit": "Billed",
+  "statement.credit": "Paid",
+  "statement.runningBalance": "Balance",
+  "statement.empty": "Nothing billed or paid in this period",
+  "statement.invoice": "Bill",
+  "statement.payment": "Payment",
   // --- common actions ------------------------------------------------
   "action.back": "Back",
   "action.cancel": "Cancel",
@@ -95,16 +123,19 @@ const en: Catalog = {
   "dashboard.delivered": "Delivered",
   "dashboard.deliveredNotBilled": "Delivered, not billed",
   "dashboard.deliveries": "Deliveries",
-  "dashboard.description": "Both sides of the dairy — milk bought from suppliers and milk sold to customers. Every figure is computed by the platform.",
+  "dashboard.description":
+    "Both sides of the dairy — milk bought from suppliers and milk sold to customers. Every figure is computed by the platform.",
   "dashboard.milkDelivered": "Milk delivered",
   "dashboard.needsAttention": "Needs attention",
   "dashboard.outstanding": "Outstanding",
   "dashboard.procurement": "Procurement",
-  "dashboard.procurementDetail": "Milk bought from suppliers, and what the dairy owes for it",
+  "dashboard.procurementDetail":
+    "Milk bought from suppliers, and what the dairy owes for it",
   "dashboard.quantity": "Quantity",
   "dashboard.refreshing": "Refreshing…",
   "dashboard.sales": "Sales",
-  "dashboard.salesDetail": "Milk delivered to customers, and what they owe the dairy",
+  "dashboard.salesDetail":
+    "Milk delivered to customers, and what they owe the dairy",
   "dashboard.salesValue": "Sales value",
   "dashboard.thisMonth": "This month",
   "dashboard.title": "Dashboard",
@@ -157,16 +188,20 @@ const en: Catalog = {
   // --- organization and personal settings ----------------------------
   "settings.businessTimezone": "Business timezone",
   "settings.country": "Country",
-  "settings.countryFixed": "Country is set when the organization is created and is not changed here.",
+  "settings.countryFixed":
+    "Country is set when the organization is created and is not changed here.",
   "settings.currency": "Currency",
   "settings.defaultLanguage": "Default language",
   "settings.language": "Language",
   "settings.locale": "Country and language",
-  "settings.localeHelp": "These decide what your money is counted in, when your business day begins, and which languages your people can work in.",
+  "settings.localeHelp":
+    "These decide what your money is counted in, when your business day begins, and which languages your people can work in.",
   "settings.myLanguage": "My language",
-  "settings.myLanguageHelp": "Only you see this. It changes nothing for anyone else.",
+  "settings.myLanguageHelp":
+    "Only you see this. It changes nothing for anyone else.",
   "settings.myTimezone": "My timezone",
-  "settings.myTimezoneHelp": "Only changes how times are shown to you. Business dates always use the organization's timezone.",
+  "settings.myTimezoneHelp":
+    "Only changes how times are shown to you. Business dates always use the organization's timezone.",
   "settings.saved": "Saved",
   "settings.supportedLanguages": "Languages your organization has enabled",
   "settings.timezone": "Timezone",
@@ -233,7 +268,8 @@ const en: Catalog = {
   "delivery.returned": "Returned",
   "delivery.skipped": "Skipped",
   "delivery.slot": "Slot",
-  "delivery.subtitle": "Milk leaving for customers — what went out, to whom, and what it is worth",
+  "delivery.subtitle":
+    "Milk leaving for customers — what went out, to whom, and what it is worth",
   "delivery.title": "Deliveries",
 
   // --- billing -------------------------------------------------------
@@ -248,7 +284,8 @@ const en: Catalog = {
   "billing.paid": "Paid",
   "billing.partiallyPaid": "Partly paid",
   "billing.period": "Period",
-  "billing.subtitle": "Monthly bills, the money customers have paid, and the receipts they were given",
+  "billing.subtitle":
+    "Monthly bills, the money customers have paid, and the receipts they were given",
   "billing.title": "Billing",
 
   // --- payments ------------------------------------------------------
@@ -261,7 +298,8 @@ const en: Catalog = {
   "payment.outstanding": "Outstanding",
   "payment.pay": "Pay",
   "payment.reference": "Reference",
-  "payment.subtitle": "Money paid against finalized settlements. This platform records movement; it does not perform it",
+  "payment.subtitle":
+    "Money paid against finalized settlements. This platform records movement; it does not perform it",
   "payment.title": "Payments",
 
   // --- receipts ------------------------------------------------------
@@ -271,7 +309,8 @@ const en: Catalog = {
   "receipt.generated": "Generated",
   "receipt.markDelivered": "Mark delivered",
   "receipt.number": "Receipt",
-  "receipt.subtitle": "Immutable proof of payment, generated automatically when a payment completes",
+  "receipt.subtitle":
+    "Immutable proof of payment, generated automatically when a payment completes",
   "receipt.title": "Receipts",
 
   // --- reports -------------------------------------------------------
@@ -282,7 +321,8 @@ const en: Catalog = {
   "report.empty": "Nothing to report for this period",
   "report.pricing": "Pricing",
   "report.settlements": "Settlements",
-  "report.subtitle": "What the platform has counted, aggregated by the database",
+  "report.subtitle":
+    "What the platform has counted, aggregated by the database",
   "report.title": "Reports",
 
   // --- settlements ---------------------------------------------------
@@ -306,7 +346,8 @@ const en: Catalog = {
   "notification.pendingState": "Pending",
   "notification.retry": "Retry",
   "notification.sent": "Sent",
-  "notification.subtitle": "Every message the platform has sent, and what became of it",
+  "notification.subtitle":
+    "Every message the platform has sent, and what became of it",
   "notification.template": "Template",
   "notification.title": "Notifications",
 
@@ -332,6 +373,34 @@ const en: Catalog = {
 };
 
 const hi: Catalog = {
+  // --- DEMO-015: date ranges, the delivery report, the statement ------
+  "range.label": "तिथि सीमा",
+  "range.today": "आज",
+  "range.yesterday": "कल",
+  "range.last_7_days": "पिछले 7 दिन",
+  "range.last_30_days": "पिछले 30 दिन",
+  "range.from": "से",
+  "range.to": "तक",
+  "delivery.byCustomer": "ग्राहक अनुसार",
+  "delivery.byCustomerHint":
+    "इस अवधि में किसने दूध लिया, डेटाबेस द्वारा समूहित",
+  "delivery.rate": "दर",
+  "delivery.mixedRate": "मिश्रित",
+  "delivery.downloadCsv": "CSV डाउनलोड करें",
+  "delivery.downloadFailed": "रिपोर्ट डाउनलोड नहीं हो सकी",
+  "statement.title": "विवरण",
+  "statement.subtitle": "यह शेष कैसे बना",
+  "statement.opening": "प्रारंभिक शेष",
+  "statement.closing": "अंतिम शेष",
+  "statement.billed": "बिल किया गया",
+  "statement.paid": "भुगतान किया गया",
+  "statement.entry": "प्रविष्टि",
+  "statement.debit": "बिल किया गया",
+  "statement.credit": "भुगतान किया गया",
+  "statement.runningBalance": "शेष",
+  "statement.empty": "इस अवधि में कोई बिल या भुगतान नहीं",
+  "statement.invoice": "बिल",
+  "statement.payment": "भुगतान",
   // --- common actions ------------------------------------------------
   "action.back": "वापस",
   "action.cancel": "रद्द करें",
@@ -401,16 +470,19 @@ const hi: Catalog = {
   "dashboard.delivered": "वितरित",
   "dashboard.deliveredNotBilled": "वितरित, बिल नहीं",
   "dashboard.deliveries": "वितरण",
-  "dashboard.description": "डेयरी के दोनों पक्ष — आपूर्तिकर्ताओं से खरीदा गया दूध और ग्राहकों को बेचा गया दूध। हर आँकड़ा प्लेटफ़ॉर्म द्वारा निकाला जाता है।",
+  "dashboard.description":
+    "डेयरी के दोनों पक्ष — आपूर्तिकर्ताओं से खरीदा गया दूध और ग्राहकों को बेचा गया दूध। हर आँकड़ा प्लेटफ़ॉर्म द्वारा निकाला जाता है।",
   "dashboard.milkDelivered": "वितरित दूध",
   "dashboard.needsAttention": "ध्यान देने योग्य",
   "dashboard.outstanding": "बकाया",
   "dashboard.procurement": "खरीद",
-  "dashboard.procurementDetail": "आपूर्तिकर्ताओं से खरीदा दूध, और डेयरी उस पर क्या देती है",
+  "dashboard.procurementDetail":
+    "आपूर्तिकर्ताओं से खरीदा दूध, और डेयरी उस पर क्या देती है",
   "dashboard.quantity": "मात्रा",
   "dashboard.refreshing": "ताज़ा हो रहा है…",
   "dashboard.sales": "बिक्री",
-  "dashboard.salesDetail": "ग्राहकों को दिया गया दूध, और वे डेयरी को क्या देते हैं",
+  "dashboard.salesDetail":
+    "ग्राहकों को दिया गया दूध, और वे डेयरी को क्या देते हैं",
   "dashboard.salesValue": "बिक्री मूल्य",
   "dashboard.thisMonth": "इस महीने",
   "dashboard.title": "डैशबोर्ड",
@@ -463,16 +535,20 @@ const hi: Catalog = {
   // --- organization and personal settings ----------------------------
   "settings.businessTimezone": "व्यावसायिक समय क्षेत्र",
   "settings.country": "देश",
-  "settings.countryFixed": "देश संगठन बनाते समय तय होता है और यहाँ नहीं बदला जाता।",
+  "settings.countryFixed":
+    "देश संगठन बनाते समय तय होता है और यहाँ नहीं बदला जाता।",
   "settings.currency": "मुद्रा",
   "settings.defaultLanguage": "डिफ़ॉल्ट भाषा",
   "settings.language": "भाषा",
   "settings.locale": "देश और भाषा",
-  "settings.localeHelp": "ये तय करते हैं कि आपका पैसा किस मुद्रा में गिना जाए, आपका कार्यदिवस कब शुरू हो, और आपके लोग किन भाषाओं में काम कर सकें।",
+  "settings.localeHelp":
+    "ये तय करते हैं कि आपका पैसा किस मुद्रा में गिना जाए, आपका कार्यदिवस कब शुरू हो, और आपके लोग किन भाषाओं में काम कर सकें।",
   "settings.myLanguage": "मेरी भाषा",
-  "settings.myLanguageHelp": "यह केवल आपको दिखता है। किसी और के लिए कुछ नहीं बदलता।",
+  "settings.myLanguageHelp":
+    "यह केवल आपको दिखता है। किसी और के लिए कुछ नहीं बदलता।",
   "settings.myTimezone": "मेरा समय क्षेत्र",
-  "settings.myTimezoneHelp": "यह केवल आपको दिखने वाले समय को बदलता है। व्यावसायिक तिथियाँ हमेशा संगठन के समय क्षेत्र से तय होती हैं।",
+  "settings.myTimezoneHelp":
+    "यह केवल आपको दिखने वाले समय को बदलता है। व्यावसायिक तिथियाँ हमेशा संगठन के समय क्षेत्र से तय होती हैं।",
   "settings.saved": "सहेजा गया",
   "settings.supportedLanguages": "आपके संगठन द्वारा सक्षम भाषाएँ",
   "settings.timezone": "समय क्षेत्र",
@@ -539,7 +615,8 @@ const hi: Catalog = {
   "delivery.returned": "वापस",
   "delivery.skipped": "छोड़ा गया",
   "delivery.slot": "समय",
-  "delivery.subtitle": "ग्राहकों को भेजा गया दूध — क्या गया, किसे गया, और उसका मूल्य",
+  "delivery.subtitle":
+    "ग्राहकों को भेजा गया दूध — क्या गया, किसे गया, और उसका मूल्य",
   "delivery.title": "वितरण",
 
   // --- billing -------------------------------------------------------
@@ -554,7 +631,8 @@ const hi: Catalog = {
   "billing.paid": "भुगतान हुआ",
   "billing.partiallyPaid": "आंशिक भुगतान",
   "billing.period": "अवधि",
-  "billing.subtitle": "मासिक बिल, ग्राहकों द्वारा किया गया भुगतान, और उन्हें दी गई रसीदें",
+  "billing.subtitle":
+    "मासिक बिल, ग्राहकों द्वारा किया गया भुगतान, और उन्हें दी गई रसीदें",
   "billing.title": "बिलिंग",
 
   // --- payments ------------------------------------------------------
@@ -567,7 +645,8 @@ const hi: Catalog = {
   "payment.outstanding": "बकाया",
   "payment.pay": "भुगतान करें",
   "payment.reference": "संदर्भ",
-  "payment.subtitle": "अंतिम निपटानों के विरुद्ध किया गया भुगतान। यह प्लेटफ़ॉर्म भुगतान दर्ज करता है, करता नहीं",
+  "payment.subtitle":
+    "अंतिम निपटानों के विरुद्ध किया गया भुगतान। यह प्लेटफ़ॉर्म भुगतान दर्ज करता है, करता नहीं",
   "payment.title": "भुगतान",
 
   // --- receipts ------------------------------------------------------
@@ -577,7 +656,8 @@ const hi: Catalog = {
   "receipt.generated": "बनाई गई",
   "receipt.markDelivered": "पहुँचाया चिह्नित करें",
   "receipt.number": "रसीद",
-  "receipt.subtitle": "भुगतान का अपरिवर्तनीय प्रमाण, भुगतान पूर्ण होते ही स्वतः बनता है",
+  "receipt.subtitle":
+    "भुगतान का अपरिवर्तनीय प्रमाण, भुगतान पूर्ण होते ही स्वतः बनता है",
   "receipt.title": "रसीदें",
 
   // --- reports -------------------------------------------------------
@@ -601,7 +681,8 @@ const hi: Catalog = {
   "settlement.gross": "सकल",
   "settlement.net": "शुद्ध देय",
   "settlement.number": "निपटान",
-  "settlement.subtitle": "एक अवधि के लिए डेयरी प्रत्येक आपूर्तिकर्ता को क्या देती है",
+  "settlement.subtitle":
+    "एक अवधि के लिए डेयरी प्रत्येक आपूर्तिकर्ता को क्या देती है",
   "settlement.title": "निपटान",
 
   // --- notifications -------------------------------------------------
@@ -612,7 +693,8 @@ const hi: Catalog = {
   "notification.pendingState": "लंबित",
   "notification.retry": "पुनः भेजें",
   "notification.sent": "भेजा गया",
-  "notification.subtitle": "प्लेटफ़ॉर्म द्वारा भेजा गया प्रत्येक संदेश, और उसका परिणाम",
+  "notification.subtitle":
+    "प्लेटफ़ॉर्म द्वारा भेजा गया प्रत्येक संदेश, और उसका परिणाम",
   "notification.template": "टेम्पलेट",
   "notification.title": "सूचनाएँ",
 
@@ -623,7 +705,8 @@ const hi: Catalog = {
   "role.members": "सदस्य",
   "role.permissions": "अनुमतियाँ",
   "role.remove": "भूमिका हटाएँ",
-  "role.subtitle": "प्रत्येक भूमिका क्या कर सकती है। भूमिकाएँ डेटा हैं, कोड नहीं",
+  "role.subtitle":
+    "प्रत्येक भूमिका क्या कर सकती है। भूमिकाएँ डेटा हैं, कोड नहीं",
   "role.title": "भूमिकाएँ",
   "role.wholeOrganization": "पूरा संगठन",
 
@@ -638,6 +721,34 @@ const hi: Catalog = {
 };
 
 const ar: Catalog = {
+  // --- DEMO-015: date ranges, the delivery report, the statement ------
+  "range.label": "النطاق الزمني",
+  "range.today": "اليوم",
+  "range.yesterday": "أمس",
+  "range.last_7_days": "آخر 7 أيام",
+  "range.last_30_days": "آخر 30 يومًا",
+  "range.from": "من",
+  "range.to": "إلى",
+  "delivery.byCustomer": "حسب العميل",
+  "delivery.byCustomerHint":
+    "من استلم الحليب في هذه الفترة، مجمَّعًا في قاعدة البيانات",
+  "delivery.rate": "السعر",
+  "delivery.mixedRate": "متعدد",
+  "delivery.downloadCsv": "تنزيل CSV",
+  "delivery.downloadFailed": "تعذّر تنزيل التقرير",
+  "statement.title": "كشف الحساب",
+  "statement.subtitle": "كيف نشأ هذا الرصيد",
+  "statement.opening": "الرصيد الافتتاحي",
+  "statement.closing": "الرصيد الختامي",
+  "statement.billed": "المفوتر",
+  "statement.paid": "المدفوع",
+  "statement.entry": "القيد",
+  "statement.debit": "المفوتر",
+  "statement.credit": "المدفوع",
+  "statement.runningBalance": "الرصيد",
+  "statement.empty": "لا فواتير ولا مدفوعات في هذه الفترة",
+  "statement.invoice": "فاتورة",
+  "statement.payment": "دفعة",
   // --- common actions ------------------------------------------------
   "action.back": "رجوع",
   "action.cancel": "إلغاء",
@@ -707,12 +818,14 @@ const ar: Catalog = {
   "dashboard.delivered": "المُسلَّم",
   "dashboard.deliveredNotBilled": "مُسلَّم وغير مُفوتر",
   "dashboard.deliveries": "التوصيلات",
-  "dashboard.description": "جانبا الألبان — الحليب المشترى من المورّدين والحليب المُباع للعملاء. كل رقم تحسبه المنصّة.",
+  "dashboard.description":
+    "جانبا الألبان — الحليب المشترى من المورّدين والحليب المُباع للعملاء. كل رقم تحسبه المنصّة.",
   "dashboard.milkDelivered": "الحليب المُسلَّم",
   "dashboard.needsAttention": "يحتاج إلى انتباه",
   "dashboard.outstanding": "المستحق",
   "dashboard.procurement": "المشتريات",
-  "dashboard.procurementDetail": "الحليب المشترى من المورّدين، وما تدين به الألبان مقابله",
+  "dashboard.procurementDetail":
+    "الحليب المشترى من المورّدين، وما تدين به الألبان مقابله",
   "dashboard.quantity": "الكمية",
   "dashboard.refreshing": "جارٍ التحديث…",
   "dashboard.sales": "المبيعات",
@@ -769,16 +882,19 @@ const ar: Catalog = {
   // --- organization and personal settings ----------------------------
   "settings.businessTimezone": "المنطقة الزمنية للعمل",
   "settings.country": "الدولة",
-  "settings.countryFixed": "تُحدَّد الدولة عند إنشاء المؤسسة ولا تُغيَّر من هنا.",
+  "settings.countryFixed":
+    "تُحدَّد الدولة عند إنشاء المؤسسة ولا تُغيَّر من هنا.",
   "settings.currency": "العملة",
   "settings.defaultLanguage": "اللغة الافتراضية",
   "settings.language": "اللغة",
   "settings.locale": "الدولة واللغة",
-  "settings.localeHelp": "تحدّد هذه الإعدادات عملة حساباتكم، ومتى يبدأ يوم العمل، واللغات التي يمكن لموظفيكم العمل بها.",
+  "settings.localeHelp":
+    "تحدّد هذه الإعدادات عملة حساباتكم، ومتى يبدأ يوم العمل، واللغات التي يمكن لموظفيكم العمل بها.",
   "settings.myLanguage": "لغتي",
   "settings.myLanguageHelp": "أنت وحدك من يرى هذا. لا يتغيّر شيء لأي شخص آخر.",
   "settings.myTimezone": "منطقتي الزمنية",
-  "settings.myTimezoneHelp": "يغيّر هذا طريقة عرض الأوقات لك فقط. تعتمد تواريخ العمل دائمًا على المنطقة الزمنية للمؤسسة.",
+  "settings.myTimezoneHelp":
+    "يغيّر هذا طريقة عرض الأوقات لك فقط. تعتمد تواريخ العمل دائمًا على المنطقة الزمنية للمؤسسة.",
   "settings.saved": "تم الحفظ",
   "settings.supportedLanguages": "اللغات المفعّلة في مؤسستكم",
   "settings.timezone": "المنطقة الزمنية",
@@ -860,7 +976,8 @@ const ar: Catalog = {
   "billing.paid": "مدفوعة",
   "billing.partiallyPaid": "مدفوعة جزئيًا",
   "billing.period": "الفترة",
-  "billing.subtitle": "الفواتير الشهرية، والمبالغ التي دفعها العملاء، والإيصالات التي استلموها",
+  "billing.subtitle":
+    "الفواتير الشهرية، والمبالغ التي دفعها العملاء، والإيصالات التي استلموها",
   "billing.title": "الفوترة",
 
   // --- payments ------------------------------------------------------
@@ -873,7 +990,8 @@ const ar: Catalog = {
   "payment.outstanding": "المستحق",
   "payment.pay": "ادفع",
   "payment.reference": "المرجع",
-  "payment.subtitle": "المبالغ المدفوعة مقابل التسويات النهائية. هذه المنصّة تسجّل الحركة ولا تنفّذها",
+  "payment.subtitle":
+    "المبالغ المدفوعة مقابل التسويات النهائية. هذه المنصّة تسجّل الحركة ولا تنفّذها",
   "payment.title": "المدفوعات",
 
   // --- receipts ------------------------------------------------------
@@ -883,7 +1001,8 @@ const ar: Catalog = {
   "receipt.generated": "مُنشأ",
   "receipt.markDelivered": "تعليم كمُسلَّم",
   "receipt.number": "إيصال",
-  "receipt.subtitle": "إثبات دفع غير قابل للتعديل، يُنشأ تلقائيًا عند اكتمال الدفعة",
+  "receipt.subtitle":
+    "إثبات دفع غير قابل للتعديل، يُنشأ تلقائيًا عند اكتمال الدفعة",
   "receipt.title": "الإيصالات",
 
   // --- reports -------------------------------------------------------

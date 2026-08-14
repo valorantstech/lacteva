@@ -53,9 +53,9 @@ const describe = (e: unknown) =>
 
 export default function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency } = useLocale();
+  const { currency: orgCurrency, timezone: orgTimezone } = useLocale();
   const { id } = use(params);
-  const [range, setRange] = useState<DateRange>(() => resolveRange("30d"));
+  const [range, setRange] = useState<DateRange>(() => resolveRange("30d", orgTimezone));
 
   const [detail, setDetail] = useState<Load<SupplierDetail>>(LOADING);
   const [summary, setSummary] = useState<Load<DailyCollectionSummary>>(LOADING);

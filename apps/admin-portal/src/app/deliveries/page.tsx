@@ -3,22 +3,33 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Banknote, Droplets, Truck, Users } from "lucide-react";
+import { Banknote, Download, Droplets, Truck, Users } from "lucide-react";
 import {
   ApiError,
   type Customer,
   type Delivery,
   type DeliveryPageResult,
   type DeliveryReport,
+  deliveryReportCsvUrl,
   getDeliveryReport,
   listCustomers,
   listDeliveries,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
-import { type DateRange, DateRangePicker, resolveRange } from "@/components/date-range";
+import {
+  type DateRange,
+  DateRangePicker,
+  resolveRange,
+} from "@/components/date-range";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
@@ -41,7 +52,8 @@ const PAGE_SIZE = 25;
 const STATUSES = ["", "delivered", "skipped", "returned", "cancelled"] as const;
 
 const describe = (e: unknown) => {
-  if (e instanceof ApiError) return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+  if (e instanceof ApiError)
+    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
   return e instanceof Error ? e.message : "Could not load deliveries";
 };
 
@@ -60,15 +72,19 @@ export default function DeliveriesPage() {
 
 function DeliveriesView() {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency } = useLocale();
+  const { currency: orgCurrency, timezone: orgTimezone, t } = useLocale();
 
   const searchParams = useSearchParams();
   const [page, setPage] = useState<DeliveryPageResult | null>(null);
   const [report, setReport] = useState<DeliveryReport | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
 
-  const [range, setRange] = useState<DateRange>(() => resolveRange("7d"));
-  const [customerId, setCustomerId] = useState(() => searchParams.get("customer_id") ?? "");
+  const [range, setRange] = useState<DateRange>(() =>
+    resolveRange("7d", orgTimezone),
+  );
+  const [customerId, setCustomerId] = useState(
+    () => searchParams.get("customer_id") ?? "",
+  );
   const [status, setStatus] = useState<(typeof STATUSES)[number]>(
     () => (searchParams.get("status") as (typeof STATUSES)[number]) ?? "",
   );
@@ -151,7 +167,12 @@ function DeliveriesView() {
         </Link>
       ),
     },
-    { key: "product", header: "Product", secondary: true, cell: (d) => d.product },
+    {
+      key: "product",
+      header: "Product",
+      secondary: true,
+      cell: (d) => d.product,
+    },
     {
       key: "quantity",
       header: "Quantity",
@@ -171,14 +192,21 @@ function DeliveriesView() {
         </div>
       ),
     },
-    { key: "status", header: "Status", cell: (d) => <StatusBadge status={d.status} /> },
+    {
+      key: "status",
+      header: "Status",
+      cell: (d) => <StatusBadge status={d.status} />,
+    },
     {
       key: "billed",
       header: "Billed",
       secondary: true,
       cell: (d) =>
         d.invoice_id ? (
-          <Link className="text-sm hover:underline" href={`/invoices/${d.invoice_id}`}>
+          <Link
+            className="text-sm hover:underline"
+            href={`/invoices/${d.invoice_id}`}
+          >
             on a bill
           </Link>
         ) : (
@@ -194,9 +222,32 @@ function DeliveriesView() {
         description="Milk leaving for customers — what went out, to whom, and what it is worth."
       />
 
-      <DateRangePicker value={range} onChange={setRange} busy={loading} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <DateRangePicker value={range} onChange={setRange} busy={loading} />
+        {/*
+          A plain link, not a fetch-and-blob. The proxy streams the file with
+          its Content-Disposition intact, so the browser saves it the way it
+          saves any download — and nothing about the report is assembled in
+          JavaScript, which is the point of §15.
+        */}
+        <a
+          href={deliveryReportCsvUrl({
+            date_from: range.from,
+            date_to: range.to,
+            customer_id: customerId || undefined,
+            status: status || undefined,
+          })}
+          className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
+        >
+          <Download className="size-4" />
+          {t("delivery.downloadCsv")}
+        </a>
+      </div>
 
-      <section aria-label="Delivery summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        aria-label="Delivery summary"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
         <StatTile
           label="Deliveries"
           value={report ? report.deliveries : "—"}
@@ -205,12 +256,27 @@ function DeliveriesView() {
         />
         <StatTile
           label="Quantity"
-          value={report ? <Quantity value={report.total_quantity} unit="L" /> : "—"}
+          value={
+            report ? (
+              <Quantity
+                value={report.total_quantity}
+                unit={report.quantity_unit}
+              />
+            ) : (
+              "—"
+            )
+          }
           icon={<Droplets className="size-4" />}
         />
         <StatTile
           label="Value"
-          value={report ? <Money amount={report.total_amount} currency={orgCurrency} /> : "—"}
+          value={
+            report ? (
+              <Money amount={report.total_amount} currency={report.currency} />
+            ) : (
+              "—"
+            )
+          }
           icon={<Banknote className="size-4" />}
         />
         <StatTile
@@ -220,12 +286,110 @@ function DeliveriesView() {
         />
       </section>
 
-      {report && report.by_day.length > 0 ? (
+      {/*
+        `?.` deliberately. During a rolling deploy the portal can be newer than
+        the API for a few seconds — DEMO-013 spent an outage in exactly that
+        state — and a screen that throws because a field it expected is absent
+        turns a brief version skew into a blank page.
+      */}
+      {report && report.by_customer?.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {t("delivery.byCustomer")}
+            </CardTitle>
+            <CardDescription>{t("delivery.byCustomerHint")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <caption className="sr-only">
+                  {t("delivery.byCustomer")}
+                </caption>
+                <thead>
+                  <tr className="border-b text-start text-muted-foreground">
+                    <th className="py-2 pe-4 font-medium">
+                      {t("nav.customers")}
+                    </th>
+                    <th className="py-2 pe-4 text-end font-medium">
+                      {t("delivery.title")}
+                    </th>
+                    <th className="py-2 pe-4 text-end font-medium">
+                      {t("field.quantity")}
+                    </th>
+                    <th className="py-2 pe-4 text-end font-medium">
+                      {t("delivery.rate")}
+                    </th>
+                    <th className="py-2 text-end font-medium">
+                      {t("field.amount")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.by_customer.map((row) => (
+                    <tr
+                      key={row.customer_id}
+                      className="border-b last:border-0"
+                    >
+                      <td className="py-2 pe-4">
+                        <Link
+                          href={`/customers/${row.customer_id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {row.name}
+                        </Link>
+                        <span className="ms-2 text-xs text-muted-foreground">
+                          {row.code}
+                        </span>
+                        {row.skipped > 0 ? (
+                          <span className="ms-2 text-xs text-muted-foreground">
+                            {row.skipped} {t("delivery.skipped").toLowerCase()}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="py-2 pe-4 text-end tabular-nums">
+                        {row.deliveries}
+                      </td>
+                      <td className="py-2 pe-4 text-end">
+                        <Quantity
+                          value={row.quantity}
+                          unit={report.quantity_unit}
+                        />
+                      </td>
+                      <td className="py-2 pe-4 text-end">
+                        {/* Null means the rate changed inside this window. The
+                            platform declines to average two rates; so does the
+                            screen. */}
+                        {row.unit_price === null ? (
+                          <span className="text-muted-foreground">
+                            {t("delivery.mixedRate")}
+                          </span>
+                        ) : (
+                          <Money
+                            amount={row.unit_price}
+                            currency={report.currency}
+                          />
+                        )}
+                      </td>
+                      <td className="py-2 text-end">
+                        <Money amount={row.amount} currency={report.currency} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {report && report.by_day?.length ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Day by day</CardTitle>
             <CardDescription>
-              Grouped by the database over {report.date_from} → {report.date_to}.
+              Grouped by the database over {report.date_from} → {report.date_to}
+              .
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -235,23 +399,39 @@ function DeliveriesView() {
                 <thead>
                   <tr className="border-b text-start text-muted-foreground">
                     <th className="py-2 pe-4 font-medium">Date</th>
-                    <th className="py-2 pe-4 text-end font-medium">Deliveries</th>
-                    <th className="py-2 pe-4 text-end font-medium">Customers</th>
+                    <th className="py-2 pe-4 text-end font-medium">
+                      Deliveries
+                    </th>
+                    <th className="py-2 pe-4 text-end font-medium">
+                      Customers
+                    </th>
                     <th className="py-2 pe-4 text-end font-medium">Quantity</th>
                     <th className="py-2 text-end font-medium">Value</th>
                   </tr>
                 </thead>
                 <tbody>
                   {report.by_day.map((day) => (
-                    <tr key={day.delivery_date} className="border-b last:border-0">
-                      <td className="py-2 pe-4 tabular-nums">{day.delivery_date}</td>
-                      <td className="py-2 pe-4 text-end tabular-nums">{day.deliveries}</td>
-                      <td className="py-2 pe-4 text-end tabular-nums">{day.customers}</td>
+                    <tr
+                      key={day.delivery_date}
+                      className="border-b last:border-0"
+                    >
+                      <td className="py-2 pe-4 tabular-nums">
+                        {day.delivery_date}
+                      </td>
+                      <td className="py-2 pe-4 text-end tabular-nums">
+                        {day.deliveries}
+                      </td>
+                      <td className="py-2 pe-4 text-end tabular-nums">
+                        {day.customers}
+                      </td>
                       <td className="py-2 pe-4 text-end">
-                        <Quantity value={day.quantity} unit="L" />
+                        <Quantity
+                          value={day.quantity}
+                          unit={report.quantity_unit}
+                        />
                       </td>
                       <td className="py-2 text-end">
-                        <Money amount={day.amount} currency={orgCurrency} />
+                        <Money amount={day.amount} currency={report.currency} />
                       </td>
                     </tr>
                   ))}
@@ -273,7 +453,9 @@ function DeliveriesView() {
             error={error}
             onRetry={() => void load()}
             empty={{
-              title: filtered ? "No delivery matches these filters" : "No deliveries in this period",
+              title: filtered
+                ? "No delivery matches these filters"
+                : "No deliveries in this period",
               description: filtered
                 ? "Try a wider date range, or clear the filters."
                 : "Record a delivery from a customer's page.",
@@ -359,7 +541,9 @@ function DeliveriesView() {
           />
           {page ? (
             <p className="pt-3 text-sm">
-              <span className="text-muted-foreground">Across all {page.total} matching deliveries: </span>
+              <span className="text-muted-foreground">
+                Across all {page.total} matching deliveries:{" "}
+              </span>
               <Quantity value={page.total_quantity} unit="L" />
               <span className="text-muted-foreground"> · </span>
               <Money amount={page.total_amount} currency={orgCurrency} />

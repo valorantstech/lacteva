@@ -89,11 +89,11 @@ function describe(error: unknown): string {
 
 export default function Home() {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency } = useLocale();
+  const { currency: orgCurrency, timezone: orgTimezone } = useLocale();
   const t = useT();
   const [session, setSession] = useState<Session | null>(null);
   const [checked, setChecked] = useState(false);
-  const [range, setRange] = useState<DateRange>(() => resolveRange("7d"));
+  const [range, setRange] = useState<DateRange>(() => resolveRange("7d", orgTimezone));
   const [metric, setMetric] = useState<"quantity" | "value">("quantity");
 
   const [dashboard, setDashboard] = useState<Load<DashboardReport>>(LOADING);

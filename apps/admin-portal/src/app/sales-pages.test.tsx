@@ -33,7 +33,10 @@ import BillingPage from "@/app/billing/page";
 import InvoiceDetailPage from "@/app/invoices/[id]/page";
 
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 
 const CUSTOMER = {
   id: "cu-1",
@@ -82,7 +85,13 @@ const DELIVERY = {
   created_at: "2026-08-11T06:00:00Z",
 };
 
-const SKIPPED = { ...DELIVERY, id: "de-2", delivery_date: "2026-08-10", status: "skipped", amount: "0.00" };
+const SKIPPED = {
+  ...DELIVERY,
+  id: "de-2",
+  delivery_date: "2026-08-10",
+  status: "skipped",
+  amount: "0.00",
+};
 
 const INVOICE = {
   id: "in-1",
@@ -105,14 +114,87 @@ const INVOICE = {
 const REPORT = {
   date_from: "2026-08-05",
   date_to: "2026-08-12",
+  currency: "KES",
+  quantity_unit: "L",
   deliveries: 36,
   customers_served: 6,
   total_quantity: "180.500",
   total_amount: "10234.50",
   skipped: 3,
+  by_customer: [
+    {
+      customer_id: "cu-1",
+      code: "CUST-0001",
+      name: "Mama Njeri Household",
+      product: "RAW-COW-MILK",
+      deliveries: 24,
+      quantity: "120.000",
+      unit_price: "56.0000",
+      amount: "6720.00",
+      skipped: 1,
+    },
+    {
+      customer_id: "cu-2",
+      code: "CUST-0002",
+      name: "Adiga Tiffin Room",
+      product: "RAW-COW-MILK",
+      deliveries: 12,
+      quantity: "60.500",
+      // The rate changed inside the window: the platform sends null rather
+      // than blending two rates into one.
+      unit_price: null,
+      amount: "3514.50",
+      skipped: 2,
+    },
+  ],
   by_day: [
-    { delivery_date: "2026-08-11", deliveries: 6, customers: 6, quantity: "30.000", amount: "1705.75" },
-    { delivery_date: "2026-08-12", deliveries: 6, customers: 6, quantity: "30.000", amount: "1705.75" },
+    {
+      delivery_date: "2026-08-11",
+      deliveries: 6,
+      customers: 6,
+      quantity: "30.000",
+      amount: "1705.75",
+    },
+    {
+      delivery_date: "2026-08-12",
+      deliveries: 6,
+      customers: 6,
+      quantity: "30.000",
+      amount: "1705.75",
+    },
+  ],
+};
+
+const STATEMENT = {
+  customer_id: "cu-1",
+  code: "CUS-2026-000001",
+  name: "Mama Njeri Household",
+  currency: "KES",
+  date_from: "2026-08-01",
+  date_to: "2026-08-12",
+  opening_balance: "500.00",
+  billed: "3658.00",
+  paid: "3658.00",
+  closing_balance: "500.00",
+  entries: [
+    {
+      entry_date: "2026-08-12",
+      kind: "invoice",
+      reference: "INV-2026-000001",
+      detail: "2026-07-01 — 2026-07-31",
+      debit: "3658.00",
+      credit: "0.00",
+      balance: "4158.00",
+    },
+    {
+      entry_date: "2026-08-12",
+      kind: "payment",
+      reference: "CPY-2026-000001",
+      detail: "MOBILE_MONEY",
+      debit: "0.00",
+      credit: "3658.00",
+      balance: "500.00",
+    },
   ],
 };
 
@@ -135,7 +217,9 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
         unbilled_deliveries: 2,
         open_invoices: 0,
       });
-    if (path.endsWith("/v1/customers/cu-1")) return json({ customer: CUSTOMER, plans: [PLAN] });
+    if (path.endsWith("/v1/customers/cu-1/statement")) return json(STATEMENT);
+    if (path.endsWith("/v1/customers/cu-1"))
+      return json({ customer: CUSTOMER, plans: [PLAN] });
     if (path.endsWith("/v1/customers"))
       return json({ items: [CUSTOMER], total: 1, limit: 15, offset: 0 });
     if (path.endsWith("/v1/deliveries/report")) return json(REPORT);
@@ -168,7 +252,8 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
         outstanding: "0.00",
         totals_match_lines: true,
       });
-    if (path.endsWith("/v1/invoices")) return json({ items: [INVOICE], total: 1, limit: 12, offset: 0 });
+    if (path.endsWith("/v1/invoices"))
+      return json({ items: [INVOICE], total: 1, limit: 12, offset: 0 });
     if (path.endsWith("/v1/customer-payments"))
       return json({
         items: [
@@ -228,7 +313,8 @@ const renderDetail = async (ui: React.ReactElement) => {
   });
 };
 
-const urls = (spy: ReturnType<typeof routeAll>) => spy.mock.calls.map((c) => String(c[0]));
+const urls = (spy: ReturnType<typeof routeAll>) =>
+  spy.mock.calls.map((c) => String(c[0]));
 
 describe("customers", () => {
   it("lists customers with their codes", async () => {
@@ -268,7 +354,9 @@ describe("customer detail — the whole workflow", () => {
     // backend's numbers.
     expect(screen.getAllByText("3,658.00").length).toBeGreaterThan(0);
     expect(screen.getByText("248.00")).toBeInTheDocument();
-    expect(screen.getByText(/2 delivered, awaiting a bill/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/2 delivered, awaiting a bill/),
+    ).toBeInTheDocument();
   });
 
   it("records a delivery WITHOUT sending a price", async () => {
@@ -276,10 +364,14 @@ describe("customer detail — the whole workflow", () => {
     await renderDetail(<CustomerDetailPage params={params()} />);
     await screen.findByText("Record a delivery");
 
-    await userEvent.click(screen.getByRole("button", { name: "Record delivery" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Record delivery" }),
+    );
 
     await waitFor(() => {
-      const call = spy.mock.calls.find(([u]) => String(u).endsWith("/v1/deliveries"));
+      const call = spy.mock.calls.find(([u]) =>
+        String(u).endsWith("/v1/deliveries"),
+      );
       expect(call).toBeDefined();
       const body = JSON.parse(String(call![1]!.body));
       expect(body.customer_id).toBe("cu-1");
@@ -315,12 +407,12 @@ describe("customer detail — the whole workflow", () => {
   it("links the bill, and shows the receipt the platform generated", async () => {
     routeAll();
     await renderDetail(<CustomerDetailPage params={params()} />);
-    expect(await screen.findByRole("link", { name: "INV-2026-000001" })).toHaveAttribute(
-      "href",
-      "/invoices/in-1",
-    );
+    expect(
+      await screen.findByRole("link", { name: "INV-2026-000001" }),
+    ).toHaveAttribute("href", "/invoices/in-1");
     expect(screen.getByText("CRC-2026-000001")).toBeInTheDocument();
-    expect(screen.getByText("CPY-2026-000001")).toBeInTheDocument();
+    // Twice since DEMO-015: in the payments list and again on the statement.
+    expect(screen.getAllByText("CPY-2026-000001").length).toBeGreaterThan(0);
   });
 
   it("records a payment through the platform", async () => {
@@ -329,7 +421,9 @@ describe("customer detail — the whole workflow", () => {
     await screen.findByText("Payments received");
 
     await userEvent.type(screen.getByLabelText("Amount (KES)"), "500.00");
-    await userEvent.click(screen.getByRole("button", { name: "Record payment" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Record payment" }),
+    );
 
     await waitFor(() => {
       const call = spy.mock.calls.find(([u]) =>
@@ -360,7 +454,9 @@ describe("deliveries and the daily report", () => {
   it("states that the totals cover the whole filtered set, not the page", async () => {
     routeAll();
     render(<DeliveriesPage />);
-    expect(await screen.findByText(/Across all 36 matching deliveries/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Across all 36 matching deliveries/),
+    ).toBeInTheDocument();
   });
 
   it("sends the date window and the customer filter to the SERVER", async () => {
@@ -375,7 +471,9 @@ describe("deliveries and the daily report", () => {
       expect(last).toContain("date_from=");
       expect(last).toContain("date_to=");
     });
-    const reportCall = urls(spy).find((u) => u.includes("/v1/deliveries/report"));
+    const reportCall = urls(spy).find((u) =>
+      u.includes("/v1/deliveries/report"),
+    );
     expect(reportCall).toContain("date_from=");
   });
 });
@@ -388,10 +486,14 @@ describe("the monthly bill", () => {
     await renderDetail(<InvoiceDetailPage params={params()} />);
 
     // The number appears in the heading and in the breadcrumb.
-    expect((await screen.findAllByText("INV-2026-000001")).length).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByText("INV-2026-000001")).length,
+    ).toBeGreaterThan(0);
     expect(screen.getAllByText("3,658.00").length).toBeGreaterThan(0);
     // The backend's own answer, not a sum computed here.
-    expect(screen.getByText(/still equals the 28 lines below/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/still equals the 28 lines below/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/verified by the platform/)).toBeInTheDocument();
   });
 
@@ -415,8 +517,12 @@ describe("the monthly bill", () => {
     routeAll();
     await renderDetail(<InvoiceDetailPage params={params()} />);
     await screen.findAllByText("INV-2026-000001");
-    expect(screen.queryByRole("button", { name: "Issue bill" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Cancel bill" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Issue bill" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Cancel bill" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/immutable/)).toBeInTheDocument();
   });
 
@@ -432,12 +538,15 @@ describe("the monthly bill", () => {
         }),
     });
     await renderDetail(<InvoiceDetailPage params={params()} />);
-    await userEvent.click(await screen.findByRole("button", { name: "Issue bill" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Issue bill" }),
+    );
     expect(screen.getByText(/is permanent/)).toBeInTheDocument();
-    expect(screen.getByText(/cannot be edited or cancelled/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/cannot be edited or cancelled/),
+    ).toBeInTheDocument();
   });
 });
-
 
 // --- deep links (DEMO-010) ---------------------------------------------------
 //
@@ -461,7 +570,9 @@ describe("deep links from the dashboard", () => {
     await waitFor(() => {
       const asked = spy.mock.calls
         .map(([u]) => String(u))
-        .filter((u) => u.includes("/v1/deliveries?") && u.includes("invoiced=false"));
+        .filter(
+          (u) => u.includes("/v1/deliveries?") && u.includes("invoiced=false"),
+        );
       expect(asked.length).toBeGreaterThan(0);
     });
     expect(await screen.findByLabelText("Billed")).toHaveValue("false");
@@ -475,7 +586,9 @@ describe("deep links from the dashboard", () => {
     await waitFor(() => {
       const asked = spy.mock.calls
         .map(([u]) => String(u))
-        .filter((u) => u.includes("/v1/invoices?") && u.includes("status=draft"));
+        .filter(
+          (u) => u.includes("/v1/invoices?") && u.includes("status=draft"),
+        );
       expect(asked.length).toBeGreaterThan(0);
     });
     expect(await screen.findByLabelText("Status")).toHaveValue("draft");
@@ -486,9 +599,80 @@ describe("deep links from the dashboard", () => {
     render(<DeliveriesPage />);
 
     await waitFor(() => {
-      const asked = spy.mock.calls.map(([u]) => String(u)).filter((u) => u.includes("/v1/deliveries?"));
+      const asked = spy.mock.calls
+        .map(([u]) => String(u))
+        .filter((u) => u.includes("/v1/deliveries?"));
       expect(asked.length).toBeGreaterThan(0);
       expect(asked.every((u) => !u.includes("invoiced="))).toBe(true);
     });
+  });
+});
+
+describe("the customer statement (DEMO-015)", () => {
+  it("prints the platform's running balance rather than recomputing it", async () => {
+    routeAll();
+    await renderDetail(
+      <CustomerDetailPage params={Promise.resolve({ id: "cu-1" })} />,
+    );
+
+    // Twice: the card title and the table's screen-reader caption.
+    expect((await screen.findAllByText("Statement")).length).toBeGreaterThan(0);
+    // Opening and closing are the platform's, and they are NOT the same
+    // number — a screen that summed the two entries itself would show 0.00.
+    expect(screen.getAllByText("500.00").length).toBeGreaterThan(0);
+    // Both appear twice on this page: once in their own list, once here.
+    expect(screen.getAllByText("INV-2026-000001").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("CPY-2026-000001").length).toBeGreaterThan(0);
+    // The running balance after the bill, straight from the response.
+    expect(screen.getByText("4,158.00")).toBeInTheDocument();
+  });
+
+  it("asks the platform for the window rather than computing a month", async () => {
+    const spy = routeAll();
+    await renderDetail(
+      <CustomerDetailPage params={Promise.resolve({ id: "cu-1" })} />,
+    );
+    await waitFor(() =>
+      expect(
+        urls(spy).some((u) => u.includes("/v1/customers/cu-1/statement")),
+      ).toBe(true),
+    );
+    // No date_from/date_to: the dairy's own month is the server's to decide.
+    const call = urls(spy).find((u) => u.includes("/statement"))!;
+    expect(call).not.toContain("date_from");
+  });
+
+  it("survives an API that has never heard of a statement", async () => {
+    // A rolling deploy can leave the portal ahead of the API for seconds.
+    // The rest of the page must still render.
+    routeAll({ "/statement": () => json({ title: "not_found" }, 404) });
+    await renderDetail(
+      <CustomerDetailPage params={Promise.resolve({ id: "cu-1" })} />,
+    );
+    expect(await screen.findByText("Mama Njeri Household")).toBeInTheDocument();
+    expect(screen.queryAllByText("Statement")).toHaveLength(0);
+  });
+});
+
+describe("the delivery report as a file (DEMO-015)", () => {
+  it("offers a download that carries the same window as the screen", async () => {
+    routeAll();
+    render(<DeliveriesPage />);
+    const link = await screen.findByRole("link", { name: /download csv/i });
+    const href = link.getAttribute("href") ?? "";
+    expect(href).toContain("/v1/deliveries/report.csv");
+    expect(href).toContain("date_from=");
+    expect(href).toContain("date_to=");
+  });
+
+  it("shows who the milk went to, with the platform's own rate", async () => {
+    routeAll();
+    render(<DeliveriesPage />);
+    expect((await screen.findAllByText("By customer")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Adiga Tiffin Room")).toBeInTheDocument();
+    expect(screen.getByText("6,720.00")).toBeInTheDocument();
+    // A customer whose rate changed inside the window: the platform sent null
+    // rather than an average, and the screen says so instead of inventing one.
+    expect(screen.getByText("Mixed")).toBeInTheDocument();
   });
 });

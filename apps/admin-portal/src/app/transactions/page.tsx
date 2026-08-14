@@ -109,14 +109,14 @@ const stamp = (iso: string | null | undefined) =>
 
 export default function TransactionsPage() {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency } = useLocale();
+  const { currency: orgCurrency, timezone: orgTimezone } = useLocale();
   const [page, setPage] = useState<MilkTransactionPage | null>(null);
   const [summary, setSummary] = useState<DailyCollectionSummary | null>(null);
   const [status, setStatus] = useState<Record<string, OperationalStatus>>({});
   const [centers, setCenters] = useState<Center[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
-  const [range, setRange] = useState<DateRange>(() => resolveRange("30d"));
+  const [range, setRange] = useState<DateRange>(() => resolveRange("30d", orgTimezone));
   const [state, setState] = useState<(typeof STATES)[number]>("");
   const [centerId, setCenterId] = useState("");
   const [supplierId, setSupplierId] = useState("");

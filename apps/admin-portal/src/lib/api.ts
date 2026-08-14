@@ -92,7 +92,11 @@ export async function api<T>(
     let extra: unknown;
     let title: string | undefined;
     try {
-      const body = (await res.json()) as { detail?: string; title?: string; extra?: unknown };
+      const body = (await res.json()) as {
+        detail?: string;
+        title?: string;
+        extra?: unknown;
+      };
       detail = body.detail ?? body.title ?? detail;
       extra = body.extra;
       title = body.title;
@@ -135,7 +139,11 @@ export type Branch = {
  * Sign in. The token never comes back to this code — the route handler puts
  * it in an HttpOnly cookie and answers 204.
  */
-export async function login(email: string, password: string, tenantId?: string) {
+export async function login(
+  email: string,
+  password: string,
+  tenantId?: string,
+) {
   const body: Record<string, string> = { email, password };
   if (tenantId) body.tenant_id = tenantId;
   const res = await fetch("/api/auth/login", {
@@ -184,11 +192,24 @@ export function listCenters(params: {
 
 export const listBranches = () => api<Branch[]>("/v1/branches");
 
-export const createCenter = (body: { branch_id: string; name: string; code: string }) =>
-  api<Center>("/v1/collection-centers", { method: "POST", body: JSON.stringify(body) });
+export const createCenter = (body: {
+  branch_id: string;
+  name: string;
+  code: string;
+}) =>
+  api<Center>("/v1/collection-centers", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
-export const updateCenter = (id: string, body: { name: string; timezone: string }) =>
-  api<Center>(`/v1/collection-centers/${id}`, { method: "PUT", body: JSON.stringify(body) });
+export const updateCenter = (
+  id: string,
+  body: { name: string; timezone: string },
+) =>
+  api<Center>(`/v1/collection-centers/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 
 export type ReadinessCheck = {
   rule: string;
@@ -263,7 +284,12 @@ export type SupplierPage = {
 
 export type SupplierDetail = {
   supplier: Supplier;
-  profile: { full_name: string; phone: string; village: string; national_id: string };
+  profile: {
+    full_name: string;
+    phone: string;
+    village: string;
+    national_id: string;
+  };
   center_ids: string[];
   bank_accounts: {
     id: string;
@@ -298,7 +324,11 @@ export const createSupplier = (body: {
   phone: string;
   village?: string;
   branch_id?: string;
-}) => api<Supplier>("/v1/suppliers", { method: "POST", body: JSON.stringify(body) });
+}) =>
+  api<Supplier>("/v1/suppliers", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export const updateSupplier = (
   id: string,
@@ -311,7 +341,8 @@ export const setSupplierStatus = (id: string, status: string) =>
     body: JSON.stringify({ status }),
   });
 
-export const getSupplierDetail = (id: string) => api<SupplierDetail>(`/v1/suppliers/${id}`);
+export const getSupplierDetail = (id: string) =>
+  api<SupplierDetail>(`/v1/suppliers/${id}`);
 
 export const assignSupplierCenter = (id: string, centerId: string) =>
   api(`/v1/suppliers/${id}/centers`, {
@@ -324,7 +355,8 @@ export const getSupplierQr = (id: string) =>
 
 // --- Rate cards (Pricing Platform — lifecycle only) -------------------------
 
-export type RateCardStatus = "draft" | "under_review" | "approved" | "published" | "archived";
+export type RateCardStatus =
+  "draft" | "under_review" | "approved" | "published" | "archived";
 
 export type RateCard = {
   id: string;
@@ -383,16 +415,26 @@ export function listRateCards(params: {
 }
 
 export const createRateCard = (body: RateCardInput & { code?: string }) =>
-  api<RateCard>("/v1/rate-cards", { method: "POST", body: JSON.stringify(body) });
+  api<RateCard>("/v1/rate-cards", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export const updateRateCard = (id: string, body: RateCardInput) =>
-  api<RateCard>(`/v1/rate-cards/${id}`, { method: "PUT", body: JSON.stringify(body) });
+  api<RateCard>(`/v1/rate-cards/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 
-export const getRateCardDetail = (id: string) => api<RateCardDetail>(`/v1/rate-cards/${id}`);
+export const getRateCardDetail = (id: string) =>
+  api<RateCardDetail>(`/v1/rate-cards/${id}`);
 
 /** Workflow actions: submit | approve | publish | archive | versions (new draft version). */
 export const rateCardAction = (id: string, action: string) =>
-  api<RateCard>(`/v1/rate-cards/${id}/${action}`, { method: "POST", body: "{}" });
+  api<RateCard>(`/v1/rate-cards/${id}/${action}`, {
+    method: "POST",
+    body: "{}",
+  });
 
 export const assignRateCardCenter = (id: string, centerId: string) =>
   api(`/v1/rate-cards/${id}/centers`, {
@@ -400,10 +442,17 @@ export const assignRateCardCenter = (id: string, centerId: string) =>
     body: JSON.stringify({ center_id: centerId }),
   });
 
-export const assignRateCardProduct = (id: string, productCode: string, productName = "") =>
+export const assignRateCardProduct = (
+  id: string,
+  productCode: string,
+  productName = "",
+) =>
   api(`/v1/rate-cards/${id}/products`, {
     method: "POST",
-    body: JSON.stringify({ product_code: productCode, product_name: productName }),
+    body: JSON.stringify({
+      product_code: productCode,
+      product_name: productName,
+    }),
   });
 
 // --- Pricing matrices (pricing data only — no calculation) ------------------
@@ -486,17 +535,31 @@ export const createMatrix = (body: {
   product_code: string;
   product_name?: string;
   dimension_code: string;
-}) => api<PricingMatrix>("/v1/pricing-matrices", { method: "POST", body: JSON.stringify(body) });
+}) =>
+  api<PricingMatrix>("/v1/pricing-matrices", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export const updateMatrix = (
   id: string,
-  body: { name: string; product_code: string; product_name?: string; dimension_code: string },
-) => api<PricingMatrix>(`/v1/pricing-matrices/${id}`, { method: "PUT", body: JSON.stringify(body) });
+  body: {
+    name: string;
+    product_code: string;
+    product_name?: string;
+    dimension_code: string;
+  },
+) =>
+  api<PricingMatrix>(`/v1/pricing-matrices/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 
 export const deleteMatrix = (id: string) =>
   api(`/v1/pricing-matrices/${id}`, { method: "DELETE" });
 
-export const getMatrixDetail = (id: string) => api<MatrixDetail>(`/v1/pricing-matrices/${id}`);
+export const getMatrixDetail = (id: string) =>
+  api<MatrixDetail>(`/v1/pricing-matrices/${id}`);
 
 export type MatrixRowInput = {
   from_value: number;
@@ -514,7 +577,11 @@ export const createMatrixRow = (matrixId: string, body: MatrixRowInput) =>
     body: JSON.stringify(body),
   });
 
-export const updateMatrixRow = (matrixId: string, rowId: string, body: MatrixRowInput) =>
+export const updateMatrixRow = (
+  matrixId: string,
+  rowId: string,
+  body: MatrixRowInput,
+) =>
   api<MatrixRow>(`/v1/pricing-matrices/${matrixId}/rows/${rowId}`, {
     method: "PUT",
     body: JSON.stringify(body),
@@ -600,9 +667,17 @@ export type TraceStep = {
 
 export type CalculationResult = {
   calculation_id: string;
-  unit_price: { amount: string | number; currency: string; rounding_policy: string };
+  unit_price: {
+    amount: string | number;
+    currency: string;
+    rounding_policy: string;
+  };
   quantity: { value: number; unit: string };
-  gross_amount: { amount: string | number; currency: string; rounding_policy: string };
+  gross_amount: {
+    amount: string | number;
+    currency: string;
+    rounding_policy: string;
+  };
   currency: string;
   rounding_policy: string;
   calculator_version: string;
@@ -632,7 +707,8 @@ export const calculatePricing = (body: {
 
 // --- Settlements (payable amounts — no payment) -----------------------------
 
-export type SettlementStatus = "draft" | "calculated" | "finalized" | "cancelled";
+export type SettlementStatus =
+  "draft" | "calculated" | "finalized" | "cancelled";
 
 export type Settlement = {
   id: string;
@@ -703,11 +779,14 @@ export const createSettlement = (body: {
   period_from: string;
   period_to: string;
   currency: string;
-}) => api<Settlement>("/v1/settlements", { method: "POST", body: JSON.stringify(body) });
+}) =>
+  api<Settlement>("/v1/settlements", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export const getSettlementDetail = (id: string) =>
   api<SettlementDetail>(`/v1/settlements/${id}`);
-
 
 export const addSettlementCalculation = (id: string, calculationId: string) =>
   api<SettlementLine>(`/v1/settlements/${id}/calculations`, {
@@ -784,7 +863,12 @@ export type SupplierSummaryRow = {
   last_collection_at: string | null;
 };
 
-export type ReportPage<T> = { items: T[]; total: number; limit: number; offset: number };
+export type ReportPage<T> = {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+};
 
 export type SettlementReport = {
   by_status: { status: string; count: number; net_amount: string | number }[];
@@ -839,7 +923,11 @@ export type TrendPoint = {
   currency: string | null;
 };
 
-export type CollectionTrend = { date_from: string; date_to: string; points: TrendPoint[] };
+export type CollectionTrend = {
+  date_from: string;
+  date_to: string;
+  points: TrendPoint[];
+};
 
 export type RateBandRow = {
   unit_price: string | number;
@@ -930,34 +1018,43 @@ export type DashboardReport = {
 
 const reportQuery = (params: Record<string, string | undefined>) => {
   const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) if (value) search.set(key, value);
+  for (const [key, value] of Object.entries(params))
+    if (value) search.set(key, value);
   return search.toString();
 };
 
 export const getDailyReport = (params: Record<string, string | undefined>) =>
-  api<DailyCollectionSummary>(`/v1/reports/collection/daily?${reportQuery(params)}`);
+  api<DailyCollectionSummary>(
+    `/v1/reports/collection/daily?${reportQuery(params)}`,
+  );
 
 export const getCenterReport = (params: Record<string, string | undefined>) =>
-  api<ReportPage<CenterSummaryRow>>(`/v1/reports/collection/by-center?${reportQuery(params)}`);
+  api<ReportPage<CenterSummaryRow>>(
+    `/v1/reports/collection/by-center?${reportQuery(params)}`,
+  );
 
 export const getSupplierReport = (params: Record<string, string | undefined>) =>
   api<ReportPage<SupplierSummaryRow>>(
     `/v1/reports/collection/by-supplier?${reportQuery(params)}`,
   );
 
-export const getSettlementReport = (params: Record<string, string | undefined>) =>
-  api<SettlementReport>(`/v1/reports/settlements?${reportQuery(params)}`);
+export const getSettlementReport = (
+  params: Record<string, string | undefined>,
+) => api<SettlementReport>(`/v1/reports/settlements?${reportQuery(params)}`);
 
 export const getPricingReport = (params: Record<string, string | undefined>) =>
   api<PricingReport>(`/v1/reports/pricing?${reportQuery(params)}`);
 
-export const getDashboardReport = (params: Record<string, string | undefined>) =>
-  api<DashboardReport>(`/v1/reports/dashboard?${reportQuery(params)}`);
+export const getDashboardReport = (
+  params: Record<string, string | undefined>,
+) => api<DashboardReport>(`/v1/reports/dashboard?${reportQuery(params)}`);
 
 export const getPaymentReport = (params: Record<string, string | undefined>) =>
   api<PaymentReport>(`/v1/reports/payments?${reportQuery(params)}`);
 
-export const getCollectionTrend = (params: Record<string, string | undefined>) =>
+export const getCollectionTrend = (
+  params: Record<string, string | undefined>,
+) =>
   api<CollectionTrend>(`/v1/reports/collection/trend?${reportQuery(params)}`);
 
 export const getSalesSummary = (params: Record<string, string | undefined>) =>
@@ -1093,7 +1190,10 @@ export type CollectionSession = {
   opened_at?: string;
 };
 
-export const listCollectionSessions = (params: { center_id?: string; status?: string }) => {
+export const listCollectionSessions = (params: {
+  center_id?: string;
+  status?: string;
+}) => {
   const search = new URLSearchParams();
   if (params.center_id) search.set("center_id", params.center_id);
   if (params.status) search.set("status", params.status);
@@ -1127,21 +1227,36 @@ export const identifySupplier = (id: string, supplierId: string) =>
 
 export const captureMilk = (
   id: string,
-  body: { milk_type: string; container_type: string; container_identifier: string; temperature_c?: number },
+  body: {
+    milk_type: string;
+    container_type: string;
+    container_identifier: string;
+    temperature_c?: number;
+  },
 ) => step(id, "milk", body);
 
-export const captureWeight = (id: string, body: { gross: number; tare: number }) =>
+export const captureWeight = (
+  id: string,
+  body: { gross: number; tare: number },
+) =>
   // `source: "manual"` is the domain's own name for an operator-entered
   // reading. The mock scale is refused outright in this environment.
   step(id, "weight", { source: "manual", unit: "kg", ...body });
 
 export const captureQuality = (
   id: string,
-  body: { fat: number; snf: number; clr: number; temperature_c?: number; remarks?: string },
+  body: {
+    fat: number;
+    snf: number;
+    clr: number;
+    temperature_c?: number;
+    remarks?: string;
+  },
 ) => step(id, "quality", { source: "manual", ...body });
 
 export const acceptTransaction = (id: string) => step(id, "accept", {});
-export const rejectTransaction = (id: string, reason: string) => step(id, "reject", { reason });
+export const rejectTransaction = (id: string, reason: string) =>
+  step(id, "reject", { reason });
 export const completeTransaction = (id: string) => step(id, "complete", {});
 
 export const getMilkTransaction = (id: string) =>
@@ -1265,24 +1380,33 @@ export function listNotifications(params: {
   return api<NotificationPage>(`/v1/notifications?${search.toString()}`);
 }
 
-export const getNotificationStats = () => api<NotificationStats>("/v1/notifications/stats");
+export const getNotificationStats = () =>
+  api<NotificationStats>("/v1/notifications/stats");
 
-export const getNotification = (id: string) => api<Notification>(`/v1/notifications/${id}`);
+export const getNotification = (id: string) =>
+  api<Notification>(`/v1/notifications/${id}`);
 
 export const retryNotification = (id: string) =>
   api<Notification>(`/v1/notifications/${id}/retry`, { method: "POST" });
 
 export const retryPendingNotifications = () =>
-  api<{ retried: number; sent: number; failed: number }>("/v1/notifications/retry-pending", {
-    method: "POST",
-  });
+  api<{ retried: number; sent: number; failed: number }>(
+    "/v1/notifications/retry-pending",
+    {
+      method: "POST",
+    },
+  );
 
 export const listNotificationTemplates = () =>
   api<NotificationTemplate[]>("/v1/notification-templates");
 
 export const previewNotificationTemplate = (
   key: string,
-  body: { channel: string; language?: string; variables: Record<string, string> },
+  body: {
+    channel: string;
+    language?: string;
+    variables: Record<string, string>;
+  },
 ) =>
   api<RenderedPreview>(`/v1/notification-templates/${key}/preview`, {
     method: "POST",
@@ -1363,7 +1487,12 @@ export type BalancePageResult = {
   offset: number;
 };
 
-export const PAYMENT_METHODS = ["BANK_TRANSFER", "CASH", "CHEQUE", "MOBILE_MONEY"] as const;
+export const PAYMENT_METHODS = [
+  "BANK_TRANSFER",
+  "CASH",
+  "CHEQUE",
+  "MOBILE_MONEY",
+] as const;
 
 export function listPayments(params: {
   q?: string;
@@ -1393,13 +1522,15 @@ export function listOutstandingBalances(params: {
 }): Promise<BalancePageResult> {
   const search = new URLSearchParams();
   if (params.supplier_id) search.set("supplier_id", params.supplier_id);
-  if (params.outstanding_only === false) search.set("outstanding_only", "false");
+  if (params.outstanding_only === false)
+    search.set("outstanding_only", "false");
   search.set("limit", String(params.limit));
   search.set("offset", String(params.offset));
   return api<BalancePageResult>(`/v1/payments/balances?${search.toString()}`);
 }
 
-export const getPaymentDetail = (id: string) => api<PaymentDetail>(`/v1/payments/${id}`);
+export const getPaymentDetail = (id: string) =>
+  api<PaymentDetail>(`/v1/payments/${id}`);
 
 export const getSettlementBalance = (settlementId: string) =>
   api<SettlementBalance>(`/v1/settlements/${settlementId}/balance`);
@@ -1413,14 +1544,21 @@ export function createPayment(body: {
   note?: string;
   idempotency_key?: string;
 }): Promise<Payment> {
-  return api<Payment>("/v1/payments", { method: "POST", body: JSON.stringify(body) });
+  return api<Payment>("/v1/payments", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export const paymentAction = (
   id: string,
   action: "submit" | "execute" | "retry" | "complete" | "fail" | "cancel",
   body: Record<string, string> = {},
-) => api<Payment>(`/v1/payments/${id}/${action}`, { method: "POST", body: JSON.stringify(body) });
+) =>
+  api<Payment>(`/v1/payments/${id}/${action}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 // --- Receipts (RCP-001) -----------------------------------------------------
 
@@ -1523,7 +1661,8 @@ export function listReceipts(params: {
   return api<ReceiptPageResult>(`/v1/receipts?${search.toString()}`);
 }
 
-export const getReceiptDetail = (id: string) => api<ReceiptDetail>(`/v1/receipts/${id}`);
+export const getReceiptDetail = (id: string) =>
+  api<ReceiptDetail>(`/v1/receipts/${id}`);
 
 export const renderReceipt = (id: string, format: string) =>
   api<RenderedReceipt>(`/v1/receipts/${id}/render?format=${format}`);
@@ -1602,7 +1741,9 @@ export function listSyncOperations(params: {
 export const getSyncStats = () => api<SyncStats>("/v1/sync/stats");
 
 export const retrySyncOperation = (operationId: string) =>
-  api<SyncOperation>(`/v1/sync/operations/${operationId}/retry`, { method: "POST" });
+  api<SyncOperation>(`/v1/sync/operations/${operationId}/retry`, {
+    method: "POST",
+  });
 
 // --- Administration (PORTAL-001 / F-10) -------------------------------------
 //
@@ -1639,7 +1780,11 @@ export type MeOrganization = {
   languages: { tag: string; name: string; endonym: string; rtl: boolean }[];
 };
 export type MeMembership = { status: string; joined_at: string };
-export type MeRole = { name: string; description: string; center_id: string | null };
+export type MeRole = {
+  name: string;
+  description: string;
+  center_id: string | null;
+};
 
 /**
  * The authorization context (DEMO-008 §13).
@@ -1664,7 +1809,8 @@ export type Me = {
  *  so this never triggers the redirect (LOOP-001). Prefer `getSession()` for
  *  a plain "am I signed in?": it answers 200 either way and leaves nothing in
  *  the browser console. */
-export const getMe = () => api<Me>("/v1/auth/me", undefined, { redirectOn401: false });
+export const getMe = () =>
+  api<Me>("/v1/auth/me", undefined, { redirectOn401: false });
 
 /** DEMO-013 — organization locale settings. */
 export type LocaleSettings = {
@@ -1727,7 +1873,10 @@ export type Session =
 /** Does this session hold `permission`? `*` is the platform wildcard. */
 export function can(session: Session | null, permission: string): boolean {
   if (!session?.authenticated) return false;
-  return session.permissions.includes("*") || session.permissions.includes(permission);
+  return (
+    session.permissions.includes("*") ||
+    session.permissions.includes(permission)
+  );
 }
 
 /** The organization every request will be scoped to, whether it came from the
@@ -1805,7 +1954,9 @@ export const getUser = (id: string) => api<User>(`/v1/identity/users/${id}`);
  * whose account cannot be read is kept in the list rather than dropped — a row
  * that says "unavailable" is information; a silently shorter list is not.
  */
-export async function listPeople(): Promise<Array<Member & { user: User | null }>> {
+export async function listPeople(): Promise<
+  Array<Member & { user: User | null }>
+> {
   const members = await listMembers();
   return Promise.all(
     members.map(async (m) => ({
@@ -1822,7 +1973,8 @@ export const setUserActive = (id: string, isActive: boolean, reason?: string) =>
     body: JSON.stringify({ is_active: isActive, reason: reason || null }),
   });
 
-export const listPermissions = () => api<Record<string, string>>("/v1/authz/permissions");
+export const listPermissions = () =>
+  api<Record<string, string>>("/v1/authz/permissions");
 
 export const createRole = (name: string, permissionKeys: string[]) =>
   api<{ id: string; name: string }>("/v1/authz/roles", {
@@ -1844,7 +1996,11 @@ export type Role = {
  *  names, one of which the backend had never had. */
 export const listRoles = () => api<Role[]>("/v1/authz/roles");
 
-export const assignRole = (userId: string, roleName: string, centerId?: string | null) =>
+export const assignRole = (
+  userId: string,
+  roleName: string,
+  centerId?: string | null,
+) =>
   api<{ id: string }>("/v1/authz/assignments", {
     method: "POST",
     body: JSON.stringify({
@@ -1855,7 +2011,10 @@ export const assignRole = (userId: string, roleName: string, centerId?: string |
   });
 
 /** Suspend or reinstate a member. Takes effect on their next request. */
-export const setMemberStatus = (userId: string, status: "active" | "suspended") =>
+export const setMemberStatus = (
+  userId: string,
+  status: "active" | "suspended",
+) =>
   api<{ user_id: string; status: string }>(`/v1/members/${userId}/status`, {
     method: "POST",
     body: JSON.stringify({ status }),
@@ -1876,7 +2035,8 @@ export type Organization = {
   status?: string;
 };
 
-export const getOrganization = (id: string) => api<Organization>(`/v1/organizations/${id}`);
+export const getOrganization = (id: string) =>
+  api<Organization>(`/v1/organizations/${id}`);
 
 export type AuditRecord = {
   id: string;
@@ -1929,11 +2089,18 @@ export const listAuditActions = () => api<string[]>("/v1/audit/actions");
 export const getConfig = (key: string) =>
   api<{ key: string; value: unknown }>(`/v1/config/${encodeURIComponent(key)}`);
 
-export const setConfig = (key: string, value: unknown, scope: "tenant" | "global" = "tenant") =>
-  api<{ key: string; scope: string; status: string }>(`/v1/config/${encodeURIComponent(key)}`, {
-    method: "PUT",
-    body: JSON.stringify({ value, scope }),
-  });
+export const setConfig = (
+  key: string,
+  value: unknown,
+  scope: "tenant" | "global" = "tenant",
+) =>
+  api<{ key: string; scope: string; status: string }>(
+    `/v1/config/${encodeURIComponent(key)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ value, scope }),
+    },
+  );
 
 export type BackupStatus = {
   healthy: boolean;
@@ -1953,9 +2120,11 @@ export type BackupRun = {
   [key: string]: unknown;
 };
 
-export const getBackupStatus = () => api<BackupStatus>("/v1/_ops/backups/status");
+export const getBackupStatus = () =>
+  api<BackupStatus>("/v1/_ops/backups/status");
 
-export const listBackupRuns = (limit = 20) => api<BackupRun[]>(`/v1/_ops/backups?limit=${limit}`);
+export const listBackupRuns = (limit = 20) =>
+  api<BackupRun[]>(`/v1/_ops/backups?limit=${limit}`);
 
 // --- Sales: customers, deliveries, billing (DEMO-009) -----------------------
 //
@@ -2016,13 +2185,20 @@ export function listCustomers(params: {
   return api<CustomerPageResult>(`/v1/customers?${search.toString()}`);
 }
 
-export const getCustomer = (id: string) => api<CustomerDetail>(`/v1/customers/${id}`);
+export const getCustomer = (id: string) =>
+  api<CustomerDetail>(`/v1/customers/${id}`);
 
 export const createCustomer = (body: Record<string, unknown>) =>
-  api<Customer>("/v1/customers", { method: "POST", body: JSON.stringify(body) });
+  api<Customer>("/v1/customers", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export const updateCustomer = (id: string, body: Record<string, unknown>) =>
-  api<Customer>(`/v1/customers/${id}`, { method: "PUT", body: JSON.stringify(body) });
+  api<Customer>(`/v1/customers/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 
 export const setCustomerStatus = (id: string, status: string) =>
   api<Customer>(`/v1/customers/${id}/status`, {
@@ -2033,8 +2209,17 @@ export const setCustomerStatus = (id: string, status: string) =>
 /** Agree (or re-agree) what a customer takes and at what rate. */
 export const setDeliveryPlan = (
   id: string,
-  body: { product?: string; default_quantity: string; quantity_unit?: string; unit_price: string },
-) => api<DeliveryPlan>(`/v1/customers/${id}/plan`, { method: "POST", body: JSON.stringify(body) });
+  body: {
+    product?: string;
+    default_quantity: string;
+    quantity_unit?: string;
+    unit_price: string;
+  },
+) =>
+  api<DeliveryPlan>(`/v1/customers/${id}/plan`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export type Delivery = {
   id: string;
@@ -2078,7 +2263,8 @@ export function listDeliveries(params: {
   if (params.date_from) search.set("date_from", params.date_from);
   if (params.date_to) search.set("date_to", params.date_to);
   if (params.status) search.set("status", params.status);
-  if (params.invoiced !== undefined) search.set("invoiced", String(params.invoiced));
+  if (params.invoiced !== undefined)
+    search.set("invoiced", String(params.invoiced));
   search.set("limit", String(params.limit));
   search.set("offset", String(params.offset));
   return api<DeliveryPageResult>(`/v1/deliveries?${search.toString()}`);
@@ -2091,12 +2277,20 @@ export const recordDelivery = (body: {
   quantity?: string;
   status?: string;
   notes?: string;
-}) => api<Delivery>("/v1/deliveries", { method: "POST", body: JSON.stringify(body) });
+}) =>
+  api<Delivery>("/v1/deliveries", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export const amendDelivery = (
   id: string,
   body: { quantity?: string; status?: string; notes?: string },
-) => api<Delivery>(`/v1/deliveries/${id}/amend`, { method: "POST", body: JSON.stringify(body) });
+) =>
+  api<Delivery>(`/v1/deliveries/${id}/amend`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export type DeliveryDayRow = {
   delivery_date: string;
@@ -2106,15 +2300,33 @@ export type DeliveryDayRow = {
   amount: string | number;
 };
 
+export type DeliveryCustomerRow = {
+  customer_id: string;
+  code: string;
+  name: string;
+  product: string;
+  deliveries: number;
+  quantity: string | number;
+  /** Null when this customer's deliveries in the window disagree about the
+   *  rate — the platform declines to average two rates into one. */
+  unit_price: string | number | null;
+  amount: string | number;
+  skipped: number;
+};
+
 export type DeliveryReport = {
   date_from: string;
   date_to: string;
+  /** The organization's own currency (DEMO-015). No screen decides this. */
+  currency: string;
+  quantity_unit: string;
   deliveries: number;
   customers_served: number;
   total_quantity: string | number;
   total_amount: string | number;
   skipped: number;
   by_day: DeliveryDayRow[];
+  by_customer: DeliveryCustomerRow[];
 };
 
 export function getDeliveryReport(params: {
@@ -2122,9 +2334,30 @@ export function getDeliveryReport(params: {
   date_to: string;
   customer_id?: string;
 }): Promise<DeliveryReport> {
-  const search = new URLSearchParams({ date_from: params.date_from, date_to: params.date_to });
+  const search = new URLSearchParams({
+    date_from: params.date_from,
+    date_to: params.date_to,
+  });
   if (params.customer_id) search.set("customer_id", params.customer_id);
   return api<DeliveryReport>(`/v1/deliveries/report?${search.toString()}`);
+}
+
+/** The report as a file, streamed through the proxy with its
+ *  `Content-Disposition` intact — the browser saves it, nothing is built in
+ *  JavaScript, and the totals are the platform's own. */
+export function deliveryReportCsvUrl(params: {
+  date_from: string;
+  date_to: string;
+  customer_id?: string;
+  status?: string;
+}): string {
+  const search = new URLSearchParams({
+    date_from: params.date_from,
+    date_to: params.date_to,
+  });
+  if (params.customer_id) search.set("customer_id", params.customer_id);
+  if (params.status) search.set("status", params.status);
+  return `${PROXY_PREFIX}/v1/deliveries/report.csv?${search.toString()}`;
 }
 
 export type Invoice = {
@@ -2188,13 +2421,15 @@ export function listInvoices(params: {
   return api<InvoicePageResult>(`/v1/invoices?${search.toString()}`);
 }
 
-export const getInvoice = (id: string) => api<InvoiceDetail>(`/v1/invoices/${id}`);
+export const getInvoice = (id: string) =>
+  api<InvoiceDetail>(`/v1/invoices/${id}`);
 
 export const generateInvoice = (body: {
   customer_id: string;
   period_from: string;
   period_to: string;
-}) => api<Invoice>("/v1/invoices", { method: "POST", body: JSON.stringify(body) });
+}) =>
+  api<Invoice>("/v1/invoices", { method: "POST", body: JSON.stringify(body) });
 
 export const issueInvoice = (id: string) =>
   api<Invoice>(`/v1/invoices/${id}/issue`, { method: "POST", body: "{}" });
@@ -2228,11 +2463,20 @@ export type CustomerPaymentPageResult = {
 
 export type CustomerPaymentDetail = {
   payment: CustomerPayment;
-  allocations: { invoice_id: string; invoice_number: string; amount: string | number }[];
+  allocations: {
+    invoice_id: string;
+    invoice_number: string;
+    amount: string | number;
+  }[];
   receipt_number: string | null;
 };
 
-export const CUSTOMER_PAYMENT_METHODS = ["CASH", "MOBILE_MONEY", "BANK_TRANSFER", "CHEQUE"] as const;
+export const CUSTOMER_PAYMENT_METHODS = [
+  "CASH",
+  "MOBILE_MONEY",
+  "BANK_TRANSFER",
+  "CHEQUE",
+] as const;
 
 export function listCustomerPayments(params: {
   customer_id?: string;
@@ -2247,7 +2491,9 @@ export function listCustomerPayments(params: {
   if (params.q) search.set("q", params.q);
   search.set("limit", String(params.limit));
   search.set("offset", String(params.offset));
-  return api<CustomerPaymentPageResult>(`/v1/customer-payments?${search.toString()}`);
+  return api<CustomerPaymentPageResult>(
+    `/v1/customer-payments?${search.toString()}`,
+  );
 }
 
 export const getCustomerPayment = (id: string) =>
@@ -2260,7 +2506,11 @@ export const recordCustomerPayment = (body: {
   reference?: string;
   notes?: string;
   invoice_ids?: string[];
-}) => api<CustomerPayment>("/v1/customer-payments", { method: "POST", body: JSON.stringify(body) });
+}) =>
+  api<CustomerPayment>("/v1/customer-payments", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export type CustomerBalance = {
   customer_id: string;
@@ -2275,6 +2525,46 @@ export type CustomerBalance = {
 
 export const getCustomerBalance = (id: string) =>
   api<CustomerBalance>(`/v1/customers/${id}/balance`);
+
+export type StatementEntry = {
+  entry_date: string;
+  kind: "invoice" | "payment";
+  reference: string;
+  detail: string;
+  debit: string | number;
+  credit: string | number;
+  balance: string | number;
+};
+
+export type CustomerStatement = {
+  customer_id: string;
+  code: string;
+  name: string;
+  currency: string;
+  date_from: string;
+  date_to: string;
+  opening_balance: string | number;
+  billed: string | number;
+  paid: string | number;
+  closing_balance: string | number;
+  entries: StatementEntry[];
+};
+
+/** How a balance came about (DEMO-015 §13). Dates are OPTIONAL: omit them and
+ *  the platform answers for the dairy's own current month, which is the only
+ *  way a browser can ask for "this month" without a timezone database. */
+export function getCustomerStatement(
+  id: string,
+  params?: { date_from?: string; date_to?: string },
+): Promise<CustomerStatement> {
+  const search = new URLSearchParams();
+  if (params?.date_from) search.set("date_from", params.date_from);
+  if (params?.date_to) search.set("date_to", params.date_to);
+  const query = search.toString();
+  return api<CustomerStatement>(
+    `/v1/customers/${id}/statement${query ? `?${query}` : ""}`,
+  );
+}
 
 export type CustomerReceipt = {
   id: string;
@@ -2297,13 +2587,21 @@ export function listCustomerReceipts(params: {
   q?: string;
   limit: number;
   offset: number;
-}): Promise<{ items: CustomerReceipt[]; total: number; limit: number; offset: number }> {
+}): Promise<{
+  items: CustomerReceipt[];
+  total: number;
+  limit: number;
+  offset: number;
+}> {
   const search = new URLSearchParams();
   if (params.customer_id) search.set("customer_id", params.customer_id);
   if (params.q) search.set("q", params.q);
   search.set("limit", String(params.limit));
   search.set("offset", String(params.offset));
-  return api<{ items: CustomerReceipt[]; total: number; limit: number; offset: number }>(
-    `/v1/customer-receipts?${search.toString()}`,
-  );
+  return api<{
+    items: CustomerReceipt[];
+    total: number;
+    limit: number;
+    offset: number;
+  }>(`/v1/customer-receipts?${search.toString()}`);
 }

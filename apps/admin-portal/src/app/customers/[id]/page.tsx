@@ -9,6 +9,7 @@ import {
   type CustomerBalance,
   type CustomerDetail,
   type CustomerPayment,
+  type CustomerStatement,
   type CustomerReceipt,
   type Delivery,
   type DeliveryPageResult,
@@ -16,6 +17,7 @@ import {
   generateInvoice,
   getCustomer,
   getCustomerBalance,
+  getCustomerStatement,
   listCustomerPayments,
   listCustomerReceipts,
   listDeliveries,
@@ -25,13 +27,20 @@ import {
   setCustomerStatus,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
+import { useLocale } from "@/lib/i18n";
 
 /**
  * One customer, end to end (DEMO-009).
@@ -57,34 +66,57 @@ type Load<T> =
 const LOADING = { state: "loading" } as const;
 
 const describe = (e: unknown) => {
-  if (e instanceof ApiError) return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+  if (e instanceof ApiError)
+    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
   return e instanceof Error ? e.message : "Request failed";
 };
 
 const stamp = (iso: string | null | undefined) =>
   iso ? String(iso).slice(0, 16).replace("T", " ") : "—";
 
-/** Today, in UTC — the platform's clock, not the browser's. */
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
+/** Today in the DAIRY's own zone (DEMO-015).
+ *
+ * This drove the default billing period, and it used to be UTC. For a Kenyan
+ * dairy that is three hours out; for an Indian one it is five and a half, so
+ * the month a manager was offered could be the wrong month for the first
+ * hours of every first-of-the-month. `Intl` reads the browser's own timezone
+ * database — nothing is shipped — and with no zone in context it falls back to
+ * UTC, which is the server's fallback too. */
+function today(timezone: string | null): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone ?? "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
-/** The first and last day of the month a date falls in, in UTC. */
+/** The first and last day of the month a date falls in. Pure calendar
+ *  arithmetic on an already-local date, so no clock is involved. */
 function monthBounds(day: string): { from: string; to: string } {
   const [y, m] = day.split("-").map(Number);
   const from = new Date(Date.UTC(y, m - 1, 1));
   const to = new Date(Date.UTC(y, m, 0));
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+  return {
+    from: from.toISOString().slice(0, 10),
+    to: to.toISOString().slice(0, 10),
+  };
 }
 
-export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function CustomerDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
+  const { t } = useLocale();
   const [detail, setDetail] = useState<Load<CustomerDetail>>(LOADING);
   const [balance, setBalance] = useState<CustomerBalance | null>(null);
   const [deliveries, setDeliveries] = useState<DeliveryPageResult | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [payments, setPayments] = useState<CustomerPayment[]>([]);
   const [receipts, setReceipts] = useState<CustomerReceipt[]>([]);
+  const [statement, setStatement] = useState<CustomerStatement | null>(null);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -113,6 +145,12 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     listCustomerReceipts({ customer_id: id, limit: 12, offset: 0 })
       .then((p) => setReceipts(p.items ?? []))
       .catch(() => setReceipts([]));
+    // No dates: the platform answers for the DAIRY's current month. A browser
+    // cannot compute a local month without a timezone database, and asking is
+    // both cheaper and right (DEMO-013).
+    getCustomerStatement(id)
+      .then(setStatement)
+      .catch(() => setStatement(null));
   }, [id]);
 
   useEffect(() => {
@@ -121,7 +159,11 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   }, [load]);
 
   /** Act, then re-read — including after a refusal. */
-  async function run(label: string, action: () => Promise<unknown>, success: string) {
+  async function run(
+    label: string,
+    action: () => Promise<unknown>,
+    success: string,
+  ) {
     setBusy(label);
     setFailure(null);
     setNotice(null);
@@ -136,14 +178,18 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
-  if (detail.state === "loading") return <LoadingState label="Loading customer…" />;
+  if (detail.state === "loading")
+    return <LoadingState label="Loading customer…" />;
   if (detail.state === "error")
     return (
       <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">
         <ErrorState
           message={`This customer could not be loaded — ${detail.message}.`}
           action={
-            <Link className="text-sm underline underline-offset-4" href="/customers">
+            <Link
+              className="text-sm underline underline-offset-4"
+              href="/customers"
+            >
               Back to customers
             </Link>
           }
@@ -158,9 +204,17 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
-        breadcrumbs={[{ label: "Customers", href: "/customers" }, { label: customer.code }]}
+        breadcrumbs={[
+          { label: "Customers", href: "/customers" },
+          { label: customer.code },
+        ]}
         title={customer.name}
-        description={[customer.code, customer.customer_type, customer.phone, customer.address]
+        description={[
+          customer.code,
+          customer.customer_type,
+          customer.phone,
+          customer.address,
+        ]
           .filter(Boolean)
           .join(" · ")}
         actions={
@@ -197,32 +251,62 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         </p>
       ) : null}
       {failure ? (
-        <p role="alert" className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <p
+          role="alert"
+          className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
           The platform refused: {failure}
         </p>
       ) : null}
 
       {/* --- the account, at a glance ------------------------------------- */}
-      <section aria-label="Account" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        aria-label="Account"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
         <StatTile
           label="Outstanding"
-          value={balance ? <Money amount={balance.outstanding} currency={currency} /> : "—"}
-          hint={balance ? `${balance.open_invoices} open invoice(s)` : undefined}
+          value={
+            balance ? (
+              <Money amount={balance.outstanding} currency={currency} />
+            ) : (
+              "—"
+            )
+          }
+          hint={
+            balance ? `${balance.open_invoices} open invoice(s)` : undefined
+          }
           icon={<Wallet className="size-4" />}
         />
         <StatTile
           label="Invoiced"
-          value={balance ? <Money amount={balance.invoiced} currency={currency} /> : "—"}
+          value={
+            balance ? (
+              <Money amount={balance.invoiced} currency={currency} />
+            ) : (
+              "—"
+            )
+          }
         />
         <StatTile
           label="Paid"
-          value={balance ? <Money amount={balance.paid} currency={currency} /> : "—"}
+          value={
+            balance ? <Money amount={balance.paid} currency={currency} /> : "—"
+          }
         />
         <StatTile
           label="Not yet billed"
-          value={balance ? <Money amount={balance.unbilled_amount} currency={currency} /> : "—"}
+          value={
+            balance ? (
+              <Money amount={balance.unbilled_amount} currency={currency} />
+            ) : (
+              "—"
+            )
+          }
           hint={
-            balance ? `${balance.unbilled_deliveries} delivered, awaiting a bill` : undefined
+            balance
+              ? `${balance.unbilled_deliveries} delivered, awaiting a bill`
+              : undefined
           }
           icon={<Truck className="size-4" />}
         />
@@ -236,9 +320,14 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             <CardDescription>
               {plan ? (
                 <>
-                  Standing order <Quantity value={plan.default_quantity} unit={plan.quantity_unit} />{" "}
-                  at {String(plan.unit_price)} {currency} per {plan.quantity_unit}. The amount is
-                  computed by the platform from that rate — it is never typed here.
+                  Standing order{" "}
+                  <Quantity
+                    value={plan.default_quantity}
+                    unit={plan.quantity_unit}
+                  />{" "}
+                  at {String(plan.unit_price)} {currency} per{" "}
+                  {plan.quantity_unit}. The amount is computed by the platform
+                  from that rate — it is never typed here.
                 </>
               ) : (
                 "This customer has no delivery plan, so no delivery can be recorded yet."
@@ -272,8 +361,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           <CardHeader>
             <CardTitle>Delivery plan</CardTitle>
             <CardDescription>
-              A rate change supersedes the plan rather than editing it, so a delivery priced last
-              week can still be explained.
+              A rate change supersedes the plan rather than editing it, so a
+              delivery priced last week can still be explained.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -282,19 +371,28 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             ) : (
               <ul className="flex flex-col divide-y">
                 {plans.map((p) => (
-                  <li key={p.id} className="flex items-center justify-between gap-3 py-2">
+                  <li
+                    key={p.id}
+                    className="flex items-center justify-between gap-3 py-2"
+                  >
                     <div className="flex flex-col">
                       <span className="text-sm">
                         {String(p.unit_price)} {p.currency}/{p.quantity_unit}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        from {p.effective_from} · <Quantity value={p.default_quantity} unit={p.quantity_unit} />
+                        from {p.effective_from} ·{" "}
+                        <Quantity
+                          value={p.default_quantity}
+                          unit={p.quantity_unit}
+                        />
                       </span>
                     </div>
                     {p.active ? (
                       <StatusBadge status="active" />
                     ) : (
-                      <span className="text-xs text-muted-foreground">superseded</span>
+                      <span className="text-xs text-muted-foreground">
+                        superseded
+                      </span>
                     )}
                   </li>
                 ))}
@@ -334,12 +432,16 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <caption className="sr-only">Deliveries to {customer.name}</caption>
+                  <caption className="sr-only">
+                    Deliveries to {customer.name}
+                  </caption>
                   <thead>
                     <tr className="border-b text-start text-muted-foreground">
                       <th className="py-2 pe-4 font-medium">Date</th>
                       <th className="py-2 pe-4 font-medium">Slot</th>
-                      <th className="py-2 pe-4 text-end font-medium">Quantity</th>
+                      <th className="py-2 pe-4 text-end font-medium">
+                        Quantity
+                      </th>
                       <th className="py-2 pe-4 text-end font-medium">Rate</th>
                       <th className="py-2 pe-4 text-end font-medium">Amount</th>
                       <th className="py-2 pe-4 font-medium">Status</th>
@@ -349,8 +451,12 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                   <tbody>
                     {deliveries.items.map((d: Delivery) => (
                       <tr key={d.id} className="border-b last:border-0">
-                        <td className="py-2 pe-4 tabular-nums">{d.delivery_date}</td>
-                        <td className="py-2 pe-4 text-muted-foreground">{d.slot}</td>
+                        <td className="py-2 pe-4 tabular-nums">
+                          {d.delivery_date}
+                        </td>
+                        <td className="py-2 pe-4 text-muted-foreground">
+                          {d.slot}
+                        </td>
                         <td className="py-2 pe-4 text-end">
                           <Quantity value={d.quantity} unit={d.quantity_unit} />
                         </td>
@@ -376,13 +482,146 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         </CardContent>
       </Card>
 
+      {/* --- how the balance came about ------------------------------------ */}
+      {statement ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("statement.title")}</CardTitle>
+            <CardDescription>
+              {t("statement.subtitle")} — {statement.date_from} →{" "}
+              {statement.date_to}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid gap-4 sm:grid-cols-4">
+              <StatTile
+                label={t("statement.opening")}
+                value={
+                  <Money
+                    amount={statement.opening_balance}
+                    currency={statement.currency}
+                  />
+                }
+              />
+              <StatTile
+                label={t("statement.billed")}
+                value={
+                  <Money
+                    amount={statement.billed}
+                    currency={statement.currency}
+                  />
+                }
+              />
+              <StatTile
+                label={t("statement.paid")}
+                value={
+                  <Money
+                    amount={statement.paid}
+                    currency={statement.currency}
+                  />
+                }
+              />
+              <StatTile
+                label={t("statement.closing")}
+                value={
+                  <Money
+                    amount={statement.closing_balance}
+                    currency={statement.currency}
+                  />
+                }
+              />
+            </div>
+
+            {statement.entries.length === 0 ? (
+              <EmptyState title={t("statement.empty")} />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <caption className="sr-only">{t("statement.title")}</caption>
+                  <thead>
+                    <tr className="border-b text-start text-muted-foreground">
+                      <th className="py-2 pe-4 font-medium">
+                        {t("field.date")}
+                      </th>
+                      <th className="py-2 pe-4 font-medium">
+                        {t("statement.entry")}
+                      </th>
+                      <th className="py-2 pe-4 text-end font-medium">
+                        {t("statement.debit")}
+                      </th>
+                      <th className="py-2 pe-4 text-end font-medium">
+                        {t("statement.credit")}
+                      </th>
+                      <th className="py-2 text-end font-medium">
+                        {t("statement.runningBalance")}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {statement.entries.map((entry) => (
+                      <tr
+                        key={`${entry.kind}-${entry.reference}`}
+                        className="border-b last:border-0"
+                      >
+                        <td className="py-2 pe-4 tabular-nums">
+                          {entry.entry_date}
+                        </td>
+                        <td className="py-2 pe-4">
+                          <span className="font-medium">
+                            {entry.kind === "invoice"
+                              ? t("statement.invoice")
+                              : t("statement.payment")}
+                          </span>{" "}
+                          <span className="text-muted-foreground">
+                            {entry.reference}
+                          </span>
+                          <div className="text-xs text-muted-foreground">
+                            {entry.detail}
+                          </div>
+                        </td>
+                        <td className="py-2 pe-4 text-end">
+                          {Number(entry.debit) === 0 ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <Money
+                              amount={entry.debit}
+                              currency={statement.currency}
+                            />
+                          )}
+                        </td>
+                        <td className="py-2 pe-4 text-end">
+                          {Number(entry.credit) === 0 ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <Money
+                              amount={entry.credit}
+                              currency={statement.currency}
+                            />
+                          )}
+                        </td>
+                        <td className="py-2 text-end font-medium">
+                          <Money
+                            amount={entry.balance}
+                            currency={statement.currency}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {/* --- the monthly bill --------------------------------------------- */}
       <Card>
         <CardHeader>
           <CardTitle>Monthly bills</CardTitle>
           <CardDescription>
-            A bill is built from the period&apos;s unbilled deliveries. Issuing it is irreversible:
-            it becomes the statement the customer is given.
+            A bill is built from the period&apos;s unbilled deliveries. Issuing
+            it is irreversible: it becomes the statement the customer is given.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -391,7 +630,12 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             onGenerate={(from, to) =>
               void run(
                 "invoice",
-                () => generateInvoice({ customer_id: customer.id, period_from: from, period_to: to }),
+                () =>
+                  generateInvoice({
+                    customer_id: customer.id,
+                    period_from: from,
+                    period_to: to,
+                  }),
                 "Draft bill created from the period's unbilled deliveries.",
               )
             }
@@ -401,13 +645,20 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           ) : (
             <ul className="flex flex-col divide-y">
               {invoices.map((inv) => (
-                <li key={inv.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <li
+                  key={inv.id}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3"
+                >
                   <div className="flex flex-col">
-                    <Link className="font-medium hover:underline" href={`/invoices/${inv.id}`}>
+                    <Link
+                      className="font-medium hover:underline"
+                      href={`/invoices/${inv.id}`}
+                    >
                       {inv.invoice_number}
                     </Link>
                     <span className="text-xs text-muted-foreground">
-                      {inv.period_from} → {inv.period_to} · {inv.line_count} deliveries
+                      {inv.period_from} → {inv.period_to} · {inv.line_count}{" "}
+                      deliveries
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
@@ -427,7 +678,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           <CardHeader>
             <CardTitle>Payments received</CardTitle>
             <CardDescription>
-              Money from the customer to the dairy. Applied to the oldest unpaid bill first.
+              Money from the customer to the dairy. Applied to the oldest unpaid
+              bill first.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -454,12 +706,18 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             ) : (
               <ul className="flex flex-col divide-y">
                 {payments.map((pay) => (
-                  <li key={pay.id} className="flex items-center justify-between gap-3 py-2">
+                  <li
+                    key={pay.id}
+                    className="flex items-center justify-between gap-3 py-2"
+                  >
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium">{pay.payment_number}</span>
+                      <span className="text-sm font-medium">
+                        {pay.payment_number}
+                      </span>
                       <span className="text-xs text-muted-foreground">
                         {pay.method}
-                        {pay.reference ? ` · ${pay.reference}` : ""} · {stamp(pay.received_at)}
+                        {pay.reference ? ` · ${pay.reference}` : ""} ·{" "}
+                        {stamp(pay.received_at)}
                       </span>
                     </div>
                     <Money amount={pay.amount} currency={pay.currency} />
@@ -475,8 +733,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           <CardHeader>
             <CardTitle>Receipts</CardTitle>
             <CardDescription>
-              Generated by the platform from each recorded payment — never by this page, and never
-              changed once issued.
+              Generated by the platform from each recorded payment — never by
+              this page, and never changed once issued.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -488,7 +746,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             ) : (
               <ul className="flex flex-col divide-y">
                 {receipts.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between gap-3 py-2">
+                  <li
+                    key={r.id}
+                    className="flex items-center justify-between gap-3 py-2"
+                  >
                     <div className="flex flex-col">
                       <span className="inline-flex items-center gap-1.5 text-sm font-medium">
                         <ReceiptIcon aria-hidden className="size-3.5" />
@@ -532,7 +793,12 @@ function RecordDeliveryForm({
     status: string;
   }) => Promise<unknown>;
 }) {
-  const [day, setDay] = useState(today());
+  // The DAIRY's today, not UTC's. An operator in Bengaluru recording the
+  // morning round before 05:30 IST would otherwise have the form propose
+  // yesterday's date — and a delivery filed a day early is a delivery on the
+  // wrong month's bill.
+  const { timezone } = useLocale();
+  const [day, setDay] = useState(() => today(timezone));
   const [slot, setSlot] = useState("morning");
   const [quantity, setQuantity] = useState(defaultQuantity);
   const [status, setStatus] = useState("delivered");
@@ -564,7 +830,12 @@ function RecordDeliveryForm({
     >
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="d-date">Date</Label>
-        <Input id="d-date" type="date" value={day} onChange={(e) => setDay(e.target.value)} />
+        <Input
+          id="d-date"
+          type="date"
+          value={day}
+          onChange={(e) => setDay(e.target.value)}
+        />
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="d-slot">Slot</Label>
@@ -620,7 +891,8 @@ function GenerateInvoiceForm({
   busy: boolean;
   onGenerate: (from: string, to: string) => void;
 }) {
-  const bounds = monthBounds(today());
+  const { timezone } = useLocale();
+  const bounds = monthBounds(today(timezone));
   const [from, setFrom] = useState(bounds.from);
   const [to, setTo] = useState(bounds.to);
 
@@ -634,11 +906,21 @@ function GenerateInvoiceForm({
     >
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="i-from">Billing period from</Label>
-        <Input id="i-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <Input
+          id="i-from"
+          type="date"
+          value={from}
+          onChange={(e) => setFrom(e.target.value)}
+        />
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="i-to">to</Label>
-        <Input id="i-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        <Input
+          id="i-to"
+          type="date"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+        />
       </div>
       <Button type="submit" variant="outline" disabled={busy}>
         Generate bill
