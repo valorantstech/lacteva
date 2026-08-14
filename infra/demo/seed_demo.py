@@ -120,6 +120,38 @@ CUSTOMERS = [
 #: Days of delivery history. Enough for a monthly bill to be a real month.
 DELIVERY_DAYS = 30
 
+#: The schedules a seeded dairy runs (DEMO-016 §15), applied round-robin so
+#: every market gets the same mix without either list having to know about the
+#: other. Four shapes, because four is what it takes to show that the schedule
+#: is data rather than a branch:
+#:
+#:   every day          the household default, and most of the round
+#:   Monday–Saturday    a shop that closes on Sunday
+#:   weekdays only      a school or a clinic
+#:   variable           a hotel that takes half again as much at the weekend
+#:
+#: `1111111` is Monday-first, matching `date.weekday()`.
+#: The fourth shape carries a WEEKEND MULTIPLIER rather than a quantity,
+#: because an override is absolute litres and the right number depends on what
+#: the customer takes — writing `1.5` here would have dropped a hotel from
+#: eighteen litres to one and a half.
+SCHEDULES = [
+    {"weekdays": "1111111"},
+    {"weekdays": "1111110"},
+    {"weekdays": "1111100"},
+    {"weekdays": "1111111", "weekend_multiplier": Decimal("1.5")},
+]
+
+
+def schedule_for(index: int, litres: str) -> dict:
+    """One customer's schedule, with any multiplier resolved to real litres."""
+    shape = dict(SCHEDULES[index % len(SCHEDULES)])
+    multiplier = shape.pop("weekend_multiplier", None)
+    if multiplier is not None:
+        weekend = (Decimal(litres) * multiplier).quantize(Decimal("0.001"))
+        shape["quantity_overrides"] = {"5": str(weekend), "6": str(weekend)}
+    return shape
+
 
 # --- the dairy ---------------------------------------------------------------
 # Kenyan cooperative names, because the platform's currency is KES and its
@@ -1588,6 +1620,13 @@ async def build_sales(client, built: dict) -> dict:
                         "default_quantity": litres,
                         "quantity_unit": "L",
                         "unit_price": rate,
+                        # DEMO-016 §15: a demo where every plan says "every
+                        # day" cannot demonstrate a schedule. The mix below is
+                        # the one the work order asks for and the one a real
+                        # dairy has — most households daily, shops six days,
+                        # institutions on weekdays, and a hotel that takes
+                        # more at the weekend.
+                        **schedule_for(index, litres),
                     },
                 },
                 headers=h,
@@ -1713,6 +1752,37 @@ async def build_sales(client, built: dict) -> dict:
         )
         if index == 0:
             first_customer = customer
+
+    # DEMO-016 §16: generate TODAY's round from the standing orders just
+    # created, so a demonstration opens on a dairy whose day is already laid
+    # out rather than on an empty screen somebody has to fill in first.
+    #
+    # Run TWICE, deliberately. The second run's `created: 0` is the
+    # reproducible proof that idempotency holds against real seeded data, and
+    # it costs one request — much cheaper than discovering in front of an
+    # audience that the button duplicates a round.
+    first = await expect(
+        await client.post("/v1/deliveries/generate", json={}, headers=h),
+        200,
+        what="generate today's round",
+    )
+    second = await expect(
+        await client.post("/v1/deliveries/generate", json={}, headers=h),
+        200,
+        what="generate today's round again",
+    )
+    if second["created"] != 0:
+        raise SeedError(
+            f"generation is not idempotent: a second run created {second['created']}"
+        )
+    summary["generation"] = {
+        "business_date": first["business_date"],
+        "due": first["due"],
+        "created": first["created"],
+        "second_run_created": second["created"],
+        "already_present_on_second_run": second["already_present"],
+        "not_due_today": first["not_due"],
+    }
 
     summary["ledger"] = records
     # DEMO-012 §4: a login that IS a customer, so the mobile customer

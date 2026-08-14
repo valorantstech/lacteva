@@ -75,4 +75,8 @@ note "    schema at head"
 
 cd "${REPO_ROOT}"
 note "==> driving the chain"
-exec "${PYTHON}" infra/ci/sales_chain_proof.py "${1:-}"
+# `"$@"` rather than `"${1:-}"`: with no argument the latter passes an EMPTY
+# string, which `pathlib.Path("")` reads as the current directory — so running
+# the proof without an output path failed on `IsADirectoryError` after doing
+# all the work. Found by running it with no argument, which is how CI runs it.
+exec "${PYTHON}" infra/ci/sales_chain_proof.py "$@"
