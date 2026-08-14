@@ -113,7 +113,7 @@ const payment = (over: Record<string, unknown> = {}) => ({
 });
 
 const PAYMENT_LINES = [
-  { id: "pl-1", settlement_id: "st-1", settlement_number: "STL-2026-000004", amount: "3600.00" },
+  { id: "ps-1", settlement_id: "st-1", settlement_number: "STL-2026-000004", amount: "3600.00" },
 ];
 
 const PAYMENT_REPORT = {

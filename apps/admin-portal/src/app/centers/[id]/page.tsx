@@ -378,12 +378,12 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
               <table className="w-full text-sm">
                 <caption className="sr-only">Recent collections at this centre</caption>
                 <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground">
+                  <tr className="border-b border-border text-start text-muted-foreground">
                     <th scope="col" className="py-2 font-medium">State</th>
                     <th scope="col" className="py-2 font-medium">Milk</th>
-                    <th scope="col" className="py-2 text-right font-medium">Net</th>
-                    <th scope="col" className="py-2 text-right font-medium">Rate</th>
-                    <th scope="col" className="py-2 text-right font-medium">Amount</th>
+                    <th scope="col" className="py-2 text-end font-medium">Net</th>
+                    <th scope="col" className="py-2 text-end font-medium">Rate</th>
+                    <th scope="col" className="py-2 text-end font-medium">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -393,13 +393,13 @@ export default function CenterDetailPage({ params }: { params: Promise<{ id: str
                         <StatusBadge status={tx.state} />
                       </td>
                       <td className="py-2 text-muted-foreground">{tx.milk_type ?? "—"}</td>
-                      <td className="py-2 text-right">
+                      <td className="py-2 text-end">
                         <Quantity value={tx.net_weight} unit="kg" />
                       </td>
-                      <td className="py-2 text-right tabular-nums text-muted-foreground">
+                      <td className="py-2 text-end tabular-nums text-muted-foreground">
                         {tx.unit_price ?? "—"}
                       </td>
-                      <td className="py-2 text-right">
+                      <td className="py-2 text-end">
                         <Money amount={tx.gross_amount} currency={tx.currency} />
                       </td>
                     </tr>

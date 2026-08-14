@@ -32,6 +32,15 @@ class User(Base, IdMixin):
     #: column cannot express "one of whatever that tenant enabled". The
     #: enforcement is in `IdentityService.set_language`.
     locale: Mapped[str] = mapped_column(String(16), default="en")
+
+    #: DEMO-014 — the clock this person wants timestamps SHOWN in, or NULL for
+    #: their organization's.
+    #:
+    #: Display only, and that is a hard boundary: a business date is measured
+    #: on the organization's clock (`core/timezones.business_timezone`, which
+    #: never reads this column), because a delivery does not change which day
+    #: it happened on because somebody flew to London.
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     #: DEMO-008 §9 — when this account last authenticated successfully.
     #: Written by `AuthService.login`; never by a client. An administrator

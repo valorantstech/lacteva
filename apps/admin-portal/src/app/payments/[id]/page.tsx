@@ -316,7 +316,7 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
               ) : null}
               {can.retry ? (
                 <Button type="button" disabled={busy !== null} onClick={() => setForm("retry")}>
-                  <RotateCcw aria-hidden className="mr-1.5 size-4" />
+                  <RotateCcw aria-hidden className="me-1.5 size-4" />
                   Retry
                 </Button>
               ) : null}
@@ -591,7 +591,7 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
                       className="inline-flex h-8 items-center rounded-md border border-input px-3 text-sm hover:bg-muted"
                       href={receiptDownloadUrl(r.id, r.render_format)}
                     >
-                      <Download aria-hidden className="mr-1.5 size-3.5" />
+                      <Download aria-hidden className="me-1.5 size-3.5" />
                       Download
                     </a>
                   </div>

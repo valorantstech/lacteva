@@ -245,7 +245,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 </div>
                 <div className="flex justify-between gap-4">
                   <dt className="text-muted-foreground">Assigned centres</dt>
-                  <dd className="text-right">
+                  <dd className="text-end">
                     {centerIds.length === 0 ? (
                       <span className="text-muted-foreground">none</span>
                     ) : (
@@ -428,12 +428,12 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
               <table className="w-full text-sm">
                 <caption className="sr-only">Recent collections for this supplier</caption>
                 <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground">
+                  <tr className="border-b border-border text-start text-muted-foreground">
                     <th scope="col" className="py-2 font-medium">State</th>
                     <th scope="col" className="py-2 font-medium">Milk</th>
-                    <th scope="col" className="py-2 text-right font-medium">Net</th>
-                    <th scope="col" className="py-2 text-right font-medium">Rate</th>
-                    <th scope="col" className="py-2 text-right font-medium">Amount</th>
+                    <th scope="col" className="py-2 text-end font-medium">Net</th>
+                    <th scope="col" className="py-2 text-end font-medium">Rate</th>
+                    <th scope="col" className="py-2 text-end font-medium">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -443,13 +443,13 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                         <StatusBadge status={tx.state} />
                       </td>
                       <td className="py-2 text-muted-foreground">{tx.milk_type ?? "—"}</td>
-                      <td className="py-2 text-right">
+                      <td className="py-2 text-end">
                         <Quantity value={tx.net_weight} unit="kg" />
                       </td>
-                      <td className="py-2 text-right tabular-nums text-muted-foreground">
+                      <td className="py-2 text-end tabular-nums text-muted-foreground">
                         {tx.unit_price ?? "—"}
                       </td>
-                      <td className="py-2 text-right">
+                      <td className="py-2 text-end">
                         <Money amount={tx.gross_amount} currency={tx.currency} />
                       </td>
                     </tr>

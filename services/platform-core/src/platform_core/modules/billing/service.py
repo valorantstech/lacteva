@@ -16,7 +16,7 @@ Two rules carry the weight:
 
 import uuid
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Numeric, cast, func, select
@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from platform_core.core.db import utcnow
 from platform_core.core.document_numbers import next_document_number
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.money import quantize_money
 from platform_core.core.org_context import tenant_currency
 from platform_core.core.tenancy import enforce_customer_scope, require_current_tenant
 from platform_core.infrastructure.events import EventEnvelope
@@ -46,12 +47,18 @@ BUS_EVENTS = {
     "CustomerPaymentRecorded": "sales.customer-payment-recorded.v1",
 }
 
-MONEY = Decimal("0.01")
 ZERO = Decimal("0.00")
 
 
-def money(value: Decimal) -> Decimal:
-    return Decimal(value).quantize(MONEY, rounding=ROUND_HALF_UP)
+def money(value: Decimal, currency: str | None = None) -> Decimal:
+    """Quantise once, at the CURRENCY's scale (DEMO-014).
+
+    `currency=None` keeps the platform default of two decimals, which is what
+    this module assumed before and what every onboarded currency uses. Callers
+    that know the currency pass it, and a zero-decimal currency then rounds
+    correctly instead of gaining a hundredth that does not exist.
+    """
+    return quantize_money(value, currency)
 
 
 # --- commands ----------------------------------------------------------------

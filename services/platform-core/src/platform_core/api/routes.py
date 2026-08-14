@@ -518,6 +518,28 @@ async def set_my_language(
     return await identity.set_language(principal.id, body.language)
 
 
+class SetTimezoneRequest(BaseModel):
+    """An IANA zone, or null for the organization's."""
+
+    timezone: str | None = Field(default=None, max_length=64)
+
+
+@auth.put("/me/timezone", response_model=UserView)
+async def set_my_timezone(
+    body: SetTimezoneRequest,
+    principal: CurrentPrincipal,
+    identity: deps.Identity,
+) -> Any:
+    """Choose the clock you read timestamps in (DEMO-014 §4).
+
+    Display only, and needs no permission for the same reason a language does
+    not: it changes nothing for anybody else. It cannot move a business date —
+    reports, billing periods and delivery days are measured on the
+    ORGANIZATION's clock, which this does not touch.
+    """
+    return await identity.set_timezone(principal.id, body.timezone)
+
+
 @auth.get("/me", response_model=MeView)
 async def me(
     principal: CurrentPrincipal,

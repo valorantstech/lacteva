@@ -252,11 +252,11 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
                           Rate bands for {matrix.name}
                         </caption>
                         <thead>
-                          <tr className="border-b border-border text-left text-muted-foreground">
+                          <tr className="border-b border-border text-start text-muted-foreground">
                             <th scope="col" className="py-2 font-medium">
                               Band ({loaded.dimension?.unit ?? matrix.dimension_code})
                             </th>
-                            <th scope="col" className="py-2 text-right font-medium">
+                            <th scope="col" className="py-2 text-end font-medium">
                               Rate
                             </th>
                           </tr>
@@ -267,9 +267,9 @@ export default function RateCardDetailPage({ params }: { params: Promise<{ id: s
                               <td className="py-2 tabular-nums">
                                 {row.from_value} – {row.to_value}
                               </td>
-                              <td className="py-2 text-right tabular-nums font-medium">
+                              <td className="py-2 text-end tabular-nums font-medium">
                                 {String(row.unit_price)}
-                                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                                <span className="ms-1 text-xs font-normal text-muted-foreground">
                                   {card?.currency}/kg
                                 </span>
                               </td>
@@ -299,7 +299,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex items-baseline justify-between gap-4">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="text-right">{children}</dd>
+      <dd className="text-end">{children}</dd>
     </div>
   );
 }

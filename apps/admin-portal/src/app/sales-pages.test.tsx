@@ -53,7 +53,7 @@ const CUSTOMER = {
 };
 
 const PLAN = {
-  id: "pl-1",
+  id: "ps-1",
   customer_id: "cu-1",
   product: "RAW-COW-MILK",
   default_quantity: "2.000",
@@ -78,7 +78,7 @@ const DELIVERY = {
   status: "delivered",
   notes: "",
   invoice_id: null,
-  plan_id: "pl-1",
+  plan_id: "ps-1",
   created_at: "2026-08-11T06:00:00Z",
 };
 

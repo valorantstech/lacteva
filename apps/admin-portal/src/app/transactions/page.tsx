@@ -337,7 +337,7 @@ export default function TransactionsPage() {
             href="/transactions/new"
             className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
           >
-            <Plus aria-hidden className="mr-1.5 size-4" />
+            <Plus aria-hidden className="me-1.5 size-4" />
             Record collection
           </Link>
         }

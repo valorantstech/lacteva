@@ -33,6 +33,7 @@ from platform_core.core.metrics import (
     PAYMENTS_CREATED,
     PAYMENTS_FAILED,
 )
+from platform_core.core.money import quantize_money
 from platform_core.core.org_context import tenant_currency
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money
@@ -744,7 +745,7 @@ class PaymentService:
             )
         if requested is None:
             return outstanding
-        amount = Decimal(requested).quantize(Decimal("0.01"))
+        amount = quantize_money(requested, settlement.currency)
         if amount <= 0:
             raise ConflictError("an allocation must be a positive amount")
         if amount > outstanding:

@@ -2,15 +2,17 @@
 
 import uuid
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.business_time import business_today
 from platform_core.core.db import utcnow
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.org_context import tenant_timezone
 from platform_core.core.tenancy import require_current_tenant
+from platform_core.core.timezones import business_timezone
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.collection_center.models import CalendarEntry, CollectionCenter
@@ -396,11 +398,13 @@ class OperationalReadinessService:
         )
 
     async def _calendar_check(self, center: CollectionCenter) -> ReadinessCheck:
-        try:
-            tz = ZoneInfo(center.timezone)
-        except Exception:
-            tz = ZoneInfo("UTC")
-        today = utcnow().astimezone(tz).date()
+        # DEMO-014: the centre's own clock when it has one, its organization's
+        # otherwise. It used to read `center.timezone` alone, which defaulted
+        # to "UTC" — so a Kenyan centre nobody had configured evaluated its
+        # calendar three hours from the day its milk arrives.
+        today = business_today(
+            business_timezone(await tenant_timezone(self._session), center.timezone)
+        )
         entry = await self._session.scalar(
             select(CalendarEntry).where(
                 CalendarEntry.center_id == center.id, CalendarEntry.day == today

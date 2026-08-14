@@ -88,7 +88,7 @@ export function Money({
     >
       {formatted}
       {currency && formatted !== "—" ? (
-        <span className="ml-1 text-xs font-normal text-muted-foreground">{currency}</span>
+        <span className="ms-1 text-xs font-normal text-muted-foreground">{currency}</span>
       ) : null}
     </span>
   );
@@ -113,7 +113,7 @@ export function Quantity({
     <span className={cn("tabular-nums whitespace-nowrap", className)}>
       {formatted}
       {unit && formatted !== "—" ? (
-        <span className="ml-1 text-xs text-muted-foreground">{unit}</span>
+        <span className="ms-1 text-xs text-muted-foreground">{unit}</span>
       ) : null}
     </span>
   );

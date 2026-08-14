@@ -5,7 +5,13 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from platform_core.core.errors import ConflictError, ForbiddenError, NotFoundError
+from platform_core.core.errors import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationError,
+)
+from platform_core.core.locales import is_valid_timezone
 from platform_core.core.org_context import tenant_locale
 from platform_core.core.security import hash_password
 from platform_core.core.tenancy import get_current_tenant
@@ -51,6 +57,34 @@ class IdentityService:
             resource_id=user.id,
             actor_id=user_id,
             detail={"locale": tag},
+        )
+        return user
+
+    async def set_timezone(self, user_id: uuid.UUID, timezone: str | None) -> User:
+        """A person chooses the clock they READ timestamps in (DEMO-014 §4).
+
+        Display only. It never moves a business date — `core/timezones` keeps
+        that boundary by not taking a user at all — because a delivery does
+        not change which day it happened on because somebody flew to London.
+
+        `None` means "my organization's", which is the default and the answer
+        for almost everyone. A zone that is not IANA is refused rather than
+        stored: an unusable value here would silently fall back forever, and
+        the person would never learn their setting had not taken.
+        """
+        user = await self._session.get(User, user_id)
+        if user is None:
+            raise NotFoundError("user not found")
+        if timezone is not None and not is_valid_timezone(timezone):
+            raise ValidationError(f"{timezone!r} is not an IANA timezone")
+        user.timezone = timezone
+        await self._session.flush()
+        await self._audit.record(
+            action="identity.timezone.changed",
+            resource_type="user",
+            resource_id=user.id,
+            actor_id=user_id,
+            detail={"timezone": timezone},
         )
         return user
 

@@ -275,7 +275,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-full">
       {/* Desktop rail */}
       {signedIn ? (
-      <aside className="hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar lg:block">
+      <aside className="hidden w-60 shrink-0 border-e border-sidebar-border bg-sidebar lg:block">
         <div className="flex h-14 items-center border-b border-sidebar-border px-6">
           <Link href="/" className="font-semibold tracking-tight">
             Lacteva
@@ -294,7 +294,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className="absolute inset-0 bg-black/40"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="absolute left-0 top-0 h-full w-64 overflow-y-auto border-r border-sidebar-border bg-sidebar">
+          <div className="absolute left-0 top-0 h-full w-64 overflow-y-auto border-e border-sidebar-border bg-sidebar">
             <div className="flex h-14 items-center justify-between border-b border-sidebar-border px-4">
               <span className="font-semibold tracking-tight">Lacteva</span>
               <Button
@@ -331,7 +331,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="ml-auto flex items-center gap-3">
             {session?.authenticated ? (
-              <span className="hidden text-right sm:block">
+              <span className="hidden text-end sm:block">
                 <span className="block text-sm leading-tight">
                   {session.user.full_name || session.user.email}
                 </span>

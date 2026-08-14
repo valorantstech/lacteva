@@ -214,7 +214,7 @@ export default function SettlementsPage() {
         description="What each supplier is owed for a period — the collections of that window, summed by the platform."
         actions={
           <Button type="button" onClick={() => setShowCreate((v) => !v)}>
-            <Plus aria-hidden className="mr-1.5 size-4" />
+            <Plus aria-hidden className="me-1.5 size-4" />
             New settlement
           </Button>
         }

@@ -233,24 +233,24 @@ function DeliveriesView() {
               <table className="w-full text-sm">
                 <caption className="sr-only">Deliveries per day</caption>
                 <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="py-2 pr-4 font-medium">Date</th>
-                    <th className="py-2 pr-4 text-right font-medium">Deliveries</th>
-                    <th className="py-2 pr-4 text-right font-medium">Customers</th>
-                    <th className="py-2 pr-4 text-right font-medium">Quantity</th>
-                    <th className="py-2 text-right font-medium">Value</th>
+                  <tr className="border-b text-start text-muted-foreground">
+                    <th className="py-2 pe-4 font-medium">Date</th>
+                    <th className="py-2 pe-4 text-end font-medium">Deliveries</th>
+                    <th className="py-2 pe-4 text-end font-medium">Customers</th>
+                    <th className="py-2 pe-4 text-end font-medium">Quantity</th>
+                    <th className="py-2 text-end font-medium">Value</th>
                   </tr>
                 </thead>
                 <tbody>
                   {report.by_day.map((day) => (
                     <tr key={day.delivery_date} className="border-b last:border-0">
-                      <td className="py-2 pr-4 tabular-nums">{day.delivery_date}</td>
-                      <td className="py-2 pr-4 text-right tabular-nums">{day.deliveries}</td>
-                      <td className="py-2 pr-4 text-right tabular-nums">{day.customers}</td>
-                      <td className="py-2 pr-4 text-right">
+                      <td className="py-2 pe-4 tabular-nums">{day.delivery_date}</td>
+                      <td className="py-2 pe-4 text-end tabular-nums">{day.deliveries}</td>
+                      <td className="py-2 pe-4 text-end tabular-nums">{day.customers}</td>
+                      <td className="py-2 pe-4 text-end">
                         <Quantity value={day.quantity} unit="L" />
                       </td>
-                      <td className="py-2 text-right">
+                      <td className="py-2 text-end">
                         <Money amount={day.amount} currency={orgCurrency} />
                       </td>
                     </tr>

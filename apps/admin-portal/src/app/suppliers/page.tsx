@@ -212,7 +212,7 @@ export default function SuppliersPage() {
         description="The producers who deliver milk. Activity figures cover the last 30 days and are computed by the platform."
         actions={
           <Button type="button" onClick={() => setForm({ mode: "create" })}>
-            <Plus aria-hidden className="mr-1.5 size-4" />
+            <Plus aria-hidden className="me-1.5 size-4" />
             New supplier
           </Button>
         }
@@ -280,7 +280,7 @@ export default function SuppliersPage() {
                     />
                     <Input
                       id="supplier-search"
-                      className="w-64 pl-8"
+                      className="w-64 ps-8"
                       placeholder="Name, code or phone"
                       value={q}
                       onChange={(e) => {
@@ -411,7 +411,7 @@ function SupplierForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="supplier-name">
-                Full name<span aria-hidden className="ml-0.5 text-destructive">*</span>
+                Full name<span aria-hidden className="ms-0.5 text-destructive">*</span>
                 <span className="sr-only"> (required)</span>
               </Label>
               <Input
@@ -430,7 +430,7 @@ function SupplierForm({
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="supplier-phone">
-                Phone<span aria-hidden className="ml-0.5 text-destructive">*</span>
+                Phone<span aria-hidden className="ms-0.5 text-destructive">*</span>
                 <span className="sr-only"> (required)</span>
               </Label>
               <Input

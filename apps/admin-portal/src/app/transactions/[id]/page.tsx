@@ -225,7 +225,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                   <Row label="Supplier">
                     {t.supplier_id ? (
                       <Link className="hover:underline" href={`/suppliers/${t.supplier_id}`}>
-                        <Truck aria-hidden className="mr-1 inline size-3.5" />
+                        <Truck aria-hidden className="me-1 inline size-3.5" />
                         {supplierName ?? `${t.supplier_id.slice(0, 8)}…`}
                       </Link>
                     ) : (
@@ -234,7 +234,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                   </Row>
                   <Row label="Centre">
                     <Link className="hover:underline" href={`/centers/${t.center_id}`}>
-                      <Building2 aria-hidden className="mr-1 inline size-3.5" />
+                      <Building2 aria-hidden className="me-1 inline size-3.5" />
                       {centerName ?? `${t.center_id.slice(0, 8)}…`}
                     </Link>
                   </Row>
@@ -263,7 +263,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                   </Row>
                   {t.quality_remarks ? (
                     <Row label="Remarks">
-                      <span className="text-right text-muted-foreground">{t.quality_remarks}</span>
+                      <span className="text-end text-muted-foreground">{t.quality_remarks}</span>
                     </Row>
                   ) : null}
                   <Row label="Pricing status">
@@ -271,7 +271,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                   </Row>
                   {t.decided_at ? (
                     <Row label="Decided">
-                      <span className="text-right text-muted-foreground">
+                      <span className="text-end text-muted-foreground">
                         {stamp(t.decided_at)}
                         {t.decided_by && actorName[t.decided_by]
                           ? ` · ${actorName[t.decided_by]}`
@@ -424,7 +424,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex items-baseline justify-between gap-4">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="text-right">{children}</dd>
+      <dd className="text-end">{children}</dd>
     </div>
   );
 }
@@ -594,7 +594,7 @@ function PricingBreakdown({ tx }: { tx: MilkTransaction }) {
           <div className="flex flex-col gap-4">
             <dl className="flex flex-col gap-2.5 text-sm">
               <Row label="Rate card">
-                <span className="text-right text-muted-foreground">
+                <span className="text-end text-muted-foreground">
                   {tx.pricing_detail ?? "—"}
                 </span>
               </Row>
@@ -604,7 +604,7 @@ function PricingBreakdown({ tx }: { tx: MilkTransaction }) {
               <Row label="Rate">
                 <span className="tabular-nums">
                   {String(tx.unit_price)}
-                  <span className="ml-1 text-xs text-muted-foreground">
+                  <span className="ms-1 text-xs text-muted-foreground">
                     {tx.currency}/{tx.weight_unit ?? "kg"}
                   </span>
                 </span>

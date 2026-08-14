@@ -195,7 +195,7 @@ export default function NotificationsPage() {
                 <TableHead>Recipient</TableHead>
                 <TableHead>Message</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="text-end">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -208,7 +208,7 @@ export default function NotificationsPage() {
                   <TableCell>
                     {n.channel}
                     {n.language !== "en" && (
-                      <span className="ml-1 text-xs text-muted-foreground">{n.language}</span>
+                      <span className="ms-1 text-xs text-muted-foreground">{n.language}</span>
                     )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">{n.recipient ?? "—"}</TableCell>
@@ -218,7 +218,7 @@ export default function NotificationsPage() {
                   <TableCell>
                     <Badge variant={statusVariant(n.status)}>{n.status}</Badge>
                     {n.attempt_count > 1 && (
-                      <span className="ml-1 text-xs text-muted-foreground">
+                      <span className="ms-1 text-xs text-muted-foreground">
                         ×{n.attempt_count}
                       </span>
                     )}
@@ -458,7 +458,7 @@ function TemplateCatalog({ templates }: { templates: NotificationTemplate[] }) {
               <TableHead>Channel</TableHead>
               <TableHead>Language</TableHead>
               <TableHead>Variables</TableHead>
-              <TableHead className="text-right">Preview</TableHead>
+              <TableHead className="text-end">Preview</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -470,7 +470,7 @@ function TemplateCatalog({ templates }: { templates: NotificationTemplate[] }) {
                 <TableCell className="text-xs text-muted-foreground">
                   {t.variables.join(", ") || "none"}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <Button size="sm" variant="outline" onClick={() => choose(t)}>
                     Preview
                   </Button>

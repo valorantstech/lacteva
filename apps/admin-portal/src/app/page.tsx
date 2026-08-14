@@ -583,7 +583,7 @@ export default function Home() {
             </CardDescription>
           </div>
           {owing.state === "ready" && owing.data.total > 0 ? (
-            <div className="text-right">
+            <div className="text-end">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Total owed</p>
               <p className="text-lg font-semibold">
                 <Money

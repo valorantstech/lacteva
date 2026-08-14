@@ -130,7 +130,7 @@ function CustomersView() {
       cell: (c) => (
         <span className="text-sm">
           {c.billing_mode}
-          <span className="ml-1 text-xs text-muted-foreground">day {c.billing_day}</span>
+          <span className="ms-1 text-xs text-muted-foreground">day {c.billing_day}</span>
         </span>
       ),
     },
@@ -157,7 +157,7 @@ function CustomersView() {
         description="The households and businesses this dairy delivers to — and what each of them owes."
         actions={
           <Button type="button" onClick={() => setShowCreate((v) => !v)}>
-            <Plus aria-hidden className="mr-1.5 size-4" />
+            <Plus aria-hidden className="me-1.5 size-4" />
             New customer
           </Button>
         }

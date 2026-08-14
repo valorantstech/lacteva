@@ -19,6 +19,9 @@ class UserView(BaseModel):
     email: str
     full_name: str
     locale: str
+    #: DEMO-014 — the clock this person reads timestamps in, or null for the
+    #: organization's. Display only; never a business date.
+    timezone: str | None = None
     is_active: bool
     last_login_at: datetime | None = None
     created_at: datetime

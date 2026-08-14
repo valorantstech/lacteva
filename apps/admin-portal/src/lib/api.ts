@@ -1616,6 +1616,8 @@ export type User = {
   email: string;
   full_name: string;
   locale: string;
+  /** DEMO-014: display timezone, or null for the organization's. */
+  timezone?: string | null;
   is_active: boolean;
   /** DEMO-008 §9 — null means the account has never signed in. */
   last_login_at?: string | null;
@@ -1688,6 +1690,14 @@ export const updateLocaleSettings = (body: {
   api<LocaleSettings>("/v1/organizations/settings/locale", {
     method: "PUT",
     body: JSON.stringify(body),
+  });
+
+/** A person's own display timezone, or null for the organization's.
+ *  DEMO-014: display only — it cannot move a business date. */
+export const setMyTimezone = (timezone: string | null) =>
+  api<User>("/v1/auth/me/timezone", {
+    method: "PUT",
+    body: JSON.stringify({ timezone }),
   });
 
 /** A person's own language. Not an administrative act — see the route. */

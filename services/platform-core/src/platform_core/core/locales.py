@@ -56,8 +56,14 @@ CURRENCIES: dict[str, Currency] = {
     "GBP": Currency("GBP", "Pound Sterling", "£"),
     "AED": Currency("AED", "UAE Dirham", "د.إ"),
     "SAR": Currency("SAR", "Saudi Riyal", "﷼"),
+    "QAR": Currency("QAR", "Qatari Riyal", "ر.ق"),
     "UGX": Currency("UGX", "Ugandan Shilling", "USh", minor_units=0),
     "TZS": Currency("TZS", "Tanzanian Shilling", "TSh"),
+    # DEMO-014: not offered for onboarding — no country in the registry uses
+    # it — and present so the ZERO-DECIMAL path is exercised by something
+    # real rather than by a hypothetical. `test_money.py` quantizes against
+    # it; UGX above is the one a tenant could actually be created with.
+    "JPY": Currency("JPY", "Japanese Yen", "¥", minor_units=0),
 }
 
 
@@ -99,14 +105,25 @@ class Country:
     languages: tuple[str, ...]
 
 
+#: `languages` is ORDERED and the first entry is the country's default.
+#:
+#: DEMO-014: the Gulf countries lead with Arabic, because a Saudi dairy's
+#: staff read Arabic and English is the second language there, not the first.
+#: That ordering is the whole mechanism — there is no `if country == "SA"`
+#: anywhere deciding it.
 COUNTRIES: dict[str, Country] = {
     "IN": Country("IN", "India", "INR", "Asia/Kolkata", ("en-IN", "hi-IN")),
     "KE": Country("KE", "Kenya", "KES", "Africa/Nairobi", ("en-KE", "sw-KE")),
-    "AE": Country("AE", "United Arab Emirates", "AED", "Asia/Dubai", ("en-AE", "ar-AE")),
-    "SA": Country("SA", "Saudi Arabia", "SAR", "Asia/Riyadh", ("en-SA", "ar-SA")),
+    "SA": Country("SA", "Saudi Arabia", "SAR", "Asia/Riyadh", ("ar-SA", "en-SA")),
+    "AE": Country("AE", "United Arab Emirates", "AED", "Asia/Dubai", ("ar-AE", "en-AE")),
+    "QA": Country("QA", "Qatar", "QAR", "Asia/Qatar", ("ar-QA", "en-QA")),
     "UG": Country("UG", "Uganda", "UGX", "Africa/Kampala", ("en-UG", "sw-UG")),
     "TZ": Country("TZ", "Tanzania", "TZS", "Africa/Dar_es_Salaam", ("en-TZ", "sw-TZ")),
     "GB": Country("GB", "United Kingdom", "GBP", "Europe/London", ("en-GB",)),
+    # The United States spans six zones and no single one is "the" American
+    # timezone. The registry names the most populous as a STARTING POINT and
+    # `resolve()` takes an override — which is the honest shape for any large
+    # country, and why the field is documented as principal rather than only.
     "US": Country("US", "United States", "USD", "America/New_York", ("en-US",)),
 }
 

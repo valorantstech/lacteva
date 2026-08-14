@@ -103,7 +103,7 @@ export function DataTable<T>({
                     key={c.key}
                     scope="col"
                     className={cn(
-                      c.align === "end" && "text-right",
+                      c.align === "end" && "text-end",
                       c.secondary && "hidden md:table-cell",
                     )}
                   >
@@ -119,7 +119,7 @@ export function DataTable<T>({
                     <TableCell
                       key={c.key}
                       className={cn(
-                        c.align === "end" && "text-right",
+                        c.align === "end" && "text-end",
                         c.secondary && "hidden md:table-cell",
                       )}
                     >

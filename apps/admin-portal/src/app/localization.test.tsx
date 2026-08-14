@@ -18,8 +18,8 @@ vi.mock("next/navigation", () => ({
 }));
 
 import SettingsPage from "@/app/admin/settings/page";
-import { LocaleProvider, baseLanguage, translatorFor, useT } from "@/lib/i18n";
-import { CATALOGS, KEYS } from "@/lib/messages";
+import { LocaleProvider, baseLanguage, translatorFor, useLocale, useT } from "@/lib/i18n";
+import { CATALOGS, KEYS, isRtl } from "@/lib/messages";
 
 function routeFetch(routes: Record<string, unknown>) {
   const spy = vi.fn(async (input: RequestInfo | URL) => {
@@ -86,13 +86,48 @@ afterEach(() => {
 });
 
 describe("the catalogs", () => {
-  it("has a Hindi string for every English key the portal defines", () => {
+  it.each(["hi", "ar"])("has a %s string for every English key", (language) => {
     // A missing key is not fatal — it falls back to English — but a catalog
     // that has quietly stopped keeping up is worth knowing about, and this is
     // cheaper than noticing on a screen.
-    const missing = KEYS.filter((key) => !(key in CATALOGS.hi));
-    expect(missing, `Hindi is missing: ${missing.join(", ")}`).toEqual([]);
+    const missing = KEYS.filter((key) => !(key in CATALOGS[language]));
+    expect(missing, `${language} is missing: ${missing.join(", ")}`).toEqual([]);
   });
+
+  it("defines no key English does not", () => {
+    // The other direction: a translated string with no English original is a
+    // string no screen can ask for, and it hides the fact that somebody
+    // translated something that then got deleted.
+    for (const language of ["hi", "ar"]) {
+      const orphans = Object.keys(CATALOGS[language]).filter((k) => !KEYS.includes(k));
+      expect(orphans, `${language} has orphans: ${orphans.join(", ")}`).toEqual([]);
+    }
+  });
+
+  it("covers every area the milestone names", () => {
+    // DEMO-014 §6 lists the areas Hindi must reach. Asserting the AREAS
+    // rather than a key count means adding a screen without translating it
+    // shows up here rather than in front of a dairy manager.
+    const areas = new Set(KEYS.map((k) => k.split(".")[0]));
+    for (const area of [
+      "nav", "dashboard", "supplier", "center", "transaction", "customer",
+      "delivery", "billing", "payment", "receipt", "report", "settlement",
+      "notification", "settings", "auth", "validation", "state", "error",
+      "action", "role",
+    ]) {
+      expect(areas.has(area), `no keys for ${area}`).toBe(true);
+    }
+  });
+
+  it("marks Arabic as right to left and English as not", () => {
+    expect(isRtl("ar-SA")).toBe(true);
+    expect(isRtl("ar")).toBe(true);
+    expect(isRtl("en-IN")).toBe(false);
+    expect(isRtl("hi-IN")).toBe(false);
+    expect(isRtl(null)).toBe(false);
+  });
+
+
 
   it("falls back to English rather than showing a blank", () => {
     const t = translatorFor("hi-IN");
@@ -134,6 +169,42 @@ describe("a screen renders in the session's language", () => {
       </LocaleProvider>,
     );
     expect(screen.getByText("ग्राहक")).toBeInTheDocument();
+  });
+});
+
+describe("right-to-left", () => {
+  function Probe() {
+    const { rtl, language } = useLocale();
+    return <p data-testid="probe">{`${language}:${rtl ? "rtl" : "ltr"}`}</p>;
+  }
+
+  it("puts the document into RTL for Arabic and back for English", () => {
+    const { unmount } = render(
+      <LocaleProvider locale="ar-SA">
+        <Probe />
+      </LocaleProvider>,
+    );
+    expect(screen.getByTestId("probe")).toHaveTextContent("ar:rtl");
+    // Setting `dir` on the document is most of RTL: the browser flips text
+    // direction, alignment and flex rows from it.
+    expect(document.documentElement.getAttribute("dir")).toBe("rtl");
+    expect(document.documentElement.getAttribute("lang")).toBe("ar-SA");
+    unmount();
+
+    render(
+      <LocaleProvider locale="en-IN">
+        <Probe />
+      </LocaleProvider>,
+    );
+    expect(document.documentElement.getAttribute("dir")).toBe("ltr");
+  });
+
+  it("renders Arabic strings, not keys", () => {
+    const t = translatorFor("ar-SA");
+    expect(t("nav.customers")).toBe("العملاء");
+    expect(t("payment.title")).toBe("المدفوعات");
+    // And a key nothing defines is still the key, in every language.
+    expect(t("nav.doesNotExist")).toBe("nav.doesNotExist");
   });
 });
 

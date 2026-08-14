@@ -202,7 +202,7 @@ export default function CentersPage() {
         description="Where milk is received. Activity figures cover the last 30 days and are computed by the platform."
         actions={
           <Button type="button" onClick={() => setForm({ mode: "create" })}>
-            <Plus aria-hidden className="mr-1.5 size-4" />
+            <Plus aria-hidden className="me-1.5 size-4" />
             New centre
           </Button>
         }
@@ -254,7 +254,7 @@ export default function CentersPage() {
                     />
                     <Input
                       id="center-search"
-                      className="w-64 pl-8"
+                      className="w-64 ps-8"
                       placeholder="Name or code"
                       value={q}
                       onChange={(e) => {
@@ -494,7 +494,7 @@ function Field({
       <Label htmlFor={id}>
         {label}
         {required ? (
-          <span aria-hidden className="ml-0.5 text-destructive">
+          <span aria-hidden className="ms-0.5 text-destructive">
             *
           </span>
         ) : null}

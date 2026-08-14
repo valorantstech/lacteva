@@ -151,7 +151,7 @@ export default function MatricesPage() {
                 <TableHead>Dimension</TableHead>
                 <TableHead>Bands</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="text-end">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -294,7 +294,7 @@ function MatrixDetailCard({
               <TableHead>To (excl.)</TableHead>
               <TableHead>Unit price</TableHead>
               <TableHead>Active</TableHead>
-              {editable && <TableHead className="text-right">Actions</TableHead>}
+              {editable && <TableHead className="text-end">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>

@@ -30,7 +30,15 @@ class CollectionCenter(Base, IdMixin):
     name: Mapped[str] = mapped_column(String(200))
     code: Mapped[str] = mapped_column(String(40))
     status: Mapped[str] = mapped_column(String(20), default="inactive", index=True)
-    timezone: Mapped[str] = mapped_column(String(40), default="UTC")  # IANA name
+    #: DEMO-014: an OPTIONAL override of the organization's business clock.
+    #:
+    #: It defaulted to the string `"UTC"`, which is a real IANA zone and
+    #: therefore indistinguishable from a deliberate choice — a centre created
+    #: before DEMO-013 in a Kenyan dairy claimed a clock three hours from the
+    #: one its milk is collected on. NULL now means "my organization's", which
+    #: is what almost every centre means and what none of them could say.
+    #: Resolution lives in `core/timezones.business_timezone`.
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)  # IANA
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

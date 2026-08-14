@@ -34,12 +34,15 @@ class CreateCenterCommand(BaseModel):
     branch_id: uuid.UUID
     name: str = Field(min_length=2, max_length=200)
     code: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$")
-    timezone: str = "UTC"
+    #: DEMO-014: NULL means "my organization's clock", which is what almost
+    #: every centre means. A value here is a deliberate override for a
+    #: cooperative that spans a border.
+    timezone: str | None = None
 
 
 class UpdateCenterCommand(BaseModel):
     name: str = Field(min_length=2, max_length=200)
-    timezone: str = Field(min_length=1, max_length=40)
+    timezone: str | None = Field(default=None, max_length=64)
 
 
 class OperatingWindowInput(BaseModel):
@@ -73,7 +76,7 @@ class CenterView(BaseModel):
     name: str
     code: str
     status: str
-    timezone: str
+    timezone: str | None
 
     model_config = {"from_attributes": True}
 

@@ -213,7 +213,7 @@ export default function ReportsPage() {
             {(["weight", "payable", "count"] as const).map((key) => (
               <button
                 key={key}
-                className={`mr-2 underline-offset-4 ${centerSort === key ? "font-semibold underline" : "hover:underline"}`}
+                className={`me-2 underline-offset-4 ${centerSort === key ? "font-semibold underline" : "hover:underline"}`}
                 onClick={() => setCenterSort(key)}
               >
                 {key}
@@ -226,11 +226,11 @@ export default function ReportsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Center</TableHead>
-                <TableHead className="text-right">Transactions</TableHead>
-                <TableHead className="text-right">Accepted</TableHead>
-                <TableHead className="text-right">Milk (kg)</TableHead>
-                <TableHead className="text-right">Payable</TableHead>
-                <TableHead className="text-right">Avg FAT</TableHead>
+                <TableHead className="text-end">Transactions</TableHead>
+                <TableHead className="text-end">Accepted</TableHead>
+                <TableHead className="text-end">Milk (kg)</TableHead>
+                <TableHead className="text-end">Payable</TableHead>
+                <TableHead className="text-end">Avg FAT</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -244,13 +244,13 @@ export default function ReportsPage() {
                       {row.center_code} — {row.center_name}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-right">{row.transactions}</TableCell>
-                  <TableCell className="text-right">{row.accepted}</TableCell>
-                  <TableCell className="text-right">{row.total_net_weight_kg}</TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
+                  <TableCell className="text-end">{row.transactions}</TableCell>
+                  <TableCell className="text-end">{row.accepted}</TableCell>
+                  <TableCell className="text-end">{row.total_net_weight_kg}</TableCell>
+                  <TableCell className="text-end whitespace-nowrap">
                     <Money amount={row.payable_amount} currency={row.currency} />
                   </TableCell>
-                  <TableCell className="text-right">{row.weighted_avg_fat ?? "—"}</TableCell>
+                  <TableCell className="text-end">{row.weighted_avg_fat ?? "—"}</TableCell>
                 </TableRow>
               ))}
               {centerRows.length === 0 && (
@@ -273,7 +273,7 @@ export default function ReportsPage() {
             {(["weight", "payable", "count"] as const).map((key) => (
               <button
                 key={key}
-                className={`mr-2 underline-offset-4 ${supplierSort === key ? "font-semibold underline" : "hover:underline"}`}
+                className={`me-2 underline-offset-4 ${supplierSort === key ? "font-semibold underline" : "hover:underline"}`}
                 onClick={() => setSupplierSort(key)}
               >
                 {key}
@@ -286,11 +286,11 @@ export default function ReportsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Supplier</TableHead>
-                <TableHead className="text-right">Deliveries</TableHead>
-                <TableHead className="text-right">Accepted</TableHead>
-                <TableHead className="text-right">Milk (kg)</TableHead>
-                <TableHead className="text-right">Payable</TableHead>
-                <TableHead className="text-right">Avg FAT</TableHead>
+                <TableHead className="text-end">Deliveries</TableHead>
+                <TableHead className="text-end">Accepted</TableHead>
+                <TableHead className="text-end">Milk (kg)</TableHead>
+                <TableHead className="text-end">Payable</TableHead>
+                <TableHead className="text-end">Avg FAT</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -304,13 +304,13 @@ export default function ReportsPage() {
                       {row.supplier_code} — {row.supplier_name}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-right">{row.deliveries}</TableCell>
-                  <TableCell className="text-right">{row.accepted}</TableCell>
-                  <TableCell className="text-right">{row.total_net_weight_kg}</TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
+                  <TableCell className="text-end">{row.deliveries}</TableCell>
+                  <TableCell className="text-end">{row.accepted}</TableCell>
+                  <TableCell className="text-end">{row.total_net_weight_kg}</TableCell>
+                  <TableCell className="text-end whitespace-nowrap">
                     <Money amount={row.payable_amount} currency={row.currency} />
                   </TableCell>
-                  <TableCell className="text-right">{row.weighted_avg_fat ?? "—"}</TableCell>
+                  <TableCell className="text-end">{row.weighted_avg_fat ?? "—"}</TableCell>
                 </TableRow>
               ))}
               {supplierRows.length === 0 && (

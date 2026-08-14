@@ -309,28 +309,28 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               <table className="w-full text-sm">
                 <caption className="sr-only">Deliveries billed by {invoice.invoice_number}</caption>
                 <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="py-2 pr-4 font-medium">Date</th>
-                    <th className="py-2 pr-4 font-medium">Slot</th>
-                    <th className="py-2 pr-4 font-medium">Product</th>
-                    <th className="py-2 pr-4 text-right font-medium">Quantity</th>
-                    <th className="py-2 pr-4 text-right font-medium">Rate</th>
-                    <th className="py-2 text-right font-medium">Amount</th>
+                  <tr className="border-b text-start text-muted-foreground">
+                    <th className="py-2 pe-4 font-medium">Date</th>
+                    <th className="py-2 pe-4 font-medium">Slot</th>
+                    <th className="py-2 pe-4 font-medium">Product</th>
+                    <th className="py-2 pe-4 text-end font-medium">Quantity</th>
+                    <th className="py-2 pe-4 text-end font-medium">Rate</th>
+                    <th className="py-2 text-end font-medium">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
                   {lines.map((line) => (
                     <tr key={line.id} className="border-b last:border-0">
-                      <td className="py-2 pr-4 tabular-nums">{line.delivery_date}</td>
-                      <td className="py-2 pr-4 text-muted-foreground">{line.slot}</td>
-                      <td className="py-2 pr-4 text-muted-foreground">{line.product}</td>
-                      <td className="py-2 pr-4 text-right">
+                      <td className="py-2 pe-4 tabular-nums">{line.delivery_date}</td>
+                      <td className="py-2 pe-4 text-muted-foreground">{line.slot}</td>
+                      <td className="py-2 pe-4 text-muted-foreground">{line.product}</td>
+                      <td className="py-2 pe-4 text-end">
                         <Quantity value={line.quantity} unit={line.quantity_unit} />
                       </td>
-                      <td className="py-2 pr-4 text-right tabular-nums">
+                      <td className="py-2 pe-4 text-end tabular-nums">
                         {String(line.unit_price)}
                       </td>
-                      <td className="py-2 text-right">
+                      <td className="py-2 text-end">
                         <Money amount={line.amount} currency={invoice.currency} />
                       </td>
                     </tr>

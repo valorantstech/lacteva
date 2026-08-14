@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.business_time import business_today
 from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.money import quantize_money
 from platform_core.core.org_context import tenant_timezone
 from platform_core.core.tenancy import enforce_customer_scope, require_current_tenant
 from platform_core.infrastructure.events import EventEnvelope
@@ -40,14 +41,17 @@ BUS_EVENTS = {
     "DeliveryCancelled": "sales.delivery-cancelled.v1",
 }
 
-MONEY = Decimal("0.01")
 #: The scale `milk_delivery.quantity` is stored at — `Numeric(12, 3)`.
 QUANTITY = Decimal("0.001")
 
 
-def money(value: Decimal) -> Decimal:
-    """Quantise once, explicitly, HALF_UP — the platform's rounding policy."""
-    return value.quantize(MONEY, rounding=ROUND_HALF_UP)
+def money(value: Decimal, currency: str | None = None) -> Decimal:
+    """Quantise once, explicitly, HALF_UP, at the CURRENCY's scale (DEMO-014).
+
+    `currency=None` keeps the platform default of two decimals — what this
+    module assumed before, and what every onboarded currency uses.
+    """
+    return quantize_money(value, currency)
 
 
 def litres(value: Decimal) -> Decimal:

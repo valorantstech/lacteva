@@ -551,7 +551,7 @@ export default function SettlementDetailPage({ params }: { params: Promise<{ id:
                 <li key={r.id} className="flex items-center justify-between gap-4 py-3">
                   <div className="flex flex-col">
                     <Link className="font-medium hover:underline" href={`/payments/${r.payment_id}`}>
-                      <ReceiptIcon aria-hidden className="mr-1.5 inline size-3.5" />
+                      <ReceiptIcon aria-hidden className="me-1.5 inline size-3.5" />
                       {r.receipt_number}
                     </Link>
                     <span className="text-xs text-muted-foreground">
@@ -564,7 +564,7 @@ export default function SettlementDetailPage({ params }: { params: Promise<{ id:
                       className="inline-flex h-8 items-center rounded-md border border-input px-3 text-sm hover:bg-muted"
                       href={receiptDownloadUrl(r.id, r.render_format)}
                     >
-                      <Download aria-hidden className="mr-1.5 size-3.5" />
+                      <Download aria-hidden className="me-1.5 size-3.5" />
                       Download
                     </a>
                   </div>
@@ -593,20 +593,20 @@ export default function SettlementDetailPage({ params }: { params: Promise<{ id:
               <table className="w-full text-sm">
                 <caption className="sr-only">Collections settled by {s.settlement_number}</caption>
                 <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="py-2 pr-4 font-medium">Date</th>
-                    <th className="py-2 pr-4 font-medium">Collection</th>
-                    <th className="py-2 pr-4 text-right font-medium">Quantity</th>
-                    <th className="py-2 pr-4 text-right font-medium">Rate</th>
-                    <th className="py-2 pr-4 text-right font-medium">Gross</th>
+                  <tr className="border-b text-start text-muted-foreground">
+                    <th className="py-2 pe-4 font-medium">Date</th>
+                    <th className="py-2 pe-4 font-medium">Collection</th>
+                    <th className="py-2 pe-4 text-end font-medium">Quantity</th>
+                    <th className="py-2 pe-4 text-end font-medium">Rate</th>
+                    <th className="py-2 pe-4 text-end font-medium">Gross</th>
                     <th className="py-2 font-medium">Trace</th>
                   </tr>
                 </thead>
                 <tbody>
                   {lines.map((line: SettlementLine) => (
                     <tr key={line.id} className="border-b last:border-0">
-                      <td className="py-2 pr-4 tabular-nums">{String(line.transaction_date).slice(0, 10)}</td>
-                      <td className="py-2 pr-4">
+                      <td className="py-2 pe-4 tabular-nums">{String(line.transaction_date).slice(0, 10)}</td>
+                      <td className="py-2 pe-4">
                         {line.transaction_id ? (
                           <Link
                             className="hover:underline"
@@ -618,11 +618,11 @@ export default function SettlementDetailPage({ params }: { params: Promise<{ id:
                           <span className="text-muted-foreground">calculation only</span>
                         )}
                       </td>
-                      <td className="py-2 pr-4 text-right">
+                      <td className="py-2 pe-4 text-end">
                         <Quantity value={line.quantity} unit={line.quantity_unit} />
                       </td>
-                      <td className="py-2 pr-4 text-right tabular-nums">{String(line.unit_price)}</td>
-                      <td className="py-2 pr-4 text-right">
+                      <td className="py-2 pe-4 text-end tabular-nums">{String(line.unit_price)}</td>
+                      <td className="py-2 pe-4 text-end">
                         <Money amount={line.gross_amount} currency={s.currency} />
                       </td>
                       <td className="py-2 font-mono text-xs text-muted-foreground">

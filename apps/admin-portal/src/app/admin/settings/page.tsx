@@ -32,6 +32,7 @@ import {
   getSession,
   type Session,
   setMyLanguage,
+  setMyTimezone,
   updateLocaleSettings,
 } from "@/lib/api";
 import { useT } from "@/lib/i18n";
@@ -65,6 +66,7 @@ export default function OrganizationSettingsPage() {
 
   const mayManage = can(session, "organization.settings.manage");
   const myLanguage = session?.authenticated ? session.user.locale : "en";
+  const myTimezone = session?.authenticated ? (session.user.timezone ?? null) : null;
 
   async function chooseMyLanguage(tag: string) {
     setSaving(true);
@@ -79,6 +81,21 @@ export default function OrganizationSettingsPage() {
       window.location.reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : t("state.error"));
+      setSaving(false);
+    }
+  }
+
+  async function chooseMyTimezone(timezone: string | null) {
+    setSaving(true);
+    setError(null);
+    setNote(null);
+    try {
+      await setMyTimezone(timezone);
+      setNote(t("settings.saved"));
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : t("state.error"));
+    } finally {
       setSaving(false);
     }
   }
@@ -149,7 +166,7 @@ export default function OrganizationSettingsPage() {
                   data-testid={`org-language-${language.tag}`}
                 >
                   {language.endonym}
-                  <span className="ml-2 text-xs text-muted-foreground">{language.tag}</span>
+                  <span className="ms-2 text-xs text-muted-foreground">{language.tag}</span>
                 </span>
               ))}
             </div>
@@ -162,6 +179,25 @@ export default function OrganizationSettingsPage() {
             ) : (
               <p className="text-xs text-muted-foreground">{t("state.noPermission")}</p>
             )}
+          </section>
+
+          <section className="flex flex-col gap-3 border-t border-border pt-6">
+            <h2 className="text-sm font-semibold">{t("settings.myTimezone")}</h2>
+            <p className="text-xs text-muted-foreground">{t("settings.myTimezoneHelp")}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant={myTimezone ? "outline" : "default"}
+                disabled={saving}
+                onClick={() => chooseMyTimezone(null)}
+                data-testid="timezone-inherit"
+              >
+                {t("settings.useOrganizationTimezone")}
+              </Button>
+              <span className="text-xs text-muted-foreground" data-testid="business-timezone">
+                {t("settings.businessTimezone")}: {settings.timezone}
+              </span>
+            </div>
           </section>
 
           <section className="flex flex-col gap-3 border-t border-border pt-6">

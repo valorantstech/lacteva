@@ -124,7 +124,7 @@ export default function UsersPage() {
             <TableHead>Membership</TableHead>
             <TableHead>Account</TableHead>
             <TableHead>Last signed in</TableHead>
-            <TableHead className="text-right">Action</TableHead>
+            <TableHead className="text-end">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -149,7 +149,7 @@ export default function UsersPage() {
                       {(person.roles ?? []).map((role) => (
                         <span key={`${role.name}-${role.center_id ?? "org"}`} className="text-sm">
                           {role.name}
-                          <span className="ml-1 text-xs text-muted-foreground">
+                          <span className="ms-1 text-xs text-muted-foreground">
                             {role.center_id
                               ? `· ${centerName(role.center_id)}`
                               : "· whole organization"}
@@ -176,7 +176,7 @@ export default function UsersPage() {
                 <TableCell className="tabular-nums text-sm text-muted-foreground">
                   {stamp(person.user?.last_login_at)}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <div className="flex justify-end gap-2">
                     <Button
                       variant={person.status === "active" ? "outline" : "default"}

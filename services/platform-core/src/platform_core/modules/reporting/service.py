@@ -25,6 +25,7 @@ from sqlalchemy import Numeric, case, cast, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import as_utc
+from platform_core.core.money import quantize_money
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.billing.models import (
     PAYABLE_INVOICE_STATUSES,
@@ -91,7 +92,13 @@ def _money(total) -> Decimal:
     The sales figures stay `Decimal` the whole way to the browser (BR-0005),
     unlike weights, which the API has always returned as `float`.
     """
-    return Decimal(total or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    # DEMO-014: the scale rule lives in `core/money.py`, not here. Reporting
+    # aggregates can span rows whose currency the caller has not threaded
+    # through, so it asks for the platform default — two decimals, which is
+    # what every onboarded currency uses and what this function always
+    # assumed. The difference is that the assumption is now stated in one
+    # place, where a zero-decimal currency would be corrected once.
+    return quantize_money(total or 0, None)
 
 
 def _litres(total) -> Decimal:

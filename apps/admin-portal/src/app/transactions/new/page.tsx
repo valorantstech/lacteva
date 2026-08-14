@@ -740,12 +740,12 @@ function ReviewStep({
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Pricing</p>
               <dl className="flex flex-col gap-2 text-sm">
                 <Row label="Rate card">
-                  <span className="text-right text-muted-foreground">{tx.pricing_detail ?? "—"}</span>
+                  <span className="text-end text-muted-foreground">{tx.pricing_detail ?? "—"}</span>
                 </Row>
                 <Row label="Rate">
                   <span className="tabular-nums">
                     {String(tx.unit_price)}
-                    <span className="ml-1 text-xs text-muted-foreground">
+                    <span className="ms-1 text-xs text-muted-foreground">
                       {tx.currency}/{tx.weight_unit ?? "kg"}
                     </span>
                   </span>
@@ -904,7 +904,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex items-baseline justify-between gap-4">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="text-right">{children}</dd>
+      <dd className="text-end">{children}</dd>
     </div>
   );
 }

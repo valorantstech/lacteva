@@ -336,31 +336,31 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 <table className="w-full text-sm">
                   <caption className="sr-only">Deliveries to {customer.name}</caption>
                   <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="py-2 pr-4 font-medium">Date</th>
-                      <th className="py-2 pr-4 font-medium">Slot</th>
-                      <th className="py-2 pr-4 text-right font-medium">Quantity</th>
-                      <th className="py-2 pr-4 text-right font-medium">Rate</th>
-                      <th className="py-2 pr-4 text-right font-medium">Amount</th>
-                      <th className="py-2 pr-4 font-medium">Status</th>
+                    <tr className="border-b text-start text-muted-foreground">
+                      <th className="py-2 pe-4 font-medium">Date</th>
+                      <th className="py-2 pe-4 font-medium">Slot</th>
+                      <th className="py-2 pe-4 text-end font-medium">Quantity</th>
+                      <th className="py-2 pe-4 text-end font-medium">Rate</th>
+                      <th className="py-2 pe-4 text-end font-medium">Amount</th>
+                      <th className="py-2 pe-4 font-medium">Status</th>
                       <th className="py-2 font-medium">Billed</th>
                     </tr>
                   </thead>
                   <tbody>
                     {deliveries.items.map((d: Delivery) => (
                       <tr key={d.id} className="border-b last:border-0">
-                        <td className="py-2 pr-4 tabular-nums">{d.delivery_date}</td>
-                        <td className="py-2 pr-4 text-muted-foreground">{d.slot}</td>
-                        <td className="py-2 pr-4 text-right">
+                        <td className="py-2 pe-4 tabular-nums">{d.delivery_date}</td>
+                        <td className="py-2 pe-4 text-muted-foreground">{d.slot}</td>
+                        <td className="py-2 pe-4 text-end">
                           <Quantity value={d.quantity} unit={d.quantity_unit} />
                         </td>
-                        <td className="py-2 pr-4 text-right tabular-nums">
+                        <td className="py-2 pe-4 text-end tabular-nums">
                           {String(d.unit_price)}
                         </td>
-                        <td className="py-2 pr-4 text-right">
+                        <td className="py-2 pe-4 text-end">
                           <Money amount={d.amount} currency={d.currency} />
                         </td>
-                        <td className="py-2 pr-4">
+                        <td className="py-2 pe-4">
                           <StatusBadge status={d.status} />
                         </td>
                         <td className="py-2 text-xs text-muted-foreground">

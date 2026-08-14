@@ -226,7 +226,7 @@ export default function SyncMonitorPage() {
                 <TableHead>Device</TableHead>
                 <TableHead>Outcome</TableHead>
                 <TableHead>Detail</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="text-end">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -242,7 +242,7 @@ export default function SyncMonitorPage() {
                   <TableCell>
                     <Badge variant={statusVariant(op.status)}>{op.status}</Badge>
                     {op.status === "conflict" && op.applied && (
-                      <span className="ml-1 text-xs text-muted-foreground">kept</span>
+                      <span className="ms-1 text-xs text-muted-foreground">kept</span>
                     )}
                   </TableCell>
                   <TableCell className="max-w-sm truncate text-muted-foreground">

@@ -26,9 +26,9 @@
  * engineer can grep for. Neither is a blank screen.
  */
 
-import { createContext, useCallback, useContext, useMemo } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
 
-import { CATALOGS, type Catalog } from "./messages";
+import { CATALOGS, type Catalog, isRtl } from "./messages";
 
 /** `hi-IN` → `hi`. Catalogs are per language; the region carries money and time. */
 export function baseLanguage(tag: string | null | undefined): string {
@@ -46,6 +46,8 @@ type LocaleContextValue = {
   currency: string | null;
   /** The organization's IANA zone, for anything that renders a date. */
   timezone: string | null;
+  /** Is this language written right to left? (DEMO-014 §7) */
+  rtl: boolean;
   t: Translate;
 };
 
@@ -54,6 +56,7 @@ const FALLBACK: LocaleContextValue = {
   language: "en",
   currency: null,
   timezone: null,
+  rtl: false,
   t: (key) => CATALOGS.en[key] ?? key,
 };
 
@@ -99,15 +102,39 @@ export function LocaleProvider({
     [catalog],
   );
 
+  const rtl = isRtl(language);
+
+  // DEMO-014 §7: `dir` and `lang` belong on the document element, and the
+  // language is only known once the session has answered — so it is set here
+  // rather than in the server-rendered layout, which cannot know it.
+  //
+  // Setting `dir` is most of RTL: the browser flips text direction, alignment
+  // and flex rows from it, which moves the sidebar, right-aligns prose and
+  // reverses tables without a single conditional in a component. What it does
+  // NOT flip is physical spacing utilities, which is why those became logical
+  // ones (`ms-`/`me-`, `ps-`/`pe-`, `text-start`/`text-end`).
+  useEffect(() => {
+    const root = document.documentElement;
+    const previousDir = root.getAttribute("dir");
+    const previousLang = root.getAttribute("lang");
+    root.setAttribute("dir", rtl ? "rtl" : "ltr");
+    root.setAttribute("lang", locale ?? "en");
+    return () => {
+      if (previousDir) root.setAttribute("dir", previousDir);
+      if (previousLang) root.setAttribute("lang", previousLang);
+    };
+  }, [rtl, locale]);
+
   const value = useMemo<LocaleContextValue>(
     () => ({
       locale: locale ?? "en",
       language,
       currency: currency ?? null,
       timezone: timezone ?? null,
+      rtl,
       t,
     }),
-    [locale, language, currency, timezone, t],
+    [locale, language, currency, timezone, rtl, t],
   );
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;

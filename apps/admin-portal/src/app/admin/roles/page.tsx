@@ -132,8 +132,8 @@ export default function RolesPage() {
               <TableHead>Role</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Scope</TableHead>
-              <TableHead className="text-right">Permissions</TableHead>
-              <TableHead className="text-right">Held by</TableHead>
+              <TableHead className="text-end">Permissions</TableHead>
+              <TableHead className="text-end">Held by</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -157,11 +157,11 @@ export default function RolesPage() {
                         {role.system ? "platform" : "this organization"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="text-end tabular-nums">
                       {role.permissions.includes("*") ? "all" : role.permissions.length}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{role.assignments}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end tabular-nums">{role.assignments}</TableCell>
+                    <TableCell className="text-end">
                       <Button
                         size="sm"
                         variant="ghost"

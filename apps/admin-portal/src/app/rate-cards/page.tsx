@@ -224,7 +224,7 @@ export default function RateCardsPage() {
                 <TableHead>Effective</TableHead>
                 <TableHead>Version</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="text-end">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

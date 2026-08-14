@@ -140,7 +140,7 @@ export default function ReceiptsPage() {
                 <TableHead>Payment</TableHead>
                 <TableHead>Settlements</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="text-end">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -150,7 +150,7 @@ export default function ReceiptsPage() {
                   <TableCell>
                     {r.supplier_name || r.supplier_id.slice(0, 8)}
                     {r.supplier_code && (
-                      <span className="ml-1 text-xs text-muted-foreground">
+                      <span className="ms-1 text-xs text-muted-foreground">
                         {r.supplier_code}
                       </span>
                     )}
@@ -304,9 +304,9 @@ function ReceiptDetailCard({
               <TableRow>
                 <TableHead>Settlement</TableHead>
                 <TableHead>Period</TableHead>
-                <TableHead className="text-right">Gross</TableHead>
-                <TableHead className="text-right">Adjustments</TableHead>
-                <TableHead className="text-right">Paid</TableHead>
+                <TableHead className="text-end">Gross</TableHead>
+                <TableHead className="text-end">Adjustments</TableHead>
+                <TableHead className="text-end">Paid</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -320,11 +320,11 @@ function ReceiptDetailCard({
                   <TableCell className="whitespace-nowrap text-muted-foreground">
                     {line.period_from} → {line.period_to}
                   </TableCell>
-                  <TableCell className="text-right">{String(line.gross_amount)}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-end">{String(line.gross_amount)}</TableCell>
+                  <TableCell className="text-end">
                     {String(line.adjustments_amount)}
                   </TableCell>
-                  <TableCell className="text-right font-medium">
+                  <TableCell className="text-end font-medium">
                     {String(line.amount_paid)}
                   </TableCell>
                 </TableRow>

@@ -59,11 +59,25 @@ class Money(BaseModel):
 
     @classmethod
     def of(
-        cls, amount: float | str | int | Decimal, currency: str, *, precision: int = 2
+        cls,
+        amount: float | str | int | Decimal,
+        currency: str,
+        *,
+        precision: int | None = None,
     ) -> "Money":
         """Build from any numeric representation without float artifacts
         (floats go through str, so 42.5 becomes Decimal('42.5'))."""
         value = amount if isinstance(amount, Decimal) else Decimal(str(amount))
+        # DEMO-014: the scale comes from the CURRENCY REGISTRY unless the
+        # caller insists. It was a literal 2, which is right for every
+        # currency Lacteva has onboarded and wrong for the next one — JPY has
+        # no minor unit and UGX, already in the country registry, has none
+        # either. Nothing about today's arithmetic changes; the assumption
+        # moved somewhere it can be corrected.
+        if precision is None:
+            from platform_core.core.money import minor_units
+
+            precision = minor_units(currency)
         return cls(amount=value, currency=currency, precision=precision)
 
     def plus(self, other: "Money") -> "Money":

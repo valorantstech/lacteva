@@ -15,6 +15,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.money import money_scale
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.event_relay.projections import Projection, register_projection
 from platform_core.modules.reporting.models import (
@@ -27,7 +28,11 @@ from platform_core.modules.reporting.models import (
 # total_net_weight NUMERIC(16,3) — grams; payable_amount NUMERIC(16,2) — minor
 # units. Named here so the handler rounds to the same place the column does.
 _WEIGHT_SCALE = Decimal("0.001")
-_MONEY_SCALE = Decimal("0.01")
+#: DEMO-014: from the central rule rather than restated. DB-002 requires this
+#: projection to quantize at every step so a rebuild reproduces the
+#: incremental total; WHAT it quantizes to is a currency fact and lives in
+#: `core/money.py`.
+_MONEY_SCALE = money_scale(None)
 
 
 class ReportingProjection(Projection):
