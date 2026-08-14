@@ -26,6 +26,11 @@
 export type Catalog = Record<string, string>;
 
 const en: Catalog = {
+  "status.scheduled": "scheduled",
+  "status.delivered": "delivered",
+  "status.skipped": "not delivered",
+  "status.returned": "returned",
+  "status.paused": "paused",
   // --- DEMO-016: standing orders and daily generation -----------------
   "schedule.daily": "Every day",
   "schedule.weekdays": "Monday to Friday",
@@ -420,6 +425,11 @@ const en: Catalog = {
 };
 
 const hi: Catalog = {
+  "status.scheduled": "निर्धारित",
+  "status.delivered": "वितरित",
+  "status.skipped": "वितरित नहीं",
+  "status.returned": "वापस",
+  "status.paused": "रोका गया",
   // --- DEMO-016: standing orders and daily generation -----------------
   "schedule.daily": "प्रतिदिन",
   "schedule.weekdays": "सोमवार से शुक्रवार",
@@ -816,6 +826,11 @@ const hi: Catalog = {
 };
 
 const ar: Catalog = {
+  "status.scheduled": "مجدول",
+  "status.delivered": "مُسلَّم",
+  "status.skipped": "غير مُسلَّم",
+  "status.returned": "مُرتجع",
+  "status.paused": "موقوف",
   // --- DEMO-016: standing orders and daily generation -----------------
   "schedule.daily": "كل يوم",
   "schedule.weekdays": "الاثنين إلى الجمعة",

@@ -213,6 +213,30 @@ describe("the catalogs", () => {
     expect(text).toContain("6");
   });
 
+  it("translates a status that has a key, and leaves the rest alone", () => {
+    // DEMO-016. Every badge printed the machine token in English, on every
+    // screen, in every language — including `scheduled`, which this milestone
+    // introduced. The narrow fix: a status with a `status.*` key reads in the
+    // reader's language; one without keeps today's behaviour exactly, so the
+    // catalog is what to extend rather than the component.
+    for (const code of [
+      "scheduled",
+      "delivered",
+      "skipped",
+      "returned",
+      "paused",
+    ]) {
+      for (const language of ["en", "hi", "ar"]) {
+        expect(
+          CATALOGS[language][`status.${code}`],
+          `${language} status.${code}`,
+        ).toBeTruthy();
+      }
+    }
+    // A lifecycle nobody has translated yet must not become a raw key on screen.
+    expect(KEYS.includes("status.quality_pending")).toBe(false);
+  });
+
   it("marks Arabic as right to left and English as not", () => {
     expect(isRtl("ar-SA")).toBe(true);
     expect(isRtl("ar")).toBe(true);
