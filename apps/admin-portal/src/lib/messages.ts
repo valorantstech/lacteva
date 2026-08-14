@@ -26,6 +26,9 @@
 export type Catalog = Record<string, string>;
 
 const en: Catalog = {
+  "delivery.plannedQuantity": "Planned",
+  "delivery.shortfall": "Shortfall",
+  "statement.milk": "Milk delivered",
   // --- DEMO-017: the automatic scheduler ------------------------------
   "generation.auto": "Generated automatically",
   "generation.lastRun": "Last generation",
@@ -437,6 +440,9 @@ const en: Catalog = {
 };
 
 const hi: Catalog = {
+  "delivery.plannedQuantity": "नियोजित",
+  "delivery.shortfall": "कमी",
+  "statement.milk": "वितरित दूध",
   // --- DEMO-017: the automatic scheduler ------------------------------
   "generation.auto": "स्वतः बनाया गया",
   "generation.lastRun": "पिछली बार बनाया गया",
@@ -850,6 +856,9 @@ const hi: Catalog = {
 };
 
 const ar: Catalog = {
+  "delivery.plannedQuantity": "المخطط",
+  "delivery.shortfall": "العجز",
+  "statement.milk": "الحليب المُسلَّم",
   // --- DEMO-017: the automatic scheduler ------------------------------
   "generation.auto": "أُنشئت تلقائيًا",
   "generation.lastRun": "آخر إنشاء",

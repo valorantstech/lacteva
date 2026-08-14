@@ -364,6 +364,28 @@ function DeliveriesView() {
           }
           icon={<Truck className="size-4" />}
         />
+        {/* DEMO-019 §5: what the round intended, beside what it achieved.
+            Only when they differ — a day that went to plan does not need a
+            tile telling a manager it went to plan. */}
+        {report &&
+        report.planned_quantity !== undefined &&
+        String(report.planned_quantity) !== String(report.total_quantity) ? (
+          <StatTile
+            label={t("delivery.plannedQuantity")}
+            value={
+              <Quantity
+                value={report.planned_quantity}
+                unit={report.quantity_unit}
+              />
+            }
+            hint={
+              report.returned
+                ? `${t("delivery.returned")}: ${report.returned}`
+                : undefined
+            }
+            icon={<Droplets className="size-4" />}
+          />
+        ) : null}
         <StatTile
           label={t("field.quantity")}
           value={

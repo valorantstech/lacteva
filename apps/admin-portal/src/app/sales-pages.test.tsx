@@ -133,6 +133,11 @@ const REPORT = {
   total_quantity: "180.500",
   total_amount: "10234.50",
   skipped: 3,
+  scheduled: 2,
+  planned: 41,
+  planned_quantity: "200.500",
+  returned: 1,
+  cancelled: 0,
   by_customer: [
     {
       customer_id: "cu-1",
@@ -188,6 +193,8 @@ const STATEMENT = {
   billed: "3658.00",
   paid: "3658.00",
   closing_balance: "500.00",
+  delivered_quantity: "62.000",
+  quantity_unit: "L",
   entries: [
     {
       entry_date: "2026-08-12",
@@ -465,7 +472,7 @@ describe("customer detail — the whole workflow", () => {
     await renderDetail(<CustomerDetailPage params={params()} />);
     await screen.findByText("Delivery history");
     expect(screen.getByText("10,234.50")).toBeInTheDocument();
-    expect(screen.getByText("180.500")).toBeInTheDocument();
+    expect(screen.getAllByText("180.500").length).toBeGreaterThan(0);
     // A skipped delivery is worth nothing, and says so. (The outstanding
     // tile is also 0.00, hence the count rather than a single match.)
     expect(screen.getAllByText("0.00").length).toBeGreaterThanOrEqual(2);
@@ -892,5 +899,36 @@ describe("the automatic scheduler (DEMO-017)", () => {
       0,
     );
     expect(screen.queryByText(/last generation/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("planned against delivered (DEMO-019)", () => {
+  it("shows what the round intended beside what it achieved", async () => {
+    routeAll();
+    render(<DeliveriesPage />);
+    expect(await screen.findByText("Planned")).toBeInTheDocument();
+    expect(screen.getByText("200.500")).toBeInTheDocument();
+    // And the achieved figure is still its own tile.
+    expect(screen.getAllByText("180.500").length).toBeGreaterThan(0);
+  });
+
+  it("says nothing when the round went to plan", async () => {
+    // A day that went to plan does not need a tile telling a manager so.
+    routeAll({
+      "/v1/deliveries/report": () =>
+        json({ ...REPORT, planned_quantity: REPORT.total_quantity }),
+    });
+    render(<DeliveriesPage />);
+    await screen.findAllByText("By customer");
+    expect(screen.queryByText("Planned")).not.toBeInTheDocument();
+  });
+
+  it("says how much milk the statement's money is for", async () => {
+    routeAll();
+    await renderDetail(
+      <CustomerDetailPage params={Promise.resolve({ id: "cu-1" })} />,
+    );
+    expect(await screen.findByText("Milk delivered")).toBeInTheDocument();
+    expect(screen.getByText("62.000")).toBeInTheDocument();
   });
 });

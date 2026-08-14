@@ -2408,6 +2408,12 @@ export type DeliveryReport = {
   scheduled?: number;
   /** The size of the day's round: completed + skipped + still scheduled. */
   planned?: number;
+  /** How much milk the round INTENDED, in litres (DEMO-019 §5). Compared with
+   *  `total_quantity` this is the shortfall, which is the question a dairy
+   *  manager actually asks at the end of a day. */
+  planned_quantity?: string | number;
+  returned?: number;
+  cancelled?: number;
   by_day: DeliveryDayRow[];
   by_customer: DeliveryCustomerRow[];
 };
@@ -2630,6 +2636,9 @@ export type CustomerStatement = {
   billed: string | number;
   paid: string | number;
   closing_balance: string | number;
+  /** How much milk the money is for (DEMO-019 §7). */
+  delivered_quantity?: string | number;
+  quantity_unit?: string;
   entries: StatementEntry[];
 };
 

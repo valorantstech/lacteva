@@ -549,7 +549,7 @@ export default function CustomerDetailPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <div className="grid gap-4 sm:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-5">
               <StatTile
                 label={t("statement.opening")}
                 value={
@@ -559,6 +559,17 @@ export default function CustomerDetailPage({
                   />
                 }
               />
+              {statement.delivered_quantity !== undefined ? (
+                <StatTile
+                  label={t("statement.milk")}
+                  value={
+                    <Quantity
+                      value={statement.delivered_quantity}
+                      unit={statement.quantity_unit ?? "L"}
+                    />
+                  }
+                />
+              ) : null}
               <StatTile
                 label={t("statement.billed")}
                 value={
