@@ -10,6 +10,7 @@ import {
   type CustomerDetail,
   type CustomerPayment,
   type CustomerStatement,
+  type DeliveryPlan,
   type CustomerReceipt,
   type Delivery,
   type DeliveryPageResult,
@@ -18,6 +19,8 @@ import {
   getCustomer,
   getCustomerBalance,
   getCustomerStatement,
+  pauseDeliveryPlan,
+  resumeDeliveryPlan,
   listCustomerPayments,
   listCustomerReceipts,
   listDeliveries,
@@ -356,44 +359,97 @@ export default function CustomerDetailPage({
           </CardContent>
         </Card>
 
-        {/* --- the plan ---------------------------------------------------- */}
+        {/* --- the standing order (DEMO-016) ------------------------------- */}
         <Card>
           <CardHeader>
-            <CardTitle>Delivery plan</CardTitle>
-            <CardDescription>
-              A rate change supersedes the plan rather than editing it, so a
-              delivery priced last week can still be explained.
-            </CardDescription>
+            <CardTitle>{t("plan.title")}</CardTitle>
+            <CardDescription>{t("plan.subtitle")}</CardDescription>
           </CardHeader>
           <CardContent>
             {plans.length === 0 ? (
-              <EmptyState title="No plan agreed" />
+              <EmptyState
+                title={t("plan.none")}
+                description={t("plan.noneDetail")}
+              />
             ) : (
               <ul className="flex flex-col divide-y">
                 {plans.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex items-center justify-between gap-3 py-2"
-                  >
-                    <div className="flex flex-col">
-                      <span className="text-sm">
-                        {String(p.unit_price)} {p.currency}/{p.quantity_unit}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        from {p.effective_from} ·{" "}
-                        <Quantity
-                          value={p.default_quantity}
-                          unit={p.quantity_unit}
+                  <li key={p.id} className="flex flex-col gap-2 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col">
+                        <span className="text-sm">
+                          <Quantity
+                            value={p.default_quantity}
+                            unit={p.quantity_unit}
+                          />
+                          {" · "}
+                          {String(p.unit_price)} {p.currency}/{p.quantity_unit}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {/* The platform sends a KEY for the schedule, never a
+                              sentence — so this line is Hindi when the reader is. */}
+                          {t(p.schedule_key ?? "schedule.daily")} ·{" "}
+                          {t("plan.startDate")} {p.effective_from}
+                          {p.effective_to
+                            ? ` · ${t("plan.endDate")} ${p.effective_to}`
+                            : ""}
+                        </span>
+                        {p.active && p.paused_from ? (
+                          <span className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-500">
+                            {p.paused_to
+                              ? t("plan.pausedUntil", { date: p.paused_to })
+                              : t("plan.pausedIndefinitely")}
+                          </span>
+                        ) : null}
+                        {p.active && !p.paused_from && p.next_delivery ? (
+                          <span className="mt-1 text-xs text-muted-foreground">
+                            {t("plan.nextDelivery")}: {p.next_delivery}
+                          </span>
+                        ) : null}
+                      </div>
+                      {p.active ? (
+                        <StatusBadge
+                          status={p.paused_from ? "paused" : "active"}
                         />
-                      </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          {t("plan.superseded")}
+                        </span>
+                      )}
                     </div>
                     {p.active ? (
-                      <StatusBadge status="active" />
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        superseded
-                      </span>
-                    )}
+                      <PlanControls
+                        plan={p}
+                        busy={busy === p.id}
+                        onPause={async (from, to) => {
+                          setBusy(p.id);
+                          try {
+                            await pauseDeliveryPlan(p.id, {
+                              paused_from: from,
+                              paused_to: to || null,
+                            });
+                            setNotice(t("plan.paused"));
+                            await load();
+                          } catch (err) {
+                            setFailure(describe(err));
+                          } finally {
+                            setBusy(null);
+                          }
+                        }}
+                        onResume={async () => {
+                          setBusy(p.id);
+                          try {
+                            await resumeDeliveryPlan(p.id);
+                            setNotice(t("plan.resume"));
+                            await load();
+                          } catch (err) {
+                            setFailure(describe(err));
+                          } finally {
+                            setBusy(null);
+                          }
+                        }}
+                      />
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -993,6 +1049,108 @@ function RecordPaymentForm({
       </div>
       <Button type="submit" disabled={busy || !amount}>
         Record payment
+      </Button>
+    </form>
+  );
+}
+
+/**
+ * Pause and resume, on one plan.
+ *
+ * The dates go to the SERVER as written: this component decides nothing about
+ * which days are affected, it only collects two dates and posts them. What a
+ * pause means — inclusive at both ends, no end meaning "until further notice"
+ * — is `schedule.py`'s answer, and duplicating that reading here is how the
+ * screen and the generator would eventually disagree about a holiday.
+ */
+function PlanControls({
+  plan,
+  busy,
+  onPause,
+  onResume,
+}: {
+  plan: DeliveryPlan;
+  busy: boolean;
+  onPause: (from: string, to: string) => Promise<void>;
+  onResume: () => Promise<void>;
+}) {
+  const { t, timezone } = useLocale();
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState(() => today(timezone));
+  const [to, setTo] = useState("");
+
+  if (plan.paused_from) {
+    return (
+      <div className="flex items-center gap-3">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void onResume()}
+        >
+          {t("plan.resume")}
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          {t("plan.paused_notice")}
+        </span>
+      </div>
+    );
+  }
+
+  if (!open) {
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        className="self-start"
+        onClick={() => setOpen(true)}
+      >
+        {t("plan.pause")}
+      </Button>
+    );
+  }
+
+  return (
+    <form
+      className="flex flex-wrap items-end gap-3"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        await onPause(from, to);
+        setOpen(false);
+      }}
+    >
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={`pause-from-${plan.id}`}>{t("plan.pauseFrom")}</Label>
+        <input
+          id={`pause-from-${plan.id}`}
+          type="date"
+          required
+          value={from}
+          onChange={(e) => setFrom(e.target.value)}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={`pause-to-${plan.id}`}>{t("plan.pauseTo")}</Label>
+        <input
+          id={`pause-to-${plan.id}`}
+          type="date"
+          value={to}
+          min={from}
+          onChange={(e) => setTo(e.target.value)}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+        />
+      </div>
+      <Button size="sm" type="submit" disabled={busy}>
+        {t("plan.pause")}
+      </Button>
+      <Button
+        size="sm"
+        type="button"
+        variant="ghost"
+        onClick={() => setOpen(false)}
+      >
+        {t("action.cancel")}
       </Button>
     </form>
   );

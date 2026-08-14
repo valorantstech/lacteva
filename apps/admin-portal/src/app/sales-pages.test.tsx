@@ -28,6 +28,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParams,
 }));
 
+import { CATALOGS } from "@/lib/messages";
 import CustomerDetailPage from "@/app/customers/[id]/page";
 import CustomersPage from "@/app/customers/page";
 import DeliveriesPage from "@/app/deliveries/page";
@@ -67,6 +68,15 @@ const PLAN = {
   currency: "KES",
   effective_from: "2026-07-01",
   active: true,
+  // DEMO-016: the plan is a standing order now.
+  effective_to: null,
+  weekdays: "1111111",
+  slot: "morning",
+  quantity_overrides: null,
+  paused_from: null,
+  paused_to: null,
+  schedule_key: "schedule.daily",
+  next_delivery: "2026-08-13",
 };
 
 const DELIVERY = {
@@ -207,6 +217,25 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
     for (const [fragment, handler] of Object.entries(overrides)) {
       if (url.includes(fragment)) return handler(url);
     }
+    // These are POSTs with their own shapes, so they must be matched BEFORE
+    // the blanket "any POST records a delivery" fallback below.
+    if (path.endsWith("/v1/deliveries/generate"))
+      return json({
+        business_date: "2026-08-12",
+        due: 6,
+        created: 6,
+        already_present: 0,
+        not_due: 1,
+        inactive_customers: 0,
+      });
+    if (path.includes("/plans/") && path.endsWith("/pause"))
+      return json({
+        ...PLAN,
+        paused_from: "2026-08-20",
+        paused_to: "2026-08-30",
+      });
+    if (path.includes("/plans/") && path.endsWith("/resume"))
+      return json({ ...PLAN, paused_from: null, paused_to: null });
     if (init?.method === "POST") return json(DELIVERY, 201);
     if (path.endsWith("/v1/customers/cu-1/balance"))
       return json({
@@ -219,6 +248,23 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
         unbilled_deliveries: 2,
         open_invoices: 0,
       });
+    if (path.endsWith("/v1/deliveries/generate"))
+      return json({
+        business_date: "2026-08-12",
+        due: 6,
+        created: 6,
+        already_present: 0,
+        not_due: 1,
+        inactive_customers: 0,
+      });
+    if (path.includes("/plans/") && path.endsWith("/pause"))
+      return json({
+        ...PLAN,
+        paused_from: "2026-08-20",
+        paused_to: "2026-08-30",
+      });
+    if (path.includes("/plans/") && path.endsWith("/resume"))
+      return json({ ...PLAN, paused_from: null, paused_to: null });
     if (path.endsWith("/v1/customers/cu-1/statement")) return json(STATEMENT);
     if (path.endsWith("/v1/customers/cu-1"))
       return json({ customer: CUSTOMER, plans: [PLAN] });
@@ -698,5 +744,78 @@ describe("the delivery report as a file (DEMO-015)", () => {
     // A customer whose rate changed inside the window: the platform sent null
     // rather than an average, and the screen says so instead of inventing one.
     expect(screen.getByText("Mixed")).toBeInTheDocument();
+  });
+});
+
+describe("standing orders (DEMO-016)", () => {
+  it("shows the schedule as words the reader can read, from a key", () => {
+    // The platform sends `schedule.mon_sat`; the catalog decides the sentence.
+    expect(CATALOGS.en["schedule.mon_sat"]).toBe("Monday to Saturday");
+    expect(CATALOGS.hi["schedule.mon_sat"]).toBeTruthy();
+    expect(CATALOGS.ar["schedule.mon_sat"]).toBeTruthy();
+  });
+
+  it("prints the plan's schedule and next delivery", async () => {
+    routeAll();
+    await renderDetail(
+      <CustomerDetailPage params={Promise.resolve({ id: "cu-1" })} />,
+    );
+    expect(await screen.findByText("Standing order")).toBeInTheDocument();
+    expect(screen.getByText(/Every day/)).toBeInTheDocument();
+  });
+
+  it("offers to pause a running plan", async () => {
+    routeAll();
+    await renderDetail(
+      <CustomerDetailPage params={Promise.resolve({ id: "cu-1" })} />,
+    );
+    expect(
+      await screen.findByRole("button", { name: "Pause" }),
+    ).toBeInTheDocument();
+  });
+
+  it("generates the round through the platform and reports what it did", async () => {
+    const spy = routeAll();
+    render(<DeliveriesPage />);
+    const button = await screen.findByRole("button", {
+      name: /generate deliveries/i,
+    });
+    await act(async () => {
+      await userEvent.click(button);
+    });
+    await waitFor(() =>
+      expect(urls(spy).some((u) => u.includes("/v1/deliveries/generate"))).toBe(
+        true,
+      ),
+    );
+    // The banner is several text nodes, so assert on the region's content
+    // rather than on a single matching element.
+    const banner = await screen.findByRole("status");
+    expect(banner.textContent).toMatch(/6 deliveries generated/i);
+  });
+
+  it("treats a second run as ordinary, not as a failure", async () => {
+    // Idempotency is a database constraint; the screen's job is to say so
+    // rather than to disable the button and pretend it cannot happen.
+    routeAll({
+      "/v1/deliveries/generate": () =>
+        json({
+          business_date: "2026-08-12",
+          due: 6,
+          created: 0,
+          already_present: 6,
+          not_due: 0,
+          inactive_customers: 0,
+        }),
+    });
+    render(<DeliveriesPage />);
+    await act(async () => {
+      await userEvent.click(
+        await screen.findByRole("button", { name: /generate deliveries/i }),
+      );
+    });
+    const banner = await screen.findByRole("status");
+    expect(banner.textContent).toMatch(/6 already existed/i);
+    expect(banner.textContent).toMatch(/will not deliver twice/i);
   });
 });

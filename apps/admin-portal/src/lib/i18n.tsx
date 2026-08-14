@@ -26,7 +26,13 @@
  * engineer can grep for. Neither is a blank screen.
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+} from "react";
 
 import { CATALOGS, type Catalog, isRtl } from "./messages";
 
@@ -35,7 +41,10 @@ export function baseLanguage(tag: string | null | undefined): string {
   return (tag ?? "en").split("-")[0].toLowerCase();
 }
 
-export type Translate = (key: string, vars?: Record<string, string | number>) => string;
+export type Translate = (
+  key: string,
+  vars?: Record<string, string | number>,
+) => string;
 
 type LocaleContextValue = {
   /** The full BCP-47 tag in force, e.g. `hi-IN`. */
@@ -57,14 +66,22 @@ const FALLBACK: LocaleContextValue = {
   currency: null,
   timezone: null,
   rtl: false,
-  t: (key) => CATALOGS.en[key] ?? key,
+  // Interpolates, like the real one. DEMO-016 found this: the fallback used
+  // to ignore `vars`, so any component rendering outside a provider — an
+  // error boundary, a page mid-hydration — printed a literal `{count}` at the
+  // reader. A fallback that degrades to English is the design; one that
+  // degrades to placeholder syntax is a bug.
+  t: (key, vars) => interpolate(CATALOGS.en[key] ?? key, vars),
 };
 
 const LocaleContext = createContext<LocaleContextValue>(FALLBACK);
 
 /** `{count} customers` → `12 customers`. Deliberately not a plural engine:
  *  every string in this catalog is written to read correctly either way. */
-function interpolate(template: string, vars?: Record<string, string | number>): string {
+function interpolate(
+  template: string,
+  vars?: Record<string, string | number>,
+): string {
   if (!vars) return template;
   return template.replace(/\{(\w+)\}/g, (whole, name) =>
     name in vars ? String(vars[name]) : whole,
@@ -80,7 +97,8 @@ function interpolate(template: string, vars?: Record<string, string | number>): 
  */
 export function translatorFor(locale: string | null | undefined): Translate {
   const catalog: Catalog = CATALOGS[baseLanguage(locale)] ?? CATALOGS.en;
-  return (key, vars) => interpolate(catalog[key] ?? CATALOGS.en[key] ?? key, vars);
+  return (key, vars) =>
+    interpolate(catalog[key] ?? CATALOGS.en[key] ?? key, vars);
 }
 
 export function LocaleProvider({
@@ -137,7 +155,9 @@ export function LocaleProvider({
     [locale, language, currency, timezone, rtl, t],
   );
 
-  return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
+  return (
+    <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>
+  );
 }
 
 /** Everything a screen needs to speak to this person about this organization. */

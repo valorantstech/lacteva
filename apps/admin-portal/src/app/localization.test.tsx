@@ -197,6 +197,22 @@ describe("the catalogs", () => {
     }
   });
 
+  it("substitutes variables even without a provider", () => {
+    // DEMO-016 found the fallback translator ignoring `vars`, so a component
+    // rendering outside a LocaleProvider printed a literal `{count}` at the
+    // reader. Degrading to English is the design; degrading to placeholder
+    // syntax is a bug.
+    // Rendered with NO LocaleProvider above it, which is the situation.
+    function Orphan() {
+      const { t } = useLocale();
+      return <span>{t("generation.created", { count: 6 })}</span>;
+    }
+    render(<Orphan />);
+    const text = screen.getByText(/generated/i).textContent ?? "";
+    expect(text).not.toContain("{count}");
+    expect(text).toContain("6");
+  });
+
   it("marks Arabic as right to left and English as not", () => {
     expect(isRtl("ar-SA")).toBe(true);
     expect(isRtl("ar")).toBe(true);

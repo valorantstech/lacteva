@@ -2158,6 +2158,21 @@ export type DeliveryPlan = {
   currency: string;
   effective_from: string;
   active: boolean;
+
+  // --- the standing order (DEMO-016) ---------------------------------------
+  effective_to?: string | null;
+  /** Seven characters, Monday first: "1111111" is every day. */
+  weekdays?: string;
+  slot?: string;
+  center_id?: string | null;
+  quantity_overrides?: Record<string, string> | null;
+  paused_from?: string | null;
+  paused_to?: string | null;
+  /** A translation KEY — `schedule.daily`, `schedule.mon_sat`, … The platform
+   *  never sends a sentence; the catalog decides what the reader sees. */
+  schedule_key?: string;
+  /** When this plan next delivers, or null if not within the year. */
+  next_delivery?: string | null;
 };
 
 export type CustomerPageResult = {
@@ -2206,7 +2221,9 @@ export const setCustomerStatus = (id: string, status: string) =>
     body: JSON.stringify({ status }),
   });
 
-/** Agree (or re-agree) what a customer takes and at what rate. */
+/** Agree (or re-agree) what a customer takes, at what rate, and on which days.
+ *  Supersedes the previous plan rather than editing it, so history keeps
+ *  pointing at the plan that priced it (DEMO-016 §8). */
 export const setDeliveryPlan = (
   id: string,
   body: {
@@ -2214,9 +2231,47 @@ export const setDeliveryPlan = (
     default_quantity: string;
     quantity_unit?: string;
     unit_price: string;
+    effective_from?: string;
+    effective_to?: string | null;
+    weekdays?: string;
+    slot?: string;
+    quantity_overrides?: Record<string, string> | null;
   },
 ) =>
   api<DeliveryPlan>(`/v1/customers/${id}/plan`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+/** Send a standing order on holiday. Generates nothing inside the window;
+ *  touches no delivery that has already happened. */
+export const pauseDeliveryPlan = (planId: string, body: { paused_from: string; paused_to?: string | null }) =>
+  api<DeliveryPlan>(`/v1/customers/plans/${planId}/pause`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+/** Back from holiday. Does NOT backfill the days that were paused. */
+export const resumeDeliveryPlan = (planId: string) =>
+  api<DeliveryPlan>(`/v1/customers/plans/${planId}/resume`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
+export type GenerationResult = {
+  business_date: string;
+  due: number;
+  created: number;
+  already_present: number;
+  not_due: number;
+  inactive_customers: number;
+};
+
+/** Turn today's standing orders into the day's round. Safe to run twice —
+ *  idempotency is a database constraint, so a second call returns
+ *  `created: 0` rather than a duplicated round. */
+export const generateDeliveries = (body: { for_date?: string } = {}) =>
+  api<GenerationResult>("/v1/deliveries/generate", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -2325,6 +2380,10 @@ export type DeliveryReport = {
   total_quantity: string | number;
   total_amount: string | number;
   skipped: number;
+  /** Generated and not yet acted on — the operator's "how many are left?" */
+  scheduled?: number;
+  /** The size of the day's round: completed + skipped + still scheduled. */
+  planned?: number;
   by_day: DeliveryDayRow[];
   by_customer: DeliveryCustomerRow[];
 };

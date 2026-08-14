@@ -3,7 +3,15 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Banknote, Download, Droplets, Truck, Users } from "lucide-react";
+import {
+  Banknote,
+  CalendarClock,
+  CalendarPlus,
+  Download,
+  Droplets,
+  Truck,
+  Users,
+} from "lucide-react";
 import {
   ApiError,
   type Customer,
@@ -11,6 +19,8 @@ import {
   type DeliveryPageResult,
   type DeliveryReport,
   deliveryReportCsvUrl,
+  generateDeliveries,
+  type GenerationResult,
   getDeliveryReport,
   listCustomers,
   listDeliveries,
@@ -97,6 +107,8 @@ function DeliveriesView() {
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [generated, setGenerated] = useState<GenerationResult | null>(null);
 
   const filtered = Boolean(customerId || status || billed);
 
@@ -230,19 +242,72 @@ function DeliveriesView() {
           saves any download — and nothing about the report is assembled in
           JavaScript, which is the point of §15.
         */}
-        <a
-          href={deliveryReportCsvUrl({
-            date_from: range.from,
-            date_to: range.to,
-            customer_id: customerId || undefined,
-            status: status || undefined,
-          })}
-          className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
-        >
-          <Download className="size-4" />
-          {t("delivery.downloadCsv")}
-        </a>
+        <div className="flex flex-wrap items-center gap-3">
+          {/*
+          DEMO-016. Running this twice is safe — idempotency is a database
+          constraint, not a check in the browser — so the button is not
+          disabled after a run and the result says how many already existed.
+        */}
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={generating}
+            onClick={async () => {
+              setGenerating(true);
+              setGenerated(null);
+              try {
+                setGenerated(await generateDeliveries({ for_date: range.to }));
+                await load();
+              } catch (err) {
+                setError(
+                  err instanceof ApiError ? err.detail : t("generation.failed"),
+                );
+              } finally {
+                setGenerating(false);
+              }
+            }}
+          >
+            <CalendarPlus className="size-4" />
+            {t("generation.run")}
+          </Button>
+          <a
+            href={deliveryReportCsvUrl({
+              date_from: range.from,
+              date_to: range.to,
+              customer_id: customerId || undefined,
+              status: status || undefined,
+            })}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
+          >
+            <Download className="size-4" />
+            {t("delivery.downloadCsv")}
+          </a>
+        </div>
       </div>
+
+      {generated ? (
+        <div
+          role="status"
+          className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm"
+        >
+          {/*
+            "Nothing due" and "nothing NEW" are different answers and a test
+            caught them being conflated: a second run finds six due and creates
+            none, which is idempotency working — not an empty day.
+          */}
+          {generated.created > 0
+            ? t("generation.created", { count: generated.created })
+            : generated.due > 0
+              ? t("generation.created", { count: 0 })
+              : t("generation.nothingDue")}
+          {generated.already_present > 0
+            ? ` · ${t("generation.alreadyPresent", { count: generated.already_present })}`
+            : ""}
+          <span className="ms-2 text-xs text-muted-foreground">
+            {t("generation.idempotent")}
+          </span>
+        </div>
+      ) : null}
 
       <section
         aria-label={t("delivery.summary")}
@@ -288,6 +353,21 @@ function DeliveriesView() {
           value={report ? report.customers_served : "—"}
           icon={<Users className="size-4" />}
         />
+        {/* DEMO-016 §13: the operator's "how many are left?". Only shown when
+            there is a generated round to be left of — a dairy that types its
+            deliveries has no pending count and does not need a zero. */}
+        {report && (report.scheduled ?? 0) > 0 ? (
+          <StatTile
+            label={t("delivery.pending")}
+            value={report.scheduled ?? 0}
+            hint={
+              report.planned
+                ? `${t("delivery.planned")}: ${report.planned}`
+                : undefined
+            }
+            icon={<CalendarClock className="size-4" />}
+          />
+        ) : null}
       </section>
 
       {/*
