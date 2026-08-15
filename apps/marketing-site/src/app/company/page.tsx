@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { LinkButton } from "@/components/link-button";
 import { Section, SectionHeading } from "@/components/section";
 
 export const metadata: Metadata = {
@@ -82,13 +82,11 @@ export default function CompanyPage() {
           title="Every production guarantee must be executable"
           lede="Lacteva is built under the Phoenix Software Engineering Standard: guarantees are proven by running them, not by writing them down. Backups restore, recovery is rehearsed, and a test that never ran counts as absent. Ambitious on scope — the long-term vision is a dairy platform serving businesses across fifty-plus countries — and deliberately conservative on claims: this page describes what exists."
         />
-        <div className="pt-2">
-          <Link
-            href="/request-demo"
-            className="inline-flex h-11 items-center rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/85"
-          >
-            Get in touch
-          </Link>
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <LinkButton href="/start-free-trial">Start Free Trial</LinkButton>
+          <LinkButton href="/request-demo" variant="outline">
+            Book a Demo
+          </LinkButton>
         </div>
       </Section>
     </>

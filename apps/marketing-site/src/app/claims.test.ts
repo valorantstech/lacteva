@@ -37,6 +37,10 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
   // MKT-004C: the trial is a request flow fulfilled by a person — the
   // copy must never promise self-service provisioning that does not exist.
   { pattern: /no credit card|instant access|start instantly|account (is )?created instantly|sign up instantly/i, why: "trial provisioning is manual; no instant-access promises" },
+  // MKT-004E: commercial terms that are not finalized cannot be promised.
+  { pattern: /cancel anytime|no setup fee|money-?back/i, why: "commercial terms are not finalized" },
+  { pattern: /unlimited (users|operators|centres|centers|suppliers|customers)/i, why: "no plan limits exist to waive; pricing is not finalized" },
+  { pattern: /\d+\s*%\s*(off|discount)|free forever/i, why: "no discounts or free tiers exist" },
 ];
 
 function collectSourceFiles(dir: string): string[] {

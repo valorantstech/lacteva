@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { LinkButton } from "@/components/link-button";
 import { Section, SectionHeading } from "@/components/section";
 
 export const metadata: Metadata = {
   title: "Why Lacteva",
   description:
-    "Why organizations choose Lacteva over single-PC collection software and the paper register: checkable records, explainable pricing, and no hardware lock-in.",
+    "Why organizations choose Lacteva over single-PC collection software and the paper register: checkable records, explainable pricing, and one connected operation.",
 };
 
 const VERSUS = [
@@ -124,13 +124,11 @@ export default function WhyLactevaPage() {
             </div>
           ))}
         </div>
-        <div className="pt-10">
-          <Link
-            href="/request-demo"
-            className="inline-flex h-11 items-center rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/85"
-          >
-            Request a demo
-          </Link>
+        <div className="flex flex-wrap items-center gap-3 pt-10">
+          <LinkButton href="/start-free-trial">Start Free Trial</LinkButton>
+          <LinkButton href="/request-demo" variant="outline">
+            Book a Demo
+          </LinkButton>
         </div>
       </Section>
     </>

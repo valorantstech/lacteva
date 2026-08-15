@@ -2,23 +2,22 @@ import Link from "next/link";
 import { LinkButton } from "@/components/link-button";
 import { Wordmark } from "@/components/logo";
 
-// Grows toward Product / Solutions / Pricing / About as those pages land
-// (MKT-004D/E). Only routes that exist are listed — no dead links.
+// Final navigation (MKT-004E). "Resources" stays deferred until there is
+// real content to put behind it; /why-lacteva remains reachable from the
+// footer.
 const NAV = [
   { href: "/product", label: "Product" },
   { href: "/solutions", label: "Solutions" },
-  { href: "/why-lacteva", label: "Why Lacteva" },
+  { href: "/pricing", label: "Pricing" },
   { href: "/company", label: "About" },
 ] as const;
 
 /**
- * Server component; the whole site is navigable without JavaScript. The
- * "Sign in" link points at the separate authenticated admin portal and only
- * renders when a portal URL is configured — the two applications share a
- * link, never a UI.
+ * Server component; the whole site is navigable without JavaScript. Login
+ * goes through /login, which hands over to the separately deployed
+ * authenticated portal — the two applications share a link, never a UI.
  */
 export function SiteHeader() {
-  const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL;
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/90 backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-6 px-4 sm:px-6 lg:px-8">
@@ -37,16 +36,14 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="flex items-center gap-3">
-          {portalUrl ? (
-            <a
-              href={portalUrl}
-              className="hidden text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
-            >
-              Login
-            </a>
-          ) : null}
-          <LinkButton href="/request-demo" size="lg">
-            Request a demo
+          <Link
+            href="/login"
+            className="hidden text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
+          >
+            Login
+          </Link>
+          <LinkButton href="/start-free-trial" size="lg">
+            Start Free Trial
           </LinkButton>
         </div>
       </div>

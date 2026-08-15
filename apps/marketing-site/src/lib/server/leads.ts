@@ -17,6 +17,8 @@ export type DemoRequest = {
   email: string;
   organization: string;
   country: string;
+  phone: string;
+  organizationType: string;
   dailyVolume: string;
   message: string;
 };

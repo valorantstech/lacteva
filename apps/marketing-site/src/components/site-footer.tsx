@@ -7,6 +7,7 @@ const COLUMNS = [
     links: [
       { href: "/product", label: "How Lacteva works" },
       { href: "/solutions", label: "Solutions" },
+      { href: "/pricing", label: "Pricing" },
       { href: "/why-lacteva", label: "Why Lacteva" },
     ],
   },
@@ -14,7 +15,9 @@ const COLUMNS = [
     heading: "Company",
     links: [
       { href: "/company", label: "About Phoenix Software" },
-      { href: "/request-demo", label: "Request a demo" },
+      { href: "/start-free-trial", label: "Start Free Trial" },
+      { href: "/request-demo", label: "Book a Demo" },
+      { href: "/login", label: "Login" },
     ],
   },
 ] as const;

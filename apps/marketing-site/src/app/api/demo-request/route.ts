@@ -55,6 +55,9 @@ export async function POST(request: Request) {
     email: email.trim(),
     organization: String(body.organization).trim(),
     country: String(body.country).trim(),
+    phone: typeof body.phone === "string" ? body.phone.trim() : "",
+    organizationType:
+      typeof body.organizationType === "string" ? body.organizationType.trim() : "",
     dailyVolume: typeof body.dailyVolume === "string" ? body.dailyVolume.trim() : "",
     message: typeof body.message === "string" ? body.message.trim() : "",
   };

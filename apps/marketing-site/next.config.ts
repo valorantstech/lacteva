@@ -29,9 +29,22 @@ const nextConfig: NextConfig = {
    * stays reusable if a pricing/packaging page returns there later.
    */
   async redirects() {
-    return [
+    const redirects = [
       { source: "/editions", destination: "/product", permanent: false },
     ];
+    // MKT-004E: /login hands over to the separately deployed authenticated
+    // portal when its URL is configured. Unset (local dev without a
+    // portal), the /login page itself renders a clear explanation instead
+    // of redirecting into nothing.
+    const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL;
+    if (portalUrl) {
+      redirects.push({
+        source: "/login",
+        destination: portalUrl,
+        permanent: false,
+      });
+    }
+    return redirects;
   },
 };
 

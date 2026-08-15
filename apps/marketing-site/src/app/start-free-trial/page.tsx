@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "Start your free trial",
   description:
     "Request a 30-day free trial of Lacteva — the connected dairy operations platform. Our team sets up your environment and gets you started.",
+  alternates: { canonical: "/start-free-trial" },
 };
 
 /**
@@ -40,7 +41,7 @@ export default function StartFreeTrialPage() {
         <LeadForm
           intent="trial"
           submitLabel="Request your free trial"
-          successDetail="Thank you — our team will contact you to set up your 30-day trial environment."
+          successDetail="Thanks — your trial request has been received. Our team will review your requirements and help set up your Lacteva environment."
         />
       </div>
     </Section>

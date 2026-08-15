@@ -3,9 +3,10 @@ import { Section, SectionHeading } from "@/components/section";
 import { LeadForm } from "@/components/lead-form";
 
 export const metadata: Metadata = {
-  title: "Request a demo",
+  title: "Book a Demo",
   description:
-    "See Lacteva live — the whole loop from milk collection to receipt, demonstrated on a phone.",
+    "Book a live demo of Lacteva — see the connected dairy operations platform on your own workflows, from collection to billing.",
+  alternates: { canonical: "/request-demo" },
 };
 
 export default function RequestDemoPage() {
@@ -15,7 +16,7 @@ export default function RequestDemoPage() {
         <div>
           <SectionHeading
             as="h1"
-            eyebrow="Request a demo"
+            eyebrow="Book a Demo"
             title="See the whole loop, live"
             lede="Collection to receipt, on a phone — including what happens when the network drops. Tell us a little about your organization and we will arrange it."
           />
@@ -31,7 +32,7 @@ export default function RequestDemoPage() {
             <li>We only use these details to respond to your request.</li>
           </ul>
         </div>
-        <LeadForm />
+        <LeadForm submitLabel="Book a demo" />
       </div>
     </Section>
   );

@@ -10,6 +10,14 @@ const VOLUME_OPTIONS = [
   "Over 200,000 L/day",
 ] as const;
 
+const ORGANIZATION_TYPES = [
+  "Dairy company",
+  "Cooperative",
+  "Milk collection organization",
+  "Milk distributor",
+  "Other",
+] as const;
+
 type Status = "idle" | "submitting" | "sent" | "error";
 
 const inputClasses =
@@ -110,9 +118,26 @@ export function LeadForm({
           Country
           <input name="country" required autoComplete="country-name" className={inputClasses} />
         </label>
+        <label className="flex flex-col gap-1.5 text-sm font-medium">
+          Phone <span className="font-normal text-muted-foreground">(optional)</span>
+          <input name="phone" type="tel" autoComplete="tel" className={inputClasses} />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm font-medium">
+          Type of organization
+          <select name="organizationType" defaultValue="" className={inputClasses}>
+            <option value="" disabled>
+              Select a type
+            </option>
+            {ORGANIZATION_TYPES.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       <label className="flex flex-col gap-1.5 text-sm font-medium">
-        Daily milk volume
+        Approximate daily milk volume
         <select name="dailyVolume" defaultValue="" className={inputClasses}>
           <option value="" disabled>
             Select a range

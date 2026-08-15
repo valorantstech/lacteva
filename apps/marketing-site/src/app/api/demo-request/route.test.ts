@@ -64,6 +64,28 @@ describe("POST /api/demo-request", () => {
     expect(forwarded.email).toBe(VALID.email);
   });
 
+  it("forwards trial intent, phone, and organization type", async () => {
+    process.env.LACTEVA_LEADS_WEBHOOK_URL = "https://crm.example/hook";
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    const response = await POST(
+      jsonRequest({
+        ...VALID,
+        intent: "trial",
+        phone: "+254 700 000000",
+        organizationType: "Cooperative",
+      }),
+    );
+    expect(response.status).toBe(202);
+    const forwarded = JSON.parse(
+      (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
+    );
+    expect(forwarded.intent).toBe("trial");
+    expect(forwarded.phone).toBe("+254 700 000000");
+    expect(forwarded.organizationType).toBe("Cooperative");
+  });
+
   it("answers 502 when the webhook fails, without leaking the reason", async () => {
     process.env.LACTEVA_LEADS_WEBHOOK_URL = "https://crm.example/hook";
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
