@@ -11,6 +11,8 @@ const ROUTES = [
   "/company",
   "/request-demo",
   "/start-free-trial",
+  "/privacy-policy",
+  "/terms",
 ] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {

@@ -14,6 +14,8 @@ describe("indexing surface", () => {
     expect(urls).toContain("/product");
     expect(urls).toContain("/solutions");
     expect(urls).toContain("/pricing");
+    expect(urls).toContain("/privacy-policy");
+    expect(urls).toContain("/terms");
     expect(urls).not.toContain("/login");
     expect(urls).not.toContain("/editions");
     expect(urls).not.toContain("/why-lacteva");

@@ -162,10 +162,25 @@ export function LeadForm({
           {error}
         </p>
       ) : null}
-      <div>
+      <div className="flex flex-col gap-3">
         <Button type="submit" size="xl" disabled={status === "submitting"}>
           {status === "submitting" ? "Sending…" : submitLabel}
         </Button>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          By submitting this form, you acknowledge that your information will
+          be handled in accordance with our{" "}
+          <a
+            href="/privacy-policy"
+            className="text-primary underline underline-offset-4"
+          >
+            Privacy Policy
+          </a>{" "}
+          and{" "}
+          <a href="/terms" className="text-primary underline underline-offset-4">
+            Terms
+          </a>
+          .
+        </p>
       </div>
     </form>
   );

@@ -57,9 +57,23 @@ export function SiteFooter() {
             ))}
           </div>
         </div>
-        <div className="flex flex-col gap-2 border-t border-ink-foreground/10 pt-6 text-xs text-ink-muted sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-t border-ink-foreground/10 pt-6 text-xs text-ink-muted sm:flex-row sm:items-center sm:justify-between">
           <p>Lacteva is the flagship product of Phoenix Software.</p>
-          <p>&copy; {new Date().getFullYear()} Phoenix Software</p>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/privacy-policy"
+              className="transition-colors hover:text-ink-foreground"
+            >
+              Privacy Policy
+            </Link>
+            <Link
+              href="/terms"
+              className="transition-colors hover:text-ink-foreground"
+            >
+              Terms
+            </Link>
+            <p>&copy; {new Date().getFullYear()} Phoenix Software</p>
+          </div>
         </div>
       </div>
     </footer>

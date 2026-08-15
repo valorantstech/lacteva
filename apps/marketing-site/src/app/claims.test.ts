@@ -48,6 +48,8 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
   // PRE-LAUNCH-001: no numerical geographic claims — "across markets" is
   // the approved phrasing.
   { pattern: /(fifty|forty|thirty|twenty|\d+)[-+\s]*(plus\s+)?countries/i, why: "no numerical geographic claims" },
+  // PRE-LAUNCH-002: legal pages must not overclaim either.
+  { pattern: /(legally|fully) compliant|100% secure|absolutely secure/i, why: "no compliance or absolute-security claims" },
 ];
 
 function collectSourceFiles(dir: string): string[] {
