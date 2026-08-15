@@ -93,7 +93,22 @@ services:
     depends_on:
       platform-core: {condition: service_started}
 
+  # Public marketing site — no backend dependency; it is a standalone
+  # public-facing app that only links to the portal.
+  marketing-site:
+    image: node:22-alpine
+    profiles: ["apps"]
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    environment:
+      NEXT_PUBLIC_PORTAL_URL: http://localhost:3000
+    volumes:
+      - ./apps/marketing-site:/app
+      - marketing_node_modules:/app/node_modules
+    ports: ["3100:3100"]
+
 volumes:
   pgdata:
   miniodata:
   portal_node_modules:
+  marketing_node_modules:

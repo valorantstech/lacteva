@@ -74,6 +74,32 @@ jobs:
       - name: Test
         run: npm test
 
+  marketing-site:
+    name: marketing-site (build + lint + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/marketing-site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/marketing-site/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Build
+        run: npm run build
+      - name: Lint
+        run: npx eslint src --max-warnings 0
+      # Wired into CI from the start, same reason as the portal's suite —
+      # and claims.test.ts makes marketing copy discipline executable.
+      - name: Test
+        run: npm test
+
   mobile:
     name: mobile (analyze + tests)
     runs-on: ubuntu-latest
@@ -105,4 +131,10 @@ jobs:
       # working.
       - name: Build portal image
         run: docker build -t lacteva/admin-portal:${{ github.sha }} apps/admin-portal
+      # Same reasoning for the marketing site. It is NOT in images.yml yet:
+      # the OIDC role there reaches exactly two ECR repositories, so
+      # publishing needs a lacteva/marketing-site repository plus a role
+      # policy change first — an infra decision, recorded in the app README.
+      - name: Build marketing-site image
+        run: docker build -t lacteva/marketing-site:${{ github.sha }} apps/marketing-site
       # TODO(M3): push to ECR + deploy (AWS infra lands in infra/ per roadmap).

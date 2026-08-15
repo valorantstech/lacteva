@@ -5,13 +5,14 @@
 COMPOSE := docker compose
 BACKEND_DIR := services/platform-core
 PORTAL_DIR := apps/admin-portal
+MARKETING_DIR := apps/marketing-site
 MOBILE_DIR := apps/mobile
 # Prefer uv; fall back to the checked-in venv workflow when uv is absent.
 UV := $(shell command -v uv 2>/dev/null)
 PY := $(if $(UV),uv run,$(BACKEND_DIR)/.venv/bin/python -m)
 
-.PHONY: help dev infra backend portal mobile stop test test-backend test-portal test-mobile \
-        lint fmt migrate migration docs-validate clean
+.PHONY: help dev infra backend portal marketing mobile stop test test-backend test-portal \
+        test-marketing test-mobile lint fmt migrate migration docs-validate clean
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -21,6 +22,7 @@ dev: ## Start the complete dev environment (infra + backend + admin portal)
 	@echo ""
 	@echo "  Backend      http://localhost:8000  (/docs /health/ready /metrics)"
 	@echo "  Admin portal http://localhost:3000  (first start installs npm deps — allow a minute)"
+	@echo "  Marketing    http://localhost:3100  (public site — no backend dependency)"
 	@echo "  RabbitMQ UI  http://localhost:15672 (lacteva/lacteva)"
 	@echo "  MinIO UI     http://localhost:9001  (lacteva/lacteva-secret)"
 	@echo "  Mobile app:  make mobile            (runs on host — needs a device/emulator)"
@@ -37,6 +39,9 @@ backend: infra ## Run the backend locally with reload (outside docker)
 portal: ## Run the admin portal locally with reload
 	cd $(PORTAL_DIR) && npm install && npm run dev
 
+marketing: ## Run the public marketing site locally with reload (port 3100)
+	cd $(MARKETING_DIR) && npm install && npm run dev
+
 mobile: ## Run the Flutter app (pass DEVICE=<id>; API defaults to host emulator address)
 	cd $(MOBILE_DIR) && flutter run $(if $(DEVICE),-d $(DEVICE),) \
 		--dart-define=LACTEVA_API_URL=$(or $(LACTEVA_API_URL),http://10.0.2.2:8000)
@@ -51,6 +56,9 @@ test-backend: ## Backend tests (no infrastructure needed)
 
 test-portal: ## Portal production build + lint (its test suite arrives in M2)
 	cd $(PORTAL_DIR) && npm run build && npx eslint src --max-warnings 0
+
+test-marketing: ## Marketing site build + lint + tests
+	cd $(MARKETING_DIR) && npm run build && npx eslint src --max-warnings 0 && npm test
 
 test-mobile: ## Flutter analyze + widget tests (skipped if flutter is absent)
 	@command -v flutter >/dev/null && (cd $(MOBILE_DIR) && flutter analyze && flutter test) \
