@@ -3,7 +3,7 @@ id: CON-0001
 title: Business Calendar
 type: con
 status: Approved
-version: "1.1"
+version: "1.2"
 owner: Platform Engineering
 created: 2026-08-15
 last-updated: 2026-08-15
@@ -100,8 +100,9 @@ scheduler resolves each due plan against its own centre's calendar through
 `WorkingDayResolver` — the one path — and a non-working answer skips the plan.
 See §6.
 
-`WorkingDayResolver` is the only thing that should ever perform this
-resolution. It caches per centre for the life of one day's run, so a round of
+`WorkingDayResolver` is the only thing that performs this resolution — the
+delivery scheduler and the operations readiness engine both go through it
+(DEMO-023), so the two cannot disagree about whether a day is worked. It caches per centre for the life of one day's run, so a round of
 three hundred plans across five centres costs six lookups, and it reads the
 centre's opinion through `collection_center`'s own service function rather
 than its table.
@@ -196,5 +197,6 @@ answers to an operator asking why a round is short.
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-08-15 | Platform Engineering | DEMO-023: operations readiness resolves through `WorkingDayResolver` too; no independent working-day decision remains in production code. |
 | 1.1 | 2026-08-15 | Platform Engineering | DEMO-022: holidays now suppress automatic delivery generation; `WorkingDayResolver` named as the one resolution path. |
 | 1.0 | 2026-08-15 | Platform Engineering | Written in DEMO-021, describing the calendar as it stands after DEMO-013, DEMO-014, DEMO-019, DEMO-020 and DEMO-021's resolution and guard work. |

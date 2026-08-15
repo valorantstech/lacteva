@@ -15,7 +15,7 @@ from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.timezones import business_timezone
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
-from platform_core.modules.collection_center.models import CalendarEntry, CollectionCenter
+from platform_core.modules.collection_center.models import CollectionCenter
 from platform_core.modules.identity.models import User
 from platform_core.modules.operational_readiness.models import (
     DEVICE_CATEGORIES,
@@ -398,37 +398,68 @@ class OperationalReadinessService:
         )
 
     async def _calendar_check(self, center: CollectionCenter) -> ReadinessCheck:
-        # DEMO-014: the centre's own clock when it has one, its organization's
-        # otherwise. It used to read `center.timezone` alone, which defaulted
-        # to "UTC" — so a Kenyan centre nobody had configured evaluated its
-        # calendar three hours from the day its milk arrives.
+        """Is this centre open today? (DEMO-023: through the ONE resolver.)
+
+        This check used to read `center_calendar_entry` itself and decide from
+        the row. That was correct for a centre and blind to the organization:
+        a dairy could declare a public holiday and every one of its centres
+        would still report itself ready, because nothing here had ever heard
+        of the organization calendar.
+
+        The decision is now `WorkingDayResolver`'s — the same call the delivery
+        scheduler makes — so readiness and generation cannot disagree about
+        whether a day is worked. The centre's own entry is still read, but only
+        to SAY WHY: a reason with no note reads as a bug rather than as an
+        unnamed closure.
+
+        DEMO-014's clock rule is unchanged and still applies: the centre's own
+        timezone when it has one, the organization's otherwise.
+        """
+        from platform_core.modules.business_calendar.service import WorkingDayResolver
+        from platform_core.modules.collection_center.service import (
+            centre_calendar_exception,
+        )
+
         today = business_today(
             business_timezone(await tenant_timezone(self._session), center.timezone)
         )
-        entry = await self._session.scalar(
-            select(CalendarEntry).where(
-                CalendarEntry.center_id == center.id, CalendarEntry.day == today
+        tenant_id = require_current_tenant()
+        resolver = WorkingDayResolver(self._session, tenant_id, today)
+        working = await resolver.is_working(center.id)
+        entry = await centre_calendar_exception(self._session, center.id, today)
+
+        if not working:
+            # The centre's own closure names itself; otherwise the reason is
+            # the organization's calendar, and saying so is what stops an
+            # operator hunting through a centre that has no entry at all.
+            reason = (
+                f"{entry.kind}: {entry.note or 'unnamed'}"
+                if entry is not None
+                else "organization calendar: not a working day"
             )
-        )
-        if entry is None:
             return ReadinessCheck(
                 rule="center.calendar",
                 severity="blocking",
-                passed=True,
-                detail="no calendar exception today",
+                passed=False,
+                detail=f"center closed today ({reason})",
             )
-        if entry.kind == "special":
+
+        if entry is not None and entry.kind == "special":
+            # Worked, and unusual. Preserved exactly as it was: the resolver
+            # says a `special` day is worked, and an operator still wants to be
+            # told it is not an ordinary one.
             return ReadinessCheck(
                 rule="center.calendar",
                 severity="warning",
                 passed=False,
                 detail=f"special day today: {entry.note or 'unnamed'}",
             )
+
         return ReadinessCheck(
             rule="center.calendar",
             severity="blocking",
-            passed=False,
-            detail=f"center closed today ({entry.kind}: {entry.note or 'unnamed'})",
+            passed=True,
+            detail="no calendar exception today",
         )
 
     async def _operator_check(self, center: CollectionCenter) -> ReadinessCheck:

@@ -112,15 +112,27 @@ class CenterPage(BaseModel):
     offset: int
 
 
-async def centre_calendar_kind(
-    session: AsyncSession, center_id: uuid.UUID, day: date
-) -> str | None:
-    """This centre's calendar `kind` on `day`, or None (DEMO-022).
+class CentreCalendarException(BaseModel):
+    """One centre's recorded exception for a day (DEMO-022; extended DEMO-023).
 
-    A module-level function rather than a method because its one caller — the
-    business calendar's resolver — needs the centre's OPINION and nothing else,
-    and constructing a full `CollectionCenterService` would mean supplying an
-    event bus and an audit service to read one row.
+    Carries the note as well as the kind because the readiness engine reports
+    WHY a centre is shut, and a reason with no note reads as a bug rather than
+    as an unnamed closure.
+    """
+
+    kind: str
+    note: str = ""
+
+
+async def centre_calendar_exception(
+    session: AsyncSession, center_id: uuid.UUID, day: date
+) -> CentreCalendarException | None:
+    """This centre's calendar exception on `day`, or None.
+
+    A module-level function rather than a method because its callers — the
+    business calendar's resolver, and readiness — need the centre's OPINION and
+    nothing else, and constructing a full `CollectionCenterService` would mean
+    supplying an event bus and an audit service to read one row.
 
     It is still this module answering for its own table, which is the boundary
     that matters: nothing outside `collection_center` imports `CalendarEntry`.
@@ -131,11 +143,14 @@ async def centre_calendar_kind(
     finds nothing, which resolves to "no opinion" — the safe answer, and the
     same one an unconfigured centre gives.
     """
-    return await session.scalar(
-        select(CalendarEntry.kind).where(
-            CalendarEntry.center_id == center_id, CalendarEntry.day == day
+    row = (
+        await session.execute(
+            select(CalendarEntry.kind, CalendarEntry.note).where(
+                CalendarEntry.center_id == center_id, CalendarEntry.day == day
+            )
         )
-    )
+    ).first()
+    return None if row is None else CentreCalendarException(kind=row[0], note=row[1] or "")
 
 
 class CollectionCenterService:

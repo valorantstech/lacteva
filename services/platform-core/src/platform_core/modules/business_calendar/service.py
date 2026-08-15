@@ -450,11 +450,13 @@ class WorkingDayResolver:
     async def _centre_opinion(self, center_id: uuid.UUID) -> bool | None:
         if center_id not in self._centres:
             from platform_core.modules.collection_center.service import (
-                centre_calendar_kind,
+                centre_calendar_exception,
             )
 
-            kind = await centre_calendar_kind(self._session, center_id, self._day)
-            self._centres[center_id] = None if kind is None else centre_exception_is_working(kind)
+            entry = await centre_calendar_exception(self._session, center_id, self._day)
+            self._centres[center_id] = (
+                None if entry is None else centre_exception_is_working(entry.kind)
+            )
         return self._centres[center_id]
 
     async def is_working(self, center_id: uuid.UUID | None = None) -> bool:
