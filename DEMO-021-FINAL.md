@@ -135,6 +135,40 @@ than left implicit.
 omitting them from report calls; its `_deviceDate()` is a documented
 last-resort fallback. Nothing in DEMO-021 changes what it consumes.
 
+## 5. Verification
+
+**Tests:** 1,539 backend passing, 0 failures (94 skipped — the PostgreSQL-only
+suites, which then ran for real). 250 portal, 125 mobile, lint/format/tsc/build
+and docs/xref all green. `alembic --autogenerate` produces an empty diff, so
+there is no migration to verify.
+
+**PostgreSQL proof: PASSED** — 94 PostgreSQL-only tests, **0 skipped**, 65
+tables RLS-enabled and forced. Its step 4 drives the whole supplier chain
+(collection → settlement `STL-2026-000001` → payment `PAY-2026-000001` →
+receipt `RCP-2026-000001`) through the new guards on a real engine, which is
+the §6 financial-chain regression executed rather than asserted.
+
+**Production, `main-35cc7cd`, deployed first attempt** with verification and
+smoke test passing. All nine health checks healthy; 65/65 tables forced;
+unauthenticated calendar reads 401.
+
+**The guard proven to refuse on production, twice.** First against the
+isolation probe tenant: a date passed, a period was closed, the same date was
+refused by name, a date outside it still passed, and the row was removed.
+Then through the browser end to end — July 2026 declared and closed from the
+portal, after which the domain refused `2026-07-15` with *"generating an
+invoice refused: 2026-07-15 falls in the closed financial period 2026-07-01 to
+2026-07-31"* while August still passed. Reopened, and the row removed.
+
+**Financial reconciliation: every count identical** before and after
+(collections 534, deliveries 1255, invoices 31, customer payments/receipts
+24/24, settlements 84, supplier payments/receipts 42/36), and receivables
+unchanged at **211,961.00 KES** and **152,972.00 INR**. Production
+configuration was restored exactly: zero financial periods and zero calendar
+days remain, as before the milestone.
+
+**AWS: nothing created, nothing modified, no recurring cost change.**
+
 ## 5. Known limitations
 
 * **Holidays are advisory.** They are recorded, resolved and reported, and
