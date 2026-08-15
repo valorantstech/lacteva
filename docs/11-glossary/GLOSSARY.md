@@ -165,6 +165,20 @@ Terminology source of truth for all Lacteva documentation. Entry format and rule
 
 ## Platform and Architecture Terms
 
+### Business Date
+
+**Definition:** The calendar date it is *for a given organization*, measured on that organization's own timezone rather than the server's, the browser's or the handset's. The unit every report window, billing period and settlement period is expressed in.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Not a *timestamp* (an instant, stored in UTC) and not a *display date* (the same instant rendered in a reader's preferred zone). One UTC instant can be two different business dates for two organizations.
+**Source:** [CON-0001](../03-architecture/00-concepts/CON-0001-business-calendar.md).
+
+### Financial Period
+
+**Definition:** A range of business dates belonging to one organization, either OPEN or CLOSED. A closed period refuses new invoices, payments and settlements dated inside it.
+**Context:** Company-wide
+**Synonyms / Do not confuse with:** Not an accounting period in the ledger sense — closing posts no journal and rolls no balance. Not a *settlement period* (one supplier's window) or a *billing period* (one customer's).
+**Source:** [CON-0001](../03-architecture/00-concepts/CON-0001-business-calendar.md).
+
 ### Business Capability
 
 **Definition:** A discrete business ability — what the business does, independent of organization and technology — cataloged in the capability model with a hierarchical ID (e.g. `FPR.HLT.02`).

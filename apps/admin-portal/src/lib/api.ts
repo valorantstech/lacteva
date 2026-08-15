@@ -2732,3 +2732,36 @@ export const getOrganizationCalendar = () =>
 
 export const getFinancialPeriods = () =>
   api<FinancialPeriodView[]>("/v1/organization/financial-periods");
+
+export type CalendarDayView = {
+  id: string;
+  day: string;
+  working: boolean;
+  kind: string;
+  name: string;
+};
+
+export const getCalendarDays = (from: string, to: string) =>
+  api<CalendarDayView[]>(
+    `/v1/organization/calendar/days?date_from=${from}&date_to=${to}`,
+  );
+
+export const openFinancialPeriod = (body: {
+  period_start: string;
+  period_end: string;
+  label?: string;
+}) =>
+  api<FinancialPeriodView>("/v1/organization/financial-periods", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const closeFinancialPeriod = (id: string) =>
+  api<FinancialPeriodView>(`/v1/organization/financial-periods/${id}/close`, {
+    method: "POST",
+  });
+
+export const reopenFinancialPeriod = (id: string) =>
+  api<FinancialPeriodView>(`/v1/organization/financial-periods/${id}/reopen`, {
+    method: "POST",
+  });

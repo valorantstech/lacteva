@@ -282,6 +282,26 @@ class CollectionCenterService:
             calendar=[CalendarEntryView.model_validate(e) for e in calendar.all()],
         )
 
+    async def calendar_exception(self, center_id: uuid.UUID, day: date) -> str | None:
+        """The `kind` of this centre's exception on `day`, or None (DEMO-021).
+
+        Exists so the business calendar can be resolved without any module
+        reaching into another's tables: the caller asks this service for the
+        centre's opinion, asks the calendar service for the organization's, and
+        hands both to `resolve_working_day`. Neither service knows the other.
+
+        Scoped through `get`, so a centre in another tenant is a 404 like
+        everything else here rather than a silent None that would read as
+        "no exception" and quietly resolve to the organization's answer.
+        """
+        center = await self.get(center_id)
+        entry = await self._session.scalar(
+            select(CalendarEntry).where(
+                CalendarEntry.center_id == center.id, CalendarEntry.day == day
+            )
+        )
+        return None if entry is None else entry.kind
+
     # --- configuration ----------------------------------------------------
 
     async def set_config(

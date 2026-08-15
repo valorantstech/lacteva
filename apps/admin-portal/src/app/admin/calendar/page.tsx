@@ -5,11 +5,17 @@ import { CalendarDays, Clock, Lock, LockOpen } from "lucide-react";
 
 import {
   ApiError,
+  type CalendarDayView,
   type FinancialPeriodView,
   type OrganizationCalendar,
+  closeFinancialPeriod,
+  getCalendarDays,
   getFinancialPeriods,
   getOrganizationCalendar,
+  openFinancialPeriod,
+  reopenFinancialPeriod,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader, StatTile } from "@/components/page-header";
 
@@ -38,7 +44,17 @@ const describe = (e: unknown) => {
   return e instanceof Error ? e.message : "Could not load the calendar";
 };
 
-function PeriodRow({ period }: { period: FinancialPeriodView }) {
+function PeriodRow({
+  period,
+  busy,
+  onClose,
+  onReopen,
+}: {
+  period: FinancialPeriodView;
+  busy?: boolean;
+  onClose?: () => void;
+  onReopen?: () => void;
+}) {
   const closed = period.status === "closed";
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 last:border-b-0">
@@ -64,6 +80,20 @@ function PeriodRow({ period }: { period: FinancialPeriodView }) {
         )}
         {closed ? "Closed" : "Open"}
       </span>
+      {/* Closing stops new bills, payments and settlements landing in the
+          period. Reopening is deliberately available: a month shut by mistake
+          would otherwise be unbillable forever, which is worse than the
+          mistake. */}
+      {closed && onReopen ? (
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onReopen}>
+          Reopen
+        </Button>
+      ) : null}
+      {!closed && onClose ? (
+        <Button size="sm" variant="secondary" disabled={busy} onClick={onClose}>
+          Close
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -71,6 +101,8 @@ function PeriodRow({ period }: { period: FinancialPeriodView }) {
 export default function OrganizationCalendarPage() {
   const [calendar, setCalendar] = useState<OrganizationCalendar | null>(null);
   const [periods, setPeriods] = useState<FinancialPeriodView[]>([]);
+  const [days, setDays] = useState<CalendarDayView[]>([]);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -78,18 +110,39 @@ export default function OrganizationCalendarPage() {
     setLoading(true);
     setError(null);
     try {
-      const [cal, list] = await Promise.all([
-        getOrganizationCalendar(),
+      const cal = await getOrganizationCalendar();
+      const [list, exceptions] = await Promise.all([
         getFinancialPeriods(),
+        // A year around today: enough to see the holidays that matter without
+        // asking the server for a range nobody looks at.
+        getCalendarDays(cal.previous_month_start, cal.month_end),
       ]);
       setCalendar(cal);
       setPeriods(list);
+      setDays(exceptions);
     } catch (e) {
       setError(describe(e));
     } finally {
       setLoading(false);
     }
   }, []);
+
+  /** Run a period action, then reload — the server's answer is the truth. */
+  const act = useCallback(
+    async (run: () => Promise<unknown>) => {
+      setBusy(true);
+      setError(null);
+      try {
+        await run();
+        await load();
+      } catch (e) {
+        setError(describe(e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
 
   useEffect(() => {
     // Deferred by a tick, the idiom the rest of the portal uses: calling
@@ -169,7 +222,18 @@ export default function OrganizationCalendarPage() {
                 </p>
               </div>
               {calendar.current_period ? (
-                <PeriodRow period={calendar.current_period} />
+                <PeriodRow
+                  period={calendar.current_period}
+                  busy={busy}
+                  onClose={() =>
+                    act(() => closeFinancialPeriod(calendar.current_period!.id))
+                  }
+                  onReopen={() =>
+                    act(() =>
+                      reopenFinancialPeriod(calendar.current_period!.id),
+                    )
+                  }
+                />
               ) : (
                 <p className="text-sm text-muted-foreground">
                   No financial period covers {calendar.business_date}. Nothing
@@ -182,12 +246,80 @@ export default function OrganizationCalendarPage() {
                 <h2 className="text-sm font-semibold">Previous period</h2>
               </div>
               {previousPeriod ? (
-                <PeriodRow period={previousPeriod} />
+                <PeriodRow
+                  period={previousPeriod}
+                  busy={busy}
+                  onClose={() =>
+                    act(() => closeFinancialPeriod(previousPeriod.id))
+                  }
+                  onReopen={() =>
+                    act(() => reopenFinancialPeriod(previousPeriod.id))
+                  }
+                />
               ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    No period declared for {calendar.previous_month_start} —{" "}
+                    {calendar.previous_month_end}.
+                  </p>
+                  {/* The month a dairy actually closes: the one that has
+                      ended. Declaring it is the first step, closing it the
+                      second — two acts, because declaring must not shut the
+                      books by surprise. */}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() =>
+                      act(() =>
+                        openFinancialPeriod({
+                          period_start: calendar.previous_month_start,
+                          period_end: calendar.previous_month_end,
+                          label: "Previous month",
+                        }),
+                      )
+                    }
+                  >
+                    Declare previous month
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="py-4">
+              <h2 className="mb-1 text-sm font-semibold">
+                Calendar exceptions
+              </h2>
+              <p className="mb-2 text-xs text-muted-foreground">
+                Days this organization does not work, or works when it normally
+                would not. An absent day is a working day.
+              </p>
+              {days.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No period declared for {calendar.previous_month_start} —{" "}
-                  {calendar.previous_month_end}.
+                  None declared between {calendar.previous_month_start} and{" "}
+                  {calendar.month_end}.
                 </p>
+              ) : (
+                days.map((d) => (
+                  <div
+                    key={d.id}
+                    className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-2 last:border-b-0"
+                  >
+                    <div>
+                      <span className="text-sm font-medium">{d.day}</span>
+                      {d.name ? (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {d.name}
+                        </span>
+                      ) : null}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {d.kind} · {d.working ? "working" : "non-working"}
+                    </span>
+                  </div>
+                ))
               )}
             </CardContent>
           </Card>
@@ -202,7 +334,15 @@ export default function OrganizationCalendarPage() {
                   None declared yet.
                 </p>
               ) : (
-                periods.map((p) => <PeriodRow key={p.id} period={p} />)
+                periods.map((p) => (
+                  <PeriodRow
+                    key={p.id}
+                    period={p}
+                    busy={busy}
+                    onClose={() => act(() => closeFinancialPeriod(p.id))}
+                    onReopen={() => act(() => reopenFinancialPeriod(p.id))}
+                  />
+                ))
               )}
             </CardContent>
           </Card>

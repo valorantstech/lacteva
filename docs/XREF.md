@@ -38,6 +38,7 @@ self-references and a template's references to its own examples are ignored.
 | [CAP-0009](05-capabilities/CAP-0009-sustainability-welfare-compliance.md) | CAP-0001, CAP-0002, CAP-0005, CAP-0006 | CAP-0001, CAP-0004, PSP-0002 |
 | [CAP-0010](05-capabilities/CAP-0010-dairy-intelligence-advisory.md) | CAP-0001, CAP-0002, CAP-0003, CAP-0005, CAP-0007 | CAP-0001, CAP-0002, CAP-0011, PSP-0008 |
 | [CAP-0011](05-capabilities/CAP-0011-ecosystem-tenant-enablement.md) | CAP-0001, CAP-0007, CAP-0008, CAP-0010 | CAP-0001, QR-0003 |
+| [CON-0001](03-architecture/00-concepts/CON-0001-business-calendar.md) | — | — |
 | [DBD-0001](07-data/DBD-0001-platform-core-database.md) | — | API-0001, DBD-0002, QR-0007 |
 | [DBD-0002](07-data/DBD-0002-integrity-lifecycle-and-numbering.md) | DBD-0001, QR-0007, STD-0007 | — |
 | [GOV-0001](01-governance/GOV-0001-review-workflow.md) | GOV-0002, STD-0002, STD-0003, STD-0004, STD-0005, STD-0006 | GOV-0003, QR-0001, QR-0003, QR-0005, STD-0004, STD-0007 |
@@ -109,4 +110,4 @@ self-references and a template's references to its own examples are ignored.
 
 ## Unreferenced Documents
 
-TPL-0011
+CON-0001, TPL-0011

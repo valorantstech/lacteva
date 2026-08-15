@@ -45,6 +45,7 @@ from platform_core.modules.billing.models import (
     CustomerPaymentAllocation,
     CustomerReceipt,
 )
+from platform_core.modules.business_calendar.service import assert_period_open
 from platform_core.modules.customer.models import Customer
 from platform_core.modules.delivery.models import BILLABLE_STATUSES, MilkDelivery
 
@@ -292,6 +293,11 @@ class BillingService:
         tenant_id = require_current_tenant()
         if cmd.period_to < cmd.period_from:
             raise ConflictError("the period ends before it begins")
+        # DEMO-021: the period the bill COVERS, not today. Guarding by today
+        # would let somebody bill a closed August from an open September.
+        await assert_period_open(
+            self._session, tenant_id, cmd.period_to, operation="generating an invoice"
+        )
         customer = await self._customer(cmd.customer_id)
 
         clash = await self._session.scalar(
@@ -393,6 +399,11 @@ class BillingService:
             )
         if invoice.line_count == 0:
             raise ConflictError("cannot issue an invoice with no lines")
+        # DEMO-021: issuing is the irreversible act, so it is the one that must
+        # not reach into a closed month.
+        await assert_period_open(
+            self._session, invoice.tenant_id, invoice.period_to, operation="issuing an invoice"
+        )
 
         lines_total = await self._session.scalar(
             select(func.coalesce(func.sum(cast(CustomerInvoiceLine.amount, Numeric)), 0)).where(
@@ -434,6 +445,12 @@ class BillingService:
             raise ConflictError(
                 f"only a draft invoice can be cancelled — this one is {invoice.status}"
             )
+        await assert_period_open(
+            self._session,
+            invoice.tenant_id,
+            invoice.period_to,
+            operation="cancelling an invoice",
+        )
         # Release the deliveries so they can be billed again, and delete the
         # lines with them. A cancelled DRAFT was never issued, so its lines are
         # working material rather than a document anybody was given — and
@@ -470,6 +487,15 @@ class BillingService:
     ) -> CustomerPayment:
         """Money received. It has already arrived, so there is one state."""
         tenant_id = require_current_tenant()
+        # DEMO-021: money belongs to the day it ARRIVED, which for a payment
+        # being recorded now is the dairy's today. A closed month must not
+        # acquire new receipts after the books were shut.
+        await assert_period_open(
+            self._session,
+            tenant_id,
+            business_today(await tenant_timezone(self._session, tenant_id)),
+            operation="recording a payment",
+        )
         customer = await self._customer(cmd.customer_id)
 
         targets = await self._invoices_to_settle(customer.id, cmd.invoice_ids)

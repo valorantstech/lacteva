@@ -55,6 +55,8 @@ from platform_core.modules.business_calendar.service import (
     CalendarView,
     FinancialPeriodInput,
     FinancialPeriodView,
+    centre_exception_is_working,
+    resolve_working_day,
 )
 from platform_core.modules.collection_center.service import (
     CalendarEntryInput,
@@ -747,9 +749,32 @@ calendar_router = APIRouter(prefix="/organization", tags=["business-calendar"])
 )
 async def organization_calendar(
     service: Annotated[BusinessCalendarService, Depends(get_business_calendar_service)],
+    centers: Annotated[CollectionCenterService, Depends(deps.get_collection_center_service)],
+    center_id: uuid.UUID | None = None,
 ) -> CalendarView:
-    """What day it is for this dairy, and which month and period that falls in."""
-    return await service.overview()
+    """What day it is for this dairy, and which month and period that falls in.
+
+    With `center_id`, the centre's own exception overrides the organization's
+    for that day (DEMO-021 §2). The two services are composed HERE, in the
+    composition root, so neither reads the other's tables: the centre service
+    is asked for the centre's opinion, the calendar service for the
+    organization's, and `resolve_working_day` decides between them.
+
+    A user's display timezone is not a parameter of any of it.
+    """
+    view = await service.overview()
+    if center_id is None:
+        return view
+    kind = await centers.calendar_exception(center_id, view.business_date)
+    centre_opinion = None if kind is None else centre_exception_is_working(kind)
+    return view.model_copy(
+        update={
+            "is_working_day": resolve_working_day(
+                organization=await service.organization_exception(view.business_date),
+                centre=centre_opinion,
+            )
+        }
+    )
 
 
 @calendar_router.get(

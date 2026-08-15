@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.business_time import business_today
 from platform_core.core.db import utcnow
 from platform_core.core.document_numbers import next_document_number
 from platform_core.core.errors import ConflictError, NotFoundError, ValidationError
@@ -34,11 +35,12 @@ from platform_core.core.metrics import (
     PAYMENTS_FAILED,
 )
 from platform_core.core.money import quantize_money
-from platform_core.core.org_context import tenant_currency
+from platform_core.core.org_context import tenant_currency, tenant_timezone
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
+from platform_core.modules.business_calendar.service import assert_period_open
 from platform_core.modules.collection_center.models import CollectionCenter
 from platform_core.modules.organization.models import Organization
 from platform_core.modules.payment.models import (
@@ -234,6 +236,17 @@ class PaymentService:
             )
             if existing is not None:
                 return existing  # idempotent execution: no second money movement
+
+        # DEMO-021: the day the dairy DECIDES to pay. Guarded here rather than
+        # at `complete`, because completion is the finishing of a movement
+        # already set in motion — refusing there would strand money mid-flight,
+        # which is a worse failure than the one closing a period prevents.
+        await assert_period_open(
+            self._session,
+            tenant_id,
+            business_today(await tenant_timezone(self._session, tenant_id)),
+            operation="creating a supplier payment",
+        )
 
         supplier = await self._session.get(Supplier, cmd.supplier_id)
         if supplier is None or supplier.tenant_id != tenant_id:

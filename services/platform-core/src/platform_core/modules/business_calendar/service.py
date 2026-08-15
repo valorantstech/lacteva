@@ -100,6 +100,59 @@ class PeriodGuard:
     period: FinancialPeriod | None = None
 
 
+# --- resolution: whose calendar wins (DEMO-021 §2) ----------------------------
+#
+# The hierarchy, and it is the SAME shape DEMO-014 gave timezones, deliberately:
+#
+#     organization  →  the calendar. Always consulted, and the answer unless
+#                      something more specific applies.
+#     centre        →  an OPTIONAL override, for the real case of one site
+#                      shutting while the dairy keeps working. Absent means
+#                      "my organization's", which is what almost every centre
+#                      means.
+#     user          →  NOTHING. A person's display preference cannot reach
+#                      this function, because it is not a parameter of it.
+#
+# That last line is the one worth guarding, and the reason resolution is a PURE
+# FUNCTION OVER VALUES rather than a service that goes looking: a function can
+# only use what it is handed, so "the user's timezone moved a financial date"
+# is not a defect this design can have. `core/timezones.display_timezone()` is
+# the only function on the platform that reads a user preference, and nothing
+# here calls it.
+
+
+def centre_exception_is_working(kind: str) -> bool:
+    """What a centre's calendar entry means for whether it works that day.
+
+    `center_calendar_entry` (DEMO-005) predates the `working` flag and records
+    a `kind` instead. The mapping is not a new decision — it is the one the
+    readiness engine has already been making since DEMO-005, written down so
+    that two readers cannot disagree:
+
+    * `holiday` and `closure` stop the centre — readiness treats both as
+      BLOCKING;
+    * `special` does not — readiness treats it as a WARNING, a day that is
+      unusual and still worked.
+    """
+    return kind == "special"
+
+
+def resolve_working_day(*, organization: bool | None, centre: bool | None = None) -> bool:
+    """Is this a working day, given what each level says about it?
+
+    `None` at a level means "that level has no opinion", which is different
+    from `False`. Deterministic and total: every combination has exactly one
+    answer, and the default is `True` because that is what the platform did
+    before any calendar existed — an absent row must never turn a working day
+    into a holiday.
+    """
+    if centre is not None:
+        return centre
+    if organization is not None:
+        return organization
+    return True
+
+
 # --- the service --------------------------------------------------------------
 
 
@@ -117,19 +170,13 @@ class BusinessCalendarService:
 
     # --- calendar -------------------------------------------------------------
 
-    async def is_working_day(self, day: date) -> bool:
-        """Does this dairy work on `day`?
+    async def organization_exception(self, day: date) -> bool | None:
+        """What the ORGANIZATION says about `day`, or `None` if nothing.
 
-        The ordinary week is working; only a recorded exception changes that.
-        That default is deliberate and it is why this milestone does not alter
-        any existing behaviour: with no rows, every day is a working day, which
-        is exactly what the platform did before the table existed.
-
-        A weekly non-working pattern (every Sunday) is NOT modelled here. The
-        delivery side already has one, per customer, in `delivery_plan.weekdays`
-        — a dairy's round is a property of what each household agreed to, not
-        of a single organization-wide week — and a second, coarser pattern
-        would give two answers to one question.
+        Separate from `is_working_day` because the resolution above needs the
+        raw opinion — "no row" and "a row saying non-working" are different
+        inputs, and collapsing them to a bool loses the distinction that makes
+        a centre override meaningful.
         """
         entry = await self._session.scalar(
             select(OrganizationCalendarDay).where(
@@ -137,7 +184,31 @@ class BusinessCalendarService:
                 OrganizationCalendarDay.day == day,
             )
         )
-        return True if entry is None else entry.working
+        return None if entry is None else entry.working
+
+    async def is_working_day(self, day: date, *, centre: bool | None = None) -> bool:
+        """Does this dairy work on `day`?
+
+        The ordinary week is working; only a recorded exception changes that.
+        That default is deliberate and it is why this capability did not alter
+        any existing behaviour when it shipped: with no rows, every day is a
+        working day, which is exactly what the platform did before the table
+        existed.
+
+        `centre` is the OPTIONAL override (DEMO-021), passed in as a value by
+        whoever has a centre in scope — this service never goes looking for
+        one, so it cannot query another module's tables and cannot be handed a
+        user's preference by accident.
+
+        A weekly non-working pattern (every Sunday) is NOT modelled here. The
+        delivery side already has one, per customer, in `delivery_plan.weekdays`
+        — a dairy's round is a property of what each household agreed to, not
+        of a single organization-wide week — and a second, coarser pattern
+        would give two answers to one question.
+        """
+        return resolve_working_day(
+            organization=await self.organization_exception(day), centre=centre
+        )
 
     async def calendar_days(self, date_from: date, date_to: date) -> list[CalendarDayView]:
         if date_to < date_from:
@@ -340,6 +411,49 @@ class BusinessCalendarService:
         )
 
 
+async def assert_period_open(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    day: date,
+    *,
+    operation: str,
+) -> None:
+    """Refuse to write into a closed financial period (DEMO-021 §4).
+
+    **The one call other modules make into this one.** It is a function rather
+    than a constructor argument on every financial service so that adopting the
+    guard is a single line at the site that matters, and so that the module
+    boundary holds: callers go through this service, never near its tables.
+
+    **Which date to hand it is a judgement, and it is the caller's**, because
+    only the caller knows which date the record BELONGS to:
+
+    * an invoice belongs to the period it bills — `period_to`, not today;
+    * a payment belongs to the day the money arrived;
+    * a settlement belongs to the period it settles.
+
+    Getting that wrong would be the subtle failure here: guarding an invoice by
+    today's date would let somebody bill a closed August from an open
+    September.
+
+    **Deliberately NOT called from event consumers.** A consumer that raised
+    here would dead-letter a business fact that has already happened — the
+    payment was taken, the receipt is merely its consequence. Closing a period
+    must stop people from making new decisions, not stop the platform from
+    finishing ones already made. The guard therefore lives on operator-initiated
+    application-service calls only.
+
+    Permissive by construction: a tenant with no periods has none closed, so
+    every date passes. That is what makes it safe to introduce into a running
+    platform, and it is asserted in the tests rather than assumed.
+    """
+    # Delegates rather than restating the refusal: two copies of "what a closed
+    # period does" is exactly the kind of duplicate that drifts, and the one
+    # that would drift silently — a caller using the stale copy would simply
+    # stop refusing (DEMO-021).
+    await BusinessCalendarService(session, tenant_id).assert_open(day, operation=operation)
+
+
 def _period_view(period: FinancialPeriod) -> FinancialPeriodView:
     return FinancialPeriodView(
         id=period.id,
@@ -360,4 +474,7 @@ __all__ = [
     "FinancialPeriodInput",
     "FinancialPeriodView",
     "PeriodGuard",
+    "assert_period_open",
+    "centre_exception_is_working",
+    "resolve_working_day",
 ]

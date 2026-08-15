@@ -36,6 +36,7 @@ from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
+from platform_core.modules.business_calendar.service import assert_period_open
 from platform_core.modules.collection_center.models import CollectionCenter
 from platform_core.modules.event_relay.service import RelayService
 from platform_core.modules.settlement.models import Settlement, SettlementLine
@@ -395,6 +396,15 @@ class SettlementService:
         gross = await self._sum_lines(settlement)
         if gross.amount != Decimal(settlement.gross_amount):
             raise ConflictError("settlement totals no longer match the lines — recalculate totals")
+        # DEMO-021: a settlement belongs to the period it SETTLES. Finalizing
+        # is the irreversible act — after it, the supplier is owed a fixed
+        # amount — so it is the one a closed period must refuse.
+        await assert_period_open(
+            self._session,
+            settlement.tenant_id,
+            settlement.period_to,
+            operation="finalizing a settlement",
+        )
         now = utcnow()
         claim = await self._session.execute(  # CAS: no double-finalize
             update(Settlement)
