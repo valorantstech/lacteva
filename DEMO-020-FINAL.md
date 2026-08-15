@@ -150,6 +150,32 @@ editable input on a developer tool, and changing it was out of scope.
 than rewriting rows underneath a reader. The platform now reports it as
 outdated until an operator rebuilds — the honest handling.
 
+## 6. What the deployment itself found
+
+**The version bump failed the deployment gate, and that was correct.**
+
+`verify-deployment.sh` treats a projection registry warning as a failed
+deployment. Bumping the projection to version 2 marks the built data outdated
+— deliberately — so the first deploy failed on `projections: warning`, rolled
+back, and the rollback then failed its own schema check because the schema had
+already moved forward while the code went back.
+
+The platform kept serving throughout (the API stayed healthy, the mixed state
+was an additive schema under older code, which is exactly the case an
+expand-only migration is designed to survive). But it is worth being precise
+about what happened: **a milestone that deliberately marks a read model stale
+cannot deploy without performing the rebuild the staleness demands.** The
+resolution was to deploy with `--no-rollback`, run the rebuild — 8,146 events
+scanned, 534 applied, 59 stale rows removed, completing at version 2 — and then
+re-run the gate, which passed on its own terms.
+
+Nothing was forced and no check was weakened. The gate asked for an operator
+action and got it.
+
+A second, smaller observation: immediately after a rebuild the `consumers`
+probe reports a transient warning, because the rebuild moves the cursor and the
+sampled snapshot catches it mid-flight. It clears on the next sample.
+
 ## 6. Known limitations
 
 * **Organization holidays do not affect delivery generation or readiness.**
@@ -169,6 +195,14 @@ outdated until an operator rebuilds — the honest handling.
 * **No weekly non-working pattern.** `delivery_plan.weekdays` already carries
   one, per customer, and a second coarser pattern would give two answers to
   one question.
+* **The rollback pin now points at the same release.** DEMO-020 was deployed
+  twice with the same tag (once with `--no-rollback` to perform the rebuild,
+  once cleanly), so `deploy.sh --rollback` would be a no-op. The genuine
+  previous release, `main-93affa5`, is still on disk and can be deployed by
+  tag — but because the schema moved, a true rollback also needs
+  `alembic downgrade -1`. The migration is expand-only, so the older code runs
+  correctly against the newer schema; only the verifier's schema-equality
+  check objects.
 * **`period_for` is still year-based.** A market needing a fiscal year that
   does not start in January changes that one function, as its original comment
   anticipated.
