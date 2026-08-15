@@ -14,6 +14,7 @@ export default function RequestDemoPage() {
       <div className="grid gap-12 lg:grid-cols-2">
         <div>
           <SectionHeading
+            as="h1"
             eyebrow="Request a demo"
             title="See the whole loop, live"
             lede="Collection to receipt, on a phone — including what happens when the network drops. Tell us a little about your organization and we will arrange it."

@@ -5,6 +5,7 @@ const siteUrl = process.env.LACTEVA_SITE_URL ?? "https://lacteva.example";
 const ROUTES = [
   "/",
   "/product",
+  "/solutions",
   "/why-lacteva",
   "/company",
   "/request-demo",

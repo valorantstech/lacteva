@@ -19,6 +19,7 @@ export default function StartFreeTrialPage() {
       <div className="grid gap-12 lg:grid-cols-2">
         <div>
           <SectionHeading
+            as="h1"
             eyebrow="30-day free trial"
             title="Try Lacteva with your own operation"
             lede="Tell us about your dairy business and our team will set up a trial environment for you — 30 days, full platform, your own data."

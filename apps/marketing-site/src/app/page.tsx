@@ -21,6 +21,7 @@ import {
   Users,
   Warehouse,
 } from "lucide-react";
+import { CtaBand } from "@/components/cta-band";
 import { LifecycleFlow } from "@/components/lifecycle-flow";
 import { LinkButton } from "@/components/link-button";
 import { ProductShot } from "@/components/product-shot";
@@ -494,27 +495,7 @@ export default function HomePage() {
 
       {/* 13 — Final CTA */}
       <Section>
-        <div className="flex flex-col items-start gap-6 rounded-2xl bg-ink p-10 text-ink-foreground sm:p-14">
-          <h2 className="max-w-2xl text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            Ready to connect your dairy operations?
-          </h2>
-          <p className="max-w-2xl text-base leading-relaxed text-ink-muted">
-            Explore Lacteva with a 30-day free trial, or talk to our team
-            about your dairy operation. We set up the environment and walk
-            you through the first steps.
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <LinkButton href="/start-free-trial" variant="onInk">
-              Start Free Trial
-            </LinkButton>
-            <LinkButton
-              href="/request-demo"
-              className="border border-ink-foreground/30 bg-transparent text-ink-foreground hover:bg-ink-foreground/10"
-            >
-              Book a Demo
-            </LinkButton>
-          </div>
-        </div>
+        <CtaBand />
       </Section>
     </>
   );

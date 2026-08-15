@@ -6,6 +6,7 @@ const COLUMNS = [
     heading: "Product",
     links: [
       { href: "/product", label: "How Lacteva works" },
+      { href: "/solutions", label: "Solutions" },
       { href: "/why-lacteva", label: "Why Lacteva" },
     ],
   },

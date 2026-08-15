@@ -1,192 +1,273 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+import { CtaBand } from "@/components/cta-band";
+import { LifecycleFlow } from "@/components/lifecycle-flow";
+import { ProductShot } from "@/components/product-shot";
 import { Section, SectionHeading } from "@/components/section";
 
 export const metadata: Metadata = {
   title: "Product",
   description:
-    "How Lacteva works: offline collection, explainable quality-based pricing, one-click settlement, payments, and immutable receipts.",
+    "Dairy operations software that connects procurement, collection, customers, delivery, billing, payments, settlements, and reporting in one platform.",
+  alternates: { canonical: "/product" },
+  openGraph: {
+    title: "Lacteva — Product",
+    description:
+      "One connected platform for dairy operations: procurement, collection, delivery, billing, payments, and reporting.",
+  },
 };
 
-const CAPABILITIES = [
+/**
+ * MKT-004D product page: the five capability groups sold on business
+ * value, with the feature depth second. Every capability listed is
+ * shipped; claims.test.ts polices the copy.
+ */
+const GROUPS = [
   {
-    area: "Collection centers",
-    detail:
-      "Centers with operating hours, business calendars, device registries, and a readiness engine — a session opens only when the center can actually collect.",
+    name: "Procure",
+    headline: "Buy milk with records both sides of the scale trust",
+    value:
+      "Procurement is where dairy trust is won or lost: a weight and a quality reading taken in seconds set what a supplier is owed weeks later. Lacteva records every collection against the supplier, the centre, and the session it happened in, prices it from your rate cards by quantity and quality, and keeps the record fixed once it is made — so the number on the supplier's receipt is the number settlement pays against.",
+    items: [
+      "Suppliers & profiles",
+      "Collection centres",
+      "Collection sessions",
+      "Milk collection records",
+      "Quantity & quality (FAT)",
+      "Rate cards & quality-based pricing",
+    ],
   },
   {
-    area: "Suppliers & members",
-    detail:
-      "Supplier profiles, documents, bank accounts, signed QR identity cards, and bulk import — a member is identified in seconds at 5 a.m. with a queue waiting.",
+    name: "Operate",
+    headline: "Run the organization, not just the data",
+    value:
+      "An operation is people with responsibilities, not rows in a database. Lacteva models your organization with users, roles, and a permission for every action, so an operator, an accountant, and a manager each see exactly their own work — and notifications carry operational events to the people who need to act on them.",
+    items: [
+      "Organizations & structure",
+      "Users & roles",
+      "Granular permissions",
+      "Notifications",
+      "Operational workflows",
+    ],
   },
   {
-    area: "Milk collection",
-    detail:
-      "Readiness-gated collection sessions feeding an immutable transaction engine. A completed transaction never changes; corrections are new records.",
+    name: "Serve",
+    headline: "Know every customer and every round",
+    value:
+      "The delivery side runs on rhythm: the same customers, the same rounds, every day. Lacteva holds each customer's agreed plan and standing order, turns them into the day's deliveries automatically, and puts the round on the field team's phone — so serving a hundred households stops being a hundred manual entries every morning.",
+    items: [
+      "Customers & agreed plans",
+      "Standing orders",
+      "Automatically generated daily deliveries",
+      "Mobile field operations",
+    ],
   },
   {
-    area: "Pricing",
-    detail:
-      "Versioned rate cards with an approval workflow, configurable quality-band matrices, exactly-one-band resolution, and decimal-exact calculation with a full trace on every price.",
+    name: "Bill",
+    headline: "Money follows the milk, traceably",
+    value:
+      "Billing built on delivery records cannot drift from what actually happened. Invoices are drafted from the period's deliveries, receivables show who owes what, payments settle against invoices with a receipt for every one — and on the procurement side, supplier settlements are built the same way, from verified collection records, exact to the decimal.",
+    items: [
+      "Invoices & billing",
+      "Receivables & statements",
+      "Payments & receipts",
+      "Supplier settlements",
+    ],
   },
   {
-    area: "Settlement",
-    detail:
-      "Supplier, center, and period payables built from server-verified calculation records — draft, calculated, then finalized and immutable, with history-preserving cancellation.",
-  },
-  {
-    area: "Payments & receipts",
-    detail:
-      "Payments against finalized settlements with allocation lines, retries, and outstanding balances — and immutable proof-of-payment receipts generated from completed payments.",
-  },
-  {
-    area: "Sales & distribution",
-    detail:
-      "Customers, delivery plans and standing orders, an automated daily delivery scheduler, invoices, customer statements, and receivables.",
-  },
-  {
-    area: "Offline sync",
-    detail:
-      "Operations captured offline replay idempotently — safe across retries and batches, with structured conflict handling and a read-only monitor.",
-  },
-  {
-    area: "Reporting",
-    detail:
-      "Live aggregation over transactional data: daily collection, quality distribution, settlement summaries, delivery reports with CSV export.",
-  },
-  {
-    area: "Notifications",
-    detail:
-      "Template-driven messages per channel and language, with a delivery record for every send.",
-  },
-  {
-    area: "Audit",
-    detail: "An append-oriented audit trail of every mutation, platform-wide.",
-  },
-  {
-    area: "Localization",
-    detail:
-      "An organization resolves country, currency, timezone, and languages once at onboarding. English, Swahili, Hindi, and Arabic ship today.",
-  },
-] as const;
-
-const SURFACES = [
-  {
-    name: "Operator app",
-    detail:
-      "Mobile-first and offline-first, built for an operator at 5 a.m. with a queue of farmers waiting. The phone renders what the platform decided and captures what a person did — it prices nothing and never recomputes a figure.",
-  },
-  {
-    name: "Admin portal",
-    detail:
-      "Web administration for the whole network: centers, suppliers, rate cards, settlements, payments, sales, reports, and platform administration.",
-  },
-  {
-    name: "Rider & customer views",
-    detail:
-      "The same mobile app serves a delivery rider on a household round and a customer checking their own account — one app, routed by capability.",
+    name: "Understand",
+    headline: "One place where the numbers agree",
+    value:
+      "When collection, delivery, and billing share one platform, reporting stops being reconciliation. Lacteva's reports aggregate the live operational records — daily collection, quality distribution, delivery rounds, settlement summaries, receivables — so the operational picture and the financial picture are the same picture.",
+    items: [
+      "Operational reports",
+      "Financial visibility",
+      "CSV export",
+      "Timezone-aware business dates",
+    ],
   },
 ] as const;
 
-const TRUST_POINTS = [
+const CONNECTIONS = [
   {
-    title: "Tenant isolation enforced in the database",
-    detail:
-      "Row-level security in PostgreSQL means a query that forgets its filter returns nothing — application filters are defence-in-depth, not the only wall.",
+    from: "A collection recorded in Procure",
+    to: "becomes a supplier payable in Bill — settlements build themselves from verified collection records.",
   },
   {
-    title: "Money is exact",
-    detail:
-      "Prices and totals are computed in exact decimal arithmetic end to end. Floating-point money is rejected by the platform itself.",
+    from: "A plan agreed in Serve",
+    to: "becomes each day's deliveries automatically — and every delivery becomes an invoice line.",
   },
   {
-    title: "Recovery is rehearsed",
-    detail:
-      "Backups, disaster recovery, and point-in-time restore are executed as proofs, not written as documents. A guarantee that has never run is treated as absent.",
+    from: "A payment recorded in Bill",
+    to: "becomes a receipt, an updated balance, and a settled account — with the trail to prove it.",
   },
   {
-    title: "Every request is traceable",
-    detail:
-      "One correlation id follows a request through the platform, its events, and the notifications it triggers.",
+    from: "Everything, as it happens",
+    to: "lands in Understand — reports read the same records the operation writes.",
   },
 ] as const;
 
 export default function ProductPage() {
   return (
     <>
+      {/* Hero */}
       <Section className="border-b border-border/60">
         <SectionHeading
+          as="h1"
           eyebrow="Product"
-          title="Every litre measured, tested, attributed, and reconciled"
-          lede="For dairy organizations running collection centers — cooperatives, collectors, processors — Lacteva makes every litre's journey from member to bulk checkable, replacing paper registers with shift-controlled records that members trust and settlement can pay against."
+          title="Everything your dairy operation needs to stay connected."
+          lede="Lacteva is dairy operations software built as one platform, not a bundle of tools: procurement, collection, customers, delivery, billing, payments, settlements, and reporting share one set of records, so every part of the business works from the same truth."
         />
       </Section>
 
+      {/* Lifecycle */}
+      <Section variant="ink">
+        <SectionHeading
+          onInk
+          eyebrow="The lifecycle"
+          title="One flow, from supplier to report"
+          lede="Every stage hands its records to the next — nothing is re-entered, nothing is reconciled by hand."
+        />
+        <LifecycleFlow />
+      </Section>
+
+      {/* Five groups */}
       <Section>
         <SectionHeading
           eyebrow="Capabilities"
-          title="What the platform does today"
-          lede="Everything below is built and tested — this page describes what exists, not a roadmap."
+          title="Five areas of the business. One platform underneath."
         />
-        <div className="grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
-          {CAPABILITIES.map((cap) => (
-            <div key={cap.area} className="flex flex-col gap-2">
-              <h3 className="font-semibold">{cap.area}</h3>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {cap.detail}
-              </p>
-            </div>
+        <div className="flex flex-col gap-12">
+          {GROUPS.map((group, i) => (
+            <article
+              key={group.name}
+              className="grid gap-6 border-t border-border pt-10 first:border-t-0 first:pt-0 lg:grid-cols-[1.2fr_1fr] lg:gap-12"
+            >
+              <div className="flex flex-col gap-3">
+                <p className="text-xs font-semibold text-primary tabular-nums">
+                  {String(i + 1).padStart(2, "0")}
+                </p>
+                <h3 className="text-2xl font-semibold tracking-tight">
+                  {group.name}
+                </h3>
+                <p className="text-base font-medium">{group.headline}</p>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {group.value}
+                </p>
+              </div>
+              <ul className="flex h-fit flex-wrap gap-2 lg:justify-end">
+                {group.items.map((item) => (
+                  <li
+                    key={item}
+                    className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground"
+                  >
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </article>
           ))}
         </div>
       </Section>
 
+      {/* How the groups connect */}
       <Section variant="tinted">
         <SectionHeading
-          eyebrow="Surfaces"
-          title="Mobile-first for operations, web for administration"
+          eyebrow="The operational workflow"
+          title="Capabilities are only half the story — the connections are the product."
         />
-        <div className="grid gap-6 lg:grid-cols-3">
-          {SURFACES.map((surface) => (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {CONNECTIONS.map((c) => (
             <div
-              key={surface.name}
-              className="flex flex-col gap-3 rounded-xl border border-border bg-card p-6"
+              key={c.from}
+              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
             >
-              <h3 className="font-semibold">{surface.name}</h3>
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                {c.from}
+                <ArrowRight className="size-4 shrink-0 text-primary" aria-hidden />
+              </p>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                {surface.detail}
+                {c.to}
               </p>
             </div>
           ))}
         </div>
       </Section>
 
+      {/* Product proof */}
       <Section>
         <SectionHeading
-          eyebrow="Built to be trusted"
-          title="Boringly reliable beats impressively fragile"
-          lede="A cooperative's payroll depends on this platform, so it is engineered for auditability and recovery before novelty."
+          eyebrow="The product"
+          title="Screens from the platform"
+          lede="Running on demonstration data."
         />
-        <div className="grid gap-6 sm:grid-cols-2">
-          {TRUST_POINTS.map((point) => (
-            <div
-              key={point.title}
-              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
-            >
-              <h3 className="font-semibold">{point.title}</h3>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <ProductShot
+            name="deliveries"
+            label="Daily delivery report — per-customer rounds, volumes, and values"
+          />
+          <ProductShot
+            name="billing"
+            label="Billing — invoices, receivables, and customer statements"
+          />
+        </div>
+      </Section>
+
+      {/* Field + office */}
+      <Section variant="tinted">
+        <div className="grid items-center gap-12 lg:grid-cols-2">
+          <div>
+            <SectionHeading
+              eyebrow="Web + mobile"
+              title="The office administers. The field operates."
+              lede="The admin portal runs the network — centres, suppliers, rate cards, settlements, billing, reports. The mobile app serves the people in the field: a collection operator, a delivery rider, and a customer each get their own experience, routed by what they are allowed to do. Work captured offline replays safely when the network returns, so the field never waits for a signal."
+            />
+          </div>
+          <ProductShot
+            name="mobile-operator"
+            label="Lacteva mobile app — field operations"
+          />
+        </div>
+      </Section>
+
+      {/* Outcomes */}
+      <Section>
+        <SectionHeading
+          eyebrow="Outcomes"
+          title="What a connected operation gets you"
+        />
+        <div className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
+          {[
+            {
+              title: "One version of the truth",
+              detail: "Procurement, delivery, and finance answer from the same records — the meeting about whose spreadsheet is right stops happening.",
+            },
+            {
+              title: "Work that carries itself forward",
+              detail: "Collections become settlements; deliveries become invoices; payments become receipts. The handovers are the platform's job.",
+            },
+            {
+              title: "Visibility while it still matters",
+              detail: "Today's collection, today's rounds, today's receivables — while the day is still happening, not at month-end.",
+            },
+            {
+              title: "An operation that scales by configuration",
+              detail: "A new centre, route, or customer joins the same platform and inherits the same workflows.",
+            },
+          ].map((o) => (
+            <div key={o.title} className="flex flex-col gap-2">
+              <h3 className="font-semibold">{o.title}</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                {point.detail}
+                {o.detail}
               </p>
             </div>
           ))}
         </div>
-        <div className="pt-10">
-          <Link
-            href="/request-demo"
-            className="inline-flex h-11 items-center rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/85"
-          >
-            See it live — request a demo
-          </Link>
-        </div>
+      </Section>
+
+      {/* CTA */}
+      <Section>
+        <CtaBand title="See what connected operations feel like." />
       </Section>
     </>
   );

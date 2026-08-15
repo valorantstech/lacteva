@@ -55,12 +55,15 @@ export function SectionHeading({
   lede,
   align = "left",
   onInk = false,
+  as: Heading = "h2",
 }: {
   eyebrow?: string;
   title: string;
   lede?: string;
   align?: "left" | "center";
   onInk?: boolean;
+  /** "h1" on a page's hero heading — every page needs exactly one. */
+  as?: "h1" | "h2";
 }) {
   return (
     <div
@@ -72,9 +75,9 @@ export function SectionHeading({
       {eyebrow ? (
         <Eyebrow className={cn(onInk && "text-ink-muted")}>{eyebrow}</Eyebrow>
       ) : null}
-      <h2 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+      <Heading className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
         {title}
-      </h2>
+      </Heading>
       {lede ? (
         <p
           className={cn(

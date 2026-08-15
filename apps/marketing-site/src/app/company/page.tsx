@@ -31,6 +31,7 @@ export default function CompanyPage() {
     <>
       <Section className="border-b border-border/60">
         <SectionHeading
+          as="h1"
           eyebrow="Company"
           title="Lacteva is the flagship product of Phoenix Software"
           lede="Our mission: digitize the entire dairy value chain — from the farmer pouring milk at a village collection center through processing, settlement, and market intelligence — for dairy businesses that today run on paper."

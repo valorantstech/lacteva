@@ -6,6 +6,7 @@ import { Wordmark } from "@/components/logo";
 // (MKT-004D/E). Only routes that exist are listed — no dead links.
 const NAV = [
   { href: "/product", label: "Product" },
+  { href: "/solutions", label: "Solutions" },
   { href: "/why-lacteva", label: "Why Lacteva" },
   { href: "/company", label: "About" },
 ] as const;

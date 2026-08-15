@@ -69,6 +69,7 @@ export default function WhyLactevaPage() {
     <>
       <Section className="border-b border-border/60">
         <SectionHeading
+          as="h1"
           eyebrow="Why Lacteva"
           title="The real competitor is paper — free, offline, and trusted"
           lede="Lacteva doesn't win by out-featuring another vendor. It wins by beating the paper register at the one thing that makes paper survive: checkability. And unlike paper, it never forgets, never smudges, and adds every record up the same way twice."
