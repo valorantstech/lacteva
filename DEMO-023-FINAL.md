@@ -83,6 +83,56 @@ first, then declares the holiday and watches the same centre become
 
 No other independent working-day decision remains in production code.
 
+## 5. Verification
+
+**Tests:** 1,566 backend passing, 0 failures (95 skipped — the PostgreSQL-only
+suites, which then ran for real). 252 portal, 125 mobile, lint/format/tsc/build
+and docs/xref green. **No migration** — the change is code only, and the
+migration count is unchanged at 42.
+
+16 new tests. The load-bearing one is a parametrized property asserting that
+**readiness and the resolver return the same decision across all seven
+combinations the model can express**, asked through two different doors — the
+HTTP endpoint and the resolver directly — so it fails if either side is changed
+alone. Both guarantees were mutation-checked: making readiness ignore the
+resolver fails seven tests, and restoring the direct `CalendarEntry` import
+fails the source guard.
+
+**PostgreSQL proof PASSED** — 95 PostgreSQL-only tests, **0 skipped**, 65 tables
+RLS-enabled and forced, migrations from empty, source and restored identical.
+
+**Production, `main-9c110b7`, deployed first attempt** with verification and
+smoke test passing. Schema unchanged at `b8d3e1470f92` — nothing to migrate.
+All nine health checks healthy; 65/65 tables forced.
+
+**Read-only production verification, exactly as the work order required — no
+holiday and no financial record was manufactured.** For every centre of every
+tenant, the resolver's answer and the readiness engine's calendar verdict were
+compared directly:
+
+| Tenant | Zone | Business date | Centres agreeing |
+|---|---|---|---|
+| Lacteva Demo Cooperative | Africa/Nairobi | 2026-08-15 | 2 / 2, both READY |
+| Lacteva India Demo | Asia/Kolkata | 2026-08-15 | 2 / 2, both READY |
+| Lacteva Isolation Demo | Africa/Nairobi | 2026-08-15 | 1 / 1 |
+| Phoenix Demo Dairy | Asia/Kolkata | 2026-08-15 | 1 / 1 |
+
+**Financial reconciliation: every count identical** before and after
+(collections 534, deliveries 1255, invoices 31, customer payments/receipts
+24/24, settlements 84, supplier payments/receipts 42/36); receivables unchanged
+at **211,961.00 KES** and **152,972.00 INR**.
+
+**Browser:** the Kiambu Highlands Centre page renders Readiness as **ready**
+with `center calendar` passing, alongside the operating hours and activity
+figures — the contract an operator sees is visibly unchanged.
+
+**Rollback:** previous release `main-d03a658` is on disk and pinned. The schema
+did not move, so `deploy.sh --rollback` is sufficient with no downgrade.
+
+**AWS: nothing created, nothing modified, no recurring cost change.** One
+security-group SSH rule was rotated to the current workstation address, the
+stale `/32` revoked — same posture, one workstation, not a widening.
+
 ## 5. Known limitations
 
 * **Readiness evaluates "today" only.** It answers about the current business
