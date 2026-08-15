@@ -1,131 +1,415 @@
-import Link from "next/link";
 import {
-  CloudOff,
-  FileSearch,
-  Layers,
+  Banknote,
+  Building2,
+  CalendarClock,
+  ClipboardList,
+  Factory,
+  FileSpreadsheet,
+  FileText,
+  Globe2,
+  Handshake,
+  Landmark,
+  LineChart,
+  Lock,
+  Milk,
   Network,
-  ScrollText,
-  Workflow,
+  Route,
+  ShieldCheck,
+  Smartphone,
+  Truck,
+  UserCog,
+  Users,
+  Warehouse,
 } from "lucide-react";
-import { Section, SectionHeading } from "@/components/section";
+import { LifecycleFlow } from "@/components/lifecycle-flow";
+import { LinkButton } from "@/components/link-button";
+import { ProductShot } from "@/components/product-shot";
+import { Eyebrow, Section, SectionHeading } from "@/components/section";
 
 /**
- * Copy on this page is drawn from approved sources — Master/Vision and
- * docs/product/PRODUCT_STRATEGY.md — under the Marketing charter's rule:
- * "Marketing describes what exists; if the two disagree, the product wins
- * and the copy changes." No AI claims (no ML is deployed today), no
- * customer quotes or logos (there are none yet), no traction numbers.
- * claims.test.ts enforces the worst offenders mechanically.
+ * MKT-004C homepage: the connected dairy operations story, in the order
+ * the owner's specification fixes. Copy discipline is binding — every
+ * capability named here is shipped and tested in the platform; the rules
+ * are enforced mechanically by claims.test.ts ("marketing describes what
+ * exists"). No statistics, no ROI, no superlatives, no instant-provisioning
+ * language: the trial is fulfilled by a person, and the copy says so.
  */
 
-const COLLECTION_LOOP = [
-  { step: "Check-in", detail: "The member is identified — QR card or search — and eligibility is confirmed before a drop is poured." },
-  { step: "Quality test", detail: "A rapid test grades the milk; the grade drives the price, and the member sees it happen." },
-  { step: "Weigh & record", detail: "Weight and quality become an immutable transaction the moment they are recorded." },
-  { step: "Receipt", detail: "The member leaves with proof — the number on the receipt is the number settlement will pay against." },
-  { step: "Settle & pay", detail: "Period payables build themselves from verified records; one run settles the whole network, and payments follow with receipts." },
-] as const;
-
-const DIFFERENTIATORS = [
+const PROBLEMS = [
   {
-    icon: FileSearch,
-    title: "Explainable pricing",
-    detail:
-      "Every payable amount carries a trace back to the exact rate-card band that produced it. If the platform can't show the why, it doesn't show the number.",
+    icon: ClipboardList,
+    title: "Paper registers",
+    detail: "Collection lives in a book at one centre, readable by one person, reconcilable by nobody.",
   },
   {
-    icon: ScrollText,
-    title: "Audit-grade records",
-    detail:
-      "Transactions snapshot at completion and never change. Corrections are new versions, so the history a dispute needs is always there.",
-  },
-  {
-    icon: CloudOff,
-    title: "Never blocks the milk",
-    detail:
-      "Collection proceeds through connectivity loss, pricing gaps, and downstream failures — always. Offline capture replays safely when the network returns.",
+    icon: FileSpreadsheet,
+    title: "Disconnected spreadsheets",
+    detail: "Procurement, deliveries, and billing each keep their own version of the truth.",
   },
   {
     icon: Network,
-    title: "Every center, one view",
-    detail:
-      "Consolidated multi-center, multi-entity visibility in real time: how much milk, at what quality, owed to whom, today.",
+    title: "Separate systems",
+    detail: "A collection tool here, a billing tool there — and nothing that carries a litre from one to the other.",
   },
   {
-    icon: Workflow,
-    title: "One connected operation",
-    detail:
-      "Procurement, delivery, billing, and settlement share one record of the same litre — no re-entry, and no reconciling one system against another.",
+    icon: UserCog,
+    title: "Manual coordination",
+    detail: "Every handover between procurement, delivery, and finance is a phone call or a walk across the yard.",
   },
   {
-    icon: Layers,
-    title: "Rules you configure",
-    detail:
-      "A pricing policy change is a new rate-card version, live across every center in minutes — not a vendor site visit.",
+    icon: CalendarClock,
+    title: "Repeated work",
+    detail: "The same round typed in every morning; the same figures re-entered at month-end.",
+  },
+  {
+    icon: LineChart,
+    title: "Delayed visibility",
+    detail: "How much milk, at what quality, owed to whom, today? The answer arrives weeks later, if at all.",
+  },
+] as const;
+
+const CAPABILITY_GROUPS = [
+  {
+    name: "Procure",
+    tagline: "Buy milk with records both sides trust",
+    items: ["Suppliers", "Collection centres", "Milk collection", "Quantity & quality (FAT)", "Rate cards"],
+  },
+  {
+    name: "Operate",
+    tagline: "Run the organization, not just the data",
+    items: ["Organizations", "Users & roles", "Permissions", "Notifications", "Operational workflows"],
+  },
+  {
+    name: "Serve",
+    tagline: "Know every customer and every round",
+    items: ["Customers", "Delivery plans", "Daily deliveries", "Mobile field operations"],
+  },
+  {
+    name: "Bill",
+    tagline: "Money follows the milk, automatically traceable",
+    items: ["Billing", "Receivables", "Payments", "Receipts", "Settlements"],
+  },
+  {
+    name: "Understand",
+    tagline: "One place where the numbers agree",
+    items: ["Reports", "Operational visibility", "Financial visibility"],
+  },
+] as const;
+
+const HOW_IT_WORKS = [
+  { step: "Capture", detail: "Milk collection and procurement information, recorded where it happens." },
+  { step: "Manage", detail: "Suppliers, customers, rate cards, and day-to-day operations." },
+  { step: "Deliver", detail: "Delivery plans and daily rounds for every customer." },
+  { step: "Bill", detail: "Billing and receivables built from delivery records." },
+  { step: "Collect", detail: "Payments, receipts, and supplier settlements." },
+  { step: "Understand", detail: "Reports and business visibility across the whole operation." },
+] as const;
+
+const AUDIENCES = [
+  {
+    icon: Factory,
+    name: "Dairy companies",
+    detail: "Procurement, distribution, and billing on one operational spine.",
+  },
+  {
+    icon: Handshake,
+    name: "Cooperatives",
+    detail: "Member collection and settlement with records members can check.",
+  },
+  {
+    icon: Milk,
+    name: "Milk collection organizations",
+    detail: "Centres, sessions, and quality-based pricing under one roof.",
+  },
+  {
+    icon: Truck,
+    name: "Milk distributors",
+    detail: "Customers, routes, daily rounds, and the bills that follow them.",
+  },
+  {
+    icon: Building2,
+    name: "Growing dairy businesses",
+    detail: "Start with the workflow that hurts most; the rest is already there.",
+  },
+  {
+    icon: Warehouse,
+    name: "Enterprise dairy operations",
+    detail: "Multi-centre visibility and role-based control, built multi-tenant from day one.",
+  },
+] as const;
+
+const OUTCOMES = [
+  {
+    title: "Better operational visibility",
+    detail: "Collection, delivery, and billing answer from the same records, while the day is still happening.",
+  },
+  {
+    title: "Less manual coordination",
+    detail: "Handovers between procurement, delivery, and finance travel with the record, not with a phone call.",
+  },
+  {
+    title: "Connected records",
+    detail: "A litre collected, delivered, billed, and paid is one chain — not four entries to reconcile.",
+  },
+  {
+    title: "More consistent workflows",
+    detail: "Every centre and every round follows the same steps, so the operation behaves the same everywhere.",
+  },
+  {
+    title: "Billing and payment clarity",
+    detail: "Who owes what, and why — every invoice traces to the deliveries that produced it.",
+  },
+  {
+    title: "Easier scaling",
+    detail: "A new centre, route, or customer joins the same platform — not a new system to stitch in.",
+  },
+] as const;
+
+const TRUST_POINTS = [
+  {
+    icon: Lock,
+    title: "Tenant isolation, enforced in the database",
+    detail: "Every organization's data is isolated with database-level row security, not just application filters.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Role-based access",
+    detail: "A permission registry governs every action; users see and do exactly what their role allows.",
+  },
+  {
+    icon: FileText,
+    title: "Audited changes",
+    detail: "Every mutation lands in an append-only audit trail, and completed transactions are immutable.",
+  },
+  {
+    icon: Landmark,
+    title: "Recovery that is rehearsed",
+    detail: "Backups and restore paths are executed as proofs, not written as documents.",
   },
 ] as const;
 
 export default function HomePage() {
   return (
     <>
-      {/* Hero */}
+      {/* 1 — Hero */}
       <Section className="border-b border-border/60">
-        <div className="flex max-w-3xl flex-col gap-6 py-6 sm:py-10">
-          <p className="text-xs font-medium tracking-wide text-primary uppercase">
-            Lacteva · by Phoenix Software
-          </p>
-          <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl lg:text-6xl">
-            Collect milk offline. Price it explainably. Settle it in one
-            click.
-          </h1>
-          <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground">
-            Lacteva digitizes the dairy value chain — from the farmer pouring
-            milk at a village collection center through settlement and
-            payment — for dairy businesses that today run on paper. Every
-            number on the screen can be checked, because a platform that is
-            right but unverifiable loses to a paper register that is
-            checkable.
-          </p>
-          <div className="flex flex-wrap items-center gap-3 pt-2">
-            <Link
-              href="/request-demo"
-              className="inline-flex h-11 items-center rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/85"
+        <div className="grid items-center gap-12 xl:grid-cols-2">
+          <div className="flex max-w-2xl flex-col gap-6">
+            <Eyebrow>Connected Dairy Operations Platform</Eyebrow>
+            <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl lg:text-6xl">
+              Run your dairy operations as one connected business.
+            </h1>
+            <p className="text-lg leading-relaxed text-muted-foreground">
+              Lacteva connects milk procurement, collection, customers,
+              delivery, billing, payments, and reporting in one scalable
+              dairy operations platform.
+            </p>
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <LinkButton href="/start-free-trial">Start Free Trial</LinkButton>
+              <LinkButton href="/request-demo" variant="outline">
+                Book a Demo
+              </LinkButton>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              30-day free trial — our team sets up your environment.
+            </p>
+          </div>
+          <ProductShot
+            name="dashboard"
+            label="Lacteva admin portal — operational overview"
+            priority
+          />
+        </div>
+      </Section>
+
+      {/* 2 — Problem */}
+      <Section variant="tinted">
+        <SectionHeading
+          eyebrow="The problem"
+          title="Dairy operations shouldn't live in disconnected systems."
+          lede="Most dairy businesses run on pieces that don't talk to each other — and every gap between them is filled by somebody's evening."
+        />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {PROBLEMS.map((item) => (
+            <div
+              key={item.title}
+              className="flex flex-col gap-2 rounded-xl border border-dashed border-border bg-card/60 p-5"
             >
-              Request a demo
-            </Link>
-            <Link
-              href="/product"
-              className="inline-flex h-11 items-center rounded-lg border border-border bg-card px-6 text-sm font-medium transition-colors hover:bg-muted"
+              <item.icon className="size-5 text-muted-foreground" aria-hidden />
+              <h3 className="text-sm font-semibold">{item.title}</h3>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {item.detail}
+              </p>
+            </div>
+          ))}
+        </div>
+        <p className="pt-8 text-sm font-medium text-primary">
+          There is another way to run it — as one connected operation. ↓
+        </p>
+      </Section>
+
+      {/* 3 — Signature lifecycle */}
+      <Section variant="ink">
+        <SectionHeading
+          onInk
+          eyebrow="The Lacteva lifecycle"
+          title="One platform. Connected dairy operations."
+          lede="From the supplier's milk to the customer's bill to the settlement that pays for it — one flow, one set of records."
+        />
+        <LifecycleFlow />
+      </Section>
+
+      {/* 4 — Capability groups */}
+      <Section>
+        <SectionHeading
+          eyebrow="Capabilities"
+          title="Everything your dairy team needs to operate."
+          lede="Five areas of the business, one platform underneath them."
+        />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {CAPABILITY_GROUPS.map((group) => (
+            <div
+              key={group.name}
+              className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5"
             >
-              See how it works
-            </Link>
+              <div>
+                <h3 className="font-semibold">{group.name}</h3>
+                <p className="pt-1 text-xs leading-relaxed text-muted-foreground">
+                  {group.tagline}
+                </p>
+              </div>
+              <ul className="flex flex-col gap-1.5 border-t border-border/60 pt-3">
+                {group.items.map((item) => (
+                  <li key={item} className="text-sm text-muted-foreground">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* 5 — How it works */}
+      <Section variant="tinted">
+        <SectionHeading
+          eyebrow="How it works"
+          title="Connect the flow of your dairy business."
+          lede="The lifecycle shows what is connected; this is how your team runs a day through it."
+        />
+        <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {HOW_IT_WORKS.map((item, i) => (
+            <li
+              key={item.step}
+              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-5"
+            >
+              <span className="text-xs font-semibold text-primary tabular-nums">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <h3 className="font-semibold">{item.step}</h3>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {item.detail}
+              </p>
+            </li>
+          ))}
+        </ol>
+      </Section>
+
+      {/* 6 — Who it's for */}
+      <Section>
+        <SectionHeading
+          eyebrow="Who it's for"
+          title="Built for dairy businesses at every stage of growth."
+        />
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {AUDIENCES.map((audience) => (
+            <div key={audience.name} className="flex flex-col gap-2">
+              <audience.icon className="size-5 text-primary" aria-hidden />
+              <h3 className="font-semibold">{audience.name}</h3>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {audience.detail}
+              </p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* 7 — Product proof */}
+      <Section variant="tinted">
+        <SectionHeading
+          eyebrow="The product"
+          title="See Lacteva in action."
+          lede="Screens from the Lacteva platform, running on demonstration data."
+        />
+        <div className="grid gap-6">
+          <ProductShot
+            name="deliveries"
+            label="Daily delivery report — per-customer rounds, volumes, and values"
+          />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <ProductShot
+              name="transactions"
+              label="Milk collection — sessions and immutable transactions"
+            />
+            <ProductShot
+              name="billing"
+              label="Billing — invoices, receivables, and customer statements"
+            />
           </div>
         </div>
       </Section>
 
-      {/* Problem */}
+      {/* 8 — Office + field */}
+      <Section>
+        <div className="grid items-center gap-12 lg:grid-cols-2">
+          <div className="flex flex-col gap-4">
+            <SectionHeading
+              eyebrow="Office + field"
+              title="Connect the office with the field."
+              lede="Central operations and field teams work from the same records — what the office plans, the field executes; what the field records, the office sees."
+            />
+            <ul className="flex flex-col gap-3">
+              {[
+                { icon: Smartphone, text: "A mobile app for collection operators, delivery riders, and customers — one app, routed by what each person is allowed to do." },
+                { icon: Route, text: "The day's round on the rider's phone; the day's report on the manager's screen — the same deliveries." },
+                { icon: Globe2, text: "Built for real field conditions: operations captured offline replay safely when the network returns." },
+              ].map((item, i) => (
+                <li key={i} className="flex items-start gap-3">
+                  <item.icon className="mt-0.5 size-4.5 shrink-0 text-primary" aria-hidden />
+                  <span className="text-sm leading-relaxed text-muted-foreground">
+                    {item.text}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <ProductShot
+            name="mobile-operator"
+            label="Lacteva mobile app — field operations"
+          />
+        </div>
+      </Section>
+
+      {/* 9 — Automation */}
       <Section variant="tinted">
         <SectionHeading
-          eyebrow="The problem"
-          title="A weight recorded wrongly at 5 a.m. becomes a payment dispute three weeks later"
-          lede="Dairy in most of the world runs on paper registers, disconnected spreadsheets, trust-based measurement, and month-end settlement disputes."
+          eyebrow="Automation"
+          title="Spend less time repeating the same operational work."
+          lede="Lacteva automates the work that is the same every day — and leaves the decisions to people."
         />
-        <div className="grid gap-6 sm:grid-cols-3">
+        <div className="grid gap-6 lg:grid-cols-3">
           {[
             {
-              title: "Milk is perishable",
-              detail:
-                "Any software that blocks the collection line is worse than paper. Delay is the one thing the product cannot tolerate.",
+              title: "Daily rounds, generated",
+              detail: "Standing orders and delivery plans become each day's deliveries automatically, on your business day, in your timezone — and never twice.",
             },
             {
-              title: "Milk is quality-priced",
-              detail:
-                "Manual fat-based price arithmetic is error-prone and opaque — and an unexplainable price erodes the trust the whole chain runs on.",
+              title: "Month-end bills, drafted",
+              detail: "Invoices are drafted from the month's delivery records automatically. A person reviews and issues them — drafts move nobody's balance.",
             },
             {
-              title: "Milk is collected twice daily",
-              detail:
-                "Thousands of small suppliers, every morning and evening. Without a shared record, disputes have nothing to check against.",
+              title: "Notifications, templated",
+              detail: "Messages go out from a template registry per channel and language, with a delivery record for every send.",
             },
           ].map((item) => (
             <div
@@ -141,68 +425,95 @@ export default function HomePage() {
         </div>
       </Section>
 
-      {/* How it works */}
+      {/* 10 — Outcomes */}
       <Section>
         <SectionHeading
-          eyebrow="How it works"
-          title="One trustworthy loop, from member to settlement"
-          lede="Every litre's journey is measured, tested, attributed, and reconciled — replacing paper registers with records that members trust and settlement can pay against."
+          eyebrow="Outcomes"
+          title="More connected operations. Better visibility."
         />
-        <ol className="grid gap-4 lg:grid-cols-5">
-          {COLLECTION_LOOP.map((item, i) => (
-            <li
-              key={item.step}
-              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-5"
-            >
-              <span className="text-xs font-semibold text-primary tabular-nums">
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <h3 className="text-sm font-semibold">{item.step}</h3>
+        <div className="grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
+          {OUTCOMES.map((outcome) => (
+            <div key={outcome.title} className="flex flex-col gap-2">
+              <h3 className="font-semibold">{outcome.title}</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                {item.detail}
-              </p>
-            </li>
-          ))}
-        </ol>
-      </Section>
-
-      {/* Differentiators */}
-      <Section variant="tinted">
-        <SectionHeading
-          eyebrow="Why it's different"
-          title="Traditional software records what the machine said. Lacteva proves what everyone is owed, and why."
-        />
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {DIFFERENTIATORS.map((item) => (
-            <div key={item.title} className="flex flex-col gap-3">
-              <item.icon className="size-5 text-primary" aria-hidden />
-              <h3 className="font-semibold">{item.title}</h3>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {item.detail}
+                {outcome.detail}
               </p>
             </div>
           ))}
         </div>
       </Section>
 
-      {/* CTA */}
+      {/* 11 — International readiness */}
+      <Section variant="tinted">
+        <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr] lg:items-center">
+          <SectionHeading
+            eyebrow="International"
+            title="Designed for dairy businesses across markets."
+            lede="Your organization sets its country once — currency, timezone, and languages follow."
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            {[
+              { icon: Globe2, text: "Multi-country: an organization resolves country, currency, and timezone at onboarding." },
+              { icon: Banknote, text: "Local currency on every amount, with exact decimal arithmetic underneath." },
+              { icon: CalendarClock, text: "Timezone-aware business dates — a 5 a.m. round belongs to your day, not the server's." },
+              { icon: Users, text: "Localized for the team: English, Swahili, Hindi, and Arabic ship today." },
+            ].map((item, i) => (
+              <div key={i} className="flex items-start gap-3 rounded-xl border border-border bg-card p-4">
+                <item.icon className="mt-0.5 size-4.5 shrink-0 text-primary" aria-hidden />
+                <span className="text-sm leading-relaxed text-muted-foreground">
+                  {item.text}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Section>
+
+      {/* 12 — Trust */}
       <Section>
-        <div className="flex flex-col items-start gap-6 rounded-2xl bg-primary p-10 text-primary-foreground sm:p-14">
+        <SectionHeading
+          eyebrow="Trust & security"
+          title="Built for business-critical operations."
+          lede="A dairy's payroll and a customer's bill depend on these records, so the platform is engineered for isolation, auditability, and recovery first."
+        />
+        <div className="grid gap-6 sm:grid-cols-2">
+          {TRUST_POINTS.map((point) => (
+            <div
+              key={point.title}
+              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
+            >
+              <point.icon className="size-5 text-primary" aria-hidden />
+              <h3 className="font-semibold">{point.title}</h3>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {point.detail}
+              </p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* 13 — Final CTA */}
+      <Section>
+        <div className="flex flex-col items-start gap-6 rounded-2xl bg-ink p-10 text-ink-foreground sm:p-14">
           <h2 className="max-w-2xl text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            Sellable in one demo, on a phone.
+            Ready to connect your dairy operations?
           </h2>
-          <p className="max-w-2xl text-base leading-relaxed text-primary-foreground/80">
-            Lacteva is preparing for its first pilots. If your organization
-            collects milk from many producers and settles it on paper, we
-            would like to show you the whole loop — collection to receipt —
-            live.
+          <p className="max-w-2xl text-base leading-relaxed text-ink-muted">
+            Explore Lacteva with a 30-day free trial, or talk to our team
+            about your dairy operation. We set up the environment and walk
+            you through the first steps.
           </p>
-          <Link
-            href="/request-demo"
-            className="inline-flex h-11 items-center rounded-lg bg-primary-foreground px-6 text-sm font-medium text-primary transition-opacity hover:opacity-90"
-          >
-            Request a demo
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <LinkButton href="/start-free-trial" variant="onInk">
+              Start Free Trial
+            </LinkButton>
+            <LinkButton
+              href="/request-demo"
+              className="border border-ink-foreground/30 bg-transparent text-ink-foreground hover:bg-ink-foreground/10"
+            >
+              Book a Demo
+            </LinkButton>
+          </div>
         </div>
       </Section>
     </>

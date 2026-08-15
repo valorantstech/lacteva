@@ -32,8 +32,11 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
   { pattern: /\bSSO\b|single sign-on|API gateway|on-prem/i, why: "enterprise capabilities that are not built yet" },
   // Generic forbidden marketing shapes (owner directive #10).
   { pattern: /bank-grade|military-grade/i, why: "generic security claims without evidence" },
-  { pattern: /(#1|number one|the only|leading) (dairy|platform|software|provider|solution)/i, why: "no superlative market-position claims" },
+  { pattern: /(#1|number one|the only|leading|best) (dairy|platform|software|provider|solution)/i, why: "no superlative market-position claims" },
   { pattern: /\d+\s*%\s*(fewer|less|more|faster|increase|reduction|saving)/i, why: "no invented ROI statistics" },
+  // MKT-004C: the trial is a request flow fulfilled by a person — the
+  // copy must never promise self-service provisioning that does not exist.
+  { pattern: /no credit card|instant access|start instantly|account (is )?created instantly|sign up instantly/i, why: "trial provisioning is manual; no instant-access promises" },
 ];
 
 function collectSourceFiles(dir: string): string[] {

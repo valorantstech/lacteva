@@ -50,6 +50,7 @@ export async function POST(request: Request) {
   }
 
   const demoRequest: DemoRequest = {
+    intent: body.intent === "trial" ? "trial" : "demo",
     name: String(body.name).trim(),
     email: email.trim(),
     organization: String(body.organization).trim(),

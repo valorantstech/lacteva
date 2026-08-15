@@ -84,6 +84,23 @@ unset ⇒ the form degrades honestly with a 503), `NEXT_PUBLIC_PORTAL_URL`
 for metadata/sitemap; defaults to a placeholder until the public domain is
 decided).
 
+## Screenshots wanted (MKT-004C)
+
+`ProductShot` renders `public/screenshots/<name>.png` when it exists and an
+unmistakable placeholder when it doesn't — drop the capture in and rebuild,
+no code change. Captures must come from the demo environment (synthetic
+data only, no PII). Wanted, at 1600×940 or similar:
+
+- `dashboard.png` — portal operational overview (hero)
+- `deliveries.png` — daily delivery report
+- `transactions.png` — milk collection / transactions
+- `billing.png` — invoices & receivables
+- `mobile-operator.png` — mobile app, field operations
+
+A ready capture script lives in the session scratchpad
+(`shots/capture.mjs`, Playwright + demo credentials from
+`infra/demo/seed_demo.py`).
+
 ## Planned next slices
 
 - Real brand assets once `Master/Marketing/Branding` and `Logo` are authored.

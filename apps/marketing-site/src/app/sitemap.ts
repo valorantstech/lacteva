@@ -8,6 +8,7 @@ const ROUTES = [
   "/why-lacteva",
   "/company",
   "/request-demo",
+  "/start-free-trial",
 ] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {

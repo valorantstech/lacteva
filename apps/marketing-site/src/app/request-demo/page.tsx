@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Section, SectionHeading } from "@/components/section";
-import { DemoRequestForm } from "./demo-request-form";
+import { LeadForm } from "@/components/lead-form";
 
 export const metadata: Metadata = {
   title: "Request a demo",
@@ -30,7 +30,7 @@ export default function RequestDemoPage() {
             <li>We only use these details to respond to your request.</li>
           </ul>
         </div>
-        <DemoRequestForm />
+        <LeadForm />
       </div>
     </Section>
   );

@@ -11,6 +11,8 @@ import "server-only";
  */
 
 export type DemoRequest = {
+  /** "demo" (book a demo) or "trial" (30-day free trial request). */
+  intent: string;
   name: string;
   email: string;
   organization: string;

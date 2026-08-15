@@ -15,7 +15,21 @@ type Status = "idle" | "submitting" | "sent" | "error";
 const inputClasses =
   "h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
-export function DemoRequestForm() {
+/**
+ * One form, two intents. "demo" and "trial" are the same lead-capture
+ * flow with different framing — a trial request is fulfilled by a person
+ * setting up the environment, and the copy must never pretend otherwise
+ * (no instant provisioning exists).
+ */
+export function LeadForm({
+  intent = "demo",
+  submitLabel = "Request a demo",
+  successDetail = "Thank you — we will get back to you to arrange a live demonstration of the whole loop, collection to receipt.",
+}: {
+  intent?: "demo" | "trial";
+  submitLabel?: string;
+  successDetail?: string;
+}) {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string>("");
 
@@ -24,7 +38,10 @@ export function DemoRequestForm() {
     setStatus("submitting");
     setError("");
     const form = event.currentTarget;
-    const data = Object.fromEntries(new FormData(form).entries());
+    const data = {
+      ...Object.fromEntries(new FormData(form).entries()),
+      intent,
+    };
     try {
       const response = await fetch("/api/demo-request", {
         method: "POST",
@@ -59,8 +76,7 @@ export function DemoRequestForm() {
       >
         <h2 className="text-lg font-semibold">Request received</h2>
         <p className="text-sm leading-relaxed text-muted-foreground">
-          Thank you — we will get back to you to arrange a live demonstration
-          of the whole loop, collection to receipt.
+          {successDetail}
         </p>
       </div>
     );
@@ -122,8 +138,8 @@ export function DemoRequestForm() {
         </p>
       ) : null}
       <div>
-        <Button type="submit" size="lg" disabled={status === "submitting"}>
-          {status === "submitting" ? "Sending…" : "Request a demo"}
+        <Button type="submit" size="xl" disabled={status === "submitting"}>
+          {status === "submitting" ? "Sending…" : submitLabel}
         </Button>
       </div>
     </form>
