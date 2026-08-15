@@ -25,7 +25,7 @@ from datetime import date
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tests import postgres_support
@@ -199,3 +199,79 @@ async def test_a_second_round_of_passes_creates_nothing(factory):
     assert deliveries == 8
     assert runs == 1
     assert created == 8, "the day's count did not survive a second round of passes"
+
+
+# --- DEMO-022: a suppressed day races the same way --------------------------
+
+
+async def _run_with_calendar(maker, tenant_id: uuid.UUID, label: str):
+    """One scheduler pass WITH calendar resolution, as the loop does it."""
+    from platform_core.core.rls import rebind_tenant
+    from platform_core.modules.business_calendar.service import WorkingDayResolver
+    from platform_core.modules.delivery.scheduler import record_run
+
+    async with maker() as session:
+        await rebind_tenant(session, tenant_id)
+        resolver = WorkingDayResolver(session, tenant_id, DAY)
+        return await record_run(
+            session,
+            tenant_id=tenant_id,
+            day=DAY,
+            trigger="scheduler",
+            label=label,
+            is_working=resolver.is_working,
+        )
+
+
+async def test_four_concurrent_schedulers_on_a_holiday_generate_nothing(factory):
+    """Suppression must be as race-safe as generation.
+
+    The concern is specific: four workers all resolve the calendar, all find
+    the dairy shut, and all try to record the day. One run row must survive
+    saying `holiday`, and no delivery may exist — a race that produced even one
+    delivery on a declared holiday would be worse than no suppression at all,
+    because it would be unpredictable.
+    """
+    import uuid as _uuid
+
+    from platform_core.core.db import utcnow
+    from platform_core.core.rls import rebind_tenant
+    from platform_core.modules.delivery.models import DeliveryGenerationRun
+
+    tenant_id = uuid.uuid4()
+    await _seed(factory, tenant_id, customers=25)
+
+    async with factory() as session:
+        await rebind_tenant(session, tenant_id)
+        await session.execute(
+            text(
+                "INSERT INTO organization_calendar_day "
+                "(id, tenant_id, day, working, kind, name, created_at) "
+                "VALUES (:i, :t, :d, false, 'holiday', 'Concurrency holiday', :n)"
+            ),
+            {"i": _uuid.uuid4(), "t": tenant_id, "d": DAY, "n": utcnow()},
+        )
+        await session.commit()
+
+    results = await asyncio.gather(
+        *(_run_with_calendar(factory, tenant_id, f"worker-{i}") for i in range(4)),
+        return_exceptions=True,
+    )
+    raised = [r for r in results if isinstance(r, Exception)]
+    assert not raised, f"a racing scheduler raised: {raised}"
+
+    deliveries, runs, created = await _counts(factory, tenant_id)
+    assert deliveries == 0, f"a shut dairy produced {deliveries} deliveries"
+    assert runs == 1, "one run row per tenant per business date, whatever raced"
+    assert created == 0
+
+    async with factory() as session:
+        await rebind_tenant(session, tenant_id)
+        row = await session.scalar(
+            select(DeliveryGenerationRun).where(
+                DeliveryGenerationRun.tenant_id == tenant_id,
+                DeliveryGenerationRun.business_date == DAY,
+            )
+        )
+        assert row.status == "holiday"
+        assert row.skipped_holiday == 25, "every suppressed plan must be counted"

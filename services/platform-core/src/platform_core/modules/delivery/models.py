@@ -149,6 +149,12 @@ class DeliveryGenerationRun(Base, IdMixin):
     already_present: Mapped[int] = mapped_column(default=0)
     not_due: Mapped[int] = mapped_column(default=0)
     inactive_customers: Mapped[int] = mapped_column(default=0)
+    #: Due plans the CALENDAR suppressed (DEMO-022) — the dairy, or the plan's
+    #: centre, does not work on this business date. Separate from `not_due`,
+    #: which means the plan's own schedule says no: an operator asking why a
+    #: round is short needs to tell "the dairy was shut" from "these households
+    #: do not take milk today".
+    skipped_holiday: Mapped[int] = mapped_column(default=0)
 
     attempts: Mapped[int] = mapped_column(default=1)
     #: Truncated: an operator needs to know WHAT broke, and the stack trace is

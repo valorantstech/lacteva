@@ -35,6 +35,7 @@ day that has just begun, not the UTC day that is still yesterday — which is
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import date
 from decimal import Decimal
 
@@ -81,6 +82,10 @@ class GenerationResult(BaseModel):
     #: Plans skipped because the customer is no longer active. A suspended
     #: customer keeps their plan and stops receiving milk.
     inactive_customers: int
+    #: Due plans the CALENDAR suppressed — the dairy, or the plan's centre, is
+    #: not working today (DEMO-022). Zero on every manual run, because manual
+    #: generation is not calendar-suppressed.
+    skipped_holiday: int = 0
 
 
 def _due_plans_query(tenant_id: uuid.UUID, day: date) -> Select:
@@ -134,6 +139,7 @@ async def generate_for_day(
     tenant_id: uuid.UUID,
     day: date,
     actor_id: uuid.UUID | None,
+    is_working: Callable[[uuid.UUID | None], Awaitable[bool]] | None = None,
 ) -> GenerationResult:
     """Produce one day's scheduled deliveries from the active standing orders.
 
@@ -142,15 +148,37 @@ async def generate_for_day(
     hundred is not something a caller wants serialised back, and the deliveries
     are readable through the ordinary delivery endpoints the moment this
     returns — which is §4's requirement that generated rows be normal rows.
+
+    **`is_working` is how a holiday suppresses a round (DEMO-022), and it is
+    OPTIONAL on purpose.** Passed a resolver, each plan is checked against its
+    own centre's calendar and a non-working answer skips it. Passed nothing —
+    which is what the manual endpoint does — behaviour is exactly as before.
+
+    That default is the whole boundary of this milestone: **holidays suppress
+    AUTOMATIC generation.** An operator who asks for a round on a declared
+    holiday knows something the calendar does not, and gets it; the scheduler,
+    which is nobody, does not.
+
+    A callable rather than a service, so this module gains no dependency on
+    either calendar: it is handed an answer, exactly as `resolve_working_day`
+    is handed opinions rather than going to look for them.
     """
     due_rows = (await session.execute(_due_plans_query(tenant_id, day))).all()
 
     candidates: list[dict] = []
     not_due = 0
     inactive = 0
+    skipped_holiday = 0
     for plan, customer_status in due_rows:
         if not delivers_on_weekday(plan.weekdays, day):
             not_due += 1
+            continue
+        # DEMO-022: the dairy — or this plan's centre — does not work today.
+        # Counted separately from `not_due`, because "the calendar says the
+        # dairy is shut" and "this household does not take milk on Tuesdays"
+        # are different answers to an operator asking why a round is short.
+        if is_working is not None and not await is_working(plan.center_id):
+            skipped_holiday += 1
             continue
         if customer_status != "active":
             inactive += 1
@@ -205,6 +233,7 @@ async def generate_for_day(
         already_present=len(candidates) - created,
         not_due=not_due,
         inactive_customers=inactive,
+        skipped_holiday=skipped_holiday,
     )
 
 

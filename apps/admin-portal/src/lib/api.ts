@@ -2264,13 +2264,16 @@ export const resumeDeliveryPlan = (planId: string) =>
 export type GenerationRun = {
   id: string;
   business_date: string;
-  status: "running" | "success" | "failed";
+  status: "running" | "success" | "failed" | "holiday";
   trigger: "scheduler" | "manual";
   plans_due: number;
   created: number;
   already_present: number;
   not_due: number;
   inactive_customers: number;
+  /** Due plans the calendar suppressed — the dairy, or the plan's centre, does
+   *  not work on this business date (DEMO-022). */
+  skipped_holiday: number;
   attempts: number;
   error: string;
   started_at: string;
@@ -2289,6 +2292,8 @@ export type GenerationResult = {
   already_present: number;
   not_due: number;
   inactive_customers: number;
+  /** Always 0 for a manual run: manual generation is not calendar-suppressed. */
+  skipped_holiday: number;
 };
 
 /** Turn today's standing orders into the day's round. Safe to run twice —

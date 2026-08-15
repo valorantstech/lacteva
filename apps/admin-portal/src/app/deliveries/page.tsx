@@ -314,6 +314,16 @@ function DeliveriesView() {
               ? ` · ${t("generation.alreadyPresent", { count: lastRun.already_present })}`
               : ""}
           </span>
+          {/* DEMO-022: why an empty round is empty. An operator seeing zero
+              needs to know the dairy was shut rather than that the scheduler
+              broke — those call for very different responses. */}
+          {lastRun.skipped_holiday > 0 ? (
+            <span className="text-muted-foreground">
+              {t("generation.skippedHoliday", {
+                count: lastRun.skipped_holiday,
+              })}
+            </span>
+          ) : null}
           {lastRun.status === "failed" ? (
             <span className="text-amber-700 dark:text-amber-500">
               {t("generation.failedNotice")}

@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -55,10 +56,15 @@ from sqlalchemy.orm.exc import StaleDataError
 from platform_core.core.business_time import zone
 from platform_core.core.db import get_session_factory, utcnow
 from platform_core.core.rls import platform_session, rebind_tenant
+from platform_core.modules.business_calendar.service import WorkingDayResolver
 from platform_core.modules.delivery.generation import GenerationResult, generate_for_day
 from platform_core.modules.delivery.models import MAX_ATTEMPTS, DeliveryGenerationRun
 
 log = structlog.get_logger("delivery.scheduler")
+
+#: Statuses that mean "this business date is settled — do not run it again".
+#: `holiday` joins `success` because both are answers, not failures.
+FINISHED_STATUSES = ("success", "holiday")
 
 
 @dataclass(frozen=True)
@@ -101,6 +107,10 @@ def should_run(
       work already done.
     * **a successful day is finished.** This is what stops a loop that wakes
       every minute from re-running a completed round sixty times an hour.
+    * **a day the CALENDAR suppressed is finished too** (DEMO-022). A holiday
+      is a final answer about the day, not a failure to retry — without this
+      the loop would re-ask three times and then give up, which reads like a
+      broken scheduler rather than a closed dairy.
     * **a failed day is retried, up to `MAX_ATTEMPTS`.** The failures worth
       retrying are transient; a fourth attempt means something retrying will
       not fix, and the row stays `failed` and visible for a person.
@@ -116,7 +126,7 @@ def should_run(
         return None
     if last is None or last.business_date != today:
         return today
-    if last.status == "success":
+    if last.status in FINISHED_STATUSES:
         return None
     if last.status == "running":
         return None
@@ -188,6 +198,11 @@ async def run_for_tenant(
         if day is None:
             return None
 
+        # DEMO-022: the AUTOMATIC path resolves the calendar; the manual
+        # endpoint does not, and that asymmetry is the milestone's boundary.
+        # An operator asking for a round on a declared holiday knows something
+        # the calendar does not; the scheduler is nobody and does not.
+        resolver = WorkingDayResolver(session, tenant.id, day)
         run, _result = await record_run(
             session,
             tenant_id=tenant.id,
@@ -195,6 +210,7 @@ async def run_for_tenant(
             trigger=trigger,
             label=tenant.slug,
             now=now,
+            is_working=resolver.is_working,
         )
         return run
 
@@ -304,6 +320,7 @@ async def record_run(
     trigger: str,
     label: str = "",
     now: datetime | None = None,
+    is_working: Callable[[uuid.UUID | None], Awaitable[bool]] | None = None,
 ) -> tuple[DeliveryGenerationRun | None, GenerationResult]:
     """Generate one day's round and record what happened, on a caller's session.
 
@@ -355,7 +372,9 @@ async def record_run(
 
     started = time.monotonic()
     try:
-        result = await generate_for_day(session, tenant_id=tenant_id, day=day, actor_id=None)
+        result = await generate_for_day(
+            session, tenant_id=tenant_id, day=day, actor_id=None, is_working=is_working
+        )
     except Exception as exc:
         # The failure has to be recorded in a transaction of its own: the
         # caller's transaction is about to be rolled back with the error in it.
@@ -396,7 +415,17 @@ async def record_run(
             inactive_customers=0,
         )
 
-    run.status = "success"
+    # DEMO-022: a day on which the calendar suppressed EVERY due plan and
+    # nothing was created is recorded as `holiday` rather than `success`.
+    # Both are finished — neither is retried — but an operator asking why the
+    # round is empty gets the reason from the status rather than having to
+    # infer it from three zeroes.
+    run.status = (
+        "holiday"
+        if result.skipped_holiday > 0 and result.created == 0 and result.due == 0
+        else "success"
+    )
+    run.skipped_holiday = result.skipped_holiday
     run.plans_due = result.due
     # ACCUMULATED across attempts, not assigned. A retry that creates the four
     # deliveries a failed attempt missed must show four created for the day,

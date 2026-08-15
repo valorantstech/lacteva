@@ -3,7 +3,7 @@ id: CON-0001
 title: Business Calendar
 type: con
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Platform Engineering
 created: 2026-08-15
 last-updated: 2026-08-15
@@ -95,9 +95,16 @@ composition root.
 flag: `holiday` and `closure` stop work, `special` does not — the same reading
 the readiness engine has used since DEMO-005.
 
-**Working days are advisory.** They are reported and they are not enforced:
-the scheduler still generates a round on a declared holiday. That is a
-deliberate limitation, recorded in §6.
+**Working days suppress automatic delivery generation** (DEMO-022). The
+scheduler resolves each due plan against its own centre's calendar through
+`WorkingDayResolver` — the one path — and a non-working answer skips the plan.
+See §6.
+
+`WorkingDayResolver` is the only thing that should ever perform this
+resolution. It caches per centre for the life of one day's run, so a round of
+three hundred plans across five centres costs six lookups, and it reads the
+centre's opinion through `collection_center`'s own service function rather
+than its table.
 
 ## 4. Financial periods
 
@@ -152,11 +159,31 @@ Completion paths — `payment.complete`, `payment.execute` — are deliberately
 *not* guarded, for the same reason as consumers: refusing there would strand
 money mid-flight.
 
-## 6. What this is not
+## 6. Holidays and the scheduler
 
-* **Not a scheduling engine.** A holiday does not stop the delivery scheduler.
-  Rounds are generated from `delivery_plan.weekdays`, per customer, which is
-  where a dairy's actual schedule lives.
+A non-working business date suppresses **automatic** delivery generation for
+the plans it covers. Three rules make that safe:
+
+1. **Automatic only.** The manual generation endpoint is unchanged and is not
+   calendar-suppressed. An operator asking for a round on a declared holiday
+   knows something the calendar does not; the scheduler is nobody.
+2. **Nothing already made is touched.** The calendar governs generation that
+   has not happened yet. Declaring a holiday after a round has gone out
+   deletes no delivery, reverses no invoice and rewrites no history.
+3. **No backfill, ever.** A suppressed day is recorded as `holiday`, which is
+   a *finished* status alongside `success` — so the loop does not re-ask, and
+   the next day generates only itself. Monday shut means Monday is empty and
+   Tuesday is Tuesday.
+
+The run row carries `skipped_holiday`, separate from `not_due`, because "the
+dairy was shut" and "these households do not take milk today" are different
+answers to an operator asking why a round is short.
+
+## 7. What this is not
+
+* **Not a scheduling engine.** Suppression is a filter over plans the existing
+  generator already produces. A dairy's actual schedule still lives in
+  `delivery_plan.weekdays`, per customer.
 * **Not an accounting system.** Closing a period posts no journal, rolls no
   balance and computes no trial balance. It refuses writes and nothing else.
 * **Not a weekly pattern.** There is no organization-wide "closed on Sundays";
@@ -169,4 +196,5 @@ money mid-flight.
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.1 | 2026-08-15 | Platform Engineering | DEMO-022: holidays now suppress automatic delivery generation; `WorkingDayResolver` named as the one resolution path. |
 | 1.0 | 2026-08-15 | Platform Engineering | Written in DEMO-021, describing the calendar as it stands after DEMO-013, DEMO-014, DEMO-019, DEMO-020 and DEMO-021's resolution and guard work. |

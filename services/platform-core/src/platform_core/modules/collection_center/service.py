@@ -112,6 +112,32 @@ class CenterPage(BaseModel):
     offset: int
 
 
+async def centre_calendar_kind(
+    session: AsyncSession, center_id: uuid.UUID, day: date
+) -> str | None:
+    """This centre's calendar `kind` on `day`, or None (DEMO-022).
+
+    A module-level function rather than a method because its one caller — the
+    business calendar's resolver — needs the centre's OPINION and nothing else,
+    and constructing a full `CollectionCenterService` would mean supplying an
+    event bus and an audit service to read one row.
+
+    It is still this module answering for its own table, which is the boundary
+    that matters: nothing outside `collection_center` imports `CalendarEntry`.
+
+    Not tenant-scoped in its own right, and does not need to be: every caller
+    runs inside a tenant-bound session, so row-level security confines the
+    lookup to the caller's own centres. A centre id from another tenant simply
+    finds nothing, which resolves to "no opinion" — the safe answer, and the
+    same one an unconfigured centre gives.
+    """
+    return await session.scalar(
+        select(CalendarEntry.kind).where(
+            CalendarEntry.center_id == center_id, CalendarEntry.day == day
+        )
+    )
+
+
 class CollectionCenterService:
     def __init__(self, session: AsyncSession, bus: EventBus, audit: AuditService):
         self._session = session

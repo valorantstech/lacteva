@@ -96,9 +96,7 @@ async def test_the_guard_refuses_only_the_owning_tenant(live):
     finally:
         async with live() as s:
             await _bind(s, alpha)
-            await s.execute(
-                text("DELETE FROM financial_period WHERE label = :l"), {"l": label}
-            )
+            await s.execute(text("DELETE FROM financial_period WHERE label = :l"), {"l": label})
             await s.commit()
 
 
@@ -127,15 +125,11 @@ async def test_the_refusal_names_the_period_and_is_a_conflict(live):
             assert "2026-09-01" in message and "2026-09-30" in message
 
             # A date outside it passes, on the same engine and binding.
-            await assert_period_open(
-                s, tenant, date(2026, 10, 1), operation="issuing an invoice"
-            )
+            await assert_period_open(s, tenant, date(2026, 10, 1), operation="issuing an invoice")
     finally:
         async with live() as s:
             await _bind(s, tenant)
-            await s.execute(
-                text("DELETE FROM financial_period WHERE label = :l"), {"l": label}
-            )
+            await s.execute(text("DELETE FROM financial_period WHERE label = :l"), {"l": label})
             await s.commit()
 
 
@@ -170,7 +164,5 @@ async def test_an_organization_calendar_day_does_not_leak_into_resolution(live):
     finally:
         async with live() as s:
             await _bind(s, alpha)
-            await s.execute(
-                text("DELETE FROM organization_calendar_day WHERE name = 'Alpha only'")
-            )
+            await s.execute(text("DELETE FROM organization_calendar_day WHERE name = 'Alpha only'"))
             await s.commit()

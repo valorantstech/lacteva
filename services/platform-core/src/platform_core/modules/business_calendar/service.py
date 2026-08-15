@@ -411,6 +411,70 @@ class BusinessCalendarService:
         )
 
 
+class WorkingDayResolver:
+    """Does this dairy work on this day — at the organization, or at a centre?
+
+    **The one resolution path** (DEMO-022). Before this, the rule existed as a
+    pure function and every caller composed it themselves: the calendar API did
+    it one way, and the scheduler did not do it at all. One class means one
+    answer, and the pure function underneath means the answer is still testable
+    without a database.
+
+    Resolution is `resolve_working_day` and nothing else:
+
+        centre override  →  organization calendar  →  a working day
+
+    **Cached per centre for the life of the resolver**, which is what keeps a
+    round of three hundred plans across five centres to six lookups rather than
+    three hundred. Generation resolves one day, so the cache is keyed by centre
+    alone and cannot go stale within a run.
+
+    It reads the centre's opinion through `collection_center`'s own service
+    function, never its table.
+    """
+
+    def __init__(self, session: AsyncSession, tenant_id: uuid.UUID, day: date) -> None:
+        self._session = session
+        self._tenant_id = tenant_id
+        self._day = day
+        self._organization: bool | _Unset | None = _UNSET
+        self._centres: dict[uuid.UUID, bool | None] = {}
+
+    async def _organization_opinion(self) -> bool | None:
+        if self._organization is _UNSET:
+            self._organization = await BusinessCalendarService(
+                self._session, self._tenant_id
+            ).organization_exception(self._day)
+        return self._organization  # type: ignore[return-value]
+
+    async def _centre_opinion(self, center_id: uuid.UUID) -> bool | None:
+        if center_id not in self._centres:
+            from platform_core.modules.collection_center.service import (
+                centre_calendar_kind,
+            )
+
+            kind = await centre_calendar_kind(self._session, center_id, self._day)
+            self._centres[center_id] = None if kind is None else centre_exception_is_working(kind)
+        return self._centres[center_id]
+
+    async def is_working(self, center_id: uuid.UUID | None = None) -> bool:
+        """The resolved answer for this day, optionally at one centre.
+
+        A plan with no centre is an organization-level plan and takes the
+        organization's answer — which is also what a centre with no exception
+        gets, by the same rule rather than by a separate branch.
+        """
+        centre = None if center_id is None else await self._centre_opinion(center_id)
+        return resolve_working_day(organization=await self._organization_opinion(), centre=centre)
+
+
+class _Unset:
+    """Distinguishes "not looked up yet" from "looked up, no opinion"."""
+
+
+_UNSET = _Unset()
+
+
 async def assert_period_open(
     session: AsyncSession,
     tenant_id: uuid.UUID,
@@ -474,6 +538,7 @@ __all__ = [
     "FinancialPeriodInput",
     "FinancialPeriodView",
     "PeriodGuard",
+    "WorkingDayResolver",
     "assert_period_open",
     "centre_exception_is_working",
     "resolve_working_day",

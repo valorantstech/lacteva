@@ -238,6 +238,7 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
           already_present: 14,
           not_due: 0,
           inactive_customers: 0,
+          skipped_holiday: 0,
           attempts: 1,
           error: "",
           started_at: "2026-08-15T05:00:02Z",
@@ -523,6 +524,44 @@ describe("deliveries and the daily report", () => {
     // day's row, so count rather than assume one.
     expect(screen.getAllByText("6").length).toBeGreaterThan(0);
     expect(screen.getAllByText("10,234.50").length).toBeGreaterThan(0);
+  });
+
+  it("says when the round was short because the dairy was shut (DEMO-022)", async () => {
+    // The operational question this answers: an empty round is either a
+    // holiday or a broken scheduler, and those need very different responses.
+    routeAll({
+      "/v1/deliveries/generation-runs": () =>
+        json([
+          {
+            id: "gr-holiday",
+            business_date: "2026-08-15",
+            status: "holiday",
+            trigger: "scheduler",
+            plans_due: 0,
+            created: 0,
+            already_present: 0,
+            not_due: 0,
+            inactive_customers: 0,
+            skipped_holiday: 300,
+            attempts: 1,
+            error: "",
+            started_at: "2026-08-15T05:00:02Z",
+            finished_at: "2026-08-15T05:00:02Z",
+            duration_ms: 40,
+          },
+        ]),
+    });
+    render(<DeliveriesPage />);
+    expect(
+      await screen.findByText(/300 skipped — not a working day/),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about holidays on an ordinary round", async () => {
+    routeAll();
+    render(<DeliveriesPage />);
+    expect(await screen.findByText("Day by day")).toBeInTheDocument();
+    expect(screen.queryByText(/not a working day/)).not.toBeInTheDocument();
   });
 
   it("states that the totals cover the whole filtered set, not the page", async () => {
