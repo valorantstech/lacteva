@@ -2,11 +2,10 @@ import Link from "next/link";
 import {
   CloudOff,
   FileSearch,
-  Landmark,
   Layers,
   Network,
   ScrollText,
-  Unplug,
+  Workflow,
 } from "lucide-react";
 import { Section, SectionHeading } from "@/components/section";
 
@@ -53,57 +52,16 @@ const DIFFERENTIATORS = [
       "Consolidated multi-center, multi-entity visibility in real time: how much milk, at what quality, owed to whom, today.",
   },
   {
-    icon: Unplug,
-    title: "Hardware freedom",
+    icon: Workflow,
+    title: "One connected operation",
     detail:
-      "Certified integrations with scales and analyzers, not bundles. The scale is not allowed to hold your data hostage.",
+      "Procurement, delivery, billing, and settlement share one record of the same litre — no re-entry, and no reconciling one system against another.",
   },
   {
     icon: Layers,
     title: "Rules you configure",
     detail:
       "A pricing policy change is a new rate-card version, live across every center in minutes — not a vendor site visit.",
-  },
-] as const;
-
-const EDITIONS = [
-  {
-    name: "Lacteva Collect",
-    audience: "Village societies, cooperatives, and collection networks",
-    detail:
-      "The procurement core: centers, suppliers, collection sessions, quality-based pricing, settlement, payments, receipts, reports — with the operator app and admin portal.",
-  },
-  {
-    name: "Lacteva Operations",
-    audience: "Networks and processors that also run the plant",
-    detail:
-      "Everything in Collect, plus processing and inventory — reception, tanks, quality lab, batches, production, warehouse — and sales basics.",
-  },
-  {
-    name: "Lacteva Enterprise",
-    audience: "Large dairies, unions, and federations",
-    detail:
-      "Everything in Operations, plus finance, enterprise integration (APIs, SSO, webhooks), analytics, SLAs, and on-premise or hybrid deployment.",
-  },
-] as const;
-
-const COMMITMENTS = [
-  {
-    icon: Landmark,
-    title: "Farmers never pay",
-    detail: "No per-farmer, per-supplier, or farmer-app fees. Ever.",
-  },
-  {
-    icon: FileSearch,
-    title: "No seat taxes",
-    detail:
-      "Adding an operator, a viewer, or a lab technician never costs extra. Dairy value scales with litres, not logins.",
-  },
-  {
-    icon: ScrollText,
-    title: "Your data stays yours",
-    detail:
-      "Supplier and farmer data is never sold or brokered — not at any price, to anyone. Tenant data is never pooled without consent.",
   },
 ] as const;
 
@@ -146,7 +104,7 @@ export default function HomePage() {
       </Section>
 
       {/* Problem */}
-      <Section tinted>
+      <Section variant="tinted">
         <SectionHeading
           eyebrow="The problem"
           title="A weight recorded wrongly at 5 a.m. becomes a payment dispute three weeks later"
@@ -209,65 +167,13 @@ export default function HomePage() {
       </Section>
 
       {/* Differentiators */}
-      <Section tinted>
+      <Section variant="tinted">
         <SectionHeading
           eyebrow="Why it's different"
           title="Traditional software records what the machine said. Lacteva proves what everyone is owed, and why."
         />
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {DIFFERENTIATORS.map((item) => (
-            <div key={item.title} className="flex flex-col gap-3">
-              <item.icon className="size-5 text-primary" aria-hidden />
-              <h3 className="font-semibold">{item.title}</h3>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {item.detail}
-              </p>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      {/* Editions */}
-      <Section>
-        <SectionHeading
-          eyebrow="Editions"
-          title="One platform that grows from a village society to a federation"
-          lede="Every edition shares one codebase and one data model, so the software is never the reason to migrate again."
-        />
-        <div className="grid gap-6 lg:grid-cols-3">
-          {EDITIONS.map((edition) => (
-            <div
-              key={edition.name}
-              className="flex flex-col gap-3 rounded-xl border border-border bg-card p-6"
-            >
-              <h3 className="text-lg font-semibold">{edition.name}</h3>
-              <p className="text-xs font-medium tracking-wide text-primary uppercase">
-                {edition.audience}
-              </p>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {edition.detail}
-              </p>
-            </div>
-          ))}
-        </div>
-        <div className="pt-8">
-          <Link
-            href="/editions"
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            Compare editions →
-          </Link>
-        </div>
-      </Section>
-
-      {/* Commitments */}
-      <Section tinted>
-        <SectionHeading
-          eyebrow="Commitments"
-          title="Trust is the product, so some things are off the table"
-        />
-        <div className="grid gap-6 sm:grid-cols-3">
-          {COMMITMENTS.map((item) => (
             <div key={item.title} className="flex flex-col gap-3">
               <item.icon className="size-5 text-primary" aria-hidden />
               <h3 className="font-semibold">{item.title}</h3>

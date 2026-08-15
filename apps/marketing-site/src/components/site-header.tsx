@@ -1,11 +1,13 @@
 import Link from "next/link";
+import { LinkButton } from "@/components/link-button";
 import { Wordmark } from "@/components/logo";
 
+// Grows toward Product / Solutions / Pricing / About as those pages land
+// (MKT-004D/E). Only routes that exist are listed — no dead links.
 const NAV = [
   { href: "/product", label: "Product" },
-  { href: "/editions", label: "Editions" },
   { href: "/why-lacteva", label: "Why Lacteva" },
-  { href: "/company", label: "Company" },
+  { href: "/company", label: "About" },
 ] as const;
 
 /**
@@ -39,18 +41,12 @@ export function SiteHeader() {
               href={portalUrl}
               className="hidden text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
             >
-              Sign in
+              Login
             </a>
           ) : null}
-          {/* This design system is Base UI, so a link styled as a button is
-              a plain anchor with button classes — same idiom as the admin
-              portal (see its centers page). */}
-          <Link
-            href="/request-demo"
-            className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/85"
-          >
+          <LinkButton href="/request-demo" size="lg">
             Request a demo
-          </Link>
+          </LinkButton>
         </div>
       </div>
       <nav

@@ -22,16 +22,12 @@ const VERSUS = [
     us: "Immutable transactions, receipts for every payment, and an append-only audit of every mutation.",
   },
   {
-    them: "Switching costs engineered in via bundled hardware",
-    us: "Certified integrations with scales and analyzers — device certification instead of hardware lock-in.",
-  },
-  {
     them: "A pricing change is a vendor site visit",
     us: "A pricing policy change is a new rate-card version, live across the network in minutes.",
   },
   {
-    them: "No APIs, no integration path",
-    us: "A platform trajectory: the same system grows from one village society to a federation, with APIs on the enterprise edition.",
+    them: "Month-end is a reconciliation project",
+    us: "Deliveries, invoices, payments, and receipts are one chain of records, so billing follows operations instead of chasing them.",
   },
 ] as const;
 
@@ -108,7 +104,7 @@ export default function WhyLactevaPage() {
         </div>
       </Section>
 
-      <Section tinted>
+      <Section variant="tinted">
         <SectionHeading
           eyebrow="Principles"
           title="The rules the product is built by"

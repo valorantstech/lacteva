@@ -26,6 +26,9 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
+  --color-ink-muted: var(--ink-muted);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -63,6 +66,12 @@
   --input: oklch(0.906 0.016 120);
   --ring: oklch(0.55 0.09 150);
   --radius: 0.625rem;
+  /* Ink: the dark surface for the footer and emphasis bands. Deep
+     green-black rather than neutral black, so dark sections still read as
+     the same brand family. */
+  --ink: oklch(0.22 0.02 160);
+  --ink-foreground: oklch(0.97 0.008 95);
+  --ink-muted: oklch(0.72 0.015 145);
 }
 
 @layer base {
@@ -74,5 +83,22 @@
   }
   html {
     @apply font-sans scroll-smooth;
+  }
+  ::selection {
+    @apply bg-primary/20;
+  }
+  /* Restraint is a feature: whatever motion the site gains later, a reader
+     who asked their OS for less of it gets less of it. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }

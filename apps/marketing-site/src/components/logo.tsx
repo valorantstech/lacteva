@@ -31,11 +31,13 @@ export function LogoMark({ className }: { className?: string }) {
 
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className={cn("flex items-center gap-2.5", className)}>
+    // Text color inherits, so a dark band recolors the wordmark by setting
+    // its own text class; `text-foreground` here is only the default.
+    <span
+      className={cn("flex items-center gap-2.5 text-foreground", className)}
+    >
       <LogoMark />
-      <span className="text-lg font-semibold tracking-tight text-foreground">
-        Lacteva
-      </span>
+      <span className="text-lg font-semibold tracking-tight">Lacteva</span>
     </span>
   );
 }

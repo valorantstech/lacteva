@@ -54,7 +54,7 @@ export default function CompanyPage() {
         </div>
       </Section>
 
-      <Section tinted>
+      <Section variant="tinted">
         <SectionHeading
           eyebrow="Why fair records matter"
           title="Steps one and two are what a customer buys. Step three is the long game."

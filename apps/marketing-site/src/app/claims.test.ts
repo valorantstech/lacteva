@@ -22,6 +22,18 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
   { pattern: /trusted by \d/i, why: "there are no customers to count yet" },
   { pattern: /testimonial/i, why: "there are no customers to quote yet" },
   { pattern: /asChild/, why: "this design system is Base UI, which has no asChild" },
+  // MKT-004B owner decisions: pricing philosophy and data-ownership
+  // commitments are ON HOLD until commercial pricing/legal is final.
+  { pattern: /farmers never pay/i, why: "pricing philosophy is held until pricing is finalized" },
+  { pattern: /per-seat|seat-based|seat tax/i, why: "pricing philosophy is held until pricing is finalized" },
+  { pattern: /sold or brokered|shared or sold|never sold/i, why: "data-ownership commitment is a pending commercial/legal decision" },
+  // Unsupported capabilities: not shipped, so not marketable.
+  { pattern: /certified integration|hardware freedom/i, why: "no hardware certification program exists" },
+  { pattern: /\bSSO\b|single sign-on|API gateway|on-prem/i, why: "enterprise capabilities that are not built yet" },
+  // Generic forbidden marketing shapes (owner directive #10).
+  { pattern: /bank-grade|military-grade/i, why: "generic security claims without evidence" },
+  { pattern: /(#1|number one|the only|leading) (dairy|platform|software|provider|solution)/i, why: "no superlative market-position claims" },
+  { pattern: /\d+\s*%\s*(fewer|less|more|faster|increase|reduction|saving)/i, why: "no invented ROI statistics" },
 ];
 
 function collectSourceFiles(dir: string): string[] {

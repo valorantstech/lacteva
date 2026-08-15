@@ -1,20 +1,28 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Shared page rhythm. Marketing pages are long-form; every band goes through
- * these two so spacing and measure stay uniform across the site.
+ * Shared page rhythm. Marketing pages are long-form; every band goes
+ * through these primitives so spacing, measure, and surface treatment stay
+ * uniform across the site. Three surfaces: default (paper), tinted (soft
+ * green-cream), ink (dark emphasis — use at most once or twice per page).
  */
 export function Section({
   children,
   className,
-  tinted = false,
+  variant = "default",
 }: {
   children: React.ReactNode;
   className?: string;
-  tinted?: boolean;
+  variant?: "default" | "tinted" | "ink";
 }) {
   return (
-    <section className={cn(tinted && "bg-secondary/50", className)}>
+    <section
+      className={cn(
+        variant === "tinted" && "bg-secondary/50",
+        variant === "ink" && "bg-ink text-ink-foreground",
+        className,
+      )}
+    >
       <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
         {children}
       </div>
@@ -22,27 +30,60 @@ export function Section({
   );
 }
 
+export function Eyebrow({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <p
+      className={cn(
+        "text-xs font-medium tracking-wide text-primary uppercase",
+        className,
+      )}
+    >
+      {children}
+    </p>
+  );
+}
+
 export function SectionHeading({
   eyebrow,
   title,
   lede,
+  align = "left",
+  onInk = false,
 }: {
   eyebrow?: string;
   title: string;
   lede?: string;
+  align?: "left" | "center";
+  onInk?: boolean;
 }) {
   return (
-    <div className="mb-10 flex max-w-3xl flex-col gap-3">
+    <div
+      className={cn(
+        "mb-10 flex max-w-3xl flex-col gap-3",
+        align === "center" && "mx-auto items-center text-center",
+      )}
+    >
       {eyebrow ? (
-        <p className="text-xs font-medium tracking-wide text-primary uppercase">
-          {eyebrow}
-        </p>
+        <Eyebrow className={cn(onInk && "text-ink-muted")}>{eyebrow}</Eyebrow>
       ) : null}
       <h2 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
         {title}
       </h2>
       {lede ? (
-        <p className="text-lg leading-relaxed text-muted-foreground">{lede}</p>
+        <p
+          className={cn(
+            "text-lg leading-relaxed",
+            onInk ? "text-ink-muted" : "text-muted-foreground",
+          )}
+        >
+          {lede}
+        </p>
       ) : null}
     </div>
   );

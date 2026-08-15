@@ -43,6 +43,39 @@ npm test
   mark in `src/components/logo.tsx` is a placeholder — both are single
   swap points for when `Master/Marketing/Branding` is authored.
 
+## Design foundation (MKT-004B)
+
+Positioning: **Connected Dairy Operations Platform** — "Run your dairy
+operations as one connected business." Enterprise software for serious
+dairy businesses: premium, clean, restrained; not a consumer dairy brand.
+
+- **Surfaces — three, only three**: paper (`background`, warm off-white),
+  tinted (`Section variant="tinted"`, soft green-cream), and ink
+  (`--ink`, deep green-black) for emphasis bands — at most once or twice
+  per page; the footer is the standing ink instance. `primary` is the
+  interim green seeded from the product's `#1B5E20`; swap the `:root`
+  block in `globals.css` when the brand guideline lands, nothing else.
+- **Type scale** (Geist): hero `text-4xl sm:text-5xl lg:text-6xl
+  font-semibold tracking-tight`; section h2 via `SectionHeading`
+  (`text-3xl sm:text-4xl`); eyebrow via `Eyebrow`; ledes `text-lg
+  text-muted-foreground`; body `text-sm leading-relaxed`.
+- **Rhythm**: `Section` owns the container (`max-w-6xl`) and band padding
+  (`py-16 sm:py-20`) — pages never hand-roll bands. Cards are
+  `rounded-xl border bg-card p-6`; shadows are reserved for
+  `ScreenshotFrame`.
+- **Components**: `LinkButton` (default size `xl`, `variant="onInk"` for
+  dark bands) for every link that looks like a button; owned `ui/button`
+  gained the `xl` size; `ScreenshotFrame` is the only way product UI
+  appears — real captures from the demo environment or an unmistakable
+  placeholder, never fabricated UI.
+- **Motion/a11y**: color/opacity transitions only, no animation
+  libraries, global `prefers-reduced-motion` flattener, visible focus via
+  the shared `ring` tokens, one `h1` per page.
+- **Held claims** (owner decisions, enforced by `claims.test.ts`):
+  pricing philosophy, data-sale commitments, hardware certification, and
+  enterprise capabilities that are not built. The editions narrative is
+  retired (`/editions` → `/product`, temporary redirect).
+
 ## Environment
 
 See `.env.example`: `LACTEVA_LEADS_WEBHOOK_URL` (demo-request forwarding,

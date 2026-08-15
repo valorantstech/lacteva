@@ -140,7 +140,7 @@ export default function ProductPage() {
         </div>
       </Section>
 
-      <Section tinted>
+      <Section variant="tinted">
         <SectionHeading
           eyebrow="Surfaces"
           title="Mobile-first for operations, web for administration"

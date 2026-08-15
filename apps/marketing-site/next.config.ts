@@ -22,6 +22,17 @@ const nextConfig: NextConfig = {
     cpus: 1,
     webpackMemoryOptimizations: true,
   },
+
+  /**
+   * MKT-004B: the public editions narrative is retired (packaging is not
+   * finalized commercially). Temporary redirect, not permanent, so the URL
+   * stays reusable if a pricing/packaging page returns there later.
+   */
+  async redirects() {
+    return [
+      { source: "/editions", destination: "/product", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

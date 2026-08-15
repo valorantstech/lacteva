@@ -27,10 +27,7 @@ export default function RequestDemoPage() {
               Early pilot partners work directly with the engineering team
               and shape what ships next.
             </li>
-            <li>
-              We only use these details to respond to your request — they are
-              never shared or sold.
-            </li>
+            <li>We only use these details to respond to your request.</li>
           </ul>
         </div>
         <DemoRequestForm />

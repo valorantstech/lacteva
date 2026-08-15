@@ -22,8 +22,10 @@ describe("home page", () => {
     ).toHaveAttribute("href", "/product");
   });
 
-  it("states the pricing commitments that are permanent", () => {
+  // The commitments band (held pricing claims) was removed in MKT-004B;
+  // the connected-operation story is the differentiator that replaced it.
+  it("tells the connected-operations story", () => {
     render(<HomePage />);
-    expect(screen.getByText(/farmers never pay/i)).toBeInTheDocument();
+    expect(screen.getByText(/one connected operation/i)).toBeInTheDocument();
   });
 });
