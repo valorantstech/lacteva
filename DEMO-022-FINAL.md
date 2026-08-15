@@ -114,6 +114,59 @@ settlement or balance. A `scheduled` delivery is worth 0.00 and is absent from
 `BILLABLE_STATUSES` until somebody says the milk arrived, so a suppressed round
 cannot move money even indirectly.
 
+## 6. Verification
+
+**Tests:** 1,550 backend passing, 0 failures (95 skipped — the PostgreSQL-only
+suites, which then ran for real). 252 portal, 125 mobile, lint/format/tsc/build
+and docs/xref green.
+
+The 11 new backend tests drive the real scheduler entry point with a fabricated
+clock. **Seven fail when the suppression filter is disabled**, and the four
+that should not — working day, working exception, no-delete, manual generation
+— do not. That discrimination is the point: a suite where everything failed
+would not be testing suppression, it would be testing that generation happens
+at all.
+
+**PostgreSQL proof PASSED** — 95 PostgreSQL-only tests, **0 skipped**, 65
+tables RLS-enabled and forced, migrations from empty. Includes a new
+four-worker race on a declared holiday: one run row survives saying `holiday`,
+`skipped_holiday` is 25, and no delivery exists. Migration verified
+up → down → up with an empty autogenerate diff.
+
+**Production, `main-d03a658`, deployed first attempt** with verification and
+smoke test passing. Schema moved `a4f7c19d8b52` → `b8d3e1470f92`; all nine
+health checks healthy; 65/65 tables forced.
+
+**Suppression proven on production against both real tenants.** With no
+holiday declared, `generate_for_day` would have produced 16 deliveries for the
+Kenyan cooperative (Africa/Nairobi) and 17 for the Indian dairy (Asia/Kolkata).
+With a holiday declared for the same date, both produced **0**, with
+`skipped_holiday` of 16 and 17 respectively. Every probe ran in a rolled-back
+transaction and the calendar rows were deleted afterwards; production ended
+with zero calendar days, zero financial periods and no delivery beyond the
+existing data.
+
+**Financial reconciliation: every count identical** before and after
+(collections 534, deliveries 1255, invoices 31, customer payments/receipts
+24/24, settlements 84, supplier payments/receipts 42/36), receivables unchanged
+at **211,961.00 KES** and **152,972.00 INR**.
+
+**Browser:** the deliveries page reports `Last generation: 2026-08-15 ·
+successful · automatic · 16 deliveries generated` with no holiday notice —
+correct, since none is declared — and every figure (55 deliveries, 921.500 L,
+49,879.00 KES) is unchanged. The business calendar page renders the dairy's
+date, month and working-day state. **The holiday notice itself is covered by a
+portal test against a stubbed run rather than in the browser**, because showing
+it live would mean manufacturing a suppressed run on production, and the
+domain-level proof above is the stronger evidence.
+
+**Rollback:** previous release `main-35cc7cd` is on disk and pinned. The schema
+moved, so a code rollback also wants `alembic downgrade -1`; the migration is
+additive with a server default, so the previous code runs correctly against the
+new schema either way.
+
+**AWS: nothing created, nothing modified, no recurring cost change.**
+
 ## 6. Known limitations
 
 * **Suppression is per plan via its centre, and most plans have no centre.**
