@@ -23,6 +23,7 @@ import asyncio
 import uuid
 from datetime import date
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -31,6 +32,28 @@ from tests import postgres_support
 
 POSTGRES_URL = postgres_support.POSTGRES_URL
 pytestmark = postgres_support.requires_postgres
+
+
+@pytest.fixture(autouse=True)
+def _settings_point_at_postgres(monkeypatch):
+    """Make `is_postgres()` true for the code under test (VER-001, DEMO-020).
+
+    `bind_tenant` and `bind_platform_context` both return early unless
+    `settings.database_url` says PostgreSQL — and conftest pins that to SQLite
+    for the whole test process. Without this fixture every binding in this
+    module is a NO-OP, and the suite still passes when it is run as a
+    superuser, because superusers ignore row-level security altogether.
+
+    That is exactly what had happened: this module passed by hand as
+    `postgres` and failed the moment it was added to the nine-step proof,
+    which runs its tests as the unprivileged role production uses. The suite
+    was proving nothing about RLS and looked green.
+    """
+    from platform_core.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "database_url", POSTGRES_URL)
+    monkeypatch.setattr(get_settings(), "rls_enabled", True)
+
 
 DAY = date(2026, 8, 17)
 RATE = "56.0000"

@@ -100,14 +100,46 @@ def range_bounds(
     return start, end
 
 
-def month_bounds(day: date, timezone_name: str | None) -> tuple[date, date]:
-    """The local calendar month containing `day`, as inclusive local dates.
+def month_bounds(day: date) -> tuple[date, date]:
+    """The calendar month containing `day`, as inclusive dates.
 
-    A billing period is a month of the dairy's calendar, not of UTC's.
+    A billing period is a month of the dairy's calendar, not of UTC's — so
+    `day` must already BE a business date, from `business_today()` or
+    `business_date_of()`. Pure calendar arithmetic from there; no zone is
+    involved, because the conversion has already happened.
+
+    DEMO-020 removed a `timezone_name` parameter this function never read. It
+    was inert and it invited exactly one mistake: `month_bounds(utcnow().date(),
+    tz)` reads like it converts, converts nothing, and yields UTC's month under
+    a local-looking name. For an Indian dairy in the first five and a half
+    hours of the 1st that is the PREVIOUS month — the whole of the wrong
+    month's billing. A parameter that cannot affect the answer must not be in
+    the signature.
     """
     first = day.replace(day=1)
     next_month = (first + timedelta(days=32)).replace(day=1)
     return first, next_month - timedelta(days=1)
+
+
+def previous_month_bounds(day: date) -> tuple[date, date]:
+    """The month before the one containing `day`, as inclusive dates.
+
+    `day` is a business date. Month-end billing asks this question every 1st,
+    and asking it by subtracting thirty days gets February wrong.
+    """
+    first, _ = month_bounds(day)
+    return month_bounds(first - timedelta(days=1))
+
+
+def business_year(timezone_name: str | None, *, now: datetime | None = None) -> int:
+    """The year it is *for this organization*, right now.
+
+    Separate from `business_today().year` only so that the call site reads as
+    a decision rather than an accident. It is the one a document series needs:
+    a receipt handed over at 04:00 on 1 January in Bengaluru is a January
+    receipt, and UTC still says December for another ninety minutes.
+    """
+    return business_today(timezone_name, now=now).year
 
 
 def format_in_zone(instant: datetime, timezone_name: str | None) -> str:
@@ -132,11 +164,15 @@ def local_date_sql(column, timezone_name: str | None, dialect: str):
     recorded after local midnight fell inside the range and landed on the
     wrong bucket: the chart disagreed with the total above it.
 
-    **PostgreSQL gets the native operation.** `timezone(tz, timezone('UTC',
-    col))` is SQLAlchemy's spelling of `col AT TIME ZONE 'UTC' AT TIME ZONE
-    tz`, which reads the IANA database the server ships with — so it is
+    **PostgreSQL gets the native operation.** `timezone(tz, col)` on a
+    `timestamptz` renders the instant in `tz` and hands back a naive local
+    timestamp, reading the IANA database the server ships with — so it is
     correct across DST transitions and for any zone, not just the fixed-offset
-    ones this platform happens to support today.
+    ones this platform happens to support today. (The paragraph that used to
+    sit here described a two-step `timezone(tz, timezone('UTC', col))`, which
+    is the draft the PostgreSQL test rejected; the reasoning below survived the
+    fix and the summary above it did not. A docstring describing an expression
+    the code does not use is a trap for the next reader — DEMO-020.)
 
     **SQLite gets a fixed offset**, because SQLite has no timezone database at
     all. That is a real difference and it is confined to the test stack, so

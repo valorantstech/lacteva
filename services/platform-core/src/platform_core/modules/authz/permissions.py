@@ -11,6 +11,13 @@ PERMISSIONS: dict[str, str] = {
     "organization.read": "Read organization details",
     "organization.manage": "Create and administer organizations",
     "organization.structure.read": "Read workspaces and branches",
+    # DEMO-020. Reading the calendar is separated from changing it, and
+    # CLOSING a period is separated from both — closing is the act that stops
+    # a dairy billing a month, so it belongs to whoever owns the books rather
+    # than to anyone who can look at a holiday list.
+    "organization.calendar.read": "Read the organization calendar and financial periods",
+    "organization.calendar.manage": "Record holidays and other non-working days",
+    "organization.period.manage": "Open, close and reopen financial periods",
     "organization.structure.manage": "Create and administer workspaces and branches",
     "organization.member.read": "Read members and invitations",
     "organization.member.manage": "Invite and administer members",
@@ -158,11 +165,15 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "sales.payment.read",
         "sales.payment.record",
         "sales.receipt.read",
+        "organization.calendar.read",
+        "organization.calendar.manage",
+        "organization.period.manage",
     ],
     "tenant-viewer": [
         "identity.user.read",
         "organization.read",
         "organization.structure.read",
+        "organization.calendar.read",
         "organization.member.read",
         "audit.read",
         "collection.center.read",

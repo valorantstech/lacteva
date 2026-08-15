@@ -2697,3 +2697,38 @@ export function listCustomerReceipts(params: {
     offset: number;
   }>(`/v1/customer-receipts?${search.toString()}`);
 }
+
+// --- Business calendar and financial periods (DEMO-020) --------------------
+
+export type FinancialPeriodView = {
+  id: string;
+  period_start: string;
+  period_end: string;
+  status: string;
+  label: string;
+  closed_at: string | null;
+};
+
+/** What the PLATFORM says the organization's calendar is.
+ *
+ * Every field here is computed on the server from the organization's own
+ * timezone. The portal deliberately does not derive any of it: a browser that
+ * decided which month it was would be a second implementation of the rule
+ * DEMO-019 spent a milestone consolidating.
+ */
+export type OrganizationCalendar = {
+  timezone: string;
+  business_date: string;
+  is_working_day: boolean;
+  month_start: string;
+  month_end: string;
+  previous_month_start: string;
+  previous_month_end: string;
+  current_period: FinancialPeriodView | null;
+};
+
+export const getOrganizationCalendar = () =>
+  api<OrganizationCalendar>("/v1/organization/calendar");
+
+export const getFinancialPeriods = () =>
+  api<FinancialPeriodView[]>("/v1/organization/financial-periods");

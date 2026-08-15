@@ -15,7 +15,9 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.business_time import business_date_of
 from platform_core.core.money import money_scale
+from platform_core.core.org_context import tenant_timezone
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.event_relay.projections import Projection, register_projection
 from platform_core.modules.reporting.models import (
@@ -37,7 +39,11 @@ _MONEY_SCALE = money_scale(None)
 
 class ReportingProjection(Projection):
     name = "reporting-projection"
-    version = 1
+    #: 2 since DEMO-020: the daily bucket changed from UTC's calendar date to
+    #: the organization's business date. A version bump marks the built data
+    #: outdated until an operator rebuilds, which is the honest handling —
+    #: rewriting the rows underneath a reader would be worse than saying so.
+    version = 2
     owner_module = "reporting"
     description = "Daily, per-center and per-supplier collection totals."
     event_types = ("collection.transaction-completed.v1",)
@@ -49,7 +55,24 @@ class ReportingProjection(Projection):
         data = envelope.data
         if envelope.tenant_id is None:  # defensive: collection events are tenant-scoped
             return
-        day = datetime.fromisoformat(envelope.time).date()
+        # The ORGANIZATION's day, not UTC's (DEMO-020).
+        #
+        # `envelope.time` is the instant the collection completed, and taking
+        # `.date()` off it is UTC's calendar — the same mistake DEMO-019 found
+        # in the trend chart's `date(created_at)`. A collection recorded at
+        # 05:00 in Bengaluru is 23:30 UTC the day before, so this projection
+        # filed a morning's milk under yesterday for every Indian dairy, and
+        # for the three hours after midnight for Kenyan and Qatari ones.
+        #
+        # Nothing had noticed because no production query reads these tables
+        # yet — they are a read model waiting for a reader, which is the worst
+        # kind of wrong: it would have been discovered by whoever first
+        # trusted it. The consumer runs under a platform session, so the
+        # tenant's zone is readable here for any tenant in the log.
+        day = business_date_of(
+            datetime.fromisoformat(envelope.time),
+            await tenant_timezone(session, envelope.tenant_id),
+        )
         rejected = bool(data.get("rejected"))
         weight = Decimal(str(data.get("net_weight") or 0)) if not rejected else Decimal("0")
         gross = (

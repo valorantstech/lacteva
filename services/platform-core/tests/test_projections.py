@@ -81,7 +81,10 @@ async def test_projections_discovered_with_metadata(client):
 
     assert "reporting-projection" in discover_projections()
     projection = get_projection("reporting-projection")
-    assert projection.version == 1
+    # DEMO-020 bumped this to 2. The subject here is that a version is
+    # DECLARED and discoverable, not what it currently happens to be — a
+    # literal turns every future shape change into a false failure here.
+    assert projection.version >= 1
     assert projection.owner_module == "reporting"
     assert projection.description
     assert projection.event_types == (COMPLETED,)
@@ -156,7 +159,12 @@ async def test_status_reports_derived_position_and_counts(client):
     assert after.last_event_id is not None and after.last_event_at is not None
     assert after.row_counts["projection_daily_totals"] == 1
     assert after.health == "ok"
-    assert after.version == 1 and after.code_version == 1
+    # Built at the CURRENT code version — that equality is the claim,
+    # not the number (DEMO-020).
+    assert after.version == after.code_version
+    from platform_core.modules.event_relay.projections import get_projection
+
+    assert after.code_version == get_projection("reporting-projection").version
 
 
 async def test_status_all_returns_every_projection(client):
@@ -181,7 +189,9 @@ async def test_rebuild_reconstructs_from_the_log(client):
     assert result.events_applied == 3
     assert result.events_scanned > 3  # the whole log is scanned, matches applied
     assert result.rows_deleted == 3  # daily + center + supplier rows
-    assert result.version == 1
+    from platform_core.modules.event_relay.projections import get_projection
+
+    assert result.version == get_projection("reporting-projection").version
 
     rebuilt = await _daily_rows()
     assert len(rebuilt) == 1
@@ -374,18 +384,19 @@ async def test_version_bump_marks_projection_outdated(client, projection_guard):
     projection = projection_guard.get_projection("reporting-projection")
     original_version = projection.version
     try:
-        projection.version = 2  # ship a new projection shape
+        projection.version = original_version + 1  # ship a new shape
         status = await rebuilder.status("reporting-projection")
         assert status.health == "outdated"
-        assert status.version == 1 and status.code_version == 2
+        assert status.version == original_version
+        assert status.code_version == original_version + 1
         verification = await rebuilder.verify("reporting-projection")
         version_check = next(c for c in verification.checks if c.check == "version")
         assert version_check.passed is False and "rebuild required" in version_check.detail
 
         result = await rebuilder.rebuild("reporting-projection")
-        assert result.version == 2
+        assert result.version == original_version + 1
         migrated = await rebuilder.status("reporting-projection")
-        assert migrated.version == 2 and migrated.health == "ok"
+        assert migrated.version == original_version + 1 and migrated.health == "ok"
     finally:
         projection.version = original_version
 

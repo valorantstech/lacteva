@@ -32,6 +32,7 @@ from platform_core.modules.auth.models import AuthSession
 from platform_core.modules.auth.service import AuthService
 from platform_core.modules.authz.service import AuthzService, PermissionEngine
 from platform_core.modules.billing.service import BillingService
+from platform_core.modules.business_calendar.service import BusinessCalendarService
 from platform_core.modules.collection_center.service import CollectionCenterService
 from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.customer.service import CustomerService
@@ -357,6 +358,20 @@ async def get_current_principal(
 
 
 CurrentPrincipal = Annotated[Principal, Depends(get_current_principal)]
+
+
+def get_business_calendar_service(
+    session: Session, principal: CurrentPrincipal
+) -> BusinessCalendarService:
+    """DEMO-020. Scoped to the caller's own organization at construction.
+
+    The tenant comes from the authenticated principal rather than from a path
+    or a body, so there is no request in which a caller can name someone
+    else's organization — the service simply has no way to be pointed at one.
+    """
+    if principal.tenant_id is None:
+        raise ForbiddenError("this endpoint requires an organization context")
+    return BusinessCalendarService(session, principal.tenant_id)
 
 
 def require_center_access(param: str = "center_id"):

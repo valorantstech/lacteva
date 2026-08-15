@@ -737,7 +737,7 @@ class BillingService:
         today = business_today(timezone)
         # A month back, which is the window a dairy actually asks for, and the
         # one the printed statement a household receives covers.
-        date_from = date_from or month_bounds(today, timezone)[0]
+        date_from = date_from or month_bounds(today)[0]
         date_to = date_to or today
         if date_to < date_from:
             raise ConflictError("the statement ends before it begins")

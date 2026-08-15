@@ -275,11 +275,23 @@ JUNIT="${WORKDIR}/pg-tests.xml"
 #                    every assertion while storing a float (DEPLOY-001)
 # Add new PostgreSQL-only modules HERE, not to a second job — this is the list
 # the skip assertion below protects.
+#
+# DEMO-020: `test_business_date_sql_postgres.py` was added by DEMO-019 and
+# never added to this line, so the proof it exists for had never run in the
+# pipeline — it passed only when someone ran it by hand. The skip assertion
+# below cannot catch that, because a file that is never named is never
+# collected and therefore never skipped. `test_no_postgres_suite_is_left_out`
+# in tests/test_production_readiness.py now compares this list against the
+# files on disk, which is the check that would have caught it — and which
+# found a SECOND absent suite the moment it was written:
+# `test_scheduler_concurrency_postgres.py`, DEMO-018's four-worker race proof.
 LACTEVA_TEST_POSTGRES_URL="$(app_url_for "${TESTS_DB}")" \
   LACTEVA_TEST_POSTGRES_ADMIN_URL="$(url_for "${TESTS_DB}")" \
   ${RUN} pytest tests/test_rls_postgres.py tests/test_exact_aggregation_postgres.py \
   tests/test_disaster_recovery_postgres.py tests/test_payment_concurrency_postgres.py \
   tests/test_consumer_concurrency_postgres.py tests/test_pricing_precision_postgres.py \
+  tests/test_business_date_sql_postgres.py tests/test_business_calendar_postgres.py \
+  tests/test_scheduler_concurrency_postgres.py \
   -v --no-header -rs --junitxml="${JUNIT}" 2>&1 | tee "${RLS_LOG}" \
   || fail "PostgreSQL-only tests failed"
 

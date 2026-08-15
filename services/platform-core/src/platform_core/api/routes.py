@@ -12,6 +12,7 @@ from platform_core.api import deps
 from platform_core.api.deps import (
     CurrentPrincipal,
     Principal,
+    get_business_calendar_service,
     require_center_access,
     require_permission,
 )
@@ -46,6 +47,14 @@ from platform_core.modules.billing.service import (
     InvoicePage,
     InvoiceView,
     RecordCustomerPaymentCommand,
+)
+from platform_core.modules.business_calendar.service import (
+    BusinessCalendarService,
+    CalendarDayInput,
+    CalendarDayView,
+    CalendarView,
+    FinancialPeriodInput,
+    FinancialPeriodView,
 )
 from platform_core.modules.collection_center.service import (
     CalendarEntryInput,
@@ -722,6 +731,108 @@ async def list_countries(_: CurrentPrincipal) -> Any:
     anything tenant-specific.
     """
     return {"countries": country_choices()}
+
+
+# --- Business calendar and financial periods (DEMO-020) -------------------
+#
+# Only what a caller can actually act on. The business-date MACHINERY is not
+# exposed — no endpoint converts an arbitrary instant, and none accepts a
+# timezone, because a client that could name the zone could name the wrong one
+# and the whole point is that the organization's clock is not negotiable.
+calendar_router = APIRouter(prefix="/organization", tags=["business-calendar"])
+
+
+@calendar_router.get(
+    "/calendar", dependencies=[Depends(require_permission("organization.calendar.read"))]
+)
+async def organization_calendar(
+    service: Annotated[BusinessCalendarService, Depends(get_business_calendar_service)],
+) -> CalendarView:
+    """What day it is for this dairy, and which month and period that falls in."""
+    return await service.overview()
+
+
+@calendar_router.get(
+    "/calendar/days", dependencies=[Depends(require_permission("organization.calendar.read"))]
+)
+async def list_calendar_days(
+    service: Annotated[BusinessCalendarService, Depends(get_business_calendar_service)],
+    date_from: date,
+    date_to: date,
+) -> list[CalendarDayView]:
+    return await service.calendar_days(date_from, date_to)
+
+
+@calendar_router.put(
+    "/calendar/days", dependencies=[Depends(require_permission("organization.calendar.manage"))]
+)
+async def set_calendar_day(
+    service: Annotated[BusinessCalendarService, Depends(get_business_calendar_service)],
+    principal: CurrentPrincipal,
+    payload: CalendarDayInput,
+) -> CalendarDayView:
+    """PUT, not POST: a day either is or is not an exception, and saying so
+    twice must mean the same as saying it once."""
+    return await service.set_calendar_day(payload, actor_id=principal.id)
+
+
+@calendar_router.delete(
+    "/calendar/days/{day}",
+    status_code=204,
+    dependencies=[Depends(require_permission("organization.calendar.manage"))],
+)
+async def remove_calendar_day(
+    service: Annotated[BusinessCalendarService, Depends(get_business_calendar_service)],
+    day: date,
+) -> None:
+    await service.remove_calendar_day(day)
+
+
+@calendar_router.get(
+    "/financial-periods",
+    dependencies=[Depends(require_permission("organization.calendar.read"))],
+)
+async def list_financial_periods(
+    service: Annotated[BusinessCalendarService, Depends(get_business_calendar_service)],
+) -> list[FinancialPeriodView]:
+    return await service.periods()
+
+
+@calendar_router.post(
+    "/financial-periods",
+    status_code=201,
+    dependencies=[Depends(require_permission("organization.period.manage"))],
+)
+async def open_financial_period(
+    service: Annotated[BusinessCalendarService, Depends(get_business_calendar_service)],
+    principal: CurrentPrincipal,
+    payload: FinancialPeriodInput,
+) -> FinancialPeriodView:
+    return await service.open_period(payload, actor_id=principal.id)
+
+
+@calendar_router.post(
+    "/financial-periods/{period_id}/close",
+    dependencies=[Depends(require_permission("organization.period.manage"))],
+)
+async def close_financial_period(
+    service: Annotated[BusinessCalendarService, Depends(get_business_calendar_service)],
+    principal: CurrentPrincipal,
+    period_id: uuid.UUID,
+) -> FinancialPeriodView:
+    return await service.close_period(period_id, actor_id=principal.id)
+
+
+@calendar_router.post(
+    "/financial-periods/{period_id}/reopen",
+    dependencies=[Depends(require_permission("organization.period.manage"))],
+)
+async def reopen_financial_period(
+    service: Annotated[BusinessCalendarService, Depends(get_business_calendar_service)],
+    principal: CurrentPrincipal,
+    period_id: uuid.UUID,
+) -> FinancialPeriodView:
+    return await service.reopen_period(period_id, actor_id=principal.id)
 
 
 # --- Organization structure (workspaces, branches) ------------------------
@@ -3556,5 +3667,6 @@ for sub in (
     delivery_router,
     billing_router,
     locale_router,
+    calendar_router,
 ):
     router.include_router(sub)

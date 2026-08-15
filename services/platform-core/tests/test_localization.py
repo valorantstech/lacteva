@@ -171,10 +171,33 @@ def test_a_day_is_not_always_twenty_four_hours():
 
 
 def test_a_billing_month_is_the_dairys_month():
-    first, last = month_bounds(date(2026, 8, 14), "Asia/Kolkata")
-    assert (first, last) == (date(2026, 8, 1), date(2026, 8, 31))
-    first, last = month_bounds(date(2026, 2, 5), "Asia/Kolkata")
-    assert (first, last) == (date(2026, 2, 1), date(2026, 2, 28))
+    """DEMO-020: this now asserts what its name has always claimed.
+
+    It used to pass a timezone to `month_bounds`, which never read it — so
+    the "dairy's month" part was decided entirely by the date the test handed
+    in, and the call would have returned the same answer for any zone on
+    earth. The timezone belongs one step earlier, in resolving WHICH date it
+    is; `month_bounds` is pure calendar arithmetic from there.
+
+    So the instant is the subject now: 20:00 UTC on 31 July is already
+    1 August in Bengaluru and still 31 July in Nairobi, and the two dairies
+    are therefore billing different months at the same moment.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    instant = datetime(2026, 7, 31, 20, 0, tzinfo=ZoneInfo("UTC"))
+    assert month_bounds(business_today("Asia/Kolkata", now=instant)) == (
+        date(2026, 8, 1),
+        date(2026, 8, 31),
+    )
+    assert month_bounds(business_today("Africa/Nairobi", now=instant)) == (
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+    )
+
+    # And the calendar arithmetic itself, including the short month.
+    assert month_bounds(date(2026, 2, 5)) == (date(2026, 2, 1), date(2026, 2, 28))
 
 
 def test_a_broken_timezone_reports_in_utc_rather_than_failing():

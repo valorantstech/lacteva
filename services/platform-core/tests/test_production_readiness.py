@@ -514,3 +514,32 @@ def test_the_backup_pruner_cannot_delete_every_backup():
         assert "-mindepth 1" in line, (
             f"prune expression can match its own parent directory: {line.strip()}"
         )
+
+
+# --- DEMO-020: the proof must actually name every PostgreSQL-only suite ------
+
+
+def test_no_postgres_only_suite_is_left_out_of_the_proof():
+    """Every `test_*_postgres.py` must appear in `postgres-proof.sh`.
+
+    The skip assertion in that script protects the files it NAMES: it parses
+    the JUnit report and fails if anything was skipped. A file that is never
+    named is never collected, so it is never skipped either — it is simply
+    absent, and the proof passes without it.
+
+    That is not hypothetical. DEMO-019 added `test_business_date_sql_postgres.py`
+    to prove the business-date SQL expression on a real engine — the suite that
+    had caught a genuinely wrong expression the whole rest of the suite passed
+    over — and never added it to the script. It ran once, by hand, and never in
+    the pipeline. This test is the check that would have said so.
+    """
+    root = pathlib.Path(__file__).resolve().parents[3]
+    script = (root / "infra/ci/postgres-proof.sh").read_text()
+    on_disk = {p.name for p in (root / "services/platform-core/tests").glob("test_*_postgres.py")}
+    assert on_disk, "the discovery glob found nothing — it has drifted from the layout"
+
+    missing = sorted(name for name in on_disk if name not in script)
+    assert not missing, (
+        f"PostgreSQL-only suites absent from infra/ci/postgres-proof.sh: {missing} — "
+        "a suite the proof never names is a proof that never runs"
+    )

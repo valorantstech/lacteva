@@ -38,7 +38,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from platform_core.core.business_time import business_today, month_bounds
+from platform_core.core.business_time import business_today, previous_month_bounds
 from platform_core.core.errors import ConflictError, NotFoundError
 from platform_core.modules.billing.service import BillingService, GenerateInvoiceCommand
 from platform_core.modules.customer.models import Customer
@@ -70,10 +70,13 @@ def previous_month(today: date) -> tuple[date, date]:
     cannot be complete until August is over. Running on the 1st of September
     drafts August, and running again on the 5th drafts nothing new because the
     period already has a live invoice.
+
+    DEMO-020: this is now one line over the platform's own month arithmetic.
+    It used to walk back to the previous month by hand, which is a second
+    implementation of a rule that has one authority — and the kind of
+    duplicate that stays right until February.
     """
-    first_of_this_month = today.replace(day=1)
-    last_of_previous = first_of_this_month - __import__("datetime").timedelta(days=1)
-    return month_bounds(last_of_previous, None)
+    return previous_month_bounds(today)
 
 
 async def draft_month_end(

@@ -83,10 +83,21 @@ class DocumentSequence(Base, IdMixin):
     next_value: Mapped[int] = mapped_column(Integer, default=1)
 
 
-def period_for(on: date | None = None) -> str:
-    from platform_core.core.db import utcnow
+def period_for(on: date) -> str:
+    """The series window a document dated `on` belongs to.
 
-    return str((on or utcnow().date()).year)
+    `on` is a BUSINESS date and is now required. It defaulted to
+    `utcnow().date()` until DEMO-020, which is UTC's year: a receipt handed
+    over at 04:00 on 1 January in Bengaluru was stamped with the year that
+    ended ninety minutes earlier, so an Indian dairy's first receipts of every
+    January carried the previous year's series — on a sequential financial
+    document several target jurisdictions require to be exactly that.
+
+    Kenya and Qatar are three hours ahead of UTC and were wrong for the same
+    three hours. Nothing failed, because the counter is per `(tenant, type,
+    period)` and simply kept counting in the old year.
+    """
+    return str(on.year)
 
 
 async def next_document_number(
@@ -106,7 +117,14 @@ async def next_document_number(
     duplicate payment would be, because the unique constraint turns it into a
     500 on the document the user was creating.
     """
-    period = period or period_for()
+    if period is None:
+        # The TENANT's year, resolved here so that all seven document series
+        # get it from one place rather than each remembering to ask. The
+        # lookup is a cached locale read, not a round trip per document.
+        from platform_core.core.business_time import business_today
+        from platform_core.core.org_context import tenant_timezone
+
+        period = period_for(business_today(await tenant_timezone(session, tenant_id)))
     statement = (
         select(DocumentSequence)
         .where(

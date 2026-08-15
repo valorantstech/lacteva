@@ -890,6 +890,9 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
     than from a snapshotted list, so nothing the build could read said so.
     """
     from migrations.versions.a1c7f3b90e22_row_level_security import TENANT_TABLES
+    from migrations.versions.a4f7c19d8b52_demo_020_business_calendar import (
+        POLICY_TABLES as DEMO020_TABLES,
+    )
     from migrations.versions.c8a4d2f10b73_demo_009_rls_for_the_sales_tables import (
         SALES_TABLES as DEMO009_TABLES,
     )
@@ -915,6 +918,7 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
         | set(DEMO009_TABLES)
         | set(DEMO012_TABLES)
         | set(DEMO017_TABLES)
+        | set(DEMO020_TABLES)
     )
     uncovered = set(tenant_tables()) - covered
     assert not uncovered, (

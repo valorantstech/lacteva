@@ -26,6 +26,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  CalendarDays,
   Banknote,
   Bell,
   Boxes,
@@ -82,9 +83,24 @@ type Entry = {
 };
 
 const OPERATIONS: Entry[] = [
-  { href: "/", labelKey: "nav.dashboard", permission: "*dashboard", icon: Gauge },
-  { href: "/centers", labelKey: "nav.centers", permission: "collection.center.read", icon: Building2 },
-  { href: "/suppliers", labelKey: "nav.suppliers", permission: "supplier.read", icon: Truck },
+  {
+    href: "/",
+    labelKey: "nav.dashboard",
+    permission: "*dashboard",
+    icon: Gauge,
+  },
+  {
+    href: "/centers",
+    labelKey: "nav.centers",
+    permission: "collection.center.read",
+    icon: Building2,
+  },
+  {
+    href: "/suppliers",
+    labelKey: "nav.suppliers",
+    permission: "supplier.read",
+    icon: Truck,
+  },
   {
     href: "/transactions",
     labelKey: "nav.transactions",
@@ -96,40 +112,128 @@ const OPERATIONS: Entry[] = [
 // DEMO-009 — the customer side. Permission-gated like every other entry, so a
 // collection operator (who has no sales.* grant) never sees it.
 const SALES: Entry[] = [
-  { href: "/customers", labelKey: "nav.customers", permission: "sales.customer.read", icon: UserRound },
-  { href: "/deliveries", labelKey: "nav.deliveries", permission: "sales.delivery.read", icon: Truck },
-  { href: "/billing", labelKey: "nav.billing", permission: "sales.invoice.read", icon: FileText },
+  {
+    href: "/customers",
+    labelKey: "nav.customers",
+    permission: "sales.customer.read",
+    icon: UserRound,
+  },
+  {
+    href: "/deliveries",
+    labelKey: "nav.deliveries",
+    permission: "sales.delivery.read",
+    icon: Truck,
+  },
+  {
+    href: "/billing",
+    labelKey: "nav.billing",
+    permission: "sales.invoice.read",
+    icon: FileText,
+  },
   // DEMO-010. `reporting.read`, not a sales permission — it is a report, and
   // an auditor with reporting access should reach it without being granted
   // anything on the sales module itself.
-  { href: "/receivables", labelKey: "nav.receivables", permission: "reporting.read", icon: Wallet },
+  {
+    href: "/receivables",
+    labelKey: "nav.receivables",
+    permission: "reporting.read",
+    icon: Wallet,
+  },
 ];
 
 const PRICING: Entry[] = [
-  { href: "/rate-cards", labelKey: "nav.rateCards", permission: "pricing.ratecard.read", icon: Tags },
-  { href: "/matrices", labelKey: "nav.matrices", permission: "pricing.ratecard.read", icon: Grid3x3 },
-  { href: "/resolve", labelKey: "nav.playground", permission: "pricing.ratecard.read", icon: Boxes },
+  {
+    href: "/rate-cards",
+    labelKey: "nav.rateCards",
+    permission: "pricing.ratecard.read",
+    icon: Tags,
+  },
+  {
+    href: "/matrices",
+    labelKey: "nav.matrices",
+    permission: "pricing.ratecard.read",
+    icon: Grid3x3,
+  },
+  {
+    href: "/resolve",
+    labelKey: "nav.playground",
+    permission: "pricing.ratecard.read",
+    icon: Boxes,
+  },
 ];
 
 const FINANCE: Entry[] = [
-  { href: "/settlements", labelKey: "nav.settlements", permission: "settlement.read", icon: Handshake },
-  { href: "/payments", labelKey: "nav.payments", permission: "payment.read", icon: Banknote },
-  { href: "/receipts", labelKey: "nav.receipts", permission: "receipt.read", icon: Receipt },
-  { href: "/reports", labelKey: "nav.reports", permission: "reporting.read", icon: FileText },
+  {
+    href: "/settlements",
+    labelKey: "nav.settlements",
+    permission: "settlement.read",
+    icon: Handshake,
+  },
+  {
+    href: "/payments",
+    labelKey: "nav.payments",
+    permission: "payment.read",
+    icon: Banknote,
+  },
+  {
+    href: "/receipts",
+    labelKey: "nav.receipts",
+    permission: "receipt.read",
+    icon: Receipt,
+  },
+  {
+    href: "/reports",
+    labelKey: "nav.reports",
+    permission: "reporting.read",
+    icon: FileText,
+  },
 ];
 
 const PLATFORM: Entry[] = [
-  { href: "/notifications", labelKey: "nav.notifications", permission: "notification.read", icon: Bell },
-  { href: "/sync", labelKey: "nav.sync", permission: "sync.read", icon: RefreshCw },
-  { href: "/admin/users", labelKey: "nav.users", permission: "identity.user.read", icon: Users },
-  { href: "/admin/roles", labelKey: "nav.roles", permission: "authz.role.read", icon: KeyRound },
+  {
+    href: "/notifications",
+    labelKey: "nav.notifications",
+    permission: "notification.read",
+    icon: Bell,
+  },
+  {
+    href: "/sync",
+    labelKey: "nav.sync",
+    permission: "sync.read",
+    icon: RefreshCw,
+  },
+  {
+    // DEMO-020. Read-only, and behind its own permission: a viewer may look at
+    // the dairy's calendar without being able to close its books.
+    href: "/admin/calendar",
+    labelKey: "nav.calendar",
+    permission: "organization.calendar.read",
+    icon: CalendarDays,
+  },
+  {
+    href: "/admin/users",
+    labelKey: "nav.users",
+    permission: "identity.user.read",
+    icon: Users,
+  },
+  {
+    href: "/admin/roles",
+    labelKey: "nav.roles",
+    permission: "authz.role.read",
+    icon: KeyRound,
+  },
   {
     href: "/admin/organizations",
     labelKey: "nav.organizations",
     permission: "organization.read",
     icon: Landmark,
   },
-  { href: "/admin/audit", labelKey: "nav.audit", permission: "audit.read", icon: ScrollText },
+  {
+    href: "/admin/audit",
+    labelKey: "nav.audit",
+    permission: "audit.read",
+    icon: ScrollText,
+  },
   {
     href: "/admin/configuration",
     labelKey: "nav.configuration",
@@ -200,7 +304,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const t = translatorFor(locale);
   const scoped = actingTenant(session);
   const needsTenant =
-    signedIn && session?.authenticated === true && session.tenant_id === null && !scoped;
+    signedIn &&
+    session?.authenticated === true &&
+    session.tenant_id === null &&
+    !scoped;
 
   const groups = GROUPS.map((g) => ({
     ...g,
@@ -225,7 +332,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         Lacteva
       </Link>
       {checked ? (
-        <a className="ml-auto text-sm text-muted-foreground hover:text-foreground" href="/login">
+        <a
+          className="ml-auto text-sm text-muted-foreground hover:text-foreground"
+          href="/login"
+        >
           Sign in
         </a>
       ) : null}
@@ -242,7 +352,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {group.entries.map((entry) => {
             const Icon = entry.icon;
             const active =
-              entry.href === "/" ? pathname === "/" : pathname.startsWith(entry.href);
+              entry.href === "/"
+                ? pathname === "/"
+                : pathname.startsWith(entry.href);
             return (
               <Link
                 key={entry.href}
@@ -275,14 +387,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-full">
       {/* Desktop rail */}
       {signedIn ? (
-      <aside className="hidden w-60 shrink-0 border-e border-sidebar-border bg-sidebar lg:block">
-        <div className="flex h-14 items-center border-b border-sidebar-border px-6">
-          <Link href="/" className="font-semibold tracking-tight">
-            Lacteva
-          </Link>
-        </div>
-        <div className="sticky top-0 max-h-[calc(100vh-3.5rem)] overflow-y-auto">{nav}</div>
-      </aside>
+        <aside className="hidden w-60 shrink-0 border-e border-sidebar-border bg-sidebar lg:block">
+          <div className="flex h-14 items-center border-b border-sidebar-border px-6">
+            <Link href="/" className="font-semibold tracking-tight">
+              Lacteva
+            </Link>
+          </div>
+          <div className="sticky top-0 max-h-[calc(100vh-3.5rem)] overflow-y-auto">
+            {nav}
+          </div>
+        </aside>
       ) : null}
 
       {/* Mobile drawer */}
@@ -314,47 +428,53 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {signedIn ? (
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 lg:px-6">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            aria-label="Open navigation"
-            aria-expanded={mobileOpen}
-            onClick={() => setMobileOpen(true)}
-          >
-            <Menu className="size-4" />
-          </Button>
-
-          <OrganizationChip session={session} scoped={scoped} onLeave={load} />
-
-          <div className="ml-auto flex items-center gap-3">
-            {session?.authenticated ? (
-              <span className="hidden text-end sm:block">
-                <span className="block text-sm leading-tight">
-                  {session.user.full_name || session.user.email}
-                </span>
-                <span className="block text-xs leading-tight text-muted-foreground">
-                  {session.tenant_id === null ? "Platform administrator" : "Organization member"}
-                </span>
-              </span>
-            ) : null}
+          <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 lg:px-6">
             <Button
               type="button"
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                await logout();
-                setSession({ authenticated: false });
-                router.push("/login");
-                router.refresh();
-              }}
+              variant="ghost"
+              size="icon"
+              className="lg:hidden"
+              aria-label="Open navigation"
+              aria-expanded={mobileOpen}
+              onClick={() => setMobileOpen(true)}
             >
-              Sign out
+              <Menu className="size-4" />
             </Button>
-          </div>
-        </header>
+
+            <OrganizationChip
+              session={session}
+              scoped={scoped}
+              onLeave={load}
+            />
+
+            <div className="ml-auto flex items-center gap-3">
+              {session?.authenticated ? (
+                <span className="hidden text-end sm:block">
+                  <span className="block text-sm leading-tight">
+                    {session.user.full_name || session.user.email}
+                  </span>
+                  <span className="block text-xs leading-tight text-muted-foreground">
+                    {session.tenant_id === null
+                      ? "Platform administrator"
+                      : "Organization member"}
+                  </span>
+                </span>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  await logout();
+                  setSession({ authenticated: false });
+                  router.push("/login");
+                  router.refresh();
+                }}
+              >
+                Sign out
+              </Button>
+            </div>
+          </header>
         ) : (
           signedOutHeader
         )}
@@ -383,7 +503,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   router.refresh();
                 } catch (err) {
                   setTenantError(
-                    err instanceof Error ? err.message : "Could not set the organization",
+                    err instanceof Error
+                      ? err.message
+                      : "Could not set the organization",
                   );
                 }
               }}
@@ -399,7 +521,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ) : null}
 
         {/* One position, both states — see the note above `signedOutHeader`. */}
-        <main className={signedIn ? "min-w-0 flex-1 bg-muted/20" : "min-w-0 flex-1"}>
+        <main
+          className={signedIn ? "min-w-0 flex-1 bg-muted/20" : "min-w-0 flex-1"}
+        >
           {/*
             DEMO-013: every page below renders in this person's language and
             this organization's currency and timezone. Provided once, here,

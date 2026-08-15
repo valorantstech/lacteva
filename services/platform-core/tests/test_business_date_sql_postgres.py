@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import Column, DateTime, MetaData, Table, select
+from sqlalchemy import DateTime, literal, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from platform_core.core.business_time import local_date_sql
@@ -31,28 +31,29 @@ pytestmark = postgres_support.requires_postgres
 
 UTC = ZoneInfo("UTC")
 
-_metadata = MetaData()
-_instants = Table("business_date_probe", _metadata, Column("at", DateTime(timezone=True)))
+# No table, and deliberately none (DEMO-020).
+#
+# This suite used to CREATE a probe table, which needs CREATE on schema
+# `public`. That is fine for an owner and impossible for the unprivileged role
+# the nine-step proof runs its tests as — so when the suite was finally added
+# to `postgres-proof.sh`, every test in it errored with "permission denied for
+# schema public". The expression under test takes a timestamptz EXPRESSION,
+# not a stored column, so a bound literal exercises exactly the same SQL with
+# no schema rights at all.
 
 
 @pytest_asyncio.fixture
 async def engine():
     engine = create_async_engine(POSTGRES_URL)
-    async with engine.begin() as conn:
-        await conn.run_sync(_metadata.create_all)
     yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(_metadata.drop_all)
     await engine.dispose()
 
 
 async def _local_date(engine, instant: datetime, timezone: str) -> date:
     maker = async_sessionmaker(engine, expire_on_commit=False)
     async with maker() as session:
-        await session.execute(_instants.delete())
-        await session.execute(_instants.insert().values(at=instant))
-        await session.commit()
-        return await session.scalar(select(local_date_sql(_instants.c.at, timezone, "postgresql")))
+        column = literal(instant, DateTime(timezone=True))
+        return await session.scalar(select(local_date_sql(column, timezone, "postgresql")))
 
 
 @pytest.mark.parametrize(

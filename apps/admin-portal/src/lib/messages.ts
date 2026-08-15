@@ -176,6 +176,7 @@ const en: Catalog = {
   "nav.suppliers": "Suppliers",
   "nav.sync": "Sync",
   "nav.transactions": "Transactions",
+  "nav.calendar": "Business calendar",
   "nav.users": "Users",
 
   // --- dashboard -----------------------------------------------------
@@ -591,6 +592,7 @@ const hi: Catalog = {
   "nav.suppliers": "आपूर्तिकर्ता",
   "nav.sync": "समन्वयन",
   "nav.transactions": "लेन-देन",
+  "nav.calendar": "व्यावसायिक कैलेंडर",
   "nav.users": "उपयोगकर्ता",
 
   // --- dashboard -----------------------------------------------------
@@ -1006,6 +1008,7 @@ const ar: Catalog = {
   "nav.suppliers": "المورّدون",
   "nav.sync": "المزامنة",
   "nav.transactions": "المعاملات",
+  "nav.calendar": "التقويم التجاري",
   "nav.users": "المستخدمون",
 
   // --- dashboard -----------------------------------------------------
