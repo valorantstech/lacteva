@@ -45,6 +45,9 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
   { pattern: /world'?s (first|largest|best|leading)|largest dairy/i, why: "no market-position superlatives" },
   { pattern: /\bguaranteed\b/i, why: "no guarantees are commercially defined" },
   { pattern: /SOC ?2|ISO ?\d{4,5}|GDPR|HIPAA|PCI[- ]DSS/i, why: "no certifications or compliance attestations exist to claim" },
+  // PRE-LAUNCH-001: no numerical geographic claims — "across markets" is
+  // the approved phrasing.
+  { pattern: /(fifty|forty|thirty|twenty|\d+)[-+\s]*(plus\s+)?countries/i, why: "no numerical geographic claims" },
 ];
 
 function collectSourceFiles(dir: string): string[] {

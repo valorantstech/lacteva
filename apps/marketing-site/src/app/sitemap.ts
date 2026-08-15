@@ -8,7 +8,6 @@ const ROUTES = [
   "/product",
   "/solutions",
   "/pricing",
-  "/why-lacteva",
   "/company",
   "/request-demo",
   "/start-free-trial",

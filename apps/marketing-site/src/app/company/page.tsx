@@ -81,7 +81,7 @@ export default function CompanyPage() {
         <SectionHeading
           eyebrow="How we build"
           title="Every production guarantee must be executable"
-          lede="Lacteva is built under the Phoenix Software Engineering Standard: guarantees are proven by running them, not by writing them down. Backups restore, recovery is rehearsed, and a test that never ran counts as absent. Ambitious on scope — the long-term vision is a dairy platform serving businesses across fifty-plus countries — and deliberately conservative on claims: this page describes what exists."
+          lede="Lacteva is built under the Phoenix Software Engineering Standard: guarantees are proven by running them, not by writing them down. Backups restore, recovery is rehearsed, and a test that never ran counts as absent. Built to support dairy operations across markets — and deliberately conservative on claims: this page describes what exists."
         />
         <div className="flex flex-wrap items-center gap-3 pt-2">
           <LinkButton href="/start-free-trial">Start Free Trial</LinkButton>

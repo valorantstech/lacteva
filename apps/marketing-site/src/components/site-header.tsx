@@ -3,8 +3,7 @@ import { LinkButton } from "@/components/link-button";
 import { Wordmark } from "@/components/logo";
 
 // Final navigation (MKT-004E). "Resources" stays deferred until there is
-// real content to put behind it; /why-lacteva remains reachable from the
-// footer.
+// real content to put behind it. "About" → /company is intentional.
 const NAV = [
   { href: "/product", label: "Product" },
   { href: "/solutions", label: "Solutions" },
@@ -61,6 +60,15 @@ export function SiteHeader() {
             {item.label}
           </Link>
         ))}
+        {/* PRE-LAUNCH-001: the desktop Login link is sm:block, so phones
+            need it here — existing customers arrive on phones too. */}
+        <Link
+          href="/login"
+          prefetch={false}
+          className="ms-auto text-sm font-medium whitespace-nowrap text-muted-foreground"
+        >
+          Login
+        </Link>
       </nav>
     </header>
   );

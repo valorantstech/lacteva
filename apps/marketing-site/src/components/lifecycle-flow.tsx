@@ -3,6 +3,7 @@ import {
   BarChart3,
   ChevronDown,
   ChevronRight,
+  CornerDownLeft,
   FileText,
   Handshake,
   Milk,
@@ -51,11 +52,16 @@ export function LifecycleFlow() {
               <ChevronDown className="size-4 text-ink-muted" />
             </span>
           ) : null}
-          {/* Desktop connector: within a row only — the wrap from stage 4
-              to stage 5 reads top-to-bottom on its own. */}
-          {i < STAGES.length - 1 && i !== 3 ? (
+          {/* Desktop connector. At the row wrap (stage 4 → 5) the arrow
+              turns down-and-left, so the flow reads as one continuous
+              line instead of breaking at the row edge (PRE-LAUNCH-001). */}
+          {i < STAGES.length - 1 ? (
             <span aria-hidden className="hidden items-center px-1 lg:flex">
-              <ChevronRight className="size-4 shrink-0 text-ink-muted" />
+              {i === 3 ? (
+                <CornerDownLeft className="size-4 shrink-0 text-ink-muted" />
+              ) : (
+                <ChevronRight className="size-4 shrink-0 text-ink-muted" />
+              )}
             </span>
           ) : null}
         </li>

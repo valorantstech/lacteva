@@ -8,7 +8,6 @@ const COLUMNS = [
       { href: "/product", label: "How Lacteva works" },
       { href: "/solutions", label: "Solutions" },
       { href: "/pricing", label: "Pricing" },
-      { href: "/why-lacteva", label: "Why Lacteva" },
     ],
   },
   {

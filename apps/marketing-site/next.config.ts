@@ -42,6 +42,9 @@ const nextConfig: NextConfig = {
   async redirects() {
     const redirects = [
       { source: "/editions", destination: "/product", permanent: false },
+      // PRE-LAUNCH-001: the page carried the pre-repositioning
+      // procurement-first narrative; retired the same way as /editions.
+      { source: "/why-lacteva", destination: "/product", permanent: false },
     ];
     // MKT-004E: /login hands over to the separately deployed authenticated
     // portal when its URL is configured. Unset (local dev without a

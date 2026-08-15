@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LeadForm } from "@/components/lead-form";
+import { SiteHeader } from "@/components/site-header";
 import LoginPage from "./login/page";
 import PricingPage from "./pricing/page";
 import ProductPage from "./product/page";
@@ -96,6 +97,20 @@ describe("pricing page (MKT-004E)", () => {
     for (const link of screen.getAllByRole("link", { name: /book a demo/i })) {
       expect(link).toHaveAttribute("href", "/request-demo");
     }
+  });
+});
+
+describe("site header (PRE-LAUNCH-001)", () => {
+  it("offers Login in both the desktop and mobile navigation", () => {
+    render(<SiteHeader />);
+    const logins = screen.getAllByRole("link", { name: /^login$/i });
+    // One sm+ link and one inside the mobile nav row.
+    expect(logins.length).toBe(2);
+    for (const link of logins) {
+      expect(link).toHaveAttribute("href", "/login");
+    }
+    const mobileNav = screen.getByRole("navigation", { name: /main mobile/i });
+    expect(mobileNav.querySelector('a[href="/login"]')).not.toBeNull();
   });
 });
 
