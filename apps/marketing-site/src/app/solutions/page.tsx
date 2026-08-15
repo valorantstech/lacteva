@@ -16,11 +16,6 @@ export const metadata: Metadata = {
   description:
     "Dairy software for cooperatives, milk collection organizations, distributors, and dairy companies — one connected operations platform, fitted to how each business runs.",
   alternates: { canonical: "/solutions" },
-  openGraph: {
-    title: "Lacteva — Solutions",
-    description:
-      "How dairy companies, cooperatives, collection organizations, and distributors run connected operations on Lacteva.",
-  },
 };
 
 /**

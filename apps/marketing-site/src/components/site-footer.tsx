@@ -48,6 +48,7 @@ export function SiteFooter() {
                   <Link
                     key={link.href}
                     href={link.href}
+                    prefetch={link.href === "/login" ? false : undefined}
                     className="text-sm text-ink-muted transition-colors hover:text-ink-foreground"
                   >
                     {link.label}

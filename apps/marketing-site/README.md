@@ -78,11 +78,18 @@ dairy businesses: premium, clean, restrained; not a consumer dairy brand.
 
 ## Environment
 
-See `.env.example`: `LACTEVA_LEADS_WEBHOOK_URL` (demo-request forwarding,
-unset ⇒ the form degrades honestly with a 503), `NEXT_PUBLIC_PORTAL_URL`
-(shows the "Sign in" link when set), `LACTEVA_SITE_URL` (canonical origin
-for metadata/sitemap; defaults to a placeholder until the public domain is
-decided).
+Three variables, all in `.env.example`. **None may carry a real secret in
+the repo, and no `NEXT_PUBLIC_*` variable may ever hold one.**
+
+| Variable | Visibility | When read | Unset behaviour |
+| --- | --- | --- | --- |
+| `LACTEVA_SITE_URL` | server/build | build (metadata, sitemap, robots, canonical, OG) | falls back to the `https://lacteva.example` placeholder **and the build warns** — must be set for any production deployment |
+| `NEXT_PUBLIC_PORTAL_URL` | public | build (`/login` redirect target) | `/login` renders a configuration notice instead of redirecting |
+| `LACTEVA_LEADS_WEBHOOK_URL` | **server-only secret** | request time (`src/lib/server/leads.ts`, `server-only`-guarded) | trial/demo API answers 503; forms show their honest fallback |
+
+Production deployment checklist: set all three, rebuild (the first two are
+baked at build time), and confirm `/login` 307s to the portal and
+`/sitemap.xml` carries the real domain.
 
 ## Screenshots wanted (MKT-004C)
 

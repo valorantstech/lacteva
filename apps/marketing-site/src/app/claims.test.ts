@@ -41,6 +41,10 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
   { pattern: /cancel anytime|no setup fee|money-?back/i, why: "commercial terms are not finalized" },
   { pattern: /unlimited (users|operators|centres|centers|suppliers|customers)/i, why: "no plan limits exist to waive; pricing is not finalized" },
   { pattern: /\d+\s*%\s*(off|discount)|free forever/i, why: "no discounts or free tiers exist" },
+  // MKT-004F: superlatives and certifications that do not exist.
+  { pattern: /world'?s (first|largest|best|leading)|largest dairy/i, why: "no market-position superlatives" },
+  { pattern: /\bguaranteed\b/i, why: "no guarantees are commercially defined" },
+  { pattern: /SOC ?2|ISO ?\d{4,5}|GDPR|HIPAA|PCI[- ]DSS/i, why: "no certifications or compliance attestations exist to claim" },
 ];
 
 function collectSourceFiles(dir: string): string[] {

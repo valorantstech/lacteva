@@ -1,5 +1,16 @@
 import type { NextConfig } from "next";
 
+// MKT-004F: the canonical-origin fallback is a placeholder domain and must
+// never silently become production's canonical URL. The build says so out
+// loud; deployment docs live in README.md ("Environment").
+if (!process.env.LACTEVA_SITE_URL) {
+  console.warn(
+    "[marketing-site] LACTEVA_SITE_URL is not set — metadata, sitemap, and " +
+      "robots will use the https://lacteva.example placeholder. Set it " +
+      "before any production deployment.",
+  );
+}
+
 const nextConfig: NextConfig = {
   /**
    * Same deployment shape as apps/admin-portal: a self-contained Node server

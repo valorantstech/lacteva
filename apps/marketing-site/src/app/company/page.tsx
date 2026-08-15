@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "Company",
   description:
     "Lacteva is the flagship product of Phoenix Software — on a mission to digitize the entire dairy value chain for businesses that today run on paper.",
+  alternates: { canonical: "/company" },
 };
 
 const WHO = [

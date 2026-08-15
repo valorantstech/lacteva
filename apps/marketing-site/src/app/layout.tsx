@@ -21,15 +21,43 @@ const siteUrl = process.env.LACTEVA_SITE_URL ?? "https://lacteva.example";
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Lacteva — the dairy platform farmers can check",
+    default: "Lacteva — Connected Dairy Operations Platform",
     template: "%s — Lacteva",
   },
   description:
-    "Collect milk offline, price it explainably, settle it in one click, pay it, prove it. Lacteva digitizes the dairy value chain for organizations that today run on paper.",
+    "Run your dairy operations as one connected business. Lacteva connects milk procurement, collection, customers, delivery, billing, payments, and reporting in one dairy operations platform.",
   openGraph: {
     siteName: "Lacteva",
     type: "website",
   },
+  twitter: {
+    card: "summary_large_image",
+  },
+};
+
+/**
+ * Conservative structured data: identity only. No ratings, reviews,
+ * prices, or counts — none exist to claim.
+ */
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      name: "Phoenix Software",
+      url: siteUrl,
+      brand: { "@type": "Brand", name: "Lacteva" },
+    },
+    {
+      "@type": "SoftwareApplication",
+      name: "Lacteva",
+      url: siteUrl,
+      applicationCategory: "BusinessApplication",
+      operatingSystem: "Web",
+      description:
+        "Connected dairy operations platform: milk procurement, collection, customers, delivery, billing, payments, and reporting in one system.",
+    },
+  ],
 };
 
 export default function RootLayout({
@@ -40,9 +68,21 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col">
+        <a
+          href="#main"
+          className="sr-only rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50"
+        >
+          Skip to content
+        </a>
         <SiteHeader />
-        <main className="flex-1">{children}</main>
+        <main id="main" className="flex-1">
+          {children}
+        </main>
         <SiteFooter />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        />
       </body>
     </html>
   );

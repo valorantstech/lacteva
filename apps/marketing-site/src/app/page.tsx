@@ -21,11 +21,16 @@ import {
   Users,
   Warehouse,
 } from "lucide-react";
+import type { Metadata } from "next";
 import { CtaBand } from "@/components/cta-band";
 import { LifecycleFlow } from "@/components/lifecycle-flow";
 import { LinkButton } from "@/components/link-button";
 import { ProductShot } from "@/components/product-shot";
 import { Eyebrow, Section, SectionHeading } from "@/components/section";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 /**
  * MKT-004C homepage: the connected dairy operations story, in the order

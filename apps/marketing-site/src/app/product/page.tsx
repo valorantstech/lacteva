@@ -10,11 +10,6 @@ export const metadata: Metadata = {
   description:
     "Dairy operations software that connects procurement, collection, customers, delivery, billing, payments, settlements, and reporting in one platform.",
   alternates: { canonical: "/product" },
-  openGraph: {
-    title: "Lacteva — Product",
-    description:
-      "One connected platform for dairy operations: procurement, collection, delivery, billing, payments, and reporting.",
-  },
 };
 
 /**

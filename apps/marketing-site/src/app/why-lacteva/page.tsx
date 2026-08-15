@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "Why Lacteva",
   description:
     "Why organizations choose Lacteva over single-PC collection software and the paper register: checkable records, explainable pricing, and one connected operation.",
+  alternates: { canonical: "/why-lacteva" },
 };
 
 const VERSUS = [

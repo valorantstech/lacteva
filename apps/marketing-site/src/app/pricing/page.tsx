@@ -9,11 +9,6 @@ export const metadata: Metadata = {
   description:
     "Start with a 30-day free trial of Lacteva, the connected dairy operations platform, or talk to our team about the right setup for your dairy operation.",
   alternates: { canonical: "/pricing" },
-  openGraph: {
-    title: "Lacteva — Pricing",
-    description:
-      "Explore Lacteva with a 30-day free trial, or talk to our team about the right setup for your dairy operation.",
-  },
 };
 
 /**
