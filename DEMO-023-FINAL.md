@@ -133,7 +133,7 @@ did not move, so `deploy.sh --rollback` is sufficient with no downgrade.
 security-group SSH rule was rotated to the current workstation address, the
 stale `/32` revoked — same posture, one workstation, not a widening.
 
-## 5. Known limitations
+## 6. Known limitations
 
 * **Readiness evaluates "today" only.** It answers about the current business
   date, as it always has; there is no "will this centre be ready on Thursday".
