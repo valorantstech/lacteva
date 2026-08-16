@@ -226,7 +226,7 @@ template and never stored on a row. Phone numbers are masked before logging.
 The one-time invitation token continues to travel by the secret-payload path
 rather than through the event outbox.
 
-## 10a. What is REAL and what is NOT — read this before demonstrating
+## 11. What is REAL and what is NOT — read this before demonstrating
 
 | | |
 |---|---|
@@ -259,7 +259,7 @@ saying otherwise would be the exact claim the work order forbids.
 Startup validation refuses to boot with `http` selected and no URL or key, so a
 half-configured deployment fails loudly rather than silently sending nothing.
 
-## 11. Production verification
+## 12. Production verification
 
 **Deployed `main-adbad10` first attempt**, verification and smoke test passing.
 Schema unchanged at `b8d3e1470f92` — **no migration**; the messaging domain
@@ -293,7 +293,7 @@ did not move, so `deploy.sh --rollback` is sufficient with no downgrade.
 messaging cost is entirely configuration-driven and currently zero, because no
 gateway is configured.
 
-## 11. Known limitations
+## 13. Known limitations
 
 * **Delivery confirmation is not modelled.** Statuses are `pending → sent →
   failed/dead`. A gateway that later confirms actual handset delivery has
@@ -311,7 +311,7 @@ gateway is configured.
 * **No delivery-cost accounting.** The SMS adapter records what the gateway
   reports about cost; nothing aggregates it.
 
-## 12. Recommended DEMO-026
+## 14. Recommended DEMO-026
 
 **Commercial Foundation II: SaaS subscription, trial and entitlement.** It is
 the other half of Phase 1 in DEMO-024's roadmap and the remaining blocker on
