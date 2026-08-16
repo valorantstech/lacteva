@@ -287,7 +287,46 @@ reaching the boundary.
 
 ## 16. Production verification
 
-*(completed after deployment — see §16 in the released version)*
+Deployed `main-206e4d6` to **https://dev.phoenixsoft.in** through the existing
+path. **No migration was required and none ran** — the schema stayed at
+`f3a9c71d5e28` and the deploy printed no "schema moved" notice. Every setting
+added by this milestone is process configuration; nothing needed a column.
+
+All nine components healthy, 11 containers healthy, dead-letter queue 0,
+undelivered outbox 0, scheduler intact (12 generation runs), 69 policies.
+
+**The platform reports, in its own words, that it cannot send.** The new
+posture endpoint on production:
+
+```
+mode = test        sends_real_messages = False
+sms       disabled-sms        configured=False  can_send=False  receipts=False
+whatsapp  disabled-whatsapp   configured=False  can_send=False  receipts=False
+email     disabled-email      configured=False  can_send=False  receipts=False
+push      disabled-push       configured=False  can_send=False  receipts=False
+```
+
+`LACTEVA_MESSAGING_MODE` is unset on the deployment, so it is `test` — the
+default doing exactly what it was added for. **No accidental external message
+is possible**, and the numbers agree: 0 delivered, 0 receipt events, 12 `sent`
+unchanged from before the deploy, and **0 messages sent in the last hour**.
+
+| Check | Result |
+|---|---|
+| Posture endpoint, unauthenticated | **401** |
+| Credential-shaped fields in the response | **none** |
+| Credential-shaped keys in `config_entry` | **0** |
+| India / Kenya tenants | unchanged, reachability and history intact |
+
+Month-to-date AWS cost effectively nil.
+
+**The browser walkthrough was NOT performed** — the Chrome extension is not
+connected in this session, so the posture panel was verified by its own tests
+and by the API, not visually. Same gap as the previous five milestones, stated
+rather than papered over.
+
+**No real SMS or WhatsApp message was sent, by this milestone or by this
+deployment.**
 
 ## 17. Financial safety
 
@@ -296,6 +335,24 @@ SQLite and again on PostgreSQL for both journeys: settlement, invoice, payment,
 receipt, customer-payment and collection counts plus settlement net and
 receivables are snapshotted around a complete send-and-receipt cycle and
 required identical.
+
+**Verified on production, before and after the deployment:**
+
+| | Before | After |
+|---|---|---|
+| Invoiced | 809038.00 | **809038.00** |
+| Receivables | 809038.00 | **809038.00** |
+| Received | 444105.00 | **444105.00** |
+| Settled (net) | 353417.50 | **353417.50** |
+| Paid out to suppliers | 168675.50 | **168675.50** |
+| Collections / settlements | 534 / 84 | **534 / 84** |
+| Invoices / customer receipts / receipts | 31 / 24 / 36 | **31 / 24 / 36** |
+| Supplier payments / customer payments | 42 / 24 | **42 / 24** |
+| Notifications / receipt events | 251 / 0 | **251 / 0** |
+
+Every figure identical. A verified backup was taken first — 69 tables, 41,571
+rows, `verified: true`, plus a second explicit verify pass — on top of the one
+`deploy.sh` takes itself.
 
 ## 18. REAL versus TEST
 
