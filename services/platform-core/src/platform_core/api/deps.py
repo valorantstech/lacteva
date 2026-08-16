@@ -59,6 +59,7 @@ from platform_core.modules.pricing.service import RateCardService
 from platform_core.modules.receipt.service import ReceiptService
 from platform_core.modules.reporting.service import ReportingService
 from platform_core.modules.settlement.service import SettlementService
+from platform_core.modules.subscription.service import SubscriptionService
 from platform_core.modules.supplier.service import SupplierService
 from platform_core.modules.sync.service import SyncService
 
@@ -358,6 +359,19 @@ async def get_current_principal(
 
 
 CurrentPrincipal = Annotated[Principal, Depends(get_current_principal)]
+
+
+def get_subscription_service(session: Session, principal: CurrentPrincipal) -> SubscriptionService:
+    """DEMO-026. Scoped to the caller's OWN organization at construction.
+
+    The tenant comes from the authenticated principal, never from a path, a
+    body or a header — so there is no request in which a caller can ask about
+    somebody else's commercial standing. §14's requirement, met by the service
+    having no way to be pointed elsewhere.
+    """
+    if principal.tenant_id is None:
+        raise ForbiddenError("this endpoint requires an organization context")
+    return SubscriptionService(session, principal.tenant_id)
 
 
 def get_business_calendar_service(

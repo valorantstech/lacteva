@@ -236,6 +236,11 @@ from platform_core.modules.settlement.service import (
     SettlementService,
     SettlementView,
 )
+from platform_core.modules.subscription.service import (
+    EntitlementView,
+    SubscriptionService,
+    SubscriptionView,
+)
 from platform_core.modules.supplier.service import (
     AddBankAccountCommand,
     BankAccountView,
@@ -733,6 +738,73 @@ async def list_countries(_: CurrentPrincipal) -> Any:
     anything tenant-specific.
     """
     return {"countries": country_choices()}
+
+
+# --- Subscription, trial and entitlement (DEMO-026) ------------------------
+#
+# Read is a tenant-administrator act; CHANGE is a Lacteva-operator one. Until a
+# payment provider exists, the only truthful way for an organization to become
+# `active` is for somebody at Lacteva to say so — so `manage` sits behind its
+# own permission that no tenant role holds.
+#
+# Nothing here accepts a status from the caller. There is no endpoint that
+# takes `status`, which is how "the client cannot forge a subscription state"
+# is guaranteed rather than validated.
+subscription_router = APIRouter(prefix="/organization", tags=["subscription"])
+
+
+class ActivateSubscriptionRequest(BaseModel):
+    plan_code: str
+    subscribed_centres: int
+    period_end: date | None = None
+
+
+@subscription_router.get(
+    "/subscription",
+    dependencies=[Depends(require_permission("organization.subscription.read"))],
+)
+async def read_subscription(
+    service: Annotated[SubscriptionService, Depends(deps.get_subscription_service)],
+) -> SubscriptionView:
+    """This organization's plan, trial dates and commercial standing."""
+    return await service.view()
+
+
+@subscription_router.get(
+    "/entitlement",
+    dependencies=[Depends(require_permission("organization.subscription.read"))],
+)
+async def read_entitlement(
+    service: Annotated[SubscriptionService, Depends(deps.get_subscription_service)],
+) -> EntitlementView:
+    """What the organization may commercially do, and how many centres it uses."""
+    return await service.entitlement_view()
+
+
+@subscription_router.post(
+    "/subscription/activate",
+    dependencies=[Depends(require_permission("organization.subscription.manage"))],
+)
+async def activate_subscription(
+    service: Annotated[SubscriptionService, Depends(deps.get_subscription_service)],
+    body: ActivateSubscriptionRequest,
+) -> SubscriptionView:
+    """Put this organization onto a paid plan. **No money moves.**"""
+    return await service.activate(
+        plan_code=body.plan_code,
+        subscribed_centres=body.subscribed_centres,
+        period_end=body.period_end,
+    )
+
+
+@subscription_router.post(
+    "/subscription/cancel",
+    dependencies=[Depends(require_permission("organization.subscription.manage"))],
+)
+async def cancel_subscription(
+    service: Annotated[SubscriptionService, Depends(deps.get_subscription_service)],
+) -> SubscriptionView:
+    return await service.cancel()
 
 
 # --- Business calendar and financial periods (DEMO-020) -------------------
@@ -3693,5 +3765,6 @@ for sub in (
     billing_router,
     locale_router,
     calendar_router,
+    subscription_router,
 ):
     router.include_router(sub)

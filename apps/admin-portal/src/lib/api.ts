@@ -2770,3 +2770,38 @@ export const reopenFinancialPeriod = (id: string) =>
   api<FinancialPeriodView>(`/v1/organization/financial-periods/${id}/reopen`, {
     method: "POST",
   });
+
+// --- Subscription, trial and entitlement (DEMO-026) ------------------------
+
+export type SubscriptionView = {
+  plan_code: string;
+  plan_name: string;
+  status: "trialing" | "active" | "cancelled" | "expired";
+  trial_started_on: string | null;
+  trial_ends_on: string | null;
+  started_on: string | null;
+  current_period_end: string | null;
+  subscribed_centres: number;
+  billing_period: string;
+  currency_code: string;
+  /** Null until a deployment has decided what this plan costs. */
+  price: string | null;
+};
+
+export type EntitlementView = {
+  status: string;
+  business_date: string;
+  trial_days_remaining: number | null;
+  can_operate: boolean;
+  can_read: boolean;
+  active_centres: number;
+  subscribed_centres: number;
+  centre_allowance: number | null;
+  within_centre_allowance: boolean;
+};
+
+export const getSubscription = () =>
+  api<SubscriptionView>("/v1/organization/subscription");
+
+export const getEntitlement = () =>
+  api<EntitlementView>("/v1/organization/entitlement");

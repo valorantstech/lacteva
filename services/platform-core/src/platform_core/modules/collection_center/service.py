@@ -233,6 +233,14 @@ class CollectionCenterService:
             )
             if not windows:
                 raise ConflictError("cannot activate a center without operating hours")
+            # DEMO-026: and the organization must be commercially entitled to
+            # another working centre. Guarded at ACTIVATION rather than
+            # creation — a dairy may always record the centres it has; what it
+            # may not do is put more of them to work than it subscribes for.
+            # Nothing is refused during a trial.
+            from platform_core.modules.subscription.service import SubscriptionService
+
+            await SubscriptionService(self._session, center.tenant_id).assert_can_activate_centre()
         previous = center.status
         center.status = new_status
         await self._audit.record(

@@ -26,6 +26,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  BadgeCheck,
   CalendarDays,
   Banknote,
   Bell,
@@ -201,6 +202,13 @@ const PLATFORM: Entry[] = [
     labelKey: "nav.sync",
     permission: "sync.read",
     icon: RefreshCw,
+  },
+  {
+    // DEMO-026. Where an administrator sees the trial and what it covers.
+    href: "/admin/subscription",
+    labelKey: "nav.subscription",
+    permission: "organization.subscription.read",
+    icon: BadgeCheck,
   },
   {
     // DEMO-020. Read-only, and behind its own permission: a viewer may look at

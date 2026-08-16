@@ -888,10 +888,18 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
     was redundant. It earned its keep once more in DEMO-012, on the push
     device registry: the migration DID install the policy, but inline rather
     than from a snapshotted list, so nothing the build could read said so.
+
+    And once more in DEMO-026, on `subscription`. That migration DID install
+    the policy from a snapshotted list — what it did not do was say so HERE,
+    and the union below is deliberately hand-written so that a new tenant table
+    cannot become protected by accident. The failure is the process working.
     """
     from migrations.versions.a1c7f3b90e22_row_level_security import TENANT_TABLES
     from migrations.versions.a4f7c19d8b52_demo_020_business_calendar import (
         POLICY_TABLES as DEMO020_TABLES,
+    )
+    from migrations.versions.c7e4a2f19b83_demo_026_subscription import (
+        POLICY_TABLES as DEMO026_TABLES,
     )
     from migrations.versions.c8a4d2f10b73_demo_009_rls_for_the_sales_tables import (
         SALES_TABLES as DEMO009_TABLES,
@@ -919,6 +927,7 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
         | set(DEMO012_TABLES)
         | set(DEMO017_TABLES)
         | set(DEMO020_TABLES)
+        | set(DEMO026_TABLES)
     )
     uncovered = set(tenant_tables()) - covered
     assert not uncovered, (

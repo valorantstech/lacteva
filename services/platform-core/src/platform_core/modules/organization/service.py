@@ -156,6 +156,16 @@ class OrganizationService:
         )
         self._session.add(org)
         await self._session.flush()
+        # DEMO-026: the 30-day trial starts here, from the organization's own
+        # creation instant on its own clock. Created eagerly so a new dairy
+        # has a subscription before its first request; `ensure_trial` is
+        # get-or-create, so an organization that predates this milestone picks
+        # its trial up lazily on first read instead.
+        from platform_core.modules.subscription.service import SubscriptionService
+
+        await SubscriptionService(self._session, org.id).ensure_trial(
+            created_at=org.created_at, timezone=org.timezone
+        )
         await self._audit.record(
             action="organization.created",
             resource_type="organization",

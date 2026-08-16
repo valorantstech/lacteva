@@ -18,6 +18,12 @@ PERMISSIONS: dict[str, str] = {
     "organization.calendar.read": "Read the organization calendar and financial periods",
     "organization.calendar.manage": "Record holidays and other non-working days",
     "organization.period.manage": "Open, close and reopen financial periods",
+    # DEMO-026. Reading the commercial standing is separated from changing it,
+    # and CHANGING it is a Lacteva-operator act rather than a tenant one: until
+    # a payment provider exists, the only truthful way to become `active` is
+    # for somebody at Lacteva to say so. A tenant administrator reads.
+    "organization.subscription.read": "Read the organization's subscription and trial",
+    "organization.subscription.manage": "Activate, change or cancel a subscription",
     "organization.structure.manage": "Create and administer workspaces and branches",
     "organization.member.read": "Read members and invitations",
     "organization.member.manage": "Invite and administer members",
@@ -168,6 +174,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "organization.calendar.read",
         "organization.calendar.manage",
         "organization.period.manage",
+        "organization.subscription.read",
     ],
     "tenant-viewer": [
         "identity.user.read",

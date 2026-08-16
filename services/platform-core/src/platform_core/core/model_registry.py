@@ -64,6 +64,7 @@ def import_all_models() -> int:
     import platform_core.modules.receipt.models
     import platform_core.modules.reporting.models
     import platform_core.modules.settlement.models
+    import platform_core.modules.subscription.models
     import platform_core.modules.supplier.models
     import platform_core.modules.sync.models
 
