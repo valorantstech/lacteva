@@ -14,7 +14,7 @@ roll back the very history this module exists to keep.
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import ClassVar, Literal
 
 import structlog
 from pydantic import BaseModel, Field, field_validator
@@ -205,6 +205,72 @@ class RenderedPreview(BaseModel):
     variables_used: dict
 
 
+#: Config key a tenant sets to choose how its people are reached, per purpose.
+#: `notification.channel.settlement_finalized = "whatsapp"`.
+CHANNEL_CONFIG_PREFIX = "notification.channel."
+
+#: Channels a tenant may choose between for an outbound business message.
+#: `push` is deliberately absent: it reaches an app the recipient may not have
+#: installed, so it is a mapping the platform makes, never a preference a
+#: tenant expresses for a farmer with a feature phone.
+SELECTABLE_CHANNELS = ("sms", "whatsapp", "email")
+
+
+async def resolve_channel(
+    session: AsyncSession,
+    template_key: str,
+    default: str,
+    tenant_id: uuid.UUID | None = None,
+) -> str:
+    """Which channel this tenant wants for this kind of message (DEMO-025).
+
+    **This is the multi-country seam, and it contains no country.** An Indian
+    dairy that wants WhatsApp settlement slips and a Kenyan one that wants SMS
+    differ by a configuration row, not by a branch — so adding Qatar, or a
+    market nobody has met yet, is a row too.
+
+    Falls back to the event mapping's own default whenever the tenant has said
+    nothing, which is what makes this safe to introduce: every existing
+    deployment keeps the channel it already had.
+
+    An unrecognised value falls back rather than raising. A typo in a config
+    row must not stop a farmer being told about their money; it should send on
+    the default and be visible in the notification history.
+    """
+    from platform_core.core.tenancy import get_current_tenant, set_current_tenant
+    from platform_core.modules.audit.service import AuditService
+    from platform_core.modules.configuration.service import ConfigurationService
+
+    # `ConfigurationService.resolve` scopes itself from the tenant CONTEXTVAR,
+    # and the dispatch consumer does not set one — it carries the tenant on the
+    # event and passes it explicitly, as every other lookup here does. So the
+    # variable is set for the duration of this read and restored afterwards.
+    # Without this the lookup silently found nothing and every tenant kept the
+    # default channel, which is a configuration feature that does not work.
+    previous = get_current_tenant()
+    if tenant_id is not None:
+        set_current_tenant(tenant_id)
+    try:
+        # A real audit service rather than None: `resolve` does not write today,
+        # and a read that starts auditing tomorrow must not fail here.
+        chosen = await ConfigurationService(session, AuditService(session)).resolve(
+            f"{CHANNEL_CONFIG_PREFIX}{template_key}"
+        )
+    except Exception:
+        return default
+    finally:
+        if tenant_id is not None:
+            set_current_tenant(previous)
+    if isinstance(chosen, str) and chosen in SELECTABLE_CHANNELS:
+        return chosen
+    log.warning(
+        "notification_channel_config_ignored",
+        template=template_key,
+        configured=str(chosen)[:40],
+    )
+    return default
+
+
 def provider_name(channel: str) -> str:
     """The provider's name for a metric label. Falls back rather than raising:
     a metrics lookup must never be the thing that breaks a delivery."""
@@ -265,9 +331,20 @@ class NotificationService:
         # The savepoint keeps the loser's violation from poisoning the whole
         # consumer transaction; losing the race means the notification already
         # exists, which is exactly the `None` this method returns for a replay.
-        self._session.add(notification)
+        #
+        # DEMO-025: the `add` belongs INSIDE the savepoint. It used to sit
+        # outside, and entering `begin_nested()` can autoflush the pending
+        # insert first — so the violation happened OUTSIDE the savepoint,
+        # poisoned the outer transaction, and the caller's `commit()` raised
+        # `PendingRollbackError`. The `except` below caught nothing because
+        # nothing had been contained.
+        #
+        # It survived because SQLite's test stack shares one connection and
+        # never actually races. Eight concurrent dispatches on real PostgreSQL
+        # showed seven losers taking down their own transactions.
         try:
             async with self._session.begin_nested():
+                self._session.add(notification)
                 await self._session.flush()
         except IntegrityError:
             return None
@@ -585,7 +662,25 @@ class NotificationService:
             )
         )
 
+    #: Which contact detail a channel needs. WhatsApp travels to a phone
+    #: number, so it reads the phone — without this it would have fallen
+    #: through to the email address and failed on every send (DEMO-025).
+    _CHANNEL_CONTACT: ClassVar[dict[str, str]] = {
+        "sms": "phone",
+        "whatsapp": "phone",
+        "email": "email",
+    }
+
     async def _resolve_recipient(self, notification: Notification) -> str | None:
+        """Where this message goes when the request did not say.
+
+        The caller's own `recipient` is preferred by `_attempt` before this is
+        reached — which is how a household is billed at all, since the
+        directory is built from supplier events and customers emit none
+        (DEMO-025). This is the fallback, and it is also where the recipient's
+        own LANGUAGE is picked up: a slip in the wrong language is barely
+        better than no slip.
+        """
         if notification.channel == "push":
             return await self._resolve_device_token(notification)
         entry = await self._directory_entry(notification)
@@ -593,7 +688,9 @@ class NotificationService:
             return None
         if not notification.language or notification.language == "en":
             notification.language = entry.language or notification.language or "en"
-        return entry.phone if notification.channel == "sms" else entry.email
+        # WhatsApp travels to a phone number. Without this it fell through to
+        # the email address and would have failed on every send (DEMO-025).
+        return getattr(entry, self._CHANNEL_CONTACT.get(notification.channel, "email"))
 
     async def _resolve_device_token(self, notification: Notification) -> str | None:
         """The most recently seen handset for this user.

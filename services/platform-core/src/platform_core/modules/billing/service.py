@@ -422,6 +422,9 @@ class BillingService:
             actor_id=actor_id,
             detail={"invoice": invoice.invoice_number, "amount_due": str(invoice.amount_due)},
         )
+        # The household this bill belongs to — needed so the event can carry
+        # where to reach them (DEMO-025).
+        customer = await self._customer(invoice.customer_id)
         await self._bus.publish(
             EventEnvelope.new(
                 BUS_EVENTS["InvoiceIssued"],
@@ -431,6 +434,29 @@ class BillingService:
                     "invoice_number": invoice.invoice_number,
                     "amount_due": str(invoice.amount_due),
                     "currency": invoice.currency,
+                    # DEMO-025: the BUSINESS dates this invoice bills, carried
+                    # so a notification never has to guess them. The dispatch
+                    # consumer previously fell back to `envelope.time[:10]` —
+                    # a slice of a UTC timestamp — which for an Indian dairy
+                    # billing after 18:30 local names the wrong day on the
+                    # customer's own bill.
+                    "period_from": str(invoice.period_from),
+                    "period_to": str(invoice.period_to),
+                    "total": str(invoice.total),
+                    # DEMO-025: where to reach the household, and what to call
+                    # them. Carried on the event exactly as the supplier
+                    # events already carry contact details — the notification
+                    # module has a directory for suppliers and none for
+                    # customers, and a household with no directory entry could
+                    # not be billed by SMS at all.
+                    #
+                    # This is contact information, not a credential: it is
+                    # already in the customer row and in every backup. The one
+                    # thing that must never travel this way is a secret, which
+                    # is why the invitation token does not (see the dispatch
+                    # consumer's note on INVITATION_ISSUED).
+                    "customer_name": customer.name,
+                    "phone": customer.phone,
                 },
                 actor_id=actor_id,
             )

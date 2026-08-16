@@ -163,6 +163,13 @@ class Settings(BaseSettings):
     notification_push_provider: Literal["logging", "placeholder", "http", "dry_run", "disabled"] = (
         "disabled"
     )
+    #: DEMO-025. Defaults to `disabled` for the same reason push does: no
+    #: WhatsApp gateway has been contracted, and a deployment that has not
+    #: made that decision must FAIL visibly rather than record a message as
+    #: delivered when nothing left the building.
+    notification_whatsapp_provider: Literal[
+        "logging", "placeholder", "http", "dry_run", "disabled"
+    ] = "disabled"
 
     # --- Email gateway (PROD-001) ------------------------------------------
     # SMTP is the provider-neutral choice deliberately: every transactional
@@ -208,6 +215,17 @@ class Settings(BaseSettings):
     #: every message retries; too long and the consumer loop stalls behind
     #: one unresponsive gateway.
     sms_timeout_seconds: float = 10.0
+
+    # --- WhatsApp gateway (DEMO-025) ---------------------------------------
+    # Deliberately its own URL, credential and sender rather than reusing the
+    # SMS ones: in most markets the same vendor sells both, but they are
+    # separately provisioned, separately priced and separately revoked. A
+    # deployment that had to share one credential could not turn one channel
+    # off without turning off the other.
+    whatsapp_api_url: str = ""
+    whatsapp_api_key: str = ""
+    whatsapp_sender_id: str = ""
+    whatsapp_timeout_seconds: float = 10.0
     # PROD-001: `builtin` is a real, dependency-free PDF writer (see
     # receipt/pdf.py). `placeholder` is kept only so the pre-PROD-001
     # behaviour remains reachable in dev; prod refuses it.
@@ -325,6 +343,7 @@ class Settings(BaseSettings):
             ("SMS", self.notification_sms_provider),
             ("EMAIL", self.notification_email_provider),
             ("PUSH", self.notification_push_provider),
+            ("WHATSAPP", self.notification_whatsapp_provider),
         ):
             if configured in ("logging", "placeholder"):
                 problems.append(
@@ -418,6 +437,13 @@ class Settings(BaseSettings):
             problems.append(
                 "LACTEVA_NOTIFICATION_PUSH_PROVIDER is 'http' but LACTEVA_PUSH_API_URL / "
                 "LACTEVA_PUSH_API_KEY are not both set"
+            )
+        if self.notification_whatsapp_provider == "http" and not (
+            self.whatsapp_api_url and self.whatsapp_api_key
+        ):
+            problems.append(
+                "LACTEVA_WHATSAPP_API_URL and LACTEVA_WHATSAPP_API_KEY are required "
+                "when the whatsapp provider is 'http'"
             )
         if self.notification_sms_provider == "http" and not (self.sms_api_url and self.sms_api_key):
             problems.append(

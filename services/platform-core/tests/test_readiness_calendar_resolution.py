@@ -242,7 +242,7 @@ async def test_readiness_evaluates_the_tenants_own_business_date(client, country
     """
     from tests.test_localization import _tenant_admin_for
 
-    org, headers = await _tenant_admin_for(
+    _org, headers = await _tenant_admin_for(
         client,
         country=country,
         slug=f"rdy-{country.lower()}",

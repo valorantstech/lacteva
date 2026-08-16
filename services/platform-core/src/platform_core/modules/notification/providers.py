@@ -358,6 +358,44 @@ class HttpSmsProvider:
         )
 
 
+class HttpWhatsAppProvider(HttpSmsProvider):
+    """WhatsApp over the same generic HTTP contract (DEMO-025).
+
+    **A subclass rather than a copy, and that is the whole design decision.**
+    Every business-messaging gateway that offers WhatsApp — and in most
+    markets it is the same vendor that sells the SMS route — exposes it as
+    another endpoint taking a recipient, a body and an idempotency key. The
+    classification table above is about HTTP status codes, which do not become
+    different because the message travels over a different network.
+
+    So WhatsApp differs in exactly three ways, all of them configuration: its
+    own URL, its own credential, and its own sender identity. Anything a
+    vendor does that this contract cannot express — template approval ids,
+    interactive buttons, media — belongs in a `ChannelProvider` of its own,
+    installed through `register_provider`. That seam is why this class is
+    allowed to be small.
+
+    **What this is NOT.** It is not the WhatsApp Business API's own protocol,
+    and it does not attempt template registration or session-window rules. A
+    deployment pointing this at a gateway is responsible for having whatever
+    pre-approved template the destination market requires; Lacteva sends text
+    and records what came back.
+    """
+
+    def __init__(self, channel: str = "whatsapp") -> None:
+        self.name = "http-whatsapp"
+        self._channel = channel
+        settings = get_settings()
+        self._url = settings.whatsapp_api_url
+        self._api_key = settings.whatsapp_api_key
+        self._sender = settings.whatsapp_sender_id
+        self._timeout = settings.whatsapp_timeout_seconds
+        if not self._url:
+            raise ValueError(
+                "LACTEVA_WHATSAPP_API_URL must be set when the whatsapp provider is 'http'"
+            )
+
+
 class SmtpEmailProvider:
     """The production email transport (PROD-001).
 
@@ -626,9 +664,19 @@ def get_provider(channel: str) -> ChannelProvider:
             "sms": settings.notification_sms_provider,
             "email": settings.notification_email_provider,
             "push": settings.notification_push_provider,
+            "whatsapp": settings.notification_whatsapp_provider,
         }.get(channel, "logging")
         _PROVIDERS[channel] = _build(channel, configured)
     return _PROVIDERS[channel]
+
+
+def _http_builder(channel: str):
+    """Which HTTP provider a channel means. One mapping, not a chain of
+    conditionals that grows a branch per channel."""
+    return {
+        "push": HttpPushProvider,
+        "whatsapp": HttpWhatsAppProvider,
+    }.get(channel, HttpSmsProvider)
 
 
 def _build(channel: str, configured: str) -> ChannelProvider:
@@ -639,7 +687,7 @@ def _build(channel: str, configured: str) -> ChannelProvider:
         "placeholder": PlaceholderProvider,
         "dry_run": DryRunProvider,
         "disabled": DisabledProvider,
-        "http": HttpSmsProvider if channel != "push" else HttpPushProvider,
+        "http": _http_builder(channel),
         "smtp": SmtpEmailProvider,
     }
     builder = builders.get(configured)

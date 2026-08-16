@@ -99,7 +99,19 @@ def test_templates_declare_title_body_channel_language_variables():
     template = get_template("settlement_finalized", "sms", "en")
     assert template.title and template.body
     assert template.channel == "sms" and template.language == "en"
-    assert set(template.variables) == {"name", "number", "net_amount", "currency", "line_count"}
+    # DEMO-025 enriched the slip: it now names the period it covers and shows
+    # gross beside net, so the shape does not change again when the deduction
+    # engine lands.
+    assert set(template.variables) == {
+        "name",
+        "number",
+        "period_from",
+        "period_to",
+        "gross_amount",
+        "net_amount",
+        "currency",
+        "line_count",
+    }
 
 
 def test_variable_substitution():
@@ -110,6 +122,9 @@ def test_variable_substitution():
         {
             "name": "Amina",
             "number": "STL-AB12",
+            "period_from": "2026-08-01",
+            "period_to": "2026-08-31",
+            "gross_amount": "7897.50",
             "net_amount": "7897.50",
             "currency": "KES",
             "line_count": 2,
@@ -117,6 +132,7 @@ def test_variable_substitution():
     )
     assert "Amina" in message.body and "STL-AB12" in message.body
     assert "7897.50 KES" in message.body and "{" not in message.body
+    assert "2026-08-01" in message.body and "2026-08-31" in message.body
     assert message.title == "Settlement STL-AB12 ready"
 
 
@@ -676,8 +692,10 @@ async def test_template_catalog_endpoint(client):
     templates = (await client.get("/v1/notification-templates", headers=headers)).json()
     keys = {t["key"] for t in templates}
     assert "settlement_finalized" in keys and "password_reset" in keys
-    entry = next(t for t in templates if t["key"] == "settlement_finalized")
-    assert entry["channel"] == "sms" and "name" in entry["variables"]
+    entry = next(
+        t for t in templates if t["key"] == "settlement_finalized" and t["channel"] == "sms"
+    )
+    assert "name" in entry["variables"]
 
 
 async def test_template_preview_endpoint(client):

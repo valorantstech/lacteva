@@ -80,21 +80,113 @@ TEMPLATES: tuple[Template, ...] = (
         "Hello {name}, your supplier account {code} has been closed. "
         "Contact your collection center if this is unexpected.",
     ),
+    # --- Farmer settlement slip (DEMO-025) ---------------------------------
+    #
+    # The slip is a REPRESENTATION of a settlement that already exists. Every
+    # figure below is read from the finalized settlement — nothing here
+    # computes money. `{period_from}`/`{period_to}` are BUSINESS dates carried
+    # on the event for exactly this reason.
+    #
+    # `{gross_amount}` and `{net_amount}` are both shown even though they are
+    # equal today: the deduction engine is still a placeholder, and a slip
+    # that showed only one number would have to change shape the day
+    # deductions arrive. Showing both now means the farmer's slip does not
+    # change its meaning later.
     _t(
         "settlement_finalized",
         "sms",
         "en",
         "Settlement {number} ready",
-        "Hello {name}, settlement {number} is finalised: {net_amount} {currency} "
-        "for {line_count} delivery(ies).",
+        "Hello {name}, settlement {number} for {period_from} to {period_to} is finalised. "
+        "Gross {gross_amount} {currency}, net payable {net_amount} {currency}, "
+        "{line_count} collection(s).",
     ),
     _t(
         "settlement_finalized",
         "sms",
         "sw",
         "Malipo {number} tayari",
-        "Habari {name}, malipo {number} yamekamilika: {net_amount} {currency} "
-        "kwa mizigo {line_count}.",
+        "Habari {name}, malipo {number} ya {period_from} hadi {period_to} yamekamilika. "
+        "Jumla {gross_amount} {currency}, malipo halisi {net_amount} {currency}, "
+        "mizigo {line_count}.",
+    ),
+    _t(
+        "settlement_finalized",
+        "sms",
+        "hi",
+        "भुगतान {number} तैयार",
+        "नमस्ते {name}, {period_from} से {period_to} तक का भुगतान {number} अंतिम रूप से तैयार है। "
+        "कुल {gross_amount} {currency}, देय राशि {net_amount} {currency}, {line_count} संग्रह।",
+    ),
+    _t(
+        "settlement_finalized",
+        "sms",
+        "ar",
+        "تسوية {number} جاهزة",
+        "مرحبا {name}، التسوية {number} من {period_from} إلى {period_to} مكتملة. "
+        "الإجمالي {gross_amount} {currency}، الصافي المستحق {net_amount} {currency}، "
+        "{line_count} عملية جمع.",
+    ),
+    _t(
+        "settlement_finalized",
+        "whatsapp",
+        "en",
+        "Settlement {number} ready",
+        "Hello {name},\n\nYour settlement *{number}* is finalised.\n"
+        "Period: {period_from} to {period_to}\n"
+        "Collections: {line_count}\n"
+        "Gross: {gross_amount} {currency}\n"
+        "Net payable: *{net_amount} {currency}*\n\n"
+        "Contact your collection centre if anything looks wrong.",
+    ),
+    _t(
+        "settlement_finalized",
+        "whatsapp",
+        "sw",
+        "Malipo {number} tayari",
+        "Habari {name},\n\nMalipo yako *{number}* yamekamilika.\n"
+        "Kipindi: {period_from} hadi {period_to}\n"
+        "Mizigo: {line_count}\n"
+        "Jumla: {gross_amount} {currency}\n"
+        "Malipo halisi: *{net_amount} {currency}*\n\n"
+        "Wasiliana na kituo chako cha ukusanyaji ikiwa kuna tatizo.",
+    ),
+    _t(
+        "settlement_finalized",
+        "whatsapp",
+        "hi",
+        "भुगतान {number} तैयार",
+        "नमस्ते {name},\n\nआपका भुगतान *{number}* अंतिम रूप से तैयार है।\n"
+        "अवधि: {period_from} से {period_to}\n"
+        "संग्रह: {line_count}\n"
+        "कुल: {gross_amount} {currency}\n"
+        "देय राशि: *{net_amount} {currency}*\n\n"
+        "कोई गड़बड़ी लगे तो अपने संग्रह केंद्र से संपर्क करें।",
+    ),
+    _t(
+        "settlement_finalized",
+        "whatsapp",
+        "ar",
+        "تسوية {number} جاهزة",
+        "مرحبا {name}،\n\nتسويتك *{number}* مكتملة.\n"
+        "الفترة: من {period_from} إلى {period_to}\n"
+        "عمليات الجمع: {line_count}\n"
+        "الإجمالي: {gross_amount} {currency}\n"
+        "الصافي المستحق: *{net_amount} {currency}*\n\n"
+        "تواصل مع مركز الجمع إذا كان هناك خطأ.",
+    ),
+    _t(
+        "settlement_finalized",
+        "email",
+        "en",
+        "Settlement {number} is ready",
+        "Hello {name},\n\nSettlement {number} covering {period_from} to {period_to} "
+        "has been finalised.\n\n"
+        "Collections: {line_count}\n"
+        "Gross amount: {gross_amount} {currency}\n"
+        "Net payable: {net_amount} {currency}\n\n"
+        "This is a summary of a settlement recorded in Lacteva. Contact your "
+        "collection centre if anything looks wrong.",
     ),
     _t(
         "payment_completed",
@@ -169,6 +261,87 @@ TEMPLATES: tuple[Template, ...] = (
     # in the app, behind the sign-in, where it is also the platform's own
     # figure rather than a copy of it that can go stale between the event and
     # the reading.
+    # --- Customer invoice (DEMO-025) ---------------------------------------
+    #
+    # The push variants below predate this milestone and are kept: a household
+    # with the app installed should still get a push. What DEMO-025 adds is
+    # the ability to reach a household that has NO app, which is most of them
+    # — over SMS, WhatsApp or email.
+    #
+    # `{period_from}`/`{period_to}` are the invoice's own business dates. The
+    # push templates keep `{period}` for compatibility and the consumer now
+    # builds it from those dates rather than from a UTC timestamp slice.
+    _t(
+        "invoice_issued",
+        "sms",
+        "en",
+        "Bill {number} ready",
+        "Hello {name}, your bill {number} for {period_from} to {period_to} is "
+        "{amount} {currency}. Please pay at your convenience.",
+    ),
+    _t(
+        "invoice_issued",
+        "sms",
+        "hi",
+        "बिल {number} तैयार",
+        "नमस्ते {name}, {period_from} से {period_to} तक का आपका बिल {number} "
+        "{amount} {currency} है। कृपया भुगतान करें।",
+    ),
+    _t(
+        "invoice_issued",
+        "sms",
+        "ar",
+        "الفاتورة {number} جاهزة",
+        "مرحبا {name}، فاتورتك {number} من {period_from} إلى {period_to} هي "
+        "{amount} {currency}. يرجى السداد.",
+    ),
+    _t(
+        "invoice_issued",
+        "sms",
+        "sw",
+        "Bili {number} tayari",
+        "Habari {name}, bili yako {number} ya {period_from} hadi {period_to} ni "
+        "{amount} {currency}. Tafadhali lipa.",
+    ),
+    _t(
+        "invoice_issued",
+        "whatsapp",
+        "en",
+        "Bill {number} ready",
+        "Hello {name},\n\nYour bill *{number}* is ready.\n"
+        "Period: {period_from} to {period_to}\n"
+        "Amount due: *{amount} {currency}*\n\n"
+        "Thank you for taking milk from us.",
+    ),
+    _t(
+        "invoice_issued",
+        "whatsapp",
+        "hi",
+        "बिल {number} तैयार",
+        "नमस्ते {name},\n\nआपका बिल *{number}* तैयार है।\n"
+        "अवधि: {period_from} से {period_to}\n"
+        "देय राशि: *{amount} {currency}*\n\n"
+        "हमसे दूध लेने के लिए धन्यवाद।",
+    ),
+    _t(
+        "invoice_issued",
+        "whatsapp",
+        "ar",
+        "الفاتورة {number} جاهزة",
+        "مرحبا {name}،\n\nفاتورتك *{number}* جاهزة.\n"
+        "الفترة: من {period_from} إلى {period_to}\n"
+        "المبلغ المستحق: *{amount} {currency}*\n\n"
+        "شكرا لتعاملكم معنا.",
+    ),
+    _t(
+        "invoice_issued",
+        "email",
+        "en",
+        "Your bill {number} is ready",
+        "Hello {name},\n\nYour bill {number} covering {period_from} to {period_to} "
+        "is {amount} {currency}.\n\n"
+        "This is a summary of an invoice recorded in Lacteva.",
+    ),
     _t(
         "invoice_issued",
         "push",

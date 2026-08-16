@@ -422,6 +422,11 @@ class SettlementService:
                 "net_amount": str(settlement.net_amount),
                 "currency": settlement.currency,
                 "line_count": line_count,
+                # DEMO-025: the business dates this settlement covers. Read
+                # from the settlement, not recomputed — the slip is a
+                # representation of an existing financial fact.
+                "period_from": str(settlement.period_from),
+                "period_to": str(settlement.period_to),
             },
             actor_id,
         )

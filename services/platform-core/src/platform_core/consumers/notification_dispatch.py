@@ -19,7 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.event_relay.consumers import EventConsumer, register_consumer
-from platform_core.modules.notification.service import NotificationRequest, NotificationService
+from platform_core.modules.notification.service import (
+    NotificationRequest,
+    NotificationService,
+    resolve_channel,
+)
 
 # Event names as the platform actually emits them (the work order's names map
 # onto these): supplier.created -> supplier-registered, supplier.archived ->
@@ -43,6 +47,13 @@ class EventMapping:
     template_key: str
     channel: str
     build: Callable[[EventEnvelope], dict | None]  # None = this event needs no message
+    #: May a tenant choose a different channel for this message? (DEMO-025)
+    #:
+    #: True for BUSINESS messages a dairy sends its farmers and customers.
+    #: False for platform messages — a password reset is an email because the
+    #: reset link goes to an inbox, and a tenant electing to SMS it would be
+    #: changing a security decision rather than a delivery preference.
+    selectable: bool = False
 
 
 def _supplier_registered(envelope: EventEnvelope) -> dict | None:
@@ -75,9 +86,15 @@ def _settlement_finalized(envelope: EventEnvelope) -> dict | None:
         "recipient_ref": _uuid(data.get("supplier_id")),
         "variables": {
             "number": data.get("settlement_number", ""),
+            # Both figures, read from the settlement. Nothing here computes
+            # money — the slip reports a settlement that already exists.
+            "gross_amount": data.get("gross_amount", ""),
             "net_amount": data.get("net_amount", ""),
             "currency": data.get("currency", ""),
             "line_count": data.get("line_count", 0),
+            # BUSINESS dates, carried on the event (DEMO-025).
+            "period_from": data.get("period_from", ""),
+            "period_to": data.get("period_to", ""),
         },
     }
 
@@ -155,11 +172,26 @@ def _invoice_issued(envelope: EventEnvelope) -> dict | None:
     needs to be able to tell those apart.
     """
     data = envelope.data
+    period_from = data.get("period_from", "")
+    period_to = data.get("period_to", "")
     return {
         "recipient_ref": _uuid(data.get("customer_id")),
+        # A household has no directory entry — the directory is built from
+        # supplier events and customers emit none. The event carries the
+        # number instead (DEMO-025).
+        "recipient": data.get("phone") or None,
         "variables": {
+            "name": data.get("customer_name") or "customer",
             "number": data.get("invoice_number", ""),
-            "period": data.get("period") or envelope.time[:10],
+            "amount": data.get("amount_due", ""),
+            "currency": data.get("currency", ""),
+            "period_from": period_from,
+            "period_to": period_to,
+            # The push templates still say `{period}`. It is now built from
+            # the invoice's own BUSINESS dates rather than from a slice of a
+            # UTC timestamp, which named the wrong day for any dairy east of
+            # UTC billing late in its own evening (DEMO-025).
+            "period": f"{period_from} - {period_to}" if period_from else envelope.time[:10],
         },
     }
 
@@ -175,7 +207,9 @@ def _customer_payment_recorded(envelope: EventEnvelope) -> dict | None:
 MAPPINGS: dict[str, EventMapping] = {
     SUPPLIER_REGISTERED: EventMapping("supplier_registered", "sms", _supplier_registered),
     SUPPLIER_STATUS_CHANGED: EventMapping("supplier_archived", "sms", _supplier_archived),
-    SETTLEMENT_FINALIZED: EventMapping("settlement_finalized", "sms", _settlement_finalized),
+    SETTLEMENT_FINALIZED: EventMapping(
+        "settlement_finalized", "sms", _settlement_finalized, selectable=True
+    ),
     PAYMENT_COMPLETED: EventMapping("payment_completed", "sms", _payment_completed),
     RECEIPT_GENERATED: EventMapping("receipt_available", "sms", _receipt_generated),
     PASSWORD_RESET_REQUESTED: EventMapping("password_reset", "email", _password_reset),
@@ -189,7 +223,13 @@ MAPPINGS: dict[str, EventMapping] = {
     # other consumers may read it.
     MEMBER_ADDED: EventMapping("invitation_accepted", "email", _member_added),
     TRANSACTION_REJECTED: EventMapping("milk_rejected", "sms", _transaction_rejected),
-    INVOICE_ISSUED: EventMapping("invoice_issued", "push", _invoice_issued),
+    # DEMO-025: the DEFAULT stays `push`, and that is deliberate. DEMO-012
+    # built the push journey for households that have the app, and changing
+    # the default would have silently taken it away from them. What DEMO-025
+    # adds is the ABILITY to reach the households that do not — a dairy sets
+    # `notification.channel.invoice_issued` to `sms` or `whatsapp` and its
+    # bills go there instead. New capability, no behaviour removed.
+    INVOICE_ISSUED: EventMapping("invoice_issued", "push", _invoice_issued, selectable=True),
     CUSTOMER_PAYMENT_RECORDED: EventMapping(
         "customer_payment_recorded", "push", _customer_payment_recorded
     ),
@@ -205,13 +245,23 @@ class NotificationDispatchConsumer(EventConsumer):
         built = mapping.build(envelope)
         if built is None:
             return
+        # DEMO-025: the tenant may prefer a different channel for this kind of
+        # message. Resolved from configuration, never from the country — an
+        # Indian dairy on WhatsApp and a Kenyan one on SMS differ by a row.
+        channel = (
+            await resolve_channel(
+                session, mapping.template_key, mapping.channel, envelope.tenant_id
+            )
+            if mapping.selectable
+            else mapping.channel
+        )
         await NotificationService(session).dispatch(
             NotificationRequest(
                 event_id=envelope.id,
                 event_name=envelope.type,
                 tenant_id=envelope.tenant_id,
                 template_key=mapping.template_key,
-                channel=mapping.channel,
+                channel=channel,
                 **built,
             )
         )

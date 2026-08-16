@@ -292,6 +292,7 @@ LACTEVA_TEST_POSTGRES_URL="$(app_url_for "${TESTS_DB}")" \
   tests/test_consumer_concurrency_postgres.py tests/test_pricing_precision_postgres.py \
   tests/test_business_date_sql_postgres.py tests/test_business_calendar_postgres.py \
   tests/test_scheduler_concurrency_postgres.py tests/test_period_guard_postgres.py \
+  tests/test_message_idempotency_postgres.py \
   -v --no-header -rs --junitxml="${JUNIT}" 2>&1 | tee "${RLS_LOG}" \
   || fail "PostgreSQL-only tests failed"
 

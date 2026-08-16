@@ -37,7 +37,9 @@ import {
 
 const PAGE_SIZE = 15;
 const STATUSES = ["", "sent", "failed", "dead", "pending"] as const;
-const CHANNELS = ["", "sms", "email"] as const;
+// DEMO-025 added whatsapp; push has existed since DEMO-012 and was missing
+// here, so a push failure could not be filtered for at all.
+const CHANNELS = ["", "sms", "whatsapp", "email", "push"] as const;
 
 const statusVariant = (s: string) =>
   s === "sent" ? "default" : s === "dead" ? "destructive" : "secondary";
