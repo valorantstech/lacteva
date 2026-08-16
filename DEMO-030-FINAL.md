@@ -217,7 +217,61 @@ carries a number that could exist.
 
 ## 13. Production verification
 
-*(completed after deployment — see §13 in the released version)*
+Deployed `main-b337b5e` to **https://dev.phoenixsoft.in** through the existing
+path. **No migration was required and none ran** — the schema stayed at
+`f3a9c71d5e28` and the deploy printed no "the schema moved" notice, which is
+§14's explicit ask answered by the deployment itself rather than by assertion.
+
+All nine components healthy, 11 containers healthy, dead-letter queue 0,
+undelivered outbox 0, scheduler intact (12 generation runs). RLS still enabled
+and **forced** on `supplier_profile`, `notification_recipient` and
+`audit_record`, among 69 policies.
+
+**The defect, fixed and proven on production.** A round-trip on one demo
+supplier:
+
+| Step | Result |
+|---|---|
+| `PATCH …/contact` to a new number | **200**, profile updated |
+| `notification_recipient.phone` seconds later | **updated** — this is the thing that used to never happen |
+| `PATCH …/contact` with `"call the office"` | **422**, nothing changed |
+| `PATCH …/contact` restoring the original | **200**, profile and directory both back |
+
+Net data change: **zero** — the original number is restored in both tables.
+What remains is two append-only audit entries, which is exactly what should
+remain:
+
+```
+{"changed": ["phone"], "phone": {"from": "+2547****0000", "to": "+2547****0111"},
+ "reason": "DEMO-030 production verification"}
+{"changed": ["phone"], "phone": {"from": "+2547****0111", "to": "+2547****0000"},
+ "reason": "DEMO-030 verification: restoring original"}
+```
+
+Before, after, reason, and **masked** — the audit trail records that a number
+changed without becoming a list of numbers.
+
+**Settlement-period reachability on both tenants**, defaulted on each
+organization's own calendar:
+
+| Tenant | Channel | Total | Reachable | Unreachable | Unknown | Reason |
+|---|---|---|---|---|---|---|
+| India | sms | 12 | 0 | 0 | **12** | `provider_unavailable` |
+| Kenya | sms | 24 | 0 | 0 | **24** | `provider_unavailable` |
+
+Every provider is `disabled`, so the platform blames itself once rather than
+accusing 36 blameless farmers — and names every one of them. Unauthenticated
+calls to both the report and the repair endpoint return **401**.
+
+**No external provider was contacted and no message was sent**: 0 delivered, 0
+receipt events, 12 `sent` unchanged from before the deploy.
+
+Month-to-date AWS cost effectively nil.
+
+**The browser walkthrough was NOT performed** — the Chrome extension is not
+connected in this session, so the repair form and the period inputs were
+verified by their own tests and by the API, not visually. Same gap as the
+previous four milestones, stated rather than papered over.
 
 ## 14. Financial safety
 
@@ -226,6 +280,26 @@ settlement, invoice, payment, receipt and customer-payment counts plus
 settlement net and receivables around repairs and reports and requires them
 identical; the other asserts the notification module imports neither
 `modules.settlement` nor `modules.payment`.
+
+**Verified on production, before and after the deployment — including across
+the contact-repair round-trip:**
+
+| | Before | After |
+|---|---|---|
+| Invoiced | 809038.00 | **809038.00** |
+| Receivables | 809038.00 | **809038.00** |
+| Received | 444105.00 | **444105.00** |
+| Settled (net) | 353417.50 | **353417.50** |
+| Paid out to suppliers | 168675.50 | **168675.50** |
+| Collections / settlements | 534 / 84 | **534 / 84** |
+| Invoices / customer receipts / receipts | 31 / 24 / 36 | **31 / 24 / 36** |
+| Supplier payments / customer payments | 42 / 24 | **42 / 24** |
+| Notifications | 251 | **251** |
+| Supplier profiles / directory entries | 44 / 44 | **44 / 44** |
+
+Every figure identical. A verified backup was taken first — 69 tables, 41,547
+rows, `verified: true`, plus a second explicit verify pass — on top of the one
+`deploy.sh` takes itself.
 
 ## 15. REAL versus TEST
 
