@@ -414,7 +414,7 @@ and all eleven of its tests executed:
 
 | Suite | Result |
 |---|---|
-| Backend (`pytest tests/`) | see §17 |
+| Backend (`pytest tests/`) | **1778 passed**, exit 0 |
 | `tests/test_subscription_payments.py` (new) | 45 |
 | `tests/test_subscription_payment_concurrency_postgres.py` (new) | 11, on real PostgreSQL |
 | Admin portal (`vitest`) | **262 passed** (19 files) |
@@ -434,7 +434,50 @@ anywhere names a status, an amount or a currency.
 
 ## 17. Production verification
 
-*(completed after deployment — see the Change Log entry for the release)*
+Deployed `main-6d7f747` to **https://dev.phoenixsoft.in** through the existing
+path — git → GitHub Actions → ECR → `deploy.sh` (pull → backup → migrate →
+deploy → verify → smoke). No flags, no forcing, no manual schema edits.
+
+    schema at d5f1c8a72e46 (matches the image)
+    database, redis, outbox, consumers, projections,
+    notifications, jwt_keys, backups, background_workers — all healthy
+    every tenant-owned table has a policy; policies are FORCED
+    the API role lacteva_app is NOSUPERUSER/NOBYPASSRLS
+    DEPLOYMENT VERIFIED — the platform is serving
+    SMOKE TEST PASSED
+
+11 containers healthy, dead-letter queue 0, undelivered outbox 0.
+
+**The most important production result is a refusal.** The deployment has no
+payment provider configured, and it says so rather than pretending:
+
+| Attempt on production | Result |
+|---|---|
+| Quote a paid plan (India) | `payable: false`, `unit_price: null`, `amount: null`, reason given |
+| `POST .../subscription/checkout` | **409** — "no payment provider is configured for this deployment" |
+| `POST /v1/payments/webhooks/test` | **404** |
+| `POST /v1/payments/webhooks/disabled` (the configured name) | **404** |
+| `POST /v1/payments/webhooks/acme-pay` | **404** |
+| `GET .../subscription/payments` with no token | **401** |
+| `GET .../subscription/payments` as tenant admin | `[]` |
+
+Every webhook path answers **404 on this deployment**, because the configured
+provider is `disabled` and it refuses to parse anything. There is no request
+that activates a subscription here, and the tables prove it: `subscription_payment`
+and `subscription_payment_event` are **empty**, both with `relrowsecurity` and
+`relforcerowsecurity` true, among **68 policies**.
+
+Existing tenants are untouched — India `trialing`, 3 active centres; Kenya
+`trialing`, 5 active centres; both `can_operate` and `can_read` true, no grace
+window, no period end, and **no subscription moved off `trialing`**.
+
+Month-to-date AWS cost is effectively nil (Cost Explorer reports a net of
+~$0.0000003 with credits applied); the instance is the same `c7i-flex.large`.
+
+**The browser walkthrough was NOT performed** — the Chrome extension is not
+connected in this session, so the portal was verified by its route, its own
+test suite and the API it calls, not visually. Same gap as DEMO-026, stated
+rather than papered over.
 
 ## 18. Financial safety
 
@@ -447,6 +490,25 @@ is only a convention is a boundary until somebody is busy.
 
 The migration is pure DDL: two tables created, one nullable column added, no
 existing row read or written.
+
+**Verified on production, before and after the deployment:**
+
+| | Before | After |
+|---|---|---|
+| Invoiced | 809038.00 | **809038.00** |
+| Receivables | 809038.00 | **809038.00** |
+| Received | 444105.00 | **444105.00** |
+| Settled (net) | 353417.50 | **353417.50** |
+| Collections | 534 | **534** |
+| Settlements | 84 | **84** |
+| Invoices / receipts / dairy payments | 31 / 24 / 42 | **31 / 24 / 42** |
+| Organizations / active centres | 5 / 10 | **5 / 10** |
+| Subscriptions | 2 | **2** |
+
+The only count that moved is users, 104 → 105: the deployment's own smoke test
+registers a throwaway account and deletes nothing, by design. A verified backup
+was taken first — 66 tables, 41,497 rows, 26.6 MB, `verified: true`, plus a
+second explicit verify pass — on top of the one `deploy.sh` takes itself.
 
 ## 19. Real versus test functionality
 
