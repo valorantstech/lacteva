@@ -63,6 +63,29 @@ class OutboundMessage:
     template_key: str
     notification_id: uuid.UUID
 
+    #: The template's variables, IN DECLARED ORDER, already substituted
+    #: (DEMO-031).
+    #:
+    #: **This exists because WhatsApp cannot accept the message Lacteva
+    #: renders.** The WhatsApp Business Platform requires a business-initiated
+    #: message to name a pre-approved template and supply positional
+    #: parameters, and permits free text only inside a 24-hour customer-service
+    #: window. DEMO-025 wrote that limitation into `HttpWhatsAppProvider`'s own
+    #: docstring and shipped the text-only path anyway — which works against a
+    #: gateway that accepts text and fails against the actual platform.
+    #:
+    #: So the boundary now carries both: `body` for anything that takes text,
+    #: and `parameters` for anything that takes a template. Nothing in the
+    #: domain changed — the order comes from the template's own declaration,
+    #: which `Template.variables` has always exposed — and no adapter is
+    #: obliged to use either one.
+    parameters: tuple[str, ...] = ()
+    #: What the VENDOR calls this template, when a vendor requires a name of
+    #: its own. Configuration, never a constant: an approved template name is
+    #: issued per account and per market, and hard-coding one would put a
+    #: vendor's registry into Lacteva's source.
+    vendor_template: str | None = None
+
     @property
     def idempotency_key(self) -> str:
         """What the gateway should deduplicate on (MSG-001).
@@ -311,6 +334,112 @@ class ReceiptTestProvider(LoggingProvider):
         return _parse_documented_receipt(body, headers)
 
 
+class SandboxGatewayProvider:
+    """**SANDBOX.** A gateway shaped like a real one, that reaches nobody.
+
+    This is DEMO-031's answer to "cross the vendor boundary safely" without a
+    contract, an account or a credential. It is not a stub that returns
+    success: it enforces the constraints a real business-messaging platform
+    enforces, so the parts of Lacteva that must satisfy them are actually
+    exercised rather than assumed.
+
+    What it insists on, and why each one is real:
+
+    * **A template name for WhatsApp.** The WhatsApp Business Platform will not
+      accept a business-initiated free-text message; it requires a pre-approved
+      template. An adapter with no `vendor_template` configured is refused
+      PERMANENTLY here, because that is what the real platform does and a retry
+      cannot fix a template that was never approved.
+    * **Positional parameters.** It sends `parameters`, not `body`, on the
+      WhatsApp channel — the shape a template message actually takes.
+    * **A recipient that looks like one.** A malformed number is a permanent
+      failure, not a retryable one.
+    * **Deterministic, addressable outcomes.** The recipient's last digit
+      selects accepted / temporary failure / permanent failure, so the retry
+      classification and the receipt path can both be driven without a clock or
+      a random source.
+
+    It is registered only under the `sandbox` provider name and refuses to run
+    in `production` messaging mode, so it cannot become the thing a real
+    deployment sends through by accident.
+
+    **No message leaves this process.** Nothing here opens a socket.
+    """
+
+    #: Last digit of the recipient → what the "gateway" does. Deterministic so
+    #: a test can address an outcome without patching anything.
+    _OUTCOMES = {"7": "temporary", "8": "permanent"}
+
+    def __init__(self, channel: str = "sms") -> None:
+        self.name = f"sandbox-{channel}"
+        self._channel = channel
+        self.sent: list[OutboundMessage] = []
+
+    async def send(self, message: OutboundMessage) -> DeliveryResult:
+        if get_settings().messaging_mode == "production":
+            # A sandbox in production is a platform that thinks it is talking
+            # to farmers and is not. Worse than failing.
+            raise PermanentSendError(
+                "the sandbox gateway must not run in production messaging mode"
+            )
+
+        recipient = (message.recipient or "").strip()
+        digits = [c for c in recipient if c.isdigit()]
+        if len(digits) < 7:
+            raise PermanentSendError(
+                f"sandbox gateway: implausible recipient {mask_phone(recipient)}"
+            )
+
+        if self._channel == "whatsapp":
+            if not message.vendor_template:
+                raise PermanentSendError(
+                    "sandbox gateway: WhatsApp requires an approved template name — set "
+                    "LACTEVA_NOTIFICATION_VENDOR_TEMPLATES for "
+                    f"{message.template_key}.{self._channel}"
+                )
+            if not message.parameters:
+                raise PermanentSendError("sandbox gateway: a template message needs parameters")
+
+        outcome = self._OUTCOMES.get(digits[-1], "accepted")
+        if outcome == "temporary":
+            raise ProviderSendError("sandbox gateway: temporary upstream failure")
+        if outcome == "permanent":
+            raise PermanentSendError("sandbox gateway: recipient rejected by the carrier")
+
+        self.sent.append(message)
+        log.info(
+            "sandbox_gateway_accepted",
+            channel=self._channel,
+            template=message.template_key,
+            vendor_template=message.vendor_template,
+            recipient=mask_phone(recipient),
+            parameters=len(message.parameters),
+        )
+        return DeliveryResult(
+            provider_message_id=f"sbx-{message.notification_id}",
+            status=ACCEPTED,
+            metadata={"sandbox": True, "channel": self._channel},
+        )
+
+    # --- receipts, through DEMO-029's boundary ------------------------------
+
+    def sign(self, body: bytes) -> str:
+        return webhook_security.sign(get_settings().notification_receipt_secret, body)
+
+    def receipt_body(
+        self, *, event_id: str, reference: str, status: str, reason: str | None = None
+    ) -> bytes:
+        return json.dumps(
+            {"event_id": event_id, "reference": reference, "status": status, "reason": reason},
+            sort_keys=True,
+        ).encode()
+
+    def parse_receipt(self, *, body: bytes, headers: dict[str, str]) -> DeliveryReceipt:
+        """The SAME documented contract and the SAME verification as every
+        other receipt-capable adapter — DEMO-029's boundary, reused."""
+        return _parse_documented_receipt(body, headers)
+
+
 class DryRunProvider:
     """Renders and logs a real message without sending it (MSG-001).
 
@@ -370,6 +499,32 @@ def _segments(body: str) -> int:
     return -(-len(body) // multi)
 
 
+class MessagingModeError(PermanentSendError):
+    """The platform is not permitted to talk to a real gateway right now.
+
+    A PERMANENT failure, deliberately: retrying will not change the mode, and a
+    retry loop against a refusal is just a slower refusal. It surfaces in the
+    notification history as a failed message with a reason an operator can act
+    on — which is the point. Silently succeeding, or silently discarding, are
+    the two outcomes this exists to prevent.
+    """
+
+
+def assert_may_reach_the_network(provider_name: str) -> None:
+    """Refuse a real network call unless the deployment asked for one (DEMO-031).
+
+    `test` is the DEFAULT, so a deployment that configures a gateway and says
+    nothing else sends nothing. Reaching a real recipient requires choosing
+    `sandbox` or `production` out loud.
+    """
+    mode = get_settings().messaging_mode
+    if mode == "test":
+        raise MessagingModeError(
+            f"{provider_name} may not contact a gateway: LACTEVA_MESSAGING_MODE is 'test'. "
+            "Set 'sandbox' or 'production' to allow it."
+        )
+
+
 class HttpSmsProvider:
     """A generic HTTP SMS gateway (MSG-001).
 
@@ -419,6 +574,9 @@ class HttpSmsProvider:
 
     async def send(self, message: OutboundMessage) -> DeliveryResult:
         import httpx
+
+        # DEMO-031: the mode gate, before anything leaves the process.
+        assert_may_reach_the_network(self.name)
 
         payload = {
             "to": message.recipient,
@@ -630,6 +788,9 @@ class SmtpEmailProvider:
         return get_settings()
 
     async def send(self, message: OutboundMessage) -> DeliveryResult:
+        # DEMO-031: the mode gate, before anything leaves the process.
+        assert_may_reach_the_network(self.name)
+
         settings = self._settings()
         if not settings.smtp_host:
             # A misconfiguration, not a bad address: this fails identically for
@@ -762,6 +923,9 @@ class HttpPushProvider:
             raise ValueError("LACTEVA_PUSH_API_URL must be set when the push provider is 'http'")
 
     async def send(self, message: OutboundMessage) -> DeliveryResult:
+        # DEMO-031: the mode gate, before anything leaves the process.
+        assert_may_reach_the_network(self.name)
+
         import httpx
 
         payload = {
@@ -871,6 +1035,32 @@ def get_provider(channel: str) -> ChannelProvider:
     return _PROVIDERS[channel]
 
 
+#: Configuration key holding the VENDOR's own name for one of our templates:
+#: `notification.vendor_template.settlement_finalized.whatsapp` (DEMO-031).
+#:
+#: A WhatsApp template name is issued per business account and per market after
+#: approval; it is not a property of the message and it is certainly not a
+#: constant in this repository. A deployment that has one sets it; an adapter
+#: that needs one and finds none refuses rather than guessing.
+VENDOR_TEMPLATE_PREFIX = "notification.vendor_template."
+
+
+def vendor_template_key(template_key: str, channel: str) -> str:
+    return f"{VENDOR_TEMPLATE_PREFIX}{template_key}.{channel}"
+
+
+def vendor_template_for(template_key: str, channel: str) -> str | None:
+    """The vendor's name for this template, from process configuration.
+
+    Read from settings rather than the tenant config store: an approved
+    template belongs to the ACCOUNT Lacteva holds with a gateway, which is a
+    deployment fact, not something a dairy chooses. Absent is the normal case
+    and is not an error here — the adapter decides whether it can proceed.
+    """
+    mapping = get_settings().notification_vendor_templates
+    return mapping.get(f"{template_key}.{channel}") or None
+
+
 def _http_builder(channel: str):
     """Which HTTP provider a channel means. One mapping, not a chain of
     conditionals that grows a branch per channel."""
@@ -889,6 +1079,7 @@ def _build(channel: str, configured: str) -> ChannelProvider:
         "dry_run": DryRunProvider,
         "disabled": DisabledProvider,
         "http": _http_builder(channel),
+        "sandbox": SandboxGatewayProvider,
         "smtp": SmtpEmailProvider,
     }
     builder = builders.get(configured)

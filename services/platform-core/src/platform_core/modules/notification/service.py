@@ -46,6 +46,7 @@ from platform_core.modules.notification.providers import (
     PermanentSendError,
     ProviderSendError,
     get_provider,
+    vendor_template_for,
 )
 from platform_core.modules.notification.templates import (
     TemplateNotFoundError,
@@ -199,6 +200,39 @@ class NotificationStats(BaseModel):
     by_status: dict[str, int]
     by_channel: dict[str, int]
     retryable: int
+
+
+class ChannelPosture(BaseModel):
+    """What an operator may know about one channel's gateway (DEMO-031).
+
+    **Never a credential, and never a URL.** A URL is not a secret but it
+    identifies the vendor and the account path, and an operator troubleshooting
+    "did it go?" does not need it. What they need is whether the channel is
+    configured, whether the platform is permitted to use it, and whether it can
+    report deliveries — three yes/no answers that leak nothing.
+    """
+
+    channel: str
+    #: The adapter's own name, e.g. `sandbox-sms`, `http-sms`, `disabled`.
+    provider: str
+    #: Configured means the adapter has what it needs to be built at all.
+    configured: bool
+    #: Whether this adapter would actually attempt a network call in the
+    #: current messaging mode.
+    can_send: bool
+    #: Whether it can receive delivery receipts (DEMO-029).
+    reports_delivery: bool
+
+
+class MessagingPosture(BaseModel):
+    """The one screen answer to "is this deployment able to send?"."""
+
+    #: `test` | `sandbox` | `production`.
+    mode: str
+    #: True only in `production`. A deployment showing false has never sent a
+    #: real message, whatever else is configured.
+    sends_real_messages: bool
+    channels: list[ChannelPosture]
 
 
 class TemplateView(BaseModel):
@@ -444,6 +478,18 @@ class NotificationService:
                         language=message.language,
                         template_key=notification.template_key,
                         notification_id=notification.id,
+                        # DEMO-031: the same values, in the template's declared
+                        # order, for adapters whose vendor takes positional
+                        # template parameters rather than text. Derived from
+                        # what the template already declares — the domain gains
+                        # no new concept and no vendor appears anywhere here.
+                        parameters=tuple(
+                            str({**variables, **secrets_in_play}.get(name, ""))
+                            for name in template.variables
+                        ),
+                        vendor_template=vendor_template_for(
+                            notification.template_key, notification.channel
+                        ),
                     )
                 )
         except PermanentSendError as exc:
@@ -811,6 +857,51 @@ class NotificationService:
             total=total or 0,
             limit=limit,
             offset=offset,
+        )
+
+    @staticmethod
+    def posture() -> MessagingPosture:
+        """Provider configuration as an operator may see it (DEMO-031).
+
+        A static method and a settings read: this is a property of the
+        DEPLOYMENT, not of a tenant, and every tenant sees the same answer
+        because every tenant shares the gateway. What is per-tenant is the
+        CHANNEL CHOICE, which lives in the configuration store and is already
+        isolated by RLS.
+        """
+        from platform_core.core.config import get_settings
+        from platform_core.modules.notification.providers import (
+            DisabledProvider,
+            supports_receipts,
+        )
+
+        settings = get_settings()
+        mode = settings.messaging_mode
+        channels: list[ChannelPosture] = []
+        for channel in ("sms", "whatsapp", "email", "push"):
+            try:
+                provider = get_provider(channel)
+                name = getattr(provider, "name", "unknown")
+                configured = not isinstance(provider, DisabledProvider)
+                reports = supports_receipts(provider)
+            except Exception:
+                # A channel whose adapter cannot even be built is NOT
+                # configured. Saying so is the honest answer; raising here
+                # would take the whole screen down for one misconfiguration.
+                name, configured, reports = "unavailable", False, False
+            channels.append(
+                ChannelPosture(
+                    channel=channel,
+                    provider=name,
+                    configured=configured,
+                    can_send=configured and mode in ("sandbox", "production"),
+                    reports_delivery=reports,
+                )
+            )
+        return MessagingPosture(
+            mode=mode,
+            sends_real_messages=mode == "production",
+            channels=channels,
         )
 
     async def stats(self) -> NotificationStats:

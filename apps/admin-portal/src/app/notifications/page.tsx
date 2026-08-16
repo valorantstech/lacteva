@@ -27,8 +27,10 @@ import {
   NotificationStats,
   NotificationTemplate,
   RenderedPreview,
+  MessagingPosture,
   ReachabilityEntry,
   ReachabilitySummary,
+  getMessagingPosture,
   getNotificationStats,
   getReachability,
   getSettlementPeriodReachability,
@@ -173,6 +175,8 @@ export default function NotificationsPage() {
           Retry all due
         </Button>
       </header>
+
+      <MessagingPosturePanel />
 
       <ReachabilityPanel />
 
@@ -916,6 +920,83 @@ function RepairContactForm({
           Recorded in the audit trail with who changed it and why. A valid
           number means the contact is usable — not that WhatsApp will reach it.
         </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Can this deployment send at all? (DEMO-031)
+ *
+ * **Never a credential and never a gateway URL.** Three yes/no answers per
+ * channel — configured, permitted, able to report delivery — which is what an
+ * operator asking "did it go?" actually needs. A URL is not a secret but it
+ * names the vendor and the account path, and nothing on this screen requires
+ * it.
+ */
+function MessagingPosturePanel() {
+  const [posture, setPosture] = useState<MessagingPosture | null>(null);
+
+  useEffect(() => {
+    // Deferred by a tick, the idiom the rest of the portal uses.
+    const timer = setTimeout(() => {
+      getMessagingPosture()
+        .then(setPosture)
+        .catch(() => setPosture(null));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!posture) return null;
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 py-4 text-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="font-medium">Messaging gateway</h2>
+          <Badge
+            variant={posture.sends_real_messages ? "default" : "secondary"}
+          >
+            {posture.mode}
+          </Badge>
+          {!posture.sends_real_messages && (
+            <span className="text-muted-foreground">
+              No real message can be sent in this mode.
+            </span>
+          )}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-4 font-medium">Channel</th>
+                <th className="py-1 pr-4 font-medium">Provider</th>
+                <th className="py-1 pr-4 font-medium">Configured</th>
+                <th className="py-1 pr-4 font-medium">Can send now</th>
+                <th className="py-1 font-medium">Delivery receipts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {posture.channels.map((channel) => (
+                <tr className="border-t border-border" key={channel.channel}>
+                  <td className="py-2 pr-4">{channel.channel}</td>
+                  <td className="py-2 pr-4 font-mono text-xs">
+                    {channel.provider}
+                  </td>
+                  <td className="py-2 pr-4">
+                    {channel.configured ? "yes" : "not configured"}
+                  </td>
+                  <td className="py-2 pr-4">
+                    {channel.can_send ? "yes" : "no"}
+                  </td>
+                  <td className="py-2">
+                    {channel.reports_delivery ? "yes" : "no"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </CardContent>
     </Card>
   );

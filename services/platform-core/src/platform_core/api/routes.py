@@ -144,6 +144,7 @@ from platform_core.modules.notification.reachability import (
 )
 from platform_core.modules.notification.receipts import UnknownReceiptProvider
 from platform_core.modules.notification.service import (
+    MessagingPosture,
     NotificationPage,
     NotificationService,
     NotificationStats,
@@ -2451,6 +2452,24 @@ notification_router = APIRouter(tags=["notifications"], route_class=IdempotentRo
 NotificationRead = Annotated[Principal, Depends(require_permission("notification.read"))]
 NotificationManage = Annotated[Principal, Depends(require_permission("notification.manage"))]
 NotificationSvc = Annotated[NotificationService, Depends(deps.get_notification_service)]
+
+
+@notification_router.get(
+    "/notifications/messaging-posture",
+    dependencies=[Depends(require_permission("notification.read"))],
+)
+async def read_messaging_posture() -> MessagingPosture:
+    """Whether this deployment can send, and on which channels (DEMO-031).
+
+    **Never a credential and never a URL.** Three yes/no answers per channel —
+    configured, permitted to send, able to report delivery — which is what an
+    operator asking "did it go?" actually needs and leaks nothing.
+
+    It is deployment-wide rather than per-tenant because the gateway is shared;
+    what IS per-tenant is the channel choice, which lives in the configuration
+    store behind RLS.
+    """
+    return NotificationService.posture()
 
 
 @notification_router.get(

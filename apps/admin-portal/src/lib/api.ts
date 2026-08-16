@@ -1437,6 +1437,29 @@ export type ReachabilitySummary = {
   affected_truncated: boolean;
 };
 
+// --- Messaging posture (DEMO-031) ------------------------------------------
+//
+// Whether this deployment can send, and on which channels. Three yes/no
+// answers per channel — never a credential, never a gateway URL.
+
+export type ChannelPosture = {
+  channel: string;
+  provider: string;
+  configured: boolean;
+  can_send: boolean;
+  reports_delivery: boolean;
+};
+
+export type MessagingPosture = {
+  mode: "test" | "sandbox" | "production";
+  /** True only in production. False means no real message has ever been sent. */
+  sends_real_messages: boolean;
+  channels: ChannelPosture[];
+};
+
+export const getMessagingPosture = () =>
+  api<MessagingPosture>("/v1/notifications/messaging-posture");
+
 export const getSettlementPeriodReachability = (from: string, to: string) =>
   api<ReachabilitySummary>(
     `/v1/notifications/reachability/settlement-period?period_from=${from}&period_to=${to}`,

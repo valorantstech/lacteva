@@ -60,6 +60,26 @@ function stubApi(messages: api.Notification[] = [MESSAGE]) {
     by_channel: { sms: messages.length },
   } as never);
   vi.spyOn(api, "listNotificationTemplates").mockResolvedValue([] as never);
+  vi.spyOn(api, "getMessagingPosture").mockResolvedValue({
+    mode: "test",
+    sends_real_messages: false,
+    channels: [
+      {
+        channel: "sms",
+        provider: "sandbox-sms",
+        configured: true,
+        can_send: false,
+        reports_delivery: true,
+      },
+      {
+        channel: "whatsapp",
+        provider: "disabled-whatsapp",
+        configured: false,
+        can_send: false,
+        reports_delivery: false,
+      },
+    ],
+  } as never);
   vi.spyOn(api, "getSettlementPeriodReachability").mockResolvedValue({
     template_key: "settlement_finalized",
     channel: "sms",
@@ -278,5 +298,40 @@ describe("contact repair", () => {
       ),
     );
     expect(await screen.findByText("settlement period")).toBeInTheDocument();
+  });
+});
+
+describe("the messaging gateway panel", () => {
+  it("says plainly when no real message can be sent", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+
+    expect(await screen.findByText("Messaging gateway")).toBeInTheDocument();
+    expect(
+      screen.getByText(/No real message can be sent in this mode/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("test")).toBeInTheDocument();
+  });
+
+  it("shows configured and can-send as separate answers", async () => {
+    // A channel can be CONFIGURED and still not permitted to send — that is
+    // the whole point of the mode gate.
+    stubApi();
+    render(<NotificationsPage />);
+
+    await screen.findByText("Messaging gateway");
+    expect(screen.getByText("sandbox-sms")).toBeInTheDocument();
+    expect(screen.getByText("not configured")).toBeInTheDocument();
+  });
+
+  it("never shows a credential or a gateway URL", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+
+    await screen.findByText("Messaging gateway");
+    const text = (document.body.textContent ?? "").toLowerCase();
+    for (const secret of ["api_key", "apikey", "secret", "token", "https://"]) {
+      expect(text).not.toContain(secret);
+    }
   });
 });

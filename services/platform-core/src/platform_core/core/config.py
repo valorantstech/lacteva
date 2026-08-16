@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_JWT_SECRET = "dev-secret-change-me"  # noqa: S105 - sentinel, refused in prod
@@ -149,26 +149,26 @@ class Settings(BaseSettings):
     # `http` is the real gateway; `dry_run` renders and logs a real message
     # against production-shaped configuration WITHOUT sending it (staging);
     # `disabled` refuses permanently, for a market that is not live yet.
-    notification_sms_provider: Literal["logging", "placeholder", "http", "dry_run", "disabled"] = (
-        "logging"
-    )
+    notification_sms_provider: Literal[
+        "logging", "placeholder", "http", "dry_run", "disabled", "sandbox"
+    ] = "logging"
     notification_email_provider: Literal[
-        "logging", "placeholder", "smtp", "dry_run", "disabled"
+        "logging", "placeholder", "smtp", "dry_run", "disabled", "sandbox"
     ] = "logging"
     #: DEMO-012 §10. Defaults to `disabled`, not `logging`, and that is the
     #: point: no push vendor has been chosen or paid for, so a deployment
     #: that has not made that decision must FAIL a push visibly rather than
     #: record it as delivered. `http` speaks the vendor-neutral contract in
     #: `HttpPushProvider`.
-    notification_push_provider: Literal["logging", "placeholder", "http", "dry_run", "disabled"] = (
-        "disabled"
-    )
+    notification_push_provider: Literal[
+        "logging", "placeholder", "http", "dry_run", "disabled", "sandbox"
+    ] = "disabled"
     #: DEMO-025. Defaults to `disabled` for the same reason push does: no
     #: WhatsApp gateway has been contracted, and a deployment that has not
     #: made that decision must FAIL visibly rather than record a message as
     #: delivered when nothing left the building.
     notification_whatsapp_provider: Literal[
-        "logging", "placeholder", "http", "dry_run", "disabled"
+        "logging", "placeholder", "http", "dry_run", "disabled", "sandbox"
     ] = "disabled"
 
     # --- Email gateway (PROD-001) ------------------------------------------
@@ -226,6 +226,39 @@ class Settings(BaseSettings):
     whatsapp_api_key: str = ""
     whatsapp_sender_id: str = ""
     whatsapp_timeout_seconds: float = 10.0
+    # --- Messaging mode (DEMO-031) -----------------------------------------
+    #
+    # **The gate that makes an accidental real send impossible.**
+    #
+    # Provider selection says WHICH gateway; this says whether the platform may
+    # talk to it at all. They are orthogonal on purpose: before DEMO-031 a
+    # deployment that set `http` with a URL and a key started sending the
+    # moment it came up, and the only protection was remembering to choose
+    # `dry_run` instead. Forgetting a safety is not a safety.
+    #
+    #   test        no network call is attempted at all. THE DEFAULT, so a
+    #               deployment that configures a gateway and says nothing else
+    #               sends nothing.
+    #   sandbox     the gateway's own test environment, or Lacteva's in-process
+    #               sandbox. Real code path, no real recipient.
+    #   production  real messages to real people. Requires saying so.
+    #
+    # A network provider (`http`, `smtp`) REFUSES to send in `test` mode — it
+    # raises rather than pretending, so the refusal is visible in the
+    # notification history instead of looking like a success.
+    messaging_mode: Literal["test", "sandbox", "production"] = "test"
+
+    #: Vendor template names, keyed `"<template_key>.<channel>"` (DEMO-031).
+    #:
+    #: WhatsApp requires a business-initiated message to name a PRE-APPROVED
+    #: template; the name is issued per business account after review and
+    #: differs per market. It is a deployment fact, so it lives here rather
+    #: than in source or in a tenant's configuration.
+    #:
+    #: Empty is the normal state today. An adapter that needs a name and finds
+    #: none refuses the send rather than inventing one.
+    notification_vendor_templates: dict[str, str] = Field(default_factory=dict)
+
     # --- Delivery receipts (DEMO-029) --------------------------------------
     #
     # The secret a messaging gateway signs its delivery reports with. Empty by
@@ -482,6 +515,31 @@ class Settings(BaseSettings):
             problems.append(
                 "LACTEVA_NOTIFICATION_EMAIL_PROVIDER is 'smtp' but LACTEVA_SMTP_HOST is not set"
             )
+
+        # DEMO-031. Messaging mode, in production.
+        #
+        # `sandbox` in production is a platform that believes it is telling
+        # farmers about their money and is telling nobody — the "healthy while
+        # doing nothing" failure again, one layer up. `test` is honest but
+        # means nothing is ever sent, which a production deployment should have
+        # to say out loud rather than inherit from a default.
+        if self.messaging_mode == "sandbox":
+            problems.append(
+                "LACTEVA_MESSAGING_MODE must not be 'sandbox' in prod — the sandbox "
+                "gateway reaches nobody while reporting success"
+            )
+        # And the sandbox ADAPTER, whatever the mode says.
+        for channel, configured in (
+            ("SMS", self.notification_sms_provider),
+            ("EMAIL", self.notification_email_provider),
+            ("PUSH", self.notification_push_provider),
+            ("WHATSAPP", self.notification_whatsapp_provider),
+        ):
+            if configured == "sandbox":
+                problems.append(
+                    f"LACTEVA_NOTIFICATION_{channel}_PROVIDER is 'sandbox', which reaches "
+                    "nobody — use a real provider, 'dry_run' to rehearse, or 'disabled'"
+                )
 
         # DEMO-027. The test gateway confirms payments that never happened. In
         # production that is not a test double, it is a way to activate a paid
