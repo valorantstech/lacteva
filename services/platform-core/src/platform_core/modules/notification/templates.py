@@ -20,6 +20,26 @@ CHANNELS = ("sms", "email")
 
 _VARIABLE_PATTERN = re.compile(r"\{(\w+)\}")
 
+#: An OPTIONAL segment: `[[Quantity: {quantity} {unit}\n]]` (DEMO-028).
+#:
+#: The segment is rendered only when every variable inside it is present AND
+#: non-empty; otherwise the whole segment disappears, brackets and all.
+#:
+#: This exists because of a real hazard. `render` treats a missing variable as
+#: an ERROR — deliberately, because half a sentence on a farmer's settlement is
+#: worse than no message. But a retry re-renders from the payload STORED on the
+#: notification row, so adding a required variable to a template retroactively
+#: breaks every notification already in the table: production held 17 retryable
+#: `invoice_issued` rows whose payloads predate the new fields, and they would
+#: have started failing on a template error instead of their real one.
+#:
+#: An optional segment lets a template gain a line without rewriting history.
+#: Old payloads render exactly as they did; new ones carry the extra line. What
+#: it does NOT do is weaken the guarantee — a variable outside a segment is
+#: still required, and a segment is written so the message reads correctly with
+#: it and without it.
+_OPTIONAL_PATTERN = re.compile(r"\[\[(.*?)\]\]", re.DOTALL)
+
 
 class TemplateNotFoundError(Exception):
     """No template for this (key, channel) in any language."""
@@ -39,8 +59,20 @@ class Template:
 
     @property
     def variables(self) -> tuple[str, ...]:
-        found = _VARIABLE_PATTERN.findall(self.title) + _VARIABLE_PATTERN.findall(self.body)
-        return tuple(dict.fromkeys(found))  # declared order, de-duplicated
+        """The variables a caller MUST supply — optional segments excluded."""
+        text = _strip_optional(self.title) + _strip_optional(self.body)
+        return tuple(dict.fromkeys(_VARIABLE_PATTERN.findall(text)))
+
+    @property
+    def optional_variables(self) -> tuple[str, ...]:
+        """Variables that appear only inside optional segments. Supplying one
+        adds its line; omitting it removes the line and nothing else."""
+        found: list[str] = []
+        for text in (self.title, self.body):
+            for segment in _OPTIONAL_PATTERN.findall(text):
+                found.extend(_VARIABLE_PATTERN.findall(segment))
+        required = set(self.variables)
+        return tuple(dict.fromkeys(name for name in found if name not in required))
 
 
 @dataclass(frozen=True)
@@ -48,6 +80,24 @@ class RenderedMessage:
     title: str
     body: str
     language: str
+
+
+def _strip_optional(text: str) -> str:
+    """The text with every optional segment removed."""
+    return _OPTIONAL_PATTERN.sub("", text)
+
+
+def _resolve_optional(text: str, values: dict) -> str:
+    """Keep each optional segment only if all of its variables have a value."""
+
+    def decide(match: re.Match) -> str:
+        segment = match.group(1)
+        names = _VARIABLE_PATTERN.findall(segment)
+        if any(str(values.get(name, "")).strip() == "" for name in names):
+            return ""
+        return segment
+
+    return _OPTIONAL_PATTERN.sub(decide, text)
 
 
 def _t(key: str, channel: str, language: str, title: str, body: str) -> Template:
@@ -99,7 +149,7 @@ TEMPLATES: tuple[Template, ...] = (
         "Settlement {number} ready",
         "Hello {name}, settlement {number} for {period_from} to {period_to} is finalised. "
         "Gross {gross_amount} {currency}, net payable {net_amount} {currency}, "
-        "{line_count} collection(s).",
+        "{line_count} collection(s)[[, {quantity} {quantity_unit}]].",
     ),
     _t(
         "settlement_finalized",
@@ -108,7 +158,7 @@ TEMPLATES: tuple[Template, ...] = (
         "Malipo {number} tayari",
         "Habari {name}, malipo {number} ya {period_from} hadi {period_to} yamekamilika. "
         "Jumla {gross_amount} {currency}, malipo halisi {net_amount} {currency}, "
-        "mizigo {line_count}.",
+        "mizigo {line_count}[[, {quantity} {quantity_unit}]].",
     ),
     _t(
         "settlement_finalized",
@@ -116,7 +166,8 @@ TEMPLATES: tuple[Template, ...] = (
         "hi",
         "भुगतान {number} तैयार",
         "नमस्ते {name}, {period_from} से {period_to} तक का भुगतान {number} अंतिम रूप से तैयार है। "
-        "कुल {gross_amount} {currency}, देय राशि {net_amount} {currency}, {line_count} संग्रह।",
+        "कुल {gross_amount} {currency}, देय राशि {net_amount} {currency}, {line_count} संग्रह"
+        "[[, {quantity} {quantity_unit}]]।",
     ),
     _t(
         "settlement_finalized",
@@ -125,7 +176,7 @@ TEMPLATES: tuple[Template, ...] = (
         "تسوية {number} جاهزة",
         "مرحبا {name}، التسوية {number} من {period_from} إلى {period_to} مكتملة. "
         "الإجمالي {gross_amount} {currency}، الصافي المستحق {net_amount} {currency}، "
-        "{line_count} عملية جمع.",
+        "{line_count} عملية جمع[[، {quantity} {quantity_unit}]].",
     ),
     _t(
         "settlement_finalized",
@@ -135,6 +186,7 @@ TEMPLATES: tuple[Template, ...] = (
         "Hello {name},\n\nYour settlement *{number}* is finalised.\n"
         "Period: {period_from} to {period_to}\n"
         "Collections: {line_count}\n"
+        "[[Quantity: {quantity} {quantity_unit}\n]]"
         "Gross: {gross_amount} {currency}\n"
         "Net payable: *{net_amount} {currency}*\n\n"
         "Contact your collection centre if anything looks wrong.",
@@ -147,6 +199,7 @@ TEMPLATES: tuple[Template, ...] = (
         "Habari {name},\n\nMalipo yako *{number}* yamekamilika.\n"
         "Kipindi: {period_from} hadi {period_to}\n"
         "Mizigo: {line_count}\n"
+        "[[Kiasi: {quantity} {quantity_unit}\n]]"
         "Jumla: {gross_amount} {currency}\n"
         "Malipo halisi: *{net_amount} {currency}*\n\n"
         "Wasiliana na kituo chako cha ukusanyaji ikiwa kuna tatizo.",
@@ -159,6 +212,7 @@ TEMPLATES: tuple[Template, ...] = (
         "नमस्ते {name},\n\nआपका भुगतान *{number}* अंतिम रूप से तैयार है।\n"
         "अवधि: {period_from} से {period_to}\n"
         "संग्रह: {line_count}\n"
+        "[[मात्रा: {quantity} {quantity_unit}\n]]"
         "कुल: {gross_amount} {currency}\n"
         "देय राशि: *{net_amount} {currency}*\n\n"
         "कोई गड़बड़ी लगे तो अपने संग्रह केंद्र से संपर्क करें।",
@@ -171,6 +225,7 @@ TEMPLATES: tuple[Template, ...] = (
         "مرحبا {name}،\n\nتسويتك *{number}* مكتملة.\n"
         "الفترة: من {period_from} إلى {period_to}\n"
         "عمليات الجمع: {line_count}\n"
+        "[[الكمية: {quantity} {quantity_unit}\n]]"
         "الإجمالي: {gross_amount} {currency}\n"
         "الصافي المستحق: *{net_amount} {currency}*\n\n"
         "تواصل مع مركز الجمع إذا كان هناك خطأ.",
@@ -183,6 +238,7 @@ TEMPLATES: tuple[Template, ...] = (
         "Hello {name},\n\nSettlement {number} covering {period_from} to {period_to} "
         "has been finalised.\n\n"
         "Collections: {line_count}\n"
+        "[[Quantity: {quantity} {quantity_unit}\n]]"
         "Gross amount: {gross_amount} {currency}\n"
         "Net payable: {net_amount} {currency}\n\n"
         "This is a summary of a settlement recorded in Lacteva. Contact your "
@@ -277,7 +333,8 @@ TEMPLATES: tuple[Template, ...] = (
         "en",
         "Bill {number} ready",
         "Hello {name}, your bill {number} for {period_from} to {period_to} is "
-        "{amount} {currency}. Please pay at your convenience.",
+        "{amount} {currency}[[ for {quantity} {quantity_unit}]]. "
+        "Please pay at your convenience.",
     ),
     _t(
         "invoice_issued",
@@ -285,7 +342,7 @@ TEMPLATES: tuple[Template, ...] = (
         "hi",
         "बिल {number} तैयार",
         "नमस्ते {name}, {period_from} से {period_to} तक का आपका बिल {number} "
-        "{amount} {currency} है। कृपया भुगतान करें।",
+        "{amount} {currency} है[[ ({quantity} {quantity_unit})]]। कृपया भुगतान करें।",
     ),
     _t(
         "invoice_issued",
@@ -293,7 +350,7 @@ TEMPLATES: tuple[Template, ...] = (
         "ar",
         "الفاتورة {number} جاهزة",
         "مرحبا {name}، فاتورتك {number} من {period_from} إلى {period_to} هي "
-        "{amount} {currency}. يرجى السداد.",
+        "{amount} {currency}[[ ({quantity} {quantity_unit})]]. يرجى السداد.",
     ),
     _t(
         "invoice_issued",
@@ -301,7 +358,7 @@ TEMPLATES: tuple[Template, ...] = (
         "sw",
         "Bili {number} tayari",
         "Habari {name}, bili yako {number} ya {period_from} hadi {period_to} ni "
-        "{amount} {currency}. Tafadhali lipa.",
+        "{amount} {currency}[[ kwa {quantity} {quantity_unit}]]. Tafadhali lipa.",
     ),
     _t(
         "invoice_issued",
@@ -310,6 +367,8 @@ TEMPLATES: tuple[Template, ...] = (
         "Bill {number} ready",
         "Hello {name},\n\nYour bill *{number}* is ready.\n"
         "Period: {period_from} to {period_to}\n"
+        "[[Delivered: {quantity} {quantity_unit}\n]]"
+        "[[Brought forward: {previous_balance} {currency}\n]]"
         "Amount due: *{amount} {currency}*\n\n"
         "Thank you for taking milk from us.",
     ),
@@ -320,6 +379,8 @@ TEMPLATES: tuple[Template, ...] = (
         "बिल {number} तैयार",
         "नमस्ते {name},\n\nआपका बिल *{number}* तैयार है।\n"
         "अवधि: {period_from} से {period_to}\n"
+        "[[वितरित: {quantity} {quantity_unit}\n]]"
+        "[[पिछला शेष: {previous_balance} {currency}\n]]"
         "देय राशि: *{amount} {currency}*\n\n"
         "हमसे दूध लेने के लिए धन्यवाद।",
     ),
@@ -330,6 +391,8 @@ TEMPLATES: tuple[Template, ...] = (
         "الفاتورة {number} جاهزة",
         "مرحبا {name}،\n\nفاتورتك *{number}* جاهزة.\n"
         "الفترة: من {period_from} إلى {period_to}\n"
+        "[[الكمية: {quantity} {quantity_unit}\n]]"
+        "[[رصيد سابق: {previous_balance} {currency}\n]]"
         "المبلغ المستحق: *{amount} {currency}*\n\n"
         "شكرا لتعاملكم معنا.",
     ),
@@ -339,8 +402,105 @@ TEMPLATES: tuple[Template, ...] = (
         "en",
         "Your bill {number} is ready",
         "Hello {name},\n\nYour bill {number} covering {period_from} to {period_to} "
-        "is {amount} {currency}.\n\n"
-        "This is a summary of an invoice recorded in Lacteva.",
+        "is {amount} {currency}.\n"
+        "[[Delivered: {quantity} {quantity_unit}\n]]"
+        "[[Brought forward: {previous_balance} {currency}\n]]"
+        "\nThis is a summary of an invoice recorded in Lacteva.",
+    ),
+    # --- DEMO-028: the languages the catalog was missing -------------------
+    #
+    # A Kenyan dairy that chose WhatsApp for its bills got ENGLISH ones, while
+    # the same dairy's SMS bills were in Swahili — the fallback is silent, so
+    # nothing said so. Email was English-only for both journeys, which meant a
+    # Hindi or Arabic dairy switching channel silently changed language too.
+    #
+    # A test now asserts that every tenant-SELECTABLE template offers the same
+    # languages on every channel it supports, so this gap cannot reopen.
+    _t(
+        "invoice_issued",
+        "whatsapp",
+        "sw",
+        "Bili {number} tayari",
+        "Habari {name},\n\nBili yako *{number}* iko tayari.\n"
+        "Kipindi: {period_from} hadi {period_to}\n"
+        "[[Imepokelewa: {quantity} {quantity_unit}\n]]"
+        "[[Salio la awali: {previous_balance} {currency}\n]]"
+        "Kiasi cha kulipa: *{amount} {currency}*\n\n"
+        "Asante kwa kuchukua maziwa kwetu.",
+    ),
+    _t(
+        "invoice_issued",
+        "email",
+        "sw",
+        "Bili yako {number} iko tayari",
+        "Habari {name},\n\nBili yako {number} ya {period_from} hadi {period_to} "
+        "ni {amount} {currency}.\n"
+        "[[Imepokelewa: {quantity} {quantity_unit}\n]]"
+        "[[Salio la awali: {previous_balance} {currency}\n]]"
+        "\nHii ni muhtasari wa bili iliyorekodiwa katika Lacteva.",
+    ),
+    _t(
+        "invoice_issued",
+        "email",
+        "hi",
+        "आपका बिल {number} तैयार है",
+        "नमस्ते {name},\n\n{period_from} से {period_to} तक का आपका बिल {number} "
+        "{amount} {currency} है।\n"
+        "[[वितरित: {quantity} {quantity_unit}\n]]"
+        "[[पिछला शेष: {previous_balance} {currency}\n]]"
+        "\nयह Lacteva में दर्ज एक बिल का सारांश है।",
+    ),
+    _t(
+        "invoice_issued",
+        "email",
+        "ar",
+        "فاتورتك {number} جاهزة",
+        "مرحبا {name}،\n\nفاتورتك {number} من {period_from} إلى {period_to} "
+        "هي {amount} {currency}.\n"
+        "[[الكمية: {quantity} {quantity_unit}\n]]"
+        "[[رصيد سابق: {previous_balance} {currency}\n]]"
+        "\nهذا ملخص لفاتورة مسجلة في Lacteva.",
+    ),
+    _t(
+        "settlement_finalized",
+        "email",
+        "sw",
+        "Malipo {number} yako tayari",
+        "Habari {name},\n\nMalipo {number} ya {period_from} hadi {period_to} "
+        "yamekamilika.\n\n"
+        "Mizigo: {line_count}\n"
+        "[[Kiasi: {quantity} {quantity_unit}\n]]"
+        "Jumla: {gross_amount} {currency}\n"
+        "Malipo halisi: {net_amount} {currency}\n\n"
+        "Huu ni muhtasari wa malipo yaliyorekodiwa katika Lacteva. Wasiliana "
+        "na kituo chako cha ukusanyaji ikiwa kuna tatizo.",
+    ),
+    _t(
+        "settlement_finalized",
+        "email",
+        "hi",
+        "भुगतान {number} तैयार है",
+        "नमस्ते {name},\n\n{period_from} से {period_to} तक का भुगतान {number} "
+        "अंतिम रूप से तैयार है।\n\n"
+        "संग्रह: {line_count}\n"
+        "[[मात्रा: {quantity} {quantity_unit}\n]]"
+        "कुल: {gross_amount} {currency}\n"
+        "देय राशि: {net_amount} {currency}\n\n"
+        "यह Lacteva में दर्ज एक भुगतान का सारांश है। कोई गड़बड़ी लगे तो अपने "
+        "संग्रह केंद्र से संपर्क करें।",
+    ),
+    _t(
+        "settlement_finalized",
+        "email",
+        "ar",
+        "التسوية {number} جاهزة",
+        "مرحبا {name}،\n\nالتسوية {number} من {period_from} إلى {period_to} "
+        "مكتملة.\n\n"
+        "عمليات الجمع: {line_count}\n"
+        "[[الكمية: {quantity} {quantity_unit}\n]]"
+        "الإجمالي: {gross_amount} {currency}\n"
+        "الصافي المستحق: {net_amount} {currency}\n\n"
+        "هذا ملخص لتسوية مسجلة في Lacteva. تواصل مع مركز الجمع إذا كان هناك خطأ.",
     ),
     _t(
         "invoice_issued",
@@ -355,6 +515,25 @@ TEMPLATES: tuple[Template, ...] = (
         "sw",
         "Bili yako iko tayari",
         "Bili {number} ya {period} iko tayari. Fungua Lacteva kuiona.",
+    ),
+    # DEMO-028. `push` is the DEFAULT channel for a bill and is not
+    # tenant-selectable, so an Indian or Arabic dairy that configures nothing
+    # was getting English pushes while every other channel offered its own
+    # language. The default channel is exactly the one that must not be the
+    # narrowest.
+    _t(
+        "invoice_issued",
+        "push",
+        "hi",
+        "आपका बिल तैयार है",
+        "{period} का बिल {number} तैयार है। देखने के लिए Lacteva खोलें।",
+    ),
+    _t(
+        "invoice_issued",
+        "push",
+        "ar",
+        "فاتورتك جاهزة",
+        "الفاتورة {number} عن {period} جاهزة. افتح Lacteva لعرضها.",
     ),
     _t(
         "customer_payment_recorded",
@@ -399,7 +578,10 @@ def render(template: Template, variables: dict) -> RenderedMessage:
         )
 
     def substitute(text: str) -> str:
-        return _VARIABLE_PATTERN.sub(lambda match: str(values[match.group(1)]), text)
+        # Optional segments are resolved FIRST, so a variable that only ever
+        # appears inside a dropped segment is never looked up.
+        resolved = _resolve_optional(text, values)
+        return _VARIABLE_PATTERN.sub(lambda match: str(values[match.group(1)]), resolved)
 
     return RenderedMessage(
         title=substitute(template.title),

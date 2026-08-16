@@ -44,6 +44,25 @@ const CHANNELS = ["", "sms", "whatsapp", "email", "push"] as const;
 const statusVariant = (s: string) =>
   s === "sent" ? "default" : s === "dead" ? "destructive" : "secondary";
 
+/**
+ * What the platform actually knows, in words an operator can act on.
+ *
+ * `sent` is the one that matters: it means the gateway took the request. It
+ * does NOT mean the farmer's phone rang. The provider's own claim, when it
+ * makes one, is shown beside it — see `providerClaim`.
+ */
+const statusLabel = (s: string) =>
+  ({
+    sent: "sent to provider",
+    pending: "queued",
+    failed: "failing",
+    dead: "gave up",
+  })[s] ?? s;
+
+/** The provider's own word, only when it said something. */
+const providerClaim = (s: string | null | undefined) =>
+  s ? (s === "delivered" ? "provider confirms delivered" : `provider: ${s}`) : null;
+
 export default function NotificationsPage() {
   const [page, setPage] = useState<NotificationPage | null>(null);
   const [stats, setStats] = useState<NotificationStats | null>(null);
@@ -139,7 +158,12 @@ export default function NotificationsPage() {
       {stats && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard label="Total" value={stats.total} />
-          <StatCard label="Delivered" value={stats.by_status.sent ?? 0} />
+          {/* NOT "Delivered" (DEMO-028). `sent` means the provider ACCEPTED
+              the request; no adapter in this platform receives a delivery
+              receipt, so the platform does not know whether anything arrived.
+              Labelling it "Delivered" told an operator something Lacteva has
+              never been in a position to know. */}
+          <StatCard label="Sent to provider" value={stats.by_status.sent ?? 0} />
           <StatCard
             label="Failing"
             value={stats.by_status.failed ?? 0}
@@ -238,7 +262,9 @@ export default function NotificationsPage() {
                     {n.rendered_text ?? n.error ?? "—"}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={statusVariant(n.status)}>{n.status}</Badge>
+                    <Badge variant={statusVariant(n.status)}>
+                      {statusLabel(n.status)}
+                    </Badge>
                     {n.attempt_count > 1 && (
                       <span className="ms-1 text-xs text-muted-foreground">
                         ×{n.attempt_count}
@@ -387,14 +413,26 @@ function NotificationDetailCard({
       <CardHeader>
         <CardTitle className="flex items-center gap-3">
           {n.template_key}
-          <Badge variant={statusVariant(n.status)}>{n.status}</Badge>
+          <Badge variant={statusVariant(n.status)}>
+            {statusLabel(n.status)}
+          </Badge>
           <Badge variant="outline">{n.channel}</Badge>
+          {/* Language always, not only when it is not English (DEMO-028) —
+              "which language did this farmer actually receive?" is a question
+              about every message, including the English ones. */}
+          <Badge variant="outline">{n.language}</Badge>
         </CardTitle>
         <CardDescription>
           Triggered by <span className="font-mono">{n.event_name}</span> ·
           attempt {n.attempt_count}
           {n.provider && ` · via ${n.provider}`}
+          {/* The provider's own claim, kept distinct from ours. */}
+          {providerClaim(n.provider_status) &&
+            ` · ${providerClaim(n.provider_status)}`}
           {n.provider_reference && ` · ref ${n.provider_reference}`}
+          {n.source_type &&
+            n.source_id &&
+            ` · about ${n.source_type} ${n.source_id.slice(0, 8)}`}
           {n.next_attempt_at &&
             ` · next retry ${n.next_attempt_at.slice(0, 16).replace("T", " ")}`}
         </CardDescription>

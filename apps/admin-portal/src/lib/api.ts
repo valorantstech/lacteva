@@ -1318,9 +1318,18 @@ export type Notification = {
   recipient_ref: string | null;
   title: string | null;
   rendered_text: string | null;
+  /** What LACTEVA did: pending | sent | failed | dead. `sent` means the
+   *  provider accepted the request — never that anything arrived. */
   status: string;
   provider: string | null;
   provider_reference: string | null;
+  /** DEMO-028. What the PROVIDER said: accepted | sent | delivered | unknown.
+   *  Null until a successful attempt, and `accepted` for every adapter this
+   *  platform has today — none receives a delivery receipt. */
+  provider_status: string | null;
+  /** DEMO-028. The business record this message is about. */
+  source_type: string | null;
+  source_id: string | null;
   attempt_count: number;
   next_attempt_at: string | null;
   error: string | null;

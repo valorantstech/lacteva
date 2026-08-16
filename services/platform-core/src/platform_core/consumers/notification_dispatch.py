@@ -42,6 +42,22 @@ INVOICE_ISSUED = "sales.invoice-issued.v1"
 CUSTOMER_PAYMENT_RECORDED = "sales.customer-payment-recorded.v1"
 
 
+def _non_zero(value) -> str:
+    """A money string, or empty when it is zero (DEMO-028).
+
+    Optional template segments drop on an empty value, so this is how a line
+    that only matters when it is non-zero disappears when it is not.
+    """
+    if value is None:
+        return ""
+    try:
+        from decimal import Decimal
+
+        return "" if Decimal(str(value)) == 0 else str(value)
+    except (ArithmeticError, ValueError):
+        return ""
+
+
 @dataclass(frozen=True)
 class EventMapping:
     template_key: str
@@ -84,8 +100,17 @@ def _settlement_finalized(envelope: EventEnvelope) -> dict | None:
     data = envelope.data
     return {
         "recipient_ref": _uuid(data.get("supplier_id")),
+        # DEMO-028: which settlement this slip is about, so "what did STL-000123
+        # tell this farmer?" is one query rather than a walk through the outbox.
+        "source_type": "settlement",
+        "source_id": _uuid(data.get("settlement_id")),
         "variables": {
             "number": data.get("settlement_number", ""),
+            # DEMO-028: how much milk. OPTIONAL in the template — an event
+            # published before this milestone carries none, and the slip then
+            # reads exactly as it did rather than failing to render.
+            "quantity": data.get("quantity", ""),
+            "quantity_unit": data.get("quantity_unit", ""),
             # Both figures, read from the settlement. Nothing here computes
             # money — the slip reports a settlement that already exists.
             "gross_amount": data.get("gross_amount", ""),
@@ -176,6 +201,8 @@ def _invoice_issued(envelope: EventEnvelope) -> dict | None:
     period_to = data.get("period_to", "")
     return {
         "recipient_ref": _uuid(data.get("customer_id")),
+        "source_type": "customer_invoice",
+        "source_id": _uuid(data.get("invoice_id")),
         # A household has no directory entry — the directory is built from
         # supplier events and customers emit none. The event carries the
         # number instead (DEMO-025).
@@ -184,6 +211,16 @@ def _invoice_issued(envelope: EventEnvelope) -> dict | None:
             "name": data.get("customer_name") or "customer",
             "number": data.get("invoice_number", ""),
             "amount": data.get("amount_due", ""),
+            # DEMO-028. Both OPTIONAL, and both authoritative on the invoice.
+            #
+            # `amount_due` is this period's total PLUS anything carried
+            # forward. A household with a balance was shown one number that
+            # matched neither, with no way to tell which — the two lines below
+            # are what make the bill explicable. A zero carried balance renders
+            # nothing, because "brought forward: 0.00" is noise.
+            "quantity": data.get("quantity", ""),
+            "quantity_unit": data.get("quantity_unit", ""),
+            "previous_balance": _non_zero(data.get("previous_balance")),
             "currency": data.get("currency", ""),
             "period_from": period_from,
             "period_to": period_to,

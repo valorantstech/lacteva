@@ -90,6 +90,10 @@ class NotificationRequest(BaseModel):
     tenant_id: uuid.UUID | None = None
     template_key: str
     channel: str
+    #: DEMO-028. What business record this message is ABOUT — a settlement, an
+    #: invoice. Separate from `event_id`, which says what produced it.
+    source_type: str | None = None
+    source_id: uuid.UUID | None = None
     recipient_ref: uuid.UUID | None = None  # supplier/user id, resolved via the directory
     recipient: str | None = None  # explicit address when the event carries it
     language: str | None = None
@@ -159,9 +163,19 @@ class NotificationView(BaseModel):
     recipient_ref: uuid.UUID | None
     title: str | None
     rendered_text: str | None
+    #: What LACTEVA did: pending | sent | failed | dead. `sent` means the
+    #: provider accepted the request.
     status: str
     provider: str | None
     provider_reference: str | None
+    #: DEMO-028. What the PROVIDER said: accepted | sent | delivered | unknown.
+    #: `None` before the first successful attempt. Every adapter in this
+    #: platform reports `accepted` today — nothing receives a delivery receipt,
+    #: so nothing may claim one.
+    provider_status: str | None = None
+    #: DEMO-028. The business record this message is about.
+    source_type: str | None = None
+    source_id: uuid.UUID | None = None
     attempt_count: int
     next_attempt_at: datetime | None
     error: str | None
@@ -316,6 +330,8 @@ class NotificationService:
                 request.language
                 or (await tenant_locale(self._session, request.tenant_id)).default_language
             ),
+            source_type=request.source_type,
+            source_id=request.source_id,
             recipient_ref=request.recipient_ref,
             recipient=request.recipient,
             payload=_jsonable(request.variables),
@@ -477,6 +493,14 @@ class NotificationService:
         notification.rendered_text = storable.body
         notification.provider = provider.name
         notification.provider_reference = result.provider_message_id
+        # DEMO-028. The provider's own word, kept separate from ours.
+        #
+        # `status = "sent"` is what LACTEVA did: it handed the message over and
+        # the gateway took it. `provider_status` is what the GATEWAY said, and
+        # for every adapter in this platform today that is `accepted` — none
+        # receives a delivery receipt. Recording both is what lets the portal
+        # stop calling an accepted request a delivery.
+        notification.provider_status = result.status
         notification.status = "sent"
         notification.sent_at = now
         notification.next_attempt_at = None

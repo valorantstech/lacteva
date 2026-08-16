@@ -425,6 +425,7 @@ class BillingService:
         # The household this bill belongs to — needed so the event can carry
         # where to reach them (DEMO-025).
         customer = await self._customer(invoice.customer_id)
+        quantity, quantity_unit = await self._sum_invoice_quantity(invoice.id)
         await self._bus.publish(
             EventEnvelope.new(
                 BUS_EVENTS["InvoiceIssued"],
@@ -457,11 +458,47 @@ class BillingService:
                     # consumer's note on INVITATION_ISSUED).
                     "customer_name": customer.name,
                     "phone": customer.phone,
+                    # DEMO-028. Two more authoritative figures, so a bill can
+                    # be explained rather than merely stated.
+                    #
+                    # `amount_due` already carried is total + previous_balance.
+                    # A household with anything carried forward was being shown
+                    # one number that matched neither what it was billed this
+                    # period nor what it thought it owed, and had no way to
+                    # tell which. Both halves are on the invoice already;
+                    # nothing here computes money.
+                    "previous_balance": str(invoice.previous_balance),
+                    # And how much milk it is for. Read from the lines, stored
+                    # nowhere — the same reason the settlement slip gained it.
+                    "quantity": str(quantity),
+                    "quantity_unit": quantity_unit,
                 },
                 actor_id=actor_id,
             )
         )
         return invoice
+
+    async def _sum_invoice_quantity(self, invoice_id: uuid.UUID) -> tuple[Decimal, str]:
+        """How much was delivered on this invoice, and in what unit (DEMO-028).
+
+        **A read.** Nothing is stored, no total moves, and the invoice's own
+        arithmetic is untouched — this exists so a bill can say what it is for.
+
+        Mixed units are reported as no quantity rather than as a sum: adding
+        litres to kilograms produces a number that means nothing, and a
+        meaningless number on a customer's bill is worse than a missing one.
+        """
+        rows = (
+            await self._session.execute(
+                select(CustomerInvoiceLine.quantity, CustomerInvoiceLine.quantity_unit).where(
+                    CustomerInvoiceLine.invoice_id == invoice_id
+                )
+            )
+        ).all()
+        units = {unit for _q, unit in rows}
+        if len(units) != 1:
+            return Decimal("0"), ""
+        return sum((Decimal(q) for q, _u in rows), Decimal("0")), units.pop()
 
     async def cancel_invoice(
         self, invoice_id: uuid.UUID, reason: str, *, actor_id: uuid.UUID

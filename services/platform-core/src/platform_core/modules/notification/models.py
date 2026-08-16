@@ -68,9 +68,30 @@ class Notification(Base, IdMixin):
     #: The body as STORED, with any secret replaced by a marker. The body the
     #: provider was handed is the only place the real value ever appears.
     rendered_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The PLATFORM's status: what Lacteva did. `sent` means the provider
+    #: accepted the request — it does NOT mean anything arrived.
     status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
     provider: Mapped[str | None] = mapped_column(String(40), nullable=True)
     provider_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    #: DEMO-028. The PROVIDER's own claim: `accepted` | `sent` | `delivered` |
+    #: `unknown`, exactly as the adapter reported it.
+    #:
+    #: It was being thrown away. `DeliveryResult.status` has carried this since
+    #: MSG-001 and nothing stored it, so the platform could not distinguish "the
+    #: gateway took the request" from "the gateway says it arrived" even when a
+    #: gateway said so — and the portal called all of it "Delivered". Two
+    #: different facts need two columns; one column is how the exaggeration
+    #: happened.
+    provider_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    #: DEMO-028. The business record this message is ABOUT.
+    #:
+    #: `event_id` says which event produced it, which is the idempotency key
+    #: and not an answer to "what did settlement STL-000123 tell this farmer?" —
+    #: that question had to be answered through `event_outbox` payloads. These
+    #: two columns make it one query, which is what §11 means by auditable.
+    source_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)

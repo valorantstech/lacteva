@@ -414,6 +414,7 @@ class SettlementService:
         if claim.rowcount != 1:
             raise ConflictError("settlement is no longer in calculated state")
         await self._session.refresh(settlement)
+        quantity, quantity_unit = await self._sum_quantity(settlement.id)
         await self._record(
             settlement,
             "finalized",
@@ -422,6 +423,11 @@ class SettlementService:
                 "net_amount": str(settlement.net_amount),
                 "currency": settlement.currency,
                 "line_count": line_count,
+                # DEMO-028: how much milk this settles. Read from the lines,
+                # stored nowhere, changing nothing — a farmer told an amount
+                # with no quantity cannot check it against their own book.
+                "quantity": str(quantity),
+                "quantity_unit": quantity_unit,
                 # DEMO-025: the business dates this settlement covers. Read
                 # from the settlement, not recomputed — the slip is a
                 # representation of an existing financial fact.
@@ -589,6 +595,26 @@ class SettlementService:
                 Money(amount=Decimal(line.gross_amount), currency=settlement.currency)
             )
         return total
+
+    async def _sum_quantity(self, settlement_id: uuid.UUID) -> tuple[Decimal, str]:
+        """Total milk this settlement pays for, and its unit (DEMO-028).
+
+        **Read, never computed into the record.** Nothing is stored and no
+        total moves: this exists so the farmer's statement can say HOW MUCH
+        MILK the money is for, which is the first thing a farmer checks and
+        the one authoritative figure the slip was missing.
+
+        The unit comes from the lines rather than from a constant — a
+        deployment weighing in kg and one measuring in litres must not both be
+        told "litres" by a default.
+        """
+        lines = await self._lines(settlement_id)
+        total = sum((Decimal(line.quantity) for line in lines), Decimal("0"))
+        units = {line.quantity_unit for line in lines}
+        # Mixed units cannot be added, and silently adding them would put a
+        # meaningless number on a farmer's statement. Saying nothing is better.
+        unit = units.pop() if len(units) == 1 else ""
+        return (total if unit else Decimal("0")), unit
 
     async def _lines(self, settlement_id: uuid.UUID) -> list[SettlementLine]:
         rows = await self._session.scalars(
