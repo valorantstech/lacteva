@@ -226,6 +226,15 @@ class Settings(BaseSettings):
     whatsapp_api_key: str = ""
     whatsapp_sender_id: str = ""
     whatsapp_timeout_seconds: float = 10.0
+    # --- Delivery receipts (DEMO-029) --------------------------------------
+    #
+    # The secret a messaging gateway signs its delivery reports with. Empty by
+    # default and empty on every deployment today, which means the receipt
+    # endpoint verifies nothing and therefore ACCEPTS nothing — see
+    # `webhook_security.verify`, which refuses outright when no secret is set.
+    # A receipt endpoint that trusted an unsigned POST would let anyone mark a
+    # farmer's settlement message "delivered".
+    notification_receipt_secret: str = ""
     # --- Subscription payment gateway (DEMO-027) ---------------------------
     #
     # Lacteva charging its own tenants. NOT the dairy paying its farmers —

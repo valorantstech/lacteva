@@ -24,7 +24,19 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.core.db import Base, IdMixin, utcnow
 
-NOTIFICATION_STATUSES = ("pending", "sent", "failed", "dead")
+#: What LACTEVA knows about a message.
+#:
+#: `delivered` is new in DEMO-029 and is reachable ONLY from a signature-
+#: verified provider receipt — never from a send, never from a timer, never
+#: from a client. That is the same rule DEMO-027 applied to `past_due`: a state
+#: the platform can set but never verify is a state it must not have.
+#:
+#: The vocabulary maps onto the work order's lifecycle rather than replacing
+#: it: `pending` is QUEUED, `sent` is SENT, `failed`/`dead` are FAILED.
+#: `dead` is failure the platform has stopped retrying.
+#:
+#: There is no `read`. No gateway this platform speaks to reports one.
+NOTIFICATION_STATUSES = ("pending", "sent", "delivered", "failed", "dead")
 
 
 class Notification(Base, IdMixin):
@@ -97,6 +109,9 @@ class Notification(Base, IdMixin):
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: DEMO-029. When the PROVIDER said it arrived — not when we sent it, and
+    #: null unless a verified receipt said so.
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -168,3 +183,39 @@ class NotificationDevice(Base, IdMixin):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class NotificationReceiptEvent(Base, IdMixin):
+    """Every provider delivery report this platform has already acted on.
+
+    **The replay defence, and it is a unique constraint rather than a check.**
+    A gateway redelivering a report it is unsure landed is normal operation —
+    every one of them does it — so the second delivery must do nothing at all.
+
+    The shape is DEMO-027's `subscription_payment_event`, deliberately: that
+    milestone established how an unauthenticated provider callback is made
+    safe, and a second shape for the same idea is how two boundaries drift
+    apart. What differs is only what the event is about.
+
+    `tenant_id` is filled from the NOTIFICATION the reference names, never from
+    the payload — an unauthenticated caller naming a tenant is the whole
+    attack.
+    """
+
+    __tablename__ = "notification_receipt_event"
+    __table_args__ = (
+        # The replay key. A gateway's event id is unique per provider.
+        UniqueConstraint("provider", "event_id", name="uq_notification_receipt_event"),
+        Index("ix_notification_receipt_notification", "notification_id"),
+    )
+
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
+    notification_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    provider: Mapped[str] = mapped_column(String(40))
+    event_id: Mapped[str] = mapped_column(String(160))
+    #: The normalised state the receipt reported: delivered | failed | unknown.
+    state: Mapped[str] = mapped_column(String(20))
+    #: What the platform DID about it, so an operator reading this table can
+    #: tell "acted on" from "recognised and correctly ignored".
+    outcome: Mapped[str] = mapped_column(String(40))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

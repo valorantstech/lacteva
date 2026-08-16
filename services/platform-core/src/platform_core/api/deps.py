@@ -43,6 +43,7 @@ from platform_core.modules.event_relay.service import OutboxEventBus, RelayServi
 from platform_core.modules.identity.models import User
 from platform_core.modules.identity.service import IdentityService
 from platform_core.modules.milk_collection.service import MilkCollectionService
+from platform_core.modules.notification.reachability import ReachabilityService
 from platform_core.modules.notification.service import NotificationService
 from platform_core.modules.operational_readiness.service import OperationalReadinessService
 from platform_core.modules.organization.service import (
@@ -373,6 +374,18 @@ def get_subscription_service(session: Session, principal: CurrentPrincipal) -> S
     if principal.tenant_id is None:
         raise ForbiddenError("this endpoint requires an organization context")
     return SubscriptionService(session, principal.tenant_id)
+
+
+def get_reachability_service(session: Session, principal: CurrentPrincipal) -> ReachabilityService:
+    """DEMO-029. Scoped to the caller's OWN organization at construction.
+
+    The tenant comes from the authenticated principal, never from a query
+    parameter — one dairy must not be able to ask who is unreachable at
+    another, because the answer is a list of that dairy's farmers.
+    """
+    if principal.tenant_id is None:
+        raise ForbiddenError("this endpoint requires an organization context")
+    return ReachabilityService(session, principal.tenant_id)
 
 
 def get_subscription_billing_service(

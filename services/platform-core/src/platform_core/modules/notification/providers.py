@@ -13,6 +13,7 @@ runtime through `register_provider` — the seam deployments and tests use.
 """
 
 import asyncio
+import json
 import smtplib
 import uuid
 from dataclasses import dataclass, field
@@ -22,6 +23,7 @@ from typing import Any, Protocol
 
 import structlog
 
+from platform_core.core import webhook_security
 from platform_core.core.config import get_settings
 from platform_core.infrastructure.notifications import Notification, get_notifier
 
@@ -98,6 +100,93 @@ class DeliveryResult:
 ACCEPTED = "accepted"
 DELIVERED = "delivered"
 UNKNOWN = "unknown"
+
+#: Re-exported from `core/webhook_security` so a receipt adapter has one import
+#: rather than two. There is still exactly ONE definition — see DEMO-029.
+SIGNATURE_HEADER = webhook_security.SIGNATURE_HEADER
+
+
+class ReceiptVerificationError(Exception):
+    """A delivery receipt did not verify, or could not be read (DEMO-029).
+
+    Never leak which of those it was to the caller: an attacker probing the
+    endpoint learns from the difference.
+    """
+
+
+@dataclass(frozen=True)
+class DeliveryReceipt:
+    """What a gateway says happened AFTER it accepted a message (DEMO-029).
+
+    The gap this closes: `DeliveryResult` is what a gateway said when it TOOK
+    the message, which is the only thing Lacteva has ever known. A receipt is
+    what it says later, asynchronously, about whether the message arrived.
+
+    `state` is the PLATFORM's vocabulary, not the vendor's — an adapter
+    normalises `DELIVRD` / `delivered` / `2` / `success` into one of these, so
+    the domain never grows a table of gateway synonyms. That normalisation is
+    §4's "the provider adapter may normalize provider-specific statuses".
+    """
+
+    #: The gateway's own id for this notification of this event. The REPLAY
+    #: key: recording it under a unique constraint is what makes a redelivered
+    #: receipt do nothing at all.
+    event_id: str
+    #: The gateway's id for the MESSAGE, matched against
+    #: `notification.provider_reference`. This is the only way a receipt finds
+    #: its notification — never a tenant or a notification id from the payload.
+    provider_reference: str
+    #: `delivered` | `failed` | `unknown`. Deliberately not `sent`: a receipt
+    #: reporting "sent" tells the platform nothing it did not already know, and
+    #: treating it as progress would be inventing information.
+    state: str
+    #: Why, when the gateway says. Free text, truncated, never a payload dump.
+    reason: str | None = None
+    #: The gateway's own status string, kept verbatim for `provider_status`.
+    provider_status: str | None = None
+
+
+class ReceiptCapableProvider(Protocol):
+    """A provider that can verify and read delivery receipts.
+
+    **Structural and optional, on purpose.** Most gateways send delivery
+    reports; some do not, and a platform that assumed they all did would be
+    inventing provider capability — the thing every one of these work orders
+    forbids. A provider without `parse_receipt` simply has no receipt endpoint,
+    and the route answers 404.
+    """
+
+    name: str
+
+    def parse_receipt(self, *, body: bytes, headers: dict[str, str]) -> DeliveryReceipt: ...
+
+
+def supports_receipts(provider: object) -> bool:
+    """Whether this provider can be sent delivery receipts at all."""
+    return callable(getattr(provider, "parse_receipt", None))
+
+
+def find_receipt_provider(name: str):
+    """The receipt-capable provider called `name`, or None (DEMO-029).
+
+    The registry is keyed by CHANNEL, because that is what a send needs. A
+    delivery receipt arrives at a URL that names the PROVIDER, because a
+    gateway knows what it is and not which of Lacteva's channels it serves —
+    so this walks the channels and matches on the provider's own name.
+
+    A channel whose provider cannot even be built (selected as `http` with no
+    URL configured, say) is skipped rather than raised: one misconfigured
+    channel must not stop receipts arriving for a working one.
+    """
+    for channel in ("sms", "whatsapp", "email", "push"):
+        try:
+            provider = get_provider(channel)
+        except Exception as exc:
+            log.debug("receipt_provider_skipped", channel=channel, error=type(exc).__name__)
+            continue
+        if getattr(provider, "name", None) == name and supports_receipts(provider):
+            return provider
+    return None
 
 
 class ChannelProvider(Protocol):
@@ -182,6 +271,44 @@ class PlaceholderProvider:
             recipient=mask_phone(message.recipient),
         )
         return DeliveryResult(provider_message_id=f"{self.name}:{uuid.uuid4()}", status=ACCEPTED)
+
+
+class ReceiptTestProvider(LoggingProvider):
+    """**TEST ONLY.** A provider that also accepts delivery receipts (DEMO-029).
+
+    It sends nothing anywhere — `LoggingProvider` writes a log line — and it
+    exists so the whole receipt path can be EXECUTED rather than described:
+    accepted, delivered, failed, duplicate callback, out-of-order callback and
+    timeout, all deterministically.
+
+    It is not registered by configuration and cannot be selected by a
+    deployment; a test installs it with `register_provider`. Nothing it reports
+    is a real external message, and the portal has no way to show one as if it
+    were.
+    """
+
+    def __init__(self, channel: str = "sms") -> None:
+        super().__init__(channel)
+        self.name = "receipt-test"
+
+    def sign(self, body: bytes) -> str:
+        """The signature this provider would send — used by tests to forge a
+        LEGITIMATE delivery, and by omission an illegitimate one."""
+        from platform_core.core import webhook_security
+        from platform_core.core.config import get_settings
+
+        return webhook_security.sign(get_settings().notification_receipt_secret, body)
+
+    def receipt_body(
+        self, *, event_id: str, reference: str, status: str, reason: str | None = None
+    ) -> bytes:
+        return json.dumps(
+            {"event_id": event_id, "reference": reference, "status": status, "reason": reason},
+            sort_keys=True,
+        ).encode()
+
+    def parse_receipt(self, *, body: bytes, headers: dict[str, str]) -> DeliveryReceipt:
+        return _parse_documented_receipt(body, headers)
 
 
 class DryRunProvider:
@@ -275,6 +402,10 @@ class HttpSmsProvider:
     #: A retry cannot change the outcome, so do not spend a gateway call on it.
     PERMANENT_STATUSES = frozenset({400, 401, 402, 403, 404, 405, 409, 415, 422})
 
+    def parse_receipt(self, *, body: bytes, headers: dict[str, str]) -> "DeliveryReceipt":
+        """DEMO-029. Reads Lacteva's documented delivery-report contract."""
+        return _parse_documented_receipt(body, headers)
+
     def __init__(self, channel: str = "sms") -> None:
         self.name = "http-sms"
         self._channel = channel
@@ -356,6 +487,76 @@ class HttpSmsProvider:
                 **{k: body[k] for k in ("cost", "currency", "parts") if k in body},
             },
         )
+
+
+def _parse_documented_receipt(body: bytes, headers: dict[str, str]) -> DeliveryReceipt:
+    """Lacteva's own documented delivery-report contract (DEMO-029).
+
+    `HttpSmsProvider` already speaks "a small, documented JSON contract
+    configured entirely by environment" for SENDING. This is the same idea for
+    the report coming back, and it is deliberately Lacteva's contract rather
+    than any vendor's — inventing a named gateway's DLR format would be
+    inventing a capability nobody contracted.
+
+        POST /v1/notifications/receipts/<provider>
+        X-Lacteva-Signature: <hex hmac-sha256 of the raw body>
+        {"event_id": "...", "reference": "...", "status": "delivered",
+         "reason": "..."}
+
+    A gateway whose reports differ implements `parse_receipt` on its own
+    adapter and is installed with `register_provider` — the same seam that has
+    always existed for `send`.
+    """
+    from platform_core.core import webhook_security
+    from platform_core.core.config import get_settings
+
+    secret = get_settings().notification_receipt_secret
+    if not webhook_security.verify(secret, body, webhook_security.header_value(headers)):
+        raise ReceiptVerificationError("signature mismatch")
+    try:
+        payload = json.loads(body)
+    except ValueError as exc:
+        raise ReceiptVerificationError("unparseable body") from exc
+
+    event_id = str(payload.get("event_id") or "").strip()
+    reference = str(payload.get("reference") or "").strip()
+    raw_status = str(payload.get("status") or "").strip()
+    if not event_id or not reference or not raw_status:
+        raise ReceiptVerificationError("incomplete receipt")
+
+    return DeliveryReceipt(
+        event_id=event_id,
+        provider_reference=reference,
+        state=normalise_receipt_status(raw_status),
+        reason=_safe_detail(str(payload.get("reason") or "")) or None,
+        provider_status=raw_status[:20],
+    )
+
+
+#: Gateway words that mean the same thing (DEMO-029).
+#:
+#: Every SMS gateway has its own spelling of "it arrived" — SMPP says
+#: `DELIVRD`, most REST APIs say `delivered`, some say `2`. Normalising here is
+#: what keeps the domain free of vendor synonyms. Anything unrecognised is
+#: `unknown`, never a guess: a status this platform cannot read must not
+#: advance a farmer's message to delivered.
+_RECEIPT_STATUSES: dict[str, str] = {
+    "delivered": DELIVERED,
+    "delivrd": DELIVERED,
+    "success": DELIVERED,
+    "ok": DELIVERED,
+    "failed": "failed",
+    "undeliv": "failed",
+    "undelivered": "failed",
+    "rejected": "failed",
+    "expired": "failed",
+    "error": "failed",
+}
+
+
+def normalise_receipt_status(raw: str) -> str:
+    """A gateway's word in Lacteva's vocabulary. `unknown` when unrecognised."""
+    return _RECEIPT_STATUSES.get((raw or "").strip().lower(), UNKNOWN)
 
 
 class HttpWhatsAppProvider(HttpSmsProvider):

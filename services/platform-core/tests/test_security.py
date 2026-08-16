@@ -917,6 +917,9 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
         POLICY_TABLES as DEMO017_TABLES,
     )
     from migrations.versions.f2d18ba60c47_sec002_complete_rls_coverage import NEW_TENANT_TABLES
+    from migrations.versions.f3a9c71d5e28_demo_029_delivery_receipts import (
+        POLICY_TABLES as DEMO029_TABLES,
+    )
     from migrations.versions.f73f41473469_idempotency_records import POLICY_TABLES
 
     from platform_core.core.rls import tenant_tables
@@ -932,6 +935,7 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
         | set(DEMO020_TABLES)
         | set(DEMO026_TABLES)
         | set(DEMO027_TABLES)
+        | set(DEMO029_TABLES)
     )
     uncovered = set(tenant_tables()) - covered
     assert not uncovered, (

@@ -128,6 +128,13 @@ from platform_core.modules.milk_collection.service import (
     TransactionView,
     WeightCommand,
 )
+from platform_core.modules.notification import receipts as receipt_processing
+from platform_core.modules.notification.providers import ReceiptVerificationError
+from platform_core.modules.notification.reachability import (
+    ReachabilityService,
+    ReachabilitySummaryView,
+)
+from platform_core.modules.notification.receipts import UnknownReceiptProvider
 from platform_core.modules.notification.service import (
     NotificationPage,
     NotificationService,
@@ -2349,10 +2356,70 @@ async def cancel_payment(
 
 
 # --- Notifications (delivery history & operations — NOT-001) ----------------
+# --- Delivery receipts (DEMO-029) -----------------------------------------
+#
+# Its own router with NO idempotency route class and NO authentication, for
+# exactly the reasons DEMO-027's payment webhook has neither.
+#
+# Not `IdempotentRoute`: that keys on a client-supplied `Idempotency-Key`
+# header, and a messaging gateway sends its own event id instead —
+# de-duplication belongs on that id, in the database, where a replay cannot
+# slip past a header nobody sent.
+#
+# Not authenticated: a gateway has no Lacteva account. What replaces
+# authentication is a constant-time HMAC over the raw body, checked by the SAME
+# `core/webhook_security` the payment webhook uses.
+delivery_receipt_router = APIRouter(prefix="/notifications", tags=["notifications"])
+
+
+@delivery_receipt_router.post("/receipts/{provider}", status_code=200)
+async def receive_delivery_receipt(provider: str, request: Request) -> dict[str, str]:
+    """Accept one provider delivery report.
+
+    Returns 200 for everything it correctly handled — including a replay, an
+    unknown reference, and a report that deliberately changed nothing. A
+    gateway reads a non-2xx as "retry", and asking it to redeliver a report
+    already applied achieves nothing and eventually pages somebody.
+
+    401 and 404 say only that the request was refused, never which check
+    refused it.
+    """
+    body = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    try:
+        result = await receipt_processing.process_receipt(
+            provider_name=provider, body=body, headers=headers
+        )
+    except ReceiptVerificationError as exc:
+        raise UnauthorizedError("receipt rejected") from exc
+    except UnknownReceiptProvider as exc:
+        raise NotFoundError("unknown provider") from exc
+    return {"outcome": result.outcome}
+
+
 notification_router = APIRouter(tags=["notifications"], route_class=IdempotentRoute)
 NotificationRead = Annotated[Principal, Depends(require_permission("notification.read"))]
 NotificationManage = Annotated[Principal, Depends(require_permission("notification.manage"))]
 NotificationSvc = Annotated[NotificationService, Depends(deps.get_notification_service)]
+
+
+@notification_router.get(
+    "/notifications/reachability",
+    dependencies=[Depends(require_permission("notification.read"))],
+)
+async def read_reachability(
+    service: Annotated[ReachabilityService, Depends(deps.get_reachability_service)],
+    template_key: str = "settlement_finalized",
+    subject_type: str = "supplier",
+) -> ReachabilitySummaryView:
+    """Who can be reached before a communication run, and who cannot.
+
+    **This blocks nothing.** A farmer with no phone number is still settled and
+    still paid; the point of counting them is that somebody can see them and do
+    something about it, instead of a message quietly going nowhere.
+    """
+    summary = await service.for_template(template_key, subject_type=subject_type)
+    return ReachabilitySummaryView.of(summary)
 
 
 @notification_router.get("/notifications", response_model=NotificationPage)
@@ -3902,5 +3969,6 @@ for sub in (
     calendar_router,
     subscription_router,
     webhook_router,
+    delivery_receipt_router,
 ):
     router.include_router(sub)

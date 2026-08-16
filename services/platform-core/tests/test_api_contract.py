@@ -282,6 +282,14 @@ PUBLIC = {
     # `(provider, event_id)` that makes a replay a no-op. It creates nothing,
     # reads no tenant from its payload, and takes no amount from it as truth.
     ("POST", "/v1/payments/webhooks/{provider}"),
+    # DEMO-029. The messaging gateway's delivery-report callback. Same reason
+    # and the same defences as the payment webhook above, using the SAME
+    # `core/webhook_security` mechanism: a gateway has no Lacteva account, so
+    # what replaces authentication is a constant-time HMAC over the raw body
+    # plus a unique `(provider, event_id)` that makes a replay a no-op. It
+    # creates nothing, reads no tenant from its payload, and cannot move a
+    # message backwards.
+    ("POST", "/v1/notifications/receipts/{provider}"),
 }
 
 

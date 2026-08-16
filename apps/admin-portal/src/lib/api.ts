@@ -1331,6 +1331,8 @@ export type Notification = {
   source_type: string | null;
   source_id: string | null;
   attempt_count: number;
+  /** DEMO-029. When a verified provider receipt said it arrived. */
+  delivered_at?: string | null;
   next_attempt_at: string | null;
   error: string | null;
   payload: Record<string, unknown>;
@@ -1404,6 +1406,41 @@ export const retryPendingNotifications = () =>
     {
       method: "POST",
     },
+  );
+
+// --- Recipient reachability (DEMO-029) -------------------------------------
+//
+// Who can be contacted before a communication run, and who cannot. It blocks
+// nothing: a farmer with no phone number is still settled and still paid, and
+// this exists so somebody can see them rather than a message going nowhere.
+
+export type ReachabilityEntry = {
+  subject_id: string;
+  subject_type: string;
+  name: string;
+  channel: string;
+  status: "reachable" | "unreachable" | "unknown";
+  reason: string | null;
+  /** Masked. The report must not become a list of farmers' phone numbers. */
+  contact: string | null;
+};
+
+export type ReachabilitySummary = {
+  template_key: string;
+  channel: string;
+  total: number;
+  reachable: number;
+  unreachable: number;
+  unknown: number;
+  reasons: Record<string, number>;
+  affected: ReachabilityEntry[];
+  affected_truncated: boolean;
+};
+
+export const getReachability = (templateKey: string, subjectType: string) =>
+  api<ReachabilitySummary>(
+    `/v1/notifications/reachability?template_key=${encodeURIComponent(templateKey)}` +
+      `&subject_type=${encodeURIComponent(subjectType)}`,
   );
 
 export const listNotificationTemplates = () =>

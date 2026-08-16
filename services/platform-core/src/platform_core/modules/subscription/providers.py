@@ -32,19 +32,22 @@ one line in `_build`. Nothing in the domain moves.
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Protocol
 
+from platform_core.core import webhook_security
 from platform_core.core.config import get_settings
 
 #: The header a provider signature is read from. A real adapter uses whatever
 #: its vendor documents; this constant belongs to the test provider and to the
 #: default contract, not to the domain.
-SIGNATURE_HEADER = "x-lacteva-signature"
+#:
+#: DEMO-029 moved the signature ARITHMETIC to `core/webhook_security.py` so the
+#: delivery-receipt webhook uses the same one rather than a second copy. Nothing
+#: here changed behaviour — this module now imports what it used to inline.
+SIGNATURE_HEADER = webhook_security.SIGNATURE_HEADER
 
 
 # --- failures -----------------------------------------------------------------
@@ -281,7 +284,7 @@ class TestPaymentProvider:
     def sign(self, body: bytes) -> str:
         """The signature this provider would send. Used by tests to forge a
         LEGITIMATE delivery — and, by omission, an illegitimate one."""
-        return hmac.new(_webhook_secret().encode(), body, hashlib.sha256).hexdigest()
+        return webhook_security.sign(_webhook_secret(), body)
 
     def webhook_body(
         self,
@@ -307,11 +310,9 @@ class TestPaymentProvider:
         ).encode()
 
     def parse_webhook(self, *, body: bytes, headers: dict[str, str]) -> WebhookEvent:
-        supplied = headers.get(SIGNATURE_HEADER) or headers.get(SIGNATURE_HEADER.title()) or ""
-        expected = self.sign(body)
-        # Constant time: a comparison that returns early leaks the prefix, and
-        # a signature is guessable one byte at a time if it does.
-        if not hmac.compare_digest(supplied, expected):
+        supplied = webhook_security.header_value(headers)
+        # Constant time, in one place: see `core/webhook_security.compare`.
+        if not webhook_security.verify(_webhook_secret(), body, supplied):
             raise WebhookVerificationError("signature mismatch")
         try:
             payload = json.loads(body)

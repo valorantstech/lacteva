@@ -60,6 +60,27 @@ function stubApi(messages: api.Notification[] = [MESSAGE]) {
     by_channel: { sms: messages.length },
   } as never);
   vi.spyOn(api, "listNotificationTemplates").mockResolvedValue([] as never);
+  vi.spyOn(api, "getReachability").mockResolvedValue({
+    template_key: "settlement_finalized",
+    channel: "sms",
+    total: 250,
+    reachable: 223,
+    unreachable: 17,
+    unknown: 10,
+    reasons: { phone_missing: 9, invalid_phone: 5, provider_unavailable: 3 },
+    affected: [
+      {
+        subject_id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+        subject_type: "supplier",
+        name: "Farmer With No Phone",
+        channel: "sms",
+        status: "unreachable",
+        reason: "phone_missing",
+        contact: null,
+      },
+    ],
+    affected_truncated: true,
+  } as never);
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -87,6 +108,20 @@ describe("the notification history", () => {
     );
   });
 
+  it("shows a confirmed delivery separately from an accepted request", async () => {
+    // DEMO-029. `delivered` is real now, and it is NOT the same card as
+    // `sent` — one is what the gateway took, the other what it confirmed.
+    stubApi([
+      { ...MESSAGE, status: "delivered", provider_status: "delivered" },
+    ]);
+    render(<NotificationsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Confirmed delivered")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Sent to provider")).toBeInTheDocument();
+  });
+
   it("shows a queued message as queued rather than as progress", async () => {
     stubApi([
       { ...MESSAGE, status: "pending", provider_status: null, sent_at: null },
@@ -97,5 +132,46 @@ describe("the notification history", () => {
       expect(screen.getAllByText("queued").length).toBeGreaterThan(0),
     );
     expect(document.body.textContent).not.toMatch(/\bDelivered\b/);
+  });
+});
+
+describe("the reachability panel", () => {
+  it("counts everyone and never hides the unreachable", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+
+    expect(
+      await screen.findByText("Communication reachability"),
+    ).toBeInTheDocument();
+    // The panel loads on a deferred tick, so wait for the DATA rather than
+    // the heading, which renders before it arrives.
+    await waitFor(() => expect(screen.getByText("223")).toBeInTheDocument());
+    expect(screen.getByText("17")).toBeInTheDocument();
+    expect(screen.getByText("10")).toBeInTheDocument();
+    // The reasons an operator can act on.
+    expect(screen.getByText("9 phone missing")).toBeInTheDocument();
+    expect(screen.getByText("5 invalid phone")).toBeInTheDocument();
+    // And the affected are NAMED, never silently skipped.
+    expect(screen.getByText("Farmer With No Phone")).toBeInTheDocument();
+  });
+
+  it("says plainly that it does not affect settlement or billing", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/does not affect settlement or billing/),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("admits when the named list is shorter than the counts", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/counts above are complete/)).toBeInTheDocument(),
+    );
   });
 });

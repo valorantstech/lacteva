@@ -27,7 +27,9 @@ import {
   NotificationStats,
   NotificationTemplate,
   RenderedPreview,
+  ReachabilitySummary,
   getNotificationStats,
+  getReachability,
   listNotificationTemplates,
   listNotifications,
   previewNotificationTemplate,
@@ -36,13 +38,20 @@ import {
 } from "@/lib/api";
 
 const PAGE_SIZE = 15;
-const STATUSES = ["", "sent", "failed", "dead", "pending"] as const;
+const STATUSES = [
+  "",
+  "delivered",
+  "sent",
+  "failed",
+  "dead",
+  "pending",
+] as const;
 // DEMO-025 added whatsapp; push has existed since DEMO-012 and was missing
 // here, so a push failure could not be filtered for at all.
 const CHANNELS = ["", "sms", "whatsapp", "email", "push"] as const;
 
 const statusVariant = (s: string) =>
-  s === "sent" ? "default" : s === "dead" ? "destructive" : "secondary";
+  s === "delivered" ? "default" : s === "dead" ? "destructive" : "secondary";
 
 /**
  * What the platform actually knows, in words an operator can act on.
@@ -53,6 +62,9 @@ const statusVariant = (s: string) =>
  */
 const statusLabel = (s: string) =>
   ({
+    // DEMO-029. `delivered` is now REAL — it means a gateway sent a signed
+    // receipt saying so, and nothing else can produce it.
+    delivered: "delivered",
     sent: "sent to provider",
     pending: "queued",
     failed: "failing",
@@ -61,7 +73,11 @@ const statusLabel = (s: string) =>
 
 /** The provider's own word, only when it said something. */
 const providerClaim = (s: string | null | undefined) =>
-  s ? (s === "delivered" ? "provider confirms delivered" : `provider: ${s}`) : null;
+  s
+    ? s === "delivered"
+      ? "provider confirms delivered"
+      : `provider: ${s}`
+    : null;
 
 export default function NotificationsPage() {
   const [page, setPage] = useState<NotificationPage | null>(null);
@@ -155,15 +171,24 @@ export default function NotificationsPage() {
         </Button>
       </header>
 
+      <ReachabilityPanel />
+
       {stats && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           <StatCard label="Total" value={stats.total} />
-          {/* NOT "Delivered" (DEMO-028). `sent` means the provider ACCEPTED
-              the request; no adapter in this platform receives a delivery
-              receipt, so the platform does not know whether anything arrived.
-              Labelling it "Delivered" told an operator something Lacteva has
-              never been in a position to know. */}
-          <StatCard label="Sent to provider" value={stats.by_status.sent ?? 0} />
+          {/* Two cards because they are two facts. `sent` means the gateway
+              ACCEPTED the request — DEMO-028 found this labelled "Delivered",
+              which told an operator something Lacteva was not in a position to
+              know. `delivered` means a gateway later sent a signed receipt
+              saying it arrived (DEMO-029), and nothing else can produce it. */}
+          <StatCard
+            label="Sent to provider"
+            value={stats.by_status.sent ?? 0}
+          />
+          <StatCard
+            label="Confirmed delivered"
+            value={stats.by_status.delivered ?? 0}
+          />
           <StatCard
             label="Failing"
             value={stats.by_status.failed ?? 0}
@@ -610,6 +635,144 @@ function TemplateCatalog({ templates }: { templates: NotificationTemplate[] }) {
         >
           Hide catalog
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Who can be reached before a communication run (DEMO-029).
+ *
+ * **It blocks nothing.** A farmer with no phone number is settled and paid
+ * exactly as before; this panel exists so an operator can SEE them, because
+ * the failure mode it replaces is a message quietly going nowhere.
+ *
+ * Deliberately on this page rather than a new one — the work order asks for
+ * the minimum operational visibility, and "did the message arrive?" and "could
+ * it ever have arrived?" are the same question asked before and after.
+ */
+function ReachabilityPanel() {
+  const [template, setTemplate] = useState("settlement_finalized");
+  const [summary, setSummary] = useState<ReachabilitySummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const subjectType = template === "invoice_issued" ? "customer" : "supplier";
+
+  useEffect(() => {
+    // Deferred by a tick, the idiom the rest of the portal uses: calling
+    // setState synchronously in an effect body cascades a render.
+    let live = true;
+    const timer = setTimeout(() => {
+      getReachability(template, subjectType)
+        .then((s) => {
+          if (live) {
+            setSummary(s);
+            setError(null);
+          }
+        })
+        .catch((e) => {
+          if (live) {
+            setSummary(null);
+            setError(e instanceof Error ? e.message : "Could not load");
+          }
+        });
+    }, 0);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [template, subjectType]);
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 py-4 text-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="font-medium">Communication reachability</h2>
+          {/* The page's own Select helper — the same idiom as the filters
+              above, so this panel adds no new component to the portal. */}
+          <Select
+            value={template}
+            onChange={setTemplate}
+            options={["settlement_finalized", "invoice_issued"]}
+            allLabel="Farmer settlement"
+          />
+          {summary && <Badge variant="outline">via {summary.channel}</Badge>}
+        </div>
+
+        {error && <p className="text-destructive">{error}</p>}
+
+        {summary && (
+          <>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <StatCard label="Recipients" value={summary.total} />
+              <StatCard label="Reachable" value={summary.reachable} />
+              <StatCard
+                label="Unreachable"
+                value={summary.unreachable}
+                tone={summary.unreachable > 0 ? "bad" : undefined}
+              />
+              <StatCard
+                label="Unknown"
+                value={summary.unknown}
+                tone={summary.unknown > 0 ? "warn" : undefined}
+              />
+            </div>
+
+            {Object.keys(summary.reasons).length > 0 && (
+              <ul className="text-muted-foreground">
+                {Object.entries(summary.reasons).map(([reason, count]) => (
+                  <li key={reason}>
+                    {count} {reason.replace(/_/g, " ")}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {summary.affected.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs text-muted-foreground">
+                    <tr>
+                      <th className="py-1 pr-4 font-medium">Recipient</th>
+                      <th className="py-1 pr-4 font-medium">Status</th>
+                      <th className="py-1 pr-4 font-medium">Reason</th>
+                      <th className="py-1 font-medium">On file</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.affected.map((entry) => (
+                      <tr
+                        className="border-t border-border"
+                        key={entry.subject_id}
+                      >
+                        <td className="py-2 pr-4">{entry.name}</td>
+                        <td className="py-2 pr-4">{entry.status}</td>
+                        <td className="py-2 pr-4">
+                          {entry.reason?.replace(/_/g, " ") ?? "—"}
+                        </td>
+                        <td className="py-2 font-mono text-xs text-muted-foreground">
+                          {entry.contact ?? "nothing"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {summary.affected_truncated && (
+                  <p className="pt-2 text-xs text-muted-foreground">
+                    Showing the first {summary.affected.length}. The counts
+                    above are complete.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <p className="text-muted-foreground">
+              This does not affect settlement or billing. A recipient with no
+              contact details is still settled, invoiced and paid — they simply
+              cannot be told, which is what this list is for.
+            </p>
+          </>
+        )}
       </CardContent>
     </Card>
   );
