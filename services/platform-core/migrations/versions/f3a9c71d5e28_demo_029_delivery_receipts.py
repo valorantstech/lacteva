@@ -87,9 +87,7 @@ def downgrade() -> None:
             for statement in drop_statements(table):
                 op.execute(statement)
 
-    op.drop_index(
-        "ix_notification_receipt_notification", table_name="notification_receipt_event"
-    )
+    op.drop_index("ix_notification_receipt_notification", table_name="notification_receipt_event")
     op.drop_index(
         "ix_notification_receipt_event_tenant_id", table_name="notification_receipt_event"
     )

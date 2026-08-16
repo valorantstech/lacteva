@@ -18,6 +18,14 @@ from platform_core.modules.notification.models import NotificationRecipient
 
 SUPPLIER_REGISTERED = "supplier.supplier-registered.v1"
 SUPPLIER_STATUS_CHANGED = "supplier.supplier-status-changed.v1"
+#: DEMO-030. A repaired contact, which used to reach nothing.
+#:
+#: `update_profile` changed `supplier_profile.phone` and published no event, so
+#: this directory — which is built from supplier events and never queries that
+#: module — kept the old number. An operator acting on DEMO-029's reachability
+#: report could fix a farmer's phone, watch the report not change, and have the
+#: next settlement message still go to the wrong place.
+SUPPLIER_PROFILE_UPDATED = "supplier.supplier-profile-updated.v1"
 
 
 class SupplierDirectoryProjection(Projection):
@@ -25,7 +33,7 @@ class SupplierDirectoryProjection(Projection):
     version = 1
     owner_module = "notification"
     description = "Contact directory (name, phone, email, language) for notification subjects."
-    event_types = (SUPPLIER_REGISTERED, SUPPLIER_STATUS_CHANGED)
+    event_types = (SUPPLIER_REGISTERED, SUPPLIER_STATUS_CHANGED, SUPPLIER_PROFILE_UPDATED)
     rebuild_strategy = "full-replay"
     replay_order = 5  # before dispatch-dependent projections
     models = (NotificationRecipient,)
@@ -71,10 +79,22 @@ class SupplierDirectoryProjection(Projection):
                 if entry is None:  # pragma: no cover - the row must exist by now
                     raise
         if envelope.type == SUPPLIER_REGISTERED:
+            # COALESCE on registration: an event that omits a field must not
+            # blank one that is already known.
             entry.display_name = data.get("full_name") or entry.display_name
             entry.code = data.get("code") or entry.code
             entry.phone = data.get("phone") or entry.phone
             entry.email = data.get("email") or entry.email
+            entry.language = data.get("locale") or entry.language
+        elif envelope.type == SUPPLIER_PROFILE_UPDATED:
+            # ASSIGN on repair, and the difference matters. The event carries
+            # the complete current profile, so an operator deliberately
+            # CLEARING a wrong number must actually clear it — coalescing here
+            # would keep the bad number and the repair would look like it
+            # worked while changing nothing.
+            entry.display_name = data.get("full_name") or entry.display_name
+            entry.code = data.get("code") or entry.code
+            entry.phone = data.get("phone") or ""
             entry.language = data.get("locale") or entry.language
         else:  # status change
             entry.active = data.get("to") not in ("archived", "suspended")

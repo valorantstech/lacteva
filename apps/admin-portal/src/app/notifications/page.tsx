@@ -27,13 +27,16 @@ import {
   NotificationStats,
   NotificationTemplate,
   RenderedPreview,
+  ReachabilityEntry,
   ReachabilitySummary,
   getNotificationStats,
   getReachability,
+  getSettlementPeriodReachability,
   listNotificationTemplates,
   listNotifications,
   previewNotificationTemplate,
   retryNotification,
+  repairSupplierContact,
   retryPendingNotifications,
 } from "@/lib/api";
 
@@ -655,15 +658,26 @@ function ReachabilityPanel() {
   const [template, setTemplate] = useState("settlement_finalized");
   const [summary, setSummary] = useState<ReachabilitySummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // DEMO-030. Empty dates mean "everyone in the directory" — the DEMO-029
+  // report. Filling them scopes the question to the farmers actually being
+  // paid for that period, which is the one an operator asks before a run.
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [repairing, setRepairing] = useState<ReachabilityEntry | null>(null);
 
   const subjectType = template === "invoice_issued" ? "customer" : "supplier";
+  const periodScoped =
+    template === "settlement_finalized" && from !== "" && to !== "";
 
   useEffect(() => {
     // Deferred by a tick, the idiom the rest of the portal uses: calling
     // setState synchronously in an effect body cascades a render.
     let live = true;
     const timer = setTimeout(() => {
-      getReachability(template, subjectType)
+      (periodScoped
+        ? getSettlementPeriodReachability(from, to)
+        : getReachability(template, subjectType)
+      )
         .then((s) => {
           if (live) {
             setSummary(s);
@@ -681,7 +695,7 @@ function ReachabilityPanel() {
       live = false;
       clearTimeout(timer);
     };
-  }, [template, subjectType]);
+  }, [template, subjectType, periodScoped, from, to, repairing]);
 
   return (
     <Card>
@@ -697,6 +711,27 @@ function ReachabilityPanel() {
             allLabel="Farmer settlement"
           />
           {summary && <Badge variant="outline">via {summary.channel}</Badge>}
+          {template === "settlement_finalized" && (
+            <>
+              <Input
+                aria-label="Period from"
+                className="h-8 w-40"
+                onChange={(e) => setFrom(e.target.value)}
+                type="date"
+                value={from}
+              />
+              <Input
+                aria-label="Period to"
+                className="h-8 w-40"
+                onChange={(e) => setTo(e.target.value)}
+                type="date"
+                value={to}
+              />
+              {periodScoped && (
+                <Badge variant="outline">settlement period</Badge>
+              )}
+            </>
+          )}
         </div>
 
         {error && <p className="text-destructive">{error}</p>}
@@ -737,6 +772,7 @@ function ReachabilityPanel() {
                       <th className="py-1 pr-4 font-medium">Status</th>
                       <th className="py-1 pr-4 font-medium">Reason</th>
                       <th className="py-1 font-medium">On file</th>
+                      <th className="py-1 text-end font-medium">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -753,6 +789,17 @@ function ReachabilityPanel() {
                         <td className="py-2 font-mono text-xs text-muted-foreground">
                           {entry.contact ?? "nothing"}
                         </td>
+                        <td className="py-2 text-end">
+                          {entry.subject_type === "supplier" && (
+                            <Button
+                              onClick={() => setRepairing(entry)}
+                              size="sm"
+                              variant="outline"
+                            >
+                              Repair
+                            </Button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -766,6 +813,13 @@ function ReachabilityPanel() {
               </div>
             )}
 
+            {repairing && (
+              <RepairContactForm
+                entry={repairing}
+                onClose={() => setRepairing(null)}
+              />
+            )}
+
             <p className="text-muted-foreground">
               This does not affect settlement or billing. A recipient with no
               contact details is still settled, invoiced and paid — they simply
@@ -773,6 +827,95 @@ function ReachabilityPanel() {
             </p>
           </>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Fix one farmer's number (DEMO-030).
+ *
+ * Deliberately tiny: a phone field and a reason, both of which go to the
+ * existing supplier record. There is no second contact directory and no new
+ * page — the operator is already looking at the list that told them who to
+ * fix.
+ */
+function RepairContactForm({
+  entry,
+  onClose,
+}: {
+  entry: ReachabilityEntry;
+  onClose: () => void;
+}) {
+  const [phone, setPhone] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await repairSupplierContact(entry.subject_id, { phone, reason });
+      onClose();
+    } catch (e) {
+      setError(
+        e instanceof ApiError
+          ? typeof e.extra === "string" && e.extra
+            ? e.extra
+            : e.detail
+          : e instanceof Error
+            ? e.message
+            : "Could not save",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 py-4 text-sm">
+        <p className="font-medium">
+          Repair contact — {entry.name || "unnamed supplier"}
+        </p>
+        <p className="text-muted-foreground">
+          Currently {entry.contact ?? "nothing on file"} ·{" "}
+          {entry.reason?.replace(/_/g, " ") ?? "unknown"}
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="space-y-1">
+            <span className="block text-xs text-muted-foreground">
+              Phone (leave empty if there is none)
+            </span>
+            <Input
+              className="w-56"
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+91…"
+              value={phone}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="block text-xs text-muted-foreground">Reason</span>
+            <Input
+              className="w-64"
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="confirmed at the collection centre"
+              value={reason}
+            />
+          </label>
+          <Button disabled={busy} onClick={() => void save()} size="sm">
+            Save
+          </Button>
+          <Button onClick={onClose} size="sm" variant="outline">
+            Cancel
+          </Button>
+        </div>
+        {error && <p className="text-destructive">{error}</p>}
+        <p className="text-xs text-muted-foreground">
+          Recorded in the audit trail with who changed it and why. A valid
+          number means the contact is usable — not that WhatsApp will reach it.
+        </p>
       </CardContent>
     </Card>
   );

@@ -10,7 +10,7 @@
  * been in a position to make — and it was on the screen, as a headline figure,
  * where an operator would read it as proof a farmer had been told.
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
@@ -60,6 +60,27 @@ function stubApi(messages: api.Notification[] = [MESSAGE]) {
     by_channel: { sms: messages.length },
   } as never);
   vi.spyOn(api, "listNotificationTemplates").mockResolvedValue([] as never);
+  vi.spyOn(api, "getSettlementPeriodReachability").mockResolvedValue({
+    template_key: "settlement_finalized",
+    channel: "sms",
+    total: 250,
+    reachable: 223,
+    unreachable: 17,
+    unknown: 10,
+    reasons: { phone_missing: 9, invalid_phone: 5, no_supported_channel: 3 },
+    affected: [
+      {
+        subject_id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        subject_type: "supplier",
+        name: "Period Farmer",
+        channel: "sms",
+        status: "unreachable",
+        reason: "phone_missing",
+        contact: null,
+      },
+    ],
+    affected_truncated: false,
+  } as never);
   vi.spyOn(api, "getReachability").mockResolvedValue({
     template_key: "settlement_finalized",
     channel: "sms",
@@ -173,5 +194,89 @@ describe("the reachability panel", () => {
     await waitFor(() =>
       expect(screen.getByText(/counts above are complete/)).toBeInTheDocument(),
     );
+  });
+});
+
+describe("contact repair", () => {
+  it("offers a repair for an unreachable supplier", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Farmer With No Phone")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Repair" }));
+
+    expect(
+      await screen.findByText(/Repair contact — Farmer With No Phone/),
+    ).toBeInTheDocument();
+    // It says what is wrong now, so the operator knows what they are fixing.
+    // (The same reason also appears in the summary list above, hence getAll.)
+    expect(screen.getAllByText(/phone missing/).length).toBeGreaterThanOrEqual(
+      2,
+    );
+  });
+
+  it("sends only the phone and the reason", async () => {
+    stubApi();
+    const repair = vi.spyOn(api, "repairSupplierContact").mockResolvedValue({
+      full_name: "Farmer",
+      phone: "+919845000101",
+    } as never);
+
+    render(<NotificationsPage />);
+    await waitFor(() =>
+      expect(screen.getByText("Farmer With No Phone")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Repair" }));
+
+    fireEvent.change(await screen.findByPlaceholderText("+91…"), {
+      target: { value: "+919845000101" },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText("confirmed at the collection centre"),
+      { target: { value: "checked with the centre" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(repair).toHaveBeenCalledTimes(1));
+    expect(repair).toHaveBeenCalledWith(
+      "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      { phone: "+919845000101", reason: "checked with the centre" },
+    );
+  });
+
+  it("does not claim a valid number means WhatsApp will reach it", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+    await waitFor(() =>
+      expect(screen.getByText("Farmer With No Phone")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Repair" }));
+
+    expect(
+      await screen.findByText(/not that WhatsApp will reach it/),
+    ).toBeInTheDocument();
+  });
+
+  it("scopes the report to a settlement period when dates are given", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+
+    await waitFor(() => expect(screen.getByText("223")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("Period from"), {
+      target: { value: "2026-08-01" },
+    });
+    fireEvent.change(screen.getByLabelText("Period to"), {
+      target: { value: "2026-08-15" },
+    });
+
+    await waitFor(() =>
+      expect(api.getSettlementPeriodReachability).toHaveBeenCalledWith(
+        "2026-08-01",
+        "2026-08-15",
+      ),
+    );
+    expect(await screen.findByText("settlement period")).toBeInTheDocument();
   });
 });

@@ -1437,6 +1437,27 @@ export type ReachabilitySummary = {
   affected_truncated: boolean;
 };
 
+export const getSettlementPeriodReachability = (from: string, to: string) =>
+  api<ReachabilitySummary>(
+    `/v1/notifications/reachability/settlement-period?period_from=${from}&period_to=${to}`,
+  );
+
+/**
+ * Repair how a farmer is reached (DEMO-030).
+ *
+ * A PATCH of contact fields only. The full-profile PUT still exists; making an
+ * operator resend `national_id` and `village` to fix a phone number is how a
+ * forgotten field silently blanks a record.
+ */
+export const repairSupplierContact = (
+  supplierId: string,
+  body: { phone: string; locale?: string; reason?: string },
+) =>
+  api<{ full_name: string; phone: string }>(
+    `/v1/suppliers/${supplierId}/contact`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+
 export const getReachability = (templateKey: string, subjectType: string) =>
   api<ReachabilitySummary>(
     `/v1/notifications/reachability?template_key=${encodeURIComponent(templateKey)}` +

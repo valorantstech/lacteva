@@ -17,12 +17,15 @@ from platform_core.core.errors import (
     ConflictError,
     InvalidTokenError,
     NotFoundError,
+    ValidationError,
 )
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.infrastructure.storage import ObjectStorage, tenant_key
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.collection_center.models import CollectionCenter
+from platform_core.modules.notification.providers import mask_phone
+from platform_core.modules.notification.reachability import looks_like_a_phone_number
 from platform_core.modules.organization.models import Branch
 from platform_core.modules.supplier.models import (
     DOCUMENT_KINDS,
@@ -48,6 +51,16 @@ MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
 # --- DTOs ------------------------------------------------------------------
 
 
+def _changed_fields(profile: SupplierProfile, target: dict[str, str]) -> dict[str, dict[str, str]]:
+    """Which fields actually move, and from what to what."""
+    changes: dict[str, dict[str, str]] = {}
+    for field, new_value in target.items():
+        old_value = getattr(profile, field) or ""
+        if (old_value or "") != (new_value or ""):
+            changes[field] = {"from": old_value or "", "to": new_value or ""}
+    return changes
+
+
 class SupplierProfileInput(BaseModel):
     full_name: str = Field(min_length=2, max_length=200)
     phone: str = Field(default="", max_length=30)
@@ -55,6 +68,28 @@ class SupplierProfileInput(BaseModel):
     village: str = Field(default="", max_length=120)
     locale: str = "en"
     extra: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("phone")
+    @classmethod
+    def _plausible_phone(cls, value: str) -> str:
+        """A number must be EMPTY or plausible — never nonsense (DEMO-030).
+
+        Empty stays legal, deliberately: a farmer may genuinely have no phone,
+        and DEMO-029 reports that honestly as `phone_missing`. What must not
+        survive is `"call the office"` sitting in a field the dispatcher will
+        later hand to a gateway.
+
+        The check is the same conservative one reachability uses, and it is the
+        same in both directions: it can say "this is certainly not a number"
+        and never "this number works". A valid phone means CONTACT_VALID, not
+        WHATSAPP_REACHABLE — DEMO-029's distinction, kept.
+        """
+        candidate = (value or "").strip()
+        if candidate and not looks_like_a_phone_number(candidate):
+            raise ValueError(
+                "phone must be a plausible number (digits, optionally +, 7-15 digits) or empty"
+            )
+        return candidate
 
 
 class CreateSupplierCommand(SupplierProfileInput):
@@ -232,25 +267,135 @@ class SupplierService:
         return supplier
 
     async def update_profile(
-        self, supplier_id: uuid.UUID, cmd: SupplierProfileInput, *, actor_id: uuid.UUID
+        self,
+        supplier_id: uuid.UUID,
+        cmd: SupplierProfileInput,
+        *,
+        actor_id: uuid.UUID,
+        reason: str | None = None,
     ) -> SupplierProfile:
         supplier = await self.get(supplier_id)
         if supplier.status == "archived":
             raise ConflictError("archived suppliers are immutable")
         profile = await self._profile(supplier.id)
+        changes = _changed_fields(
+            profile,
+            {
+                "full_name": cmd.full_name,
+                "phone": cmd.phone,
+                "national_id": cmd.national_id,
+                "village": cmd.village,
+                "locale": cmd.locale,
+            },
+        )
         profile.full_name = cmd.full_name
         profile.phone = cmd.phone
         profile.national_id = cmd.national_id
         profile.village = cmd.village
         profile.locale = cmd.locale
         profile.extra = cmd.extra
+        await self._record_profile_change(supplier, profile, changes, actor_id, reason)
+        return profile
+
+    async def repair_contact(
+        self,
+        supplier_id: uuid.UUID,
+        *,
+        phone: str,
+        locale: str | None = None,
+        reason: str | None = None,
+        actor_id: uuid.UUID,
+    ) -> SupplierProfile:
+        """Fix how a farmer is reached, and nothing else (DEMO-030).
+
+        **A PATCH rather than the full-profile PUT, deliberately.** An operator
+        acting on a reachability report is fixing one thing; making them resend
+        the whole profile to do it means a forgotten field silently blanks a
+        national id or a village. The narrow surface is the safe one.
+
+        It reuses the same model, the same audit and the same event as
+        `update_profile` — there is one contact record for a supplier and one
+        way it changes.
+        """
+        supplier = await self.get(supplier_id)
+        if supplier.status == "archived":
+            raise ConflictError("archived suppliers are immutable")
+        profile = await self._profile(supplier.id)
+
+        candidate = (phone or "").strip()
+        if candidate and not looks_like_a_phone_number(candidate):
+            raise ValidationError(
+                "phone must be a plausible number (digits, optionally +, 7-15 digits) or empty"
+            )
+        target = {"phone": candidate}
+        if locale:
+            target["locale"] = locale
+        changes = _changed_fields(profile, target)
+        profile.phone = candidate
+        if locale:
+            profile.locale = locale
+        await self._record_profile_change(supplier, profile, changes, actor_id, reason)
+        return profile
+
+    async def _record_profile_change(
+        self,
+        supplier: Supplier,
+        profile: SupplierProfile,
+        changes: dict[str, dict[str, str]],
+        actor_id: uuid.UUID,
+        reason: str | None,
+    ) -> None:
+        """Audit what actually changed, then tell the directory (DEMO-030).
+
+        Both halves were missing, and the second is why a repair used to do
+        nothing at all. The audit recorded that *something* happened with no
+        before and no after; and no event was published, so
+        `notification_recipient` — which is built from supplier events and
+        never queries this module — kept the old number. An operator could fix
+        a farmer's phone, see the reachability report unchanged, and have the
+        next message still go to the wrong place.
+
+        `masked_phone` rather than the number: an audit trail is read far more
+        widely than a contact record, and "0712…678 became 0722…901" is what an
+        operator needs to verify a repair without the log becoming a directory.
+        """
+        detail: dict[str, Any] = {"changed": sorted(changes)}
+        for field, values in changes.items():
+            detail[field] = (
+                {"from": mask_phone(values["from"]), "to": mask_phone(values["to"])}
+                if field == "phone"
+                else values
+            )
+        if reason:
+            detail["reason"] = reason[:200]
         await self._audit.record(
             action="supplier.profile_updated",
             resource_type="supplier",
             resource_id=supplier.id,
             actor_id=actor_id,
+            detail=detail,
         )
-        return profile
+        if not changes:
+            # Nothing moved. Publishing anyway would make a no-op look like a
+            # repair in the directory's own history.
+            return
+        await self._bus.publish(
+            EventEnvelope.new(
+                "supplier.supplier-profile-updated.v1",
+                {
+                    "supplier_id": str(supplier.id),
+                    "code": supplier.code,
+                    # The CURRENT values, complete — the directory assigns
+                    # rather than coalesces on this event, so deliberately
+                    # clearing a wrong number actually clears it.
+                    "full_name": profile.full_name,
+                    "phone": profile.phone,
+                    "locale": profile.locale,
+                    "changed": sorted(changes),
+                },
+                actor_id=actor_id,
+            )
+        )
 
     async def set_status(
         self, supplier_id: uuid.UUID, new_status: str, *, actor_id: uuid.UUID

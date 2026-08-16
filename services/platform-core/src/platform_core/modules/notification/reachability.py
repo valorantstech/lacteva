@@ -274,22 +274,88 @@ class ReachabilityService:
             for subject_id, name, phone, email in await self._contacts(subject_type)
         ]
 
-        reasons: dict[str, int] = {}
-        for result in results:
-            if result.reason:
-                reasons[result.reason] = reasons.get(result.reason, 0) + 1
-        affected = [r for r in results if r.status != REACHABLE]
-        cap = self.LIST_LIMIT if limit is None else max(0, limit)
-
-        return ReachabilitySummary(
+        return _summarise(
+            results,
             template_key=template_key,
             channel=channel,
-            total=len(results),
-            reachable=sum(1 for r in results if r.status == REACHABLE),
-            unreachable=sum(1 for r in results if r.status == UNREACHABLE),
-            unknown=sum(1 for r in results if r.status == UNKNOWN),
-            reasons=dict(sorted(reasons.items())),
-            affected=affected[:cap],
+            cap=self.LIST_LIMIT if limit is None else max(0, limit),
+        )
+
+    async def for_subjects(
+        self,
+        subject_ids: list[uuid.UUID],
+        *,
+        template_key: str = "settlement_finalized",
+        limit: int | None = None,
+    ) -> ReachabilitySummary:
+        """The same question, asked of a NAMED set of recipients (DEMO-030).
+
+        **The engine is unchanged.** `evaluate` decides, the channel resolves
+        the same way, the vocabulary is DEMO-029's — the only difference is WHO
+        is asked about: the suppliers who actually have a settlement covering
+        this period, rather than everybody in the directory.
+
+        That difference is the operational one. "17 of your farmers are
+        unreachable" is a report; "17 of the 250 farmers you are about to pay
+        for 1-15 August are unreachable" is something to act on before the run.
+
+        **Who those subjects ARE is not this module's business.** The caller
+        supplies the ids — the settlement-period route asks the settlement
+        module through its own service — because a notification module that
+        queried `settlement` directly would be reaching into another module's
+        tables. DEMO-029's own boundary test caught exactly that in the first
+        draft of this method, which is what such a test is for.
+
+        A subject with NO directory entry is reported as `not_in_directory`
+        rather than omitted — being absent from the contact directory is
+        exactly the kind of unreachable that a report listing only known
+        contacts would hide.
+        """
+        from platform_core.consumers.notification_dispatch import MAPPINGS
+        from platform_core.modules.notification.service import resolve_channel
+
+        default = _default_channel(MAPPINGS, template_key)
+        channel = await resolve_channel(
+            self._session, template_key, default, tenant_id=self._tenant_id
+        )
+        available = _provider_available(channel)
+
+        known = {
+            subject_id: (name, phone, email)
+            for subject_id, name, phone, email in await self._contacts("supplier")
+        }
+
+        results: list[Reachability] = []
+        for supplier_id in subject_ids:
+            if supplier_id in known:
+                name, phone, email = known[supplier_id]
+                results.append(
+                    evaluate(
+                        channel=channel,
+                        phone=phone,
+                        email=email,
+                        provider_available=available,
+                        subject_id=supplier_id,
+                        subject_type="supplier",
+                        name=name,
+                    )
+                )
+            else:
+                results.append(
+                    Reachability(
+                        subject_id=supplier_id,
+                        subject_type="supplier",
+                        name="",
+                        channel=channel,
+                        status=UNREACHABLE,
+                        reason=NOT_IN_DIRECTORY,
+                    )
+                )
+        return _summarise(
+            results,
+            template_key=template_key,
+            channel=channel,
+            cap=self.LIST_LIMIT if limit is None else max(0, limit),
         )
 
     async def _contacts(
@@ -346,6 +412,27 @@ class ReachabilityService:
                 )
             )
         ) or 0
+
+
+def _summarise(
+    results: list[Reachability], *, template_key: str, channel: str, cap: int
+) -> ReachabilitySummary:
+    """Counts, reasons and the affected list. One implementation, two callers."""
+    reasons: dict[str, int] = {}
+    for result in results:
+        if result.reason:
+            reasons[result.reason] = reasons.get(result.reason, 0) + 1
+    affected = [r for r in results if r.status != REACHABLE]
+    return ReachabilitySummary(
+        template_key=template_key,
+        channel=channel,
+        total=len(results),
+        reachable=sum(1 for r in results if r.status == REACHABLE),
+        unreachable=sum(1 for r in results if r.status == UNREACHABLE),
+        unknown=sum(1 for r in results if r.status == UNKNOWN),
+        reasons=dict(sorted(reasons.items())),
+        affected=affected[:cap],
+    )
 
 
 def _default_channel(mappings, template_key: str) -> str:

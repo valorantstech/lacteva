@@ -587,6 +587,37 @@ class SettlementService:
                     f"({other.period_from} to {other.period_to}) for this supplier"
                 )
 
+    async def supplier_ids_in_period(self, period_from: date, period_to: date) -> list[uuid.UUID]:
+        """Who this dairy is settling for a period (DEMO-030).
+
+        Asked by the communication side before a settlement run, and answered
+        HERE because the settlement tables belong to this module — a
+        notification service querying them directly would be reaching across a
+        boundary the platform maintains deliberately. It returns ids only;
+        nothing about money leaves.
+
+        Overlapping rather than contained: a settlement running 1-31 August is
+        relevant to a question about 1-15 August, and an operator asking about
+        a fortnight should not be told about nobody because every settlement
+        happens to be monthly.
+
+        Cancelled settlements are excluded — nobody is being paid for one, so
+        nobody needs telling about it.
+        """
+        rows = (
+            await self._session.execute(
+                select(Settlement.supplier_id)
+                .where(
+                    Settlement.tenant_id == require_current_tenant(),
+                    Settlement.status != "cancelled",
+                    Settlement.period_from <= period_to,
+                    Settlement.period_to >= period_from,
+                )
+                .distinct()
+            )
+        ).all()
+        return [row[0] for row in rows]
+
     async def _sum_lines(self, settlement: Settlement) -> Money:
         """Exact Decimal sum of line gross amounts (BR-0011, BR-0005)."""
         total = Money(amount=Decimal("0.00"), currency=settlement.currency)

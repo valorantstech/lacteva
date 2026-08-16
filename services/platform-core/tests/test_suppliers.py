@@ -235,7 +235,15 @@ async def test_search_filters(client):
 async def test_import_mixed_results(client, bus):
     headers, _, center = await _center_fixture(client)
     rows = [
-        {"full_name": "Import One", "phone": "+254711", "center_codes": [center["code"]]},
+        # DEMO-030: a plausible number. `+254711` is six digits — not a Kenyan
+        # number, not anyone's number, and now correctly refused by the
+        # contact validation. The row's PURPOSE is to be the one that
+        # succeeds, so it gets a number that could exist.
+        {
+            "full_name": "Import One",
+            "phone": "+254711000111",
+            "center_codes": [center["code"]],
+        },
         {"full_name": "Import Two", "center_codes": ["NO-SUCH-CENTER"]},
         {"full_name": "X"},  # too short -> validation error inside create
     ]

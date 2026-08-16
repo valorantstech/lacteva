@@ -23,11 +23,19 @@ from platform_core.core.backup.service import (
     BackupStatusView,
     ClassificationView,
 )
+from platform_core.core.business_time import business_today, month_bounds
 from platform_core.core.db import as_utc
-from platform_core.core.errors import AppError, ForbiddenError, NotFoundError, UnauthorizedError
+from platform_core.core.errors import (
+    AppError,
+    ForbiddenError,
+    NotFoundError,
+    UnauthorizedError,
+    ValidationError,
+)
 from platform_core.core.http_security import client_ip
 from platform_core.core.keys import get_key_registry
 from platform_core.core.locales import country_choices, currency_symbol, language_choices
+from platform_core.core.org_context import tenant_timezone
 from platform_core.core.security_audit import record_security_event
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.tenant_lifecycle import TenantLifecycleService
@@ -1546,6 +1554,48 @@ async def update_supplier_profile(
     )
 
 
+class RepairContactRequest(BaseModel):
+    """The smallest thing an operator acting on a reachability report sends.
+
+    A PATCH body rather than a whole profile: making somebody resend
+    `national_id` and `village` to fix a phone number is how a forgotten field
+    silently blanks a record.
+    """
+
+    phone: str = Field(default="", max_length=30)
+    locale: str | None = Field(default=None, max_length=8)
+    #: Why. Free text, stored on the audit entry and nowhere else.
+    reason: str | None = Field(default=None, max_length=200)
+
+
+@supplier_router.patch("/{supplier_id}/contact", response_model=SupplierProfileInput)
+async def repair_supplier_contact(
+    supplier_id: uuid.UUID, body: RepairContactRequest, service: SupplierSvc, p: SupplierManage
+) -> Any:
+    """Repair how a farmer is reached (DEMO-030).
+
+    Behind the same `supplier.manage` permission as every other change to a
+    supplier — a contact detail is part of the supplier record, and inventing a
+    narrower permission for it would mean a role that can change a farmer's
+    phone number but not their name.
+    """
+    profile = await service.repair_contact(
+        supplier_id,
+        phone=body.phone,
+        locale=body.locale,
+        reason=body.reason,
+        actor_id=p.id,
+    )
+    return SupplierProfileInput(
+        full_name=profile.full_name,
+        phone=profile.phone,
+        national_id=profile.national_id,
+        village=profile.village,
+        locale=profile.locale,
+        extra=profile.extra,
+    )
+
+
 class SupplierStatusRequest(BaseModel):
     status: str
 
@@ -2419,6 +2469,44 @@ async def read_reachability(
     something about it, instead of a message quietly going nowhere.
     """
     summary = await service.for_template(template_key, subject_type=subject_type)
+    return ReachabilitySummaryView.of(summary)
+
+
+@notification_router.get(
+    "/notifications/reachability/settlement-period",
+    dependencies=[Depends(require_permission("notification.read"))],
+)
+async def read_settlement_period_reachability(
+    service: Annotated[ReachabilityService, Depends(deps.get_reachability_service)],
+    settlements: Annotated[SettlementService, Depends(deps.get_settlement_service)],
+    session: deps.Session,
+    period_from: date | None = None,
+    period_to: date | None = None,
+) -> ReachabilitySummaryView:
+    """Who can be reached about the settlements in a period (DEMO-030).
+
+    **The dates default on the ORGANIZATION's calendar, not the server's.** An
+    operator in Bengaluru asking "this month" at 00:30 local must be answered
+    about their month, and `business_today` is the only thing that knows which
+    that is — `date.today()` here would silently give an Indian dairy the
+    previous month for five and a half hours every night.
+
+    It still blocks nothing: this reports, and settlement proceeds regardless.
+    """
+    # `tenant_timezone` is the platform's own way to ask whose clock this is —
+    # the same one the calendar and the scheduler use.
+    today = business_today(await tenant_timezone(session))
+    if period_from is None or period_to is None:
+        default_from, default_to = month_bounds(today)
+        period_from = period_from or default_from
+        period_to = period_to or default_to
+    if period_from > period_to:
+        raise ValidationError("period_from must not be after period_to")
+    # Composition, in the composition layer: the SETTLEMENT module answers who
+    # it is settling, and the NOTIFICATION module answers whether they can be
+    # reached. Neither queries the other's tables.
+    subject_ids = await settlements.supplier_ids_in_period(period_from, period_to)
+    summary = await service.for_subjects(subject_ids, template_key="settlement_finalized")
     return ReachabilitySummaryView.of(summary)
 
 
