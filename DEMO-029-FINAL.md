@@ -240,7 +240,56 @@ described in §5.
 
 ## 13. Production verification
 
-*(completed after deployment — see §13 in the released version)*
+Deployed `main-7975891` to **https://dev.phoenixsoft.in** through the existing
+path. **A migration was necessary and is stated as such**: `delivered_at` has
+nowhere else to live and the replay defence is a unique constraint, which is a
+table. Schema at `f3a9c71d5e28`, matching the image; verified up→down→up with
+an empty autogenerate diff before deployment.
+
+All nine components healthy, 11 containers healthy, dead-letter queue 0,
+undelivered outbox 0, scheduler intact (12 generation runs).
+
+**Nothing on production is delivered, and nothing pretends to be:**
+
+| | |
+|---|---|
+| `status = 'delivered'` | **0** |
+| `delivered_at IS NOT NULL` | **0** |
+| Receipt events received | **0** |
+| `status = 'sent'` | 12 (unchanged) |
+
+No backfill was performed: no `sent` row became `delivered`, because turning
+provider acceptance into delivery is the one thing DEMO-028 was written to
+stop.
+
+**The reachability report works, and its production answer is the honest one:**
+
+| Tenant | Channel | Total | Reachable | Unreachable | Unknown | Reason |
+|---|---|---|---|---|---|---|
+| India | sms | 12 | 0 | 0 | **12** | `provider_unavailable` |
+| Kenya | sms | 24 | 0 | 0 | **24** | `provider_unavailable` |
+
+Every messaging provider on this deployment is `disabled`, so the platform
+cannot send at all — and it says so once, against the deployment, rather than
+accusing 36 blameless farmers of having bad phone numbers. Every one of them is
+still **named** in the affected list. This is the rule from §7 doing exactly
+what it was written for, observed in production rather than described.
+
+**The guards refuse:**
+
+| Attempt | Result |
+|---|---|
+| Reachability with no token | **401** |
+| `POST /v1/notifications/receipts/sms` (provider has no receipts) | **404** |
+| `POST /v1/notifications/receipts/acme` (no such provider) | **404** |
+
+RLS on `notification_receipt_event` is enabled and **forced**, among 69
+policies. Month-to-date AWS cost is effectively nil.
+
+**The browser walkthrough was NOT performed** — the Chrome extension is not
+connected in this session, so the reachability panel and the `delivered` card
+were verified by their own tests and by the API, not visually. Same gap as the
+previous three milestones, stated rather than papered over.
 
 ## 14. REAL versus TEST
 
@@ -275,6 +324,24 @@ asserted by a test, and the PostgreSQL proof snapshots settlement, invoice,
 payment, receipt and customer-payment counts plus settlement net and
 receivables around a full receipt cycle for **both** journeys and requires them
 identical.
+
+**Verified on production, before and after the deployment:**
+
+| | Before | After |
+|---|---|---|
+| Invoiced | 809038.00 | **809038.00** |
+| Receivables | 809038.00 | **809038.00** |
+| Received | 444105.00 | **444105.00** |
+| Settled (net) | 353417.50 | **353417.50** |
+| Paid out to suppliers | 168675.50 | **168675.50** |
+| Collections / settlements | 534 / 84 | **534 / 84** |
+| Invoices / customer receipts / receipts | 31 / 24 / 36 | **31 / 24 / 36** |
+| Supplier payments / customer payments | 42 / 24 | **42 / 24** |
+| Notifications | 251 | **251** |
+
+Every figure identical, including the notification count. A verified backup was
+taken first — 68 tables, 41,531 rows, `verified: true`, plus a second explicit
+verify pass — on top of the one `deploy.sh` takes itself.
 
 ## 16. Known limitations
 
