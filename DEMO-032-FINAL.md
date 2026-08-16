@@ -342,7 +342,45 @@ report, `NOT_APPLICABLE` for text channels, and purpose coverage.
 
 ## 18. Production verification
 
-*(completed after deployment — see §18 in the released version)*
+Deployed `main-9e71cfc` to **https://dev.phoenixsoft.in** through the existing
+path. **No migration was required and none ran** — the schema stayed at
+`f3a9c71d5e28` and the deploy printed no "schema moved" notice. The registry is
+a read over code and a settings dict; nothing needed a column.
+
+All nine components healthy, 11 containers, dead-letter queue 0, undelivered
+outbox 0, scheduler intact (12 generation runs).
+
+**The registry on production says exactly what it should:**
+
+```
+total = 41        unmapped_whatsapp = 8
+mapping           NOT_APPLICABLE 33   NOT_CONFIGURED 8
+whatsapp not approvable   8 of 8
+business keys     customer_payment_recorded, invoice_issued, milk_rejected,
+                  payment_completed, receipt_available, settlement_finalized
+```
+
+The §11 finding is visible in production, not only in a test: **all 8 business
+WhatsApp templates report that they cannot be approved templates**, each with
+its reason.
+
+| Check | Result |
+|---|---|
+| Both tenants' registry responses | **byte-identical** — process-wide, no tenant data |
+| Credential-shaped fields | **none** |
+| `GET` unauthenticated | **401** |
+| `POST` to the registry | **405** — there is no write path |
+| Messaging mode | `test`, `sends_real_messages=false`, all four channels `can_send=false` |
+| Messages sent in the last hour | **0** |
+
+DEMO-031's safety is intact and **no external message was sent**.
+
+Month-to-date AWS cost effectively nil.
+
+**The browser walkthrough was NOT performed** — the Chrome extension is not
+connected in this session, so the registry panel was verified by its own tests
+and by the API, not visually. Same gap as the previous six milestones, stated
+rather than papered over.
 
 ## 19. Financial safety
 
@@ -350,6 +388,24 @@ Nothing here writes anything. The registry is a read over a Python tuple and a
 settings dict. Asserted on SQLite and again on PostgreSQL: settlement, invoice,
 payment, receipt, customer-payment counts and settlement net and receivables
 are snapshotted around repeated registry reads and required identical.
+
+**Verified on production, before and after the deployment:**
+
+| | Before | After |
+|---|---|---|
+| Invoiced | 809038.00 | **809038.00** |
+| Receivables | 809038.00 | **809038.00** |
+| Received | 444105.00 | **444105.00** |
+| Settled (net) | 353417.50 | **353417.50** |
+| Paid out to suppliers | 168675.50 | **168675.50** |
+| Collections / settlements | 534 / 84 | **534 / 84** |
+| Invoices / customer receipts / receipts | 31 / 24 / 36 | **31 / 24 / 36** |
+| Supplier payments / customer payments | 42 / 24 | **42 / 24** |
+| Notifications | 251 | **251** |
+
+Every figure identical. A verified backup was taken first — 69 tables, 41,587
+rows, `verified: true`, plus a second explicit verify pass — on top of the one
+`deploy.sh` takes itself.
 
 ## 20. REAL versus TEST
 
