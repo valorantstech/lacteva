@@ -259,7 +259,47 @@ storing `provider_status`, and dropping quantity from the settlement event.
 
 ## 16. Production verification
 
-*(completed after deployment — see §16 in the released version)*
+Deployed `main-948933e` to **https://dev.phoenixsoft.in** through the existing
+path — git → GitHub Actions → ECR → `deploy.sh`. No flags, no forcing, no
+manual schema edits. Schema at `e8b2a4c60d17`, matching the image; all nine
+components healthy; 11 containers healthy; dead-letter queue 0; undelivered
+outbox 0. `SMOKE TEST PASSED`.
+
+**Nothing on production claims a delivery:**
+
+| | |
+|---|---|
+| Rows claiming `provider_status = 'delivered'` | **0** |
+| Rows with no provider claim at all | **251** (all of them — they predate the column, which is the honest value) |
+| Rows with `status = 'sent'` | 12 |
+
+`provider_status` and `source_type` read `null` on every pre-existing row and
+the API returns them as such, on both tenants. No backfill was performed:
+nothing recorded before this migration knows what a provider claimed, and
+inventing one would put an unobserved fact in the audit trail.
+
+**Notification configuration is unchanged** — `config_entry` holds **zero**
+`notification.channel.*` rows, so no tenant's channel moved. Both messaging
+providers on the deployment remain `disabled`
+(`LACTEVA_NOTIFICATION_SMS_PROVIDER=disabled`,
+`LACTEVA_NOTIFICATION_EMAIL_PROVIDER=disabled`).
+
+**No external message was delivered by this milestone, and none is reported as
+delivered.** The India tenant's history holds 25 settlement messages and
+Kenya's 49, every one of them `dead` — the correct outcome for a deployment
+with no gateway, visible rather than silent.
+
+RLS on `notification` is enabled and **forced**, among 68 policies.
+
+Month-to-date AWS cost is effectively nil (~$0.0000003 net with credits
+applied); same `c7i-flex.large`.
+
+**Two things stated rather than glossed.** The browser walkthrough was **not
+performed** — the Chrome extension is not connected in this session, so the
+portal's corrected wording was verified by its own test suite and the API, not
+visually. And both production tenants are configured `en-IN` / `en`, so no
+Hindi, Arabic or Swahili message exists in production data: the language work
+is proven by tests and by the PostgreSQL proof, not by production content.
 
 ## 17. Financial safety
 
@@ -272,6 +312,25 @@ No calculation was touched. The settlement and billing changes are two **reads**
 (`_sum_quantity`, `_sum_invoice_quantity`) publishing figures onto events; no
 column was written, no total recomputed, no migration touched a financial
 table.
+
+**Verified on production, before and after the deployment:**
+
+| | Before | After |
+|---|---|---|
+| Invoiced | 809038.00 | **809038.00** |
+| Receivables | 809038.00 | **809038.00** |
+| Received | 444105.00 | **444105.00** |
+| Settled (net) | 353417.50 | **353417.50** |
+| Paid out to suppliers | 168675.50 | **168675.50** |
+| Collections / settlements | 534 / 84 | **534 / 84** |
+| Invoices / customer receipts / receipts | 31 / 24 / 36 | **31 / 24 / 36** |
+| Supplier payments / customer payments | 42 / 24 | **42 / 24** |
+| Notifications | 251 | **251** |
+
+Every figure identical, including the notification count — deploying produced
+no message. A verified backup was taken first (68 tables, 41,515 rows,
+`verified: true`, plus a second explicit verify pass), on top of the one
+`deploy.sh` takes itself.
 
 ## 18. REAL versus TEST
 
