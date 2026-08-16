@@ -152,6 +152,7 @@ from platform_core.modules.notification.service import (
     PushDeviceView,
     RegisterPushDeviceCommand,
     RenderedPreview,
+    TemplateRegistryView,
     TemplateView,
 )
 from platform_core.modules.operational_readiness.models import DEVICE_CATEGORIES
@@ -2452,6 +2453,26 @@ notification_router = APIRouter(tags=["notifications"], route_class=IdempotentRo
 NotificationRead = Annotated[Principal, Depends(require_permission("notification.read"))]
 NotificationManage = Annotated[Principal, Depends(require_permission("notification.manage"))]
 NotificationSvc = Annotated[NotificationService, Depends(deps.get_notification_service)]
+
+
+@notification_router.get(
+    "/notification-templates/registry",
+    dependencies=[Depends(require_permission("notification.read"))],
+)
+async def read_template_registry() -> TemplateRegistryView:
+    """Every template Lacteva can send, and whether a provider knows it.
+
+    **Read-only.** A template is code — reviewed, tested, shipped, and
+    re-renderable months later for a retry. A database-editable message that a
+    farmer receives about their money is a change nobody reviewed, and an
+    approved WhatsApp wording that has silently diverged from the one a vendor
+    approved.
+
+    Process-wide rather than per-tenant, because the templates are. What is
+    per-tenant is the channel a dairy chose, which lives in the configuration
+    store behind RLS and is not exposed here.
+    """
+    return NotificationService.registry()
 
 
 @notification_router.get(

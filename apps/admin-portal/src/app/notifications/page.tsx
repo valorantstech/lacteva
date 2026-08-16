@@ -30,10 +30,12 @@ import {
   MessagingPosture,
   ReachabilityEntry,
   ReachabilitySummary,
+  TemplateRegistry,
   getMessagingPosture,
   getNotificationStats,
   getReachability,
   getSettlementPeriodReachability,
+  getTemplateRegistry,
   listNotificationTemplates,
   listNotifications,
   previewNotificationTemplate,
@@ -177,6 +179,8 @@ export default function NotificationsPage() {
       </header>
 
       <MessagingPosturePanel />
+
+      <TemplateRegistryPanel />
 
       <ReachabilityPanel />
 
@@ -997,6 +1001,115 @@ function MessagingPosturePanel() {
             </tbody>
           </table>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * What Lacteva can send, and what a provider would still need (DEMO-032).
+ *
+ * **Read-only, deliberately.** A template is code — reviewed, shipped, and
+ * re-rendered months later for a retry. A database-editable message a farmer
+ * receives about their money is a change nobody reviewed, and an approved
+ * WhatsApp wording that has silently diverged from the one a vendor approved.
+ *
+ * The column that matters is the last one: an approved WhatsApp template has a
+ * FIXED parameter count, and Lacteva's optional segments do not.
+ */
+function TemplateRegistryPanel() {
+  const [registry, setRegistry] = useState<TemplateRegistry | null>(null);
+  const [businessOnly, setBusinessOnly] = useState(true);
+
+  useEffect(() => {
+    // Deferred by a tick, the idiom the rest of the portal uses.
+    const timer = setTimeout(() => {
+      getTemplateRegistry()
+        .then(setRegistry)
+        .catch(() => setRegistry(null));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!registry) return null;
+
+  const rows = registry.entries.filter((e) => !businessOnly || e.business);
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 py-4 text-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="font-medium">Message templates</h2>
+          <Badge variant="outline">{registry.total} total</Badge>
+          {registry.unmapped_whatsapp > 0 && (
+            <Badge variant="secondary">
+              {registry.unmapped_whatsapp} WhatsApp not mapped to a provider
+            </Badge>
+          )}
+          <Button
+            onClick={() => setBusinessOnly((v) => !v)}
+            size="sm"
+            variant="outline"
+          >
+            {businessOnly ? "Show all" : "Business messages only"}
+          </Button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-4 font-medium">Template</th>
+                <th className="py-1 pr-4 font-medium">Purpose</th>
+                <th className="py-1 pr-4 font-medium">Channel</th>
+                <th className="py-1 pr-4 font-medium">Lang</th>
+                <th className="py-1 pr-4 font-medium">Variables</th>
+                <th className="py-1 pr-4 font-medium">Status</th>
+                <th className="py-1 font-medium">Provider mapping</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((entry) => (
+                <tr
+                  className="border-t border-border align-top"
+                  key={`${entry.key}-${entry.channel}-${entry.language}`}
+                >
+                  <td className="py-2 pr-4 font-mono text-xs">{entry.key}</td>
+                  <td className="py-2 pr-4 text-muted-foreground">
+                    {entry.purpose}
+                  </td>
+                  <td className="py-2 pr-4">{entry.channel}</td>
+                  <td className="py-2 pr-4">{entry.language}</td>
+                  <td className="py-2 pr-4 font-mono text-xs">
+                    {entry.variables.length}
+                    {entry.optional_variables.length > 0 &&
+                      ` +${entry.optional_variables.length} optional`}
+                  </td>
+                  <td className="py-2 pr-4">
+                    {entry.active ? `v${entry.version}` : "retired"}
+                  </td>
+                  <td className="py-2">
+                    {entry.provider_mapping_status === "NOT_APPLICABLE"
+                      ? "—"
+                      : (entry.provider_template ?? "not configured")}
+                    {entry.channel === "whatsapp" && !entry.whatsapp_ready && (
+                      <span className="block text-xs text-destructive">
+                        cannot be an approved template: {entry.whatsapp_blocker}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="text-muted-foreground">
+          Templates are part of the application and are not editable here — a
+          message a farmer receives about their money is reviewed and shipped,
+          not typed into a screen. Provider template names come from deployment
+          configuration; no credential appears on this page.
+        </p>
       </CardContent>
     </Card>
   );

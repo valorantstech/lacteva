@@ -60,6 +60,48 @@ function stubApi(messages: api.Notification[] = [MESSAGE]) {
     by_channel: { sms: messages.length },
   } as never);
   vi.spyOn(api, "listNotificationTemplates").mockResolvedValue([] as never);
+  vi.spyOn(api, "getTemplateRegistry").mockResolvedValue({
+    total: 41,
+    unmapped_whatsapp: 8,
+    entries: [
+      {
+        key: "settlement_finalized",
+        purpose:
+          "Tells a farmer their settlement is final and what they are owed",
+        channel: "whatsapp",
+        language: "en",
+        title: "Settlement {number} ready",
+        body: "Hello {name}…",
+        variables: ["number", "name"],
+        optional_variables: ["quantity", "quantity_unit"],
+        version: 1,
+        active: true,
+        business: true,
+        provider_mapping_status: "NOT_CONFIGURED",
+        provider_template: null,
+        whatsapp_ready: false,
+        whatsapp_blocker:
+          "has optional segments, which a fixed-parameter template cannot carry",
+      },
+      {
+        key: "password_reset",
+        purpose: "Sends a user a one-time password-reset link",
+        channel: "email",
+        language: "en",
+        title: "Reset",
+        body: "…",
+        variables: ["link"],
+        optional_variables: [],
+        version: 1,
+        active: true,
+        business: false,
+        provider_mapping_status: "NOT_APPLICABLE",
+        provider_template: null,
+        whatsapp_ready: true,
+        whatsapp_blocker: null,
+      },
+    ],
+  } as never);
   vi.spyOn(api, "getMessagingPosture").mockResolvedValue({
     mode: "test",
     sends_real_messages: false,
@@ -321,7 +363,10 @@ describe("the messaging gateway panel", () => {
 
     await screen.findByText("Messaging gateway");
     expect(screen.getByText("sandbox-sms")).toBeInTheDocument();
-    expect(screen.getByText("not configured")).toBeInTheDocument();
+    // The gateway panel says "not configured" for the channel; the registry
+    // panel says it for a provider mapping. Both are legitimate, so scope this
+    // to the gateway row.
+    expect(screen.getByText("disabled-whatsapp")).toBeInTheDocument();
   });
 
   it("never shows a credential or a gateway URL", async () => {
@@ -331,6 +376,68 @@ describe("the messaging gateway panel", () => {
     await screen.findByText("Messaging gateway");
     const text = (document.body.textContent ?? "").toLowerCase();
     for (const secret of ["api_key", "apikey", "secret", "token", "https://"]) {
+      expect(text).not.toContain(secret);
+    }
+  });
+});
+
+describe("the template registry panel", () => {
+  it("shows what each template is for", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+
+    expect(await screen.findByText("Message templates")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Tells a farmer their settlement is final/),
+    ).toBeInTheDocument();
+  });
+
+  it("says how many WhatsApp templates no provider knows", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+
+    expect(
+      await screen.findByText("8 WhatsApp not mapped to a provider"),
+    ).toBeInTheDocument();
+    // "not configured" appears in both panels — the count above is the
+    // unambiguous assertion.
+    expect(screen.getAllByText("not configured").length).toBeGreaterThanOrEqual(
+      1,
+    );
+  });
+
+  it("says plainly when a template cannot be an approved WhatsApp template", async () => {
+    // The finding: an approved template has a FIXED parameter count and
+    // Lacteva's optional segments do not.
+    stubApi();
+    render(<NotificationsPage />);
+
+    expect(
+      await screen.findByText(/cannot be an approved template/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/optional segments/)).toBeInTheDocument();
+  });
+
+  it("filters to business messages, and can show the rest", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+
+    await screen.findByText("Message templates");
+    // A password reset is not something a dairy sends its farmers.
+    expect(screen.queryByText("password_reset")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show all" }));
+    expect(await screen.findByText("password_reset")).toBeInTheDocument();
+  });
+
+  it("says templates are not editable here, and shows no credential", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+
+    expect(
+      await screen.findByText(/are not editable here/),
+    ).toBeInTheDocument();
+    const text = (document.body.textContent ?? "").toLowerCase();
+    for (const secret of ["api_key", "apikey", "https://"]) {
       expect(text).not.toContain(secret);
     }
   });

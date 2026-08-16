@@ -49,6 +49,50 @@ class TemplateRenderError(Exception):
     """The template needs variables the caller did not supply."""
 
 
+#: What a template is FOR, in business terms (DEMO-032 §6).
+#:
+#: One entry per template key, not per channel or language — the purpose of a
+#: settlement slip does not change because it went by WhatsApp. Keyed
+#: separately from the templates themselves so a new language cannot silently
+#: acquire a different purpose.
+#:
+#: Only journeys the product ACTUALLY has appear here. There is no marketing
+#: category, no reminder, no promotion: inventing an entry would be inventing a
+#: business behaviour, and the registry is meant to be a true statement of what
+#: this platform sends.
+PURPOSES: dict[str, str] = {
+    "settlement_finalized": "Tells a farmer their settlement is final and what they are owed",
+    "payment_completed": "Tells a farmer a settlement payment has been executed",
+    "receipt_available": "Tells a farmer a payment receipt is available",
+    "invoice_issued": "Tells a customer their bill for a period is ready",
+    "customer_payment_recorded": "Tells a customer a payment against their account was recorded",
+    "supplier_registered": "Welcomes a farmer and gives them their supplier code",
+    "supplier_archived": "Tells a farmer their supplier account was closed",
+    "milk_rejected": "Tells a farmer a collection was rejected, and why",
+    "price_unavailable": "Tells an operator no rate could be resolved for a collection",
+    "invitation": "Sends a new user their one-time invitation link",
+    "invitation_accepted": "Confirms to an administrator that an invitation was accepted",
+    "password_reset": "Sends a user a one-time password-reset link",
+}
+
+#: Templates that carry a business fact to a farmer or a customer, as opposed
+#: to platform messages about accounts and access.
+#:
+#: The distinction is the one DEMO-025 already drew for tenant channel
+#: selection, restated here because it is also the line a regulator draws
+#: between "transactional/service" and everything else.
+BUSINESS_PURPOSE_KEYS = frozenset(
+    {
+        "settlement_finalized",
+        "payment_completed",
+        "receipt_available",
+        "invoice_issued",
+        "customer_payment_recorded",
+        "milk_rejected",
+    }
+)
+
+
 @dataclass(frozen=True)
 class Template:
     key: str
@@ -56,6 +100,24 @@ class Template:
     language: str
     title: str
     body: str
+
+    #: DEMO-032. Registry metadata, defaulted so no existing entry changed.
+    #:
+    #: `version` is the CONTENT version of this template. It is not a schema
+    #: version and nothing branches on it: it exists because an approved
+    #: WhatsApp template is approved as a specific wording, so changing the
+    #: wording means re-approval, and an operator needs to be able to see that
+    #: the text moved.
+    version: int = 1
+    #: Inactive means "still here so old messages can be re-rendered on retry,
+    #: but not chosen for anything new". Nothing is inactive today; the field
+    #: exists so retiring a wording does not mean deleting one.
+    active: bool = True
+
+    @property
+    def purpose(self) -> str:
+        """What this template is for, in business terms."""
+        return PURPOSES.get(self.key, "")
 
     @property
     def variables(self) -> tuple[str, ...]:
@@ -576,6 +638,44 @@ def render(template: Template, variables: dict) -> RenderedMessage:
         raise TemplateRenderError(
             f"template {template.key!r} is missing variable(s): {', '.join(sorted(missing))}"
         )
+    # DEMO-032 §8. An UNKNOWN variable is an error too, and it used to be
+    # silently ignored.
+    #
+    # The failure that hides behind that: a consumer renames `net_amount` to
+    # `amount`, the template still has `{net_amount}` — so the render fails
+    # loudly, which is fine. But rename it the OTHER way, or add a figure the
+    # template does not yet show, and nothing complains: the message goes to a
+    # farmer looking complete and missing the number that was added for them.
+    #
+    # Known means "used by SOME template for this key", not "used by this one".
+    #
+    # The dispatch mapping is declarative and one builder feeds every channel:
+    # `invoice_issued` supplies `period` for the push template and
+    # `previous_balance` for the WhatsApp and email ones, and the SMS template
+    # uses neither. Requiring each channel's exact set would have made that
+    # deliberate superset an error — the first draft of this check did, and
+    # three delivery tests said so immediately.
+    #
+    # What survives is the case §8 is actually about: a variable no template
+    # anywhere displays, which is a rename or a typo, and which today reaches a
+    # farmer as a message that looks complete and is missing a figure.
+    #
+    # `name` is exempt: the dispatcher fills it from the recipient directory
+    # for templates that want it and passes it to those that do not.
+    # Its own variables are always known — a template built outside the
+    # registry (a test, a preview) can only be judged against itself.
+    known = (
+        variables_for(template.key)
+        | set(template.variables)
+        | set(template.optional_variables)
+        | {"name"}
+    )
+    unknown = sorted(set(values) - known)
+    if unknown:
+        raise TemplateRenderError(
+            f"template {template.key!r} was given variable(s) it does not use: "
+            f"{', '.join(unknown)} — a value nobody displays is a value nobody sees"
+        )
 
     def substitute(text: str) -> str:
         # Optional segments are resolved FIRST, so a variable that only ever
@@ -588,6 +688,21 @@ def render(template: Template, variables: dict) -> RenderedMessage:
         body=substitute(template.body),
         language=template.language,
     )
+
+
+def variables_for(key: str) -> set[str]:
+    """Every variable any template with this key can display (DEMO-032).
+
+    Required and optional, across every channel and language. This is the set a
+    dispatch builder may legitimately supply, because one builder feeds all of
+    a key's channels.
+    """
+    names: set[str] = set()
+    for template in TEMPLATES:
+        if template.key == key:
+            names.update(template.variables)
+            names.update(template.optional_variables)
+    return names
 
 
 def catalog() -> list[Template]:

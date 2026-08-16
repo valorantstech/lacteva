@@ -235,6 +235,53 @@ class MessagingPosture(BaseModel):
     channels: list[ChannelPosture]
 
 
+class TemplateRegistryEntry(BaseModel):
+    """One template, as the registry describes it (DEMO-032).
+
+    Provider-independent by construction: the only vendor-shaped field is
+    `provider_template`, which is a NAME read from deployment configuration and
+    is `None` on every deployment today.
+    """
+
+    key: str
+    purpose: str
+    channel: str
+    language: str
+    title: str
+    body: str
+    #: Required variables, IN THE ORDER a positional-parameter API needs them.
+    variables: list[str]
+    #: Variables that add a line when supplied and are absent otherwise. NOT
+    #: positional parameters — see `whatsapp_ready`.
+    optional_variables: list[str]
+    version: int
+    active: bool
+    #: Does this template carry a business fact to a farmer or customer, as
+    #: opposed to an account/access message?
+    business: bool
+    #: `NOT_APPLICABLE` | `NOT_CONFIGURED` | `CONFIGURED`.
+    provider_mapping_status: str
+    #: The vendor's own name for this template, when configured. Never a
+    #: credential — a template name is not a secret, and an operator needs it
+    #: to check an approval against a vendor console.
+    provider_template: str | None = None
+    #: Whether this template COULD be sent as an approved WhatsApp template:
+    #: it needs at least one positional parameter and no optional segments,
+    #: because a template message with a varying parameter count is not a
+    #: template.
+    whatsapp_ready: bool = True
+    whatsapp_blocker: str | None = None
+
+
+class TemplateRegistryView(BaseModel):
+    """The whole registry, plus what an operator needs to act on it."""
+
+    total: int
+    #: How many WhatsApp templates still have no approved vendor name.
+    unmapped_whatsapp: int
+    entries: list[TemplateRegistryEntry]
+
+
 class TemplateView(BaseModel):
     key: str
     channel: str
@@ -857,6 +904,69 @@ class NotificationService:
             total=total or 0,
             limit=limit,
             offset=offset,
+        )
+
+    @staticmethod
+    def registry() -> TemplateRegistryView:
+        """Every template Lacteva can send, and whether a provider knows it.
+
+        **Read-only, and deliberately.** A template is code: reviewed, tested,
+        shipped, and re-renderable for a retry months later. A database-editable
+        message that a farmer receives about their money is a change nobody
+        reviewed and an approved WhatsApp wording that silently diverged from
+        the one a vendor approved. The registry describes; it does not edit.
+
+        It is also process-wide rather than per-tenant, because the templates
+        are. What IS per-tenant is which channel a dairy chose, which lives in
+        the configuration store behind RLS and is not exposed here.
+        """
+        from platform_core.modules.notification.providers import vendor_template_for
+        from platform_core.modules.notification.templates import (
+            BUSINESS_PURPOSE_KEYS,
+            catalog,
+        )
+
+        entries: list[TemplateRegistryEntry] = []
+        unmapped = 0
+        for template in catalog():
+            mapped = vendor_template_for(template.key, template.channel)
+            if template.channel == "whatsapp":
+                status = "CONFIGURED" if mapped else "NOT_CONFIGURED"
+                if not mapped:
+                    unmapped += 1
+            else:
+                # SMS and email send text. A vendor template name is only
+                # meaningful where the vendor requires one, and claiming these
+                # are "unmapped" would invent 30 problems nobody has.
+                status = "CONFIGURED" if mapped else "NOT_APPLICABLE"
+
+            blocker = None
+            if not template.variables:
+                blocker = "no positional parameters"
+            elif template.optional_variables:
+                blocker = "has optional segments, which a fixed-parameter template cannot carry"
+
+            entries.append(
+                TemplateRegistryEntry(
+                    key=template.key,
+                    purpose=template.purpose,
+                    channel=template.channel,
+                    language=template.language,
+                    title=template.title,
+                    body=template.body,
+                    variables=list(template.variables),
+                    optional_variables=list(template.optional_variables),
+                    version=template.version,
+                    active=template.active,
+                    business=template.key in BUSINESS_PURPOSE_KEYS,
+                    provider_mapping_status=status,
+                    provider_template=mapped,
+                    whatsapp_ready=blocker is None,
+                    whatsapp_blocker=blocker,
+                )
+            )
+        return TemplateRegistryView(
+            total=len(entries), unmapped_whatsapp=unmapped, entries=entries
         )
 
     @staticmethod

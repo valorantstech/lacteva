@@ -1457,6 +1457,41 @@ export type MessagingPosture = {
   channels: ChannelPosture[];
 };
 
+// --- Template registry (DEMO-032) ------------------------------------------
+//
+// What Lacteva can send, what each template is for, and whether a provider
+// knows it. Read-only: a template is code, and a database-editable message a
+// farmer receives about their money is a change nobody reviewed.
+
+export type TemplateRegistryEntry = {
+  key: string;
+  purpose: string;
+  channel: string;
+  language: string;
+  title: string;
+  body: string;
+  /** Required variables, in the order a positional-parameter API needs them. */
+  variables: string[];
+  optional_variables: string[];
+  version: number;
+  active: boolean;
+  business: boolean;
+  provider_mapping_status: "NOT_APPLICABLE" | "NOT_CONFIGURED" | "CONFIGURED";
+  /** The vendor's own name for this template. Not a credential. */
+  provider_template: string | null;
+  whatsapp_ready: boolean;
+  whatsapp_blocker: string | null;
+};
+
+export type TemplateRegistry = {
+  total: number;
+  unmapped_whatsapp: number;
+  entries: TemplateRegistryEntry[];
+};
+
+export const getTemplateRegistry = () =>
+  api<TemplateRegistry>("/v1/notification-templates/registry");
+
 export const getMessagingPosture = () =>
   api<MessagingPosture>("/v1/notifications/messaging-posture");
 
