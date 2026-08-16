@@ -226,6 +226,73 @@ template and never stored on a row. Phone numbers are masked before logging.
 The one-time invitation token continues to travel by the secret-payload path
 rather than through the event outbox.
 
+## 10a. What is REAL and what is NOT — read this before demonstrating
+
+| | |
+|---|---|
+| **Adapters** | REAL. `HttpSmsProvider`, `HttpWhatsAppProvider`, `SmtpEmailProvider`, `HttpPushProvider` speak real protocols to real gateways. |
+| **Pipeline** | REAL and running on production. |
+| **Templates** | REAL — verified rendering on production in en/hi/ar. |
+| **Tests** | Recording and failing **fakes**. No test contacts a gateway. |
+| **Provider configured on production** | **NONE.** Every channel is `disabled`. |
+| **Message actually delivered to a handset** | **NO. Not one.** |
+
+**Production has all four channels set to `disabled`** — SMS, WhatsApp, email
+and push. That was true before this milestone and is unchanged by it: this
+deployment has never sent an external message and does not now. A `disabled`
+channel refuses and records the refusal; it does not pretend.
+
+**DEMO A and DEMO B are therefore not yet demonstrable end to end.** The
+business event, the template, the channel selection, the notification record
+and the delivery state are all real and provable. The last hop is not, and
+saying otherwise would be the exact claim the work order forbids.
+
+**What is still required to send a real message:**
+
+1. A contracted gateway (SMS and/or WhatsApp) for the target market.
+2. `LACTEVA_NOTIFICATION_SMS_PROVIDER=http` (and/or `..._WHATSAPP_PROVIDER=http`).
+3. `LACTEVA_SMS_API_URL` + `LACTEVA_SMS_API_KEY` (and the WhatsApp equivalents),
+   held as deployment secrets. **No credential was created or committed.**
+4. A tenant that has opted into a channel, if it wants anything other than the
+   default.
+
+Startup validation refuses to boot with `http` selected and no URL or key, so a
+half-configured deployment fails loudly rather than silently sending nothing.
+
+## 11. Production verification
+
+**Deployed `main-adbad10` first attempt**, verification and smoke test passing.
+Schema unchanged at `b8d3e1470f92` — **no migration**; the messaging domain
+already existed. All nine health checks healthy; **65/65 tables RLS-forced**.
+
+**Financial reconciliation: every count identical** before and after —
+collections 534, invoices 31, customer payments/receipts 24/24, settlements 84,
+supplier payments/receipts 42/36, notifications 251. Receivables unchanged at
+**211,961.00 KES** and **152,972.00 INR**.
+
+Deliveries read 1,287 rather than DEMO-023's 1,255. That is the scheduler doing
+its job on the intervening days, not this milestone: identical before and after
+the deploy.
+
+Messages are partitioned by tenant on production — 126 / 102 / 18 / 5 / 0 rows
+across the five organizations, each visible only to its owner.
+
+The new templates were confirmed rendering **on production** in English, Hindi
+and Arabic, with the settlement's period and both money figures substituted.
+
+**Browser verification could not be completed**: the Chrome extension is not
+connected in this session. Verified over HTTP instead — the portal's
+`/notifications` page serves 200, and the notifications and templates APIs
+return 401 unauthenticated. The portal change itself (the channel filter) is
+covered by `tsc`, eslint and the production build.
+
+**Rollback:** previous release `main-9c110b7` is on disk and pinned. The schema
+did not move, so `deploy.sh --rollback` is sufficient with no downgrade.
+
+**AWS: nothing created, nothing modified, no recurring cost change.** External
+messaging cost is entirely configuration-driven and currently zero, because no
+gateway is configured.
+
 ## 11. Known limitations
 
 * **Delivery confirmation is not modelled.** Statuses are `pending → sent →
