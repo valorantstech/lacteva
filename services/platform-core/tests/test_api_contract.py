@@ -275,6 +275,13 @@ PUBLIC = {
     ("POST", "/v1/auth/password-reset/confirm"),
     ("POST", "/v1/invitations/accept"),
     ("GET", "/v1/.well-known/jwks.json"),
+    # DEMO-027. The payment provider's webhook. A gateway has no Lacteva
+    # account, so there is nothing for it to authenticate AS — what replaces
+    # authentication is a constant-time HMAC over the raw body, checked against
+    # a secret that exists only in deployment configuration, plus a unique
+    # `(provider, event_id)` that makes a replay a no-op. It creates nothing,
+    # reads no tenant from its payload, and takes no amount from it as truth.
+    ("POST", "/v1/payments/webhooks/{provider}"),
 }
 
 

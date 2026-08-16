@@ -226,6 +226,25 @@ class Settings(BaseSettings):
     whatsapp_api_key: str = ""
     whatsapp_sender_id: str = ""
     whatsapp_timeout_seconds: float = 10.0
+    # --- Subscription payment gateway (DEMO-027) ---------------------------
+    #
+    # Lacteva charging its own tenants. NOT the dairy paying its farmers —
+    # that is `modules/payment`, which has no gateway by design.
+    #
+    # `disabled` is the DEFAULT and the only correct production posture until a
+    # gateway is contracted: it refuses every checkout loudly rather than
+    # recording an intent nobody can complete. `test` is a deterministic fake
+    # that takes no money and is REFUSED IN PROD below — a fake gateway
+    # reachable in production is indistinguishable from free software.
+    subscription_payment_provider: Literal["disabled", "test"] = "disabled"
+    #: HMAC secret for verifying provider webhooks. From deployment
+    #: configuration only; there is no default, because a default would be a
+    #: published secret and anyone could then forge a payment confirmation.
+    subscription_payment_webhook_secret: str = ""
+    #: How long access survives a renewal the provider says failed, in days on
+    #: the organization's own calendar. Configuration rather than a constant
+    #: because it is a commercial policy, not an engineering fact.
+    subscription_grace_days: int = 14
     # PROD-001: `builtin` is a real, dependency-free PDF writer (see
     # receipt/pdf.py). `placeholder` is kept only so the pre-PROD-001
     # behaviour remains reachable in dev; prod refuses it.
@@ -453,6 +472,26 @@ class Settings(BaseSettings):
         if self.notification_email_provider == "smtp" and not self.smtp_host:
             problems.append(
                 "LACTEVA_NOTIFICATION_EMAIL_PROVIDER is 'smtp' but LACTEVA_SMTP_HOST is not set"
+            )
+
+        # DEMO-027. The test gateway confirms payments that never happened. In
+        # production that is not a test double, it is a way to activate a paid
+        # subscription for nothing — so it is refused at startup rather than
+        # trusted not to be selected by accident.
+        if self.subscription_payment_provider == "test":
+            problems.append(
+                "LACTEVA_SUBSCRIPTION_PAYMENT_PROVIDER must not be 'test' in prod — "
+                "the test provider confirms payments that never happened"
+            )
+        # A gateway selected but unable to verify its webhooks would accept an
+        # unsigned POST as proof of payment. Fail the deployment once.
+        if (
+            self.subscription_payment_provider != "disabled"
+            and not self.subscription_payment_webhook_secret
+        ):
+            problems.append(
+                "LACTEVA_SUBSCRIPTION_PAYMENT_WEBHOOK_SECRET is required when a payment "
+                "provider is configured — without it a webhook cannot be verified"
             )
 
         # PROD-001 §4: the placeholder renderer emits a text file named .pdf.txt

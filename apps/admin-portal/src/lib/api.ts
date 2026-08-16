@@ -2776,7 +2776,7 @@ export const reopenFinancialPeriod = (id: string) =>
 export type SubscriptionView = {
   plan_code: string;
   plan_name: string;
-  status: "trialing" | "active" | "cancelled" | "expired";
+  status: "trialing" | "active" | "past_due" | "cancelled" | "expired";
   trial_started_on: string | null;
   trial_ends_on: string | null;
   started_on: string | null;
@@ -2798,6 +2798,9 @@ export type EntitlementView = {
   subscribed_centres: number;
   centre_allowance: number | null;
   within_centre_allowance: boolean;
+  /** DEMO-027. When a past_due subscription stops operating. */
+  grace_ends_on: string | null;
+  current_period_end: string | null;
 };
 
 export const getSubscription = () =>
@@ -2805,3 +2808,75 @@ export const getSubscription = () =>
 
 export const getEntitlement = () =>
   api<EntitlementView>("/v1/organization/entitlement");
+
+// --- Subscription payment (DEMO-027) ---------------------------------------
+//
+// Note what the client may SEND: a plan code and a number of collection
+// centres. Never an amount, never a currency, never a status. Those are the
+// server's, and a type that could express them here would be the first step to
+// a browser naming its own price.
+
+export type QuoteView = {
+  plan_code: string;
+  plan_name: string;
+  currency_code: string;
+  /** Per collection centre, per period. Null until a price is published. */
+  unit_price: string | null;
+  quantity: number;
+  amount: string | null;
+  billing_period: string;
+  active_centres: number;
+  /** Whether this deployment can take money at all. */
+  payable: boolean;
+  payable_reason: string | null;
+};
+
+export type SubscriptionPaymentView = {
+  id: string;
+  plan_code: string;
+  unit_price: string;
+  quantity: number;
+  amount: string;
+  currency_code: string;
+  status: "pending" | "succeeded" | "failed" | "cancelled";
+  provider: string;
+  provider_reference: string | null;
+  checkout_url: string | null;
+  failure_code: string | null;
+  failure_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export const getSubscriptionQuote = (planCode: string, centres: number) =>
+  api<QuoteView>(
+    `/v1/organization/subscription/quote?plan_code=${encodeURIComponent(planCode)}` +
+      `&subscribed_centres=${centres}`,
+  );
+
+export const startSubscriptionCheckout = (planCode: string, centres: number) =>
+  api<SubscriptionPaymentView>("/v1/organization/subscription/checkout", {
+    method: "POST",
+    body: JSON.stringify({
+      plan_code: planCode,
+      subscribed_centres: centres,
+    }),
+  });
+
+/**
+ * Ask the SERVER to ask the provider. Takes no arguments deliberately — a
+ * browser back from a hosted checkout knows only that something may have
+ * changed, never what.
+ */
+export const refreshSubscriptionCheckout = () =>
+  api<SubscriptionPaymentView>("/v1/organization/subscription/checkout/refresh", {
+    method: "POST",
+  });
+
+export const cancelSubscriptionCheckout = () =>
+  api<SubscriptionPaymentView>("/v1/organization/subscription/checkout/cancel", {
+    method: "POST",
+  });
+
+export const getSubscriptionPayments = () =>
+  api<SubscriptionPaymentView[]>("/v1/organization/subscription/payments");

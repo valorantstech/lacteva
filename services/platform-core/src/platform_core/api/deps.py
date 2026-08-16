@@ -59,6 +59,7 @@ from platform_core.modules.pricing.service import RateCardService
 from platform_core.modules.receipt.service import ReceiptService
 from platform_core.modules.reporting.service import ReportingService
 from platform_core.modules.settlement.service import SettlementService
+from platform_core.modules.subscription.billing import SubscriptionBillingService
 from platform_core.modules.subscription.service import SubscriptionService
 from platform_core.modules.supplier.service import SupplierService
 from platform_core.modules.sync.service import SyncService
@@ -372,6 +373,17 @@ def get_subscription_service(session: Session, principal: CurrentPrincipal) -> S
     if principal.tenant_id is None:
         raise ForbiddenError("this endpoint requires an organization context")
     return SubscriptionService(session, principal.tenant_id)
+
+
+def get_subscription_billing_service(
+    session: Session, principal: CurrentPrincipal, bus: Bus
+) -> SubscriptionBillingService:
+    """DEMO-027. Also scoped to the caller's own organization, for the same
+    reason: there is no request in which a caller can start a checkout for
+    somebody else, because there is nowhere to say whose."""
+    if principal.tenant_id is None:
+        raise ForbiddenError("this endpoint requires an organization context")
+    return SubscriptionBillingService(session, principal.tenant_id, bus)
 
 
 def get_business_calendar_service(

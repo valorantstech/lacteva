@@ -24,6 +24,11 @@ PERMISSIONS: dict[str, str] = {
     # for somebody at Lacteva to say so. A tenant administrator reads.
     "organization.subscription.read": "Read the organization's subscription and trial",
     "organization.subscription.manage": "Activate, change or cancel a subscription",
+    # DEMO-027. Distinct from `manage` on purpose: paying for your own
+    # subscription is a thing a customer does, and activating one without a
+    # payment is a thing only Lacteva does. Collapsing them would have given
+    # every tenant administrator the operator's override.
+    "organization.subscription.pay": "Pay for this organization's subscription",
     "organization.structure.manage": "Create and administer workspaces and branches",
     "organization.member.read": "Read members and invitations",
     "organization.member.manage": "Invite and administer members",
@@ -175,6 +180,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "organization.calendar.manage",
         "organization.period.manage",
         "organization.subscription.read",
+        "organization.subscription.pay",
     ],
     "tenant-viewer": [
         "identity.user.read",

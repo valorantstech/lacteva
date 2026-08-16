@@ -24,7 +24,7 @@ from platform_core.core.backup.service import (
     ClassificationView,
 )
 from platform_core.core.db import as_utc
-from platform_core.core.errors import AppError, ForbiddenError
+from platform_core.core.errors import AppError, ForbiddenError, NotFoundError, UnauthorizedError
 from platform_core.core.http_security import client_ip
 from platform_core.core.keys import get_key_registry
 from platform_core.core.locales import country_choices, currency_symbol, language_choices
@@ -235,6 +235,16 @@ from platform_core.modules.settlement.service import (
     SettlementPage,
     SettlementService,
     SettlementView,
+)
+from platform_core.modules.subscription import webhooks as webhook_processing
+from platform_core.modules.subscription.billing import (
+    QuoteView,
+    SubscriptionBillingService,
+    SubscriptionPaymentView,
+)
+from platform_core.modules.subscription.providers import (
+    PaymentProviderUnavailable,
+    WebhookVerificationError,
 )
 from platform_core.modules.subscription.service import (
     EntitlementView,
@@ -805,6 +815,131 @@ async def cancel_subscription(
     service: Annotated[SubscriptionService, Depends(deps.get_subscription_service)],
 ) -> SubscriptionView:
     return await service.cancel()
+
+
+# --- Subscription payment (DEMO-027) --------------------------------------
+#
+# What a client may send is deliberately tiny: a plan code and a number of
+# collection centres. No amount, no currency, no status, no payment id, no
+# provider reference. Everything else is the server's, because every one of
+# those fields is a way to pay less than the price or to become active without
+# paying at all.
+
+
+class CheckoutRequestBody(BaseModel):
+    plan_code: str
+    #: Collection centres to subscribe for. The ONLY number a customer chooses.
+    subscribed_centres: int
+
+
+@subscription_router.get(
+    "/subscription/quote",
+    dependencies=[Depends(require_permission("organization.subscription.read"))],
+)
+async def quote_subscription(
+    billing: Annotated[SubscriptionBillingService, Depends(deps.get_subscription_billing_service)],
+    plan_code: str,
+    subscribed_centres: int,
+) -> QuoteView:
+    """What a subscription would cost. Calculated here, never sent by a client."""
+    return await billing.quote(plan_code=plan_code, quantity=subscribed_centres)
+
+
+@subscription_router.post(
+    "/subscription/checkout",
+    dependencies=[Depends(require_permission("organization.subscription.pay"))],
+)
+async def start_subscription_checkout(
+    billing: Annotated[SubscriptionBillingService, Depends(deps.get_subscription_billing_service)],
+    body: CheckoutRequestBody,
+) -> SubscriptionPaymentView:
+    """Open a checkout with the configured provider.
+
+    Refuses plainly when no gateway is contracted or no price is published —
+    both are things an administrator can act on, and neither improves by being
+    retried.
+    """
+    return await billing.start_checkout(plan_code=body.plan_code, quantity=body.subscribed_centres)
+
+
+@subscription_router.post(
+    "/subscription/checkout/refresh",
+    dependencies=[Depends(require_permission("organization.subscription.pay"))],
+)
+async def refresh_subscription_checkout(
+    billing: Annotated[SubscriptionBillingService, Depends(deps.get_subscription_billing_service)],
+) -> SubscriptionPaymentView:
+    """Ask the PROVIDER what happened to the open payment.
+
+    Takes no arguments on purpose. A browser returning from a hosted checkout
+    is a hint that something may have changed, not evidence of what — so the
+    most it can say is "look again". It cannot name a payment, an amount or a
+    status.
+    """
+    return await billing.refresh_open_payment()
+
+
+@subscription_router.post(
+    "/subscription/checkout/cancel",
+    dependencies=[Depends(require_permission("organization.subscription.pay"))],
+)
+async def cancel_subscription_checkout(
+    billing: Annotated[SubscriptionBillingService, Depends(deps.get_subscription_billing_service)],
+) -> SubscriptionPaymentView:
+    return await billing.cancel_open_payment()
+
+
+@subscription_router.get(
+    "/subscription/payments",
+    dependencies=[Depends(require_permission("organization.subscription.read"))],
+)
+async def list_subscription_payments(
+    billing: Annotated[SubscriptionBillingService, Depends(deps.get_subscription_billing_service)],
+) -> list[SubscriptionPaymentView]:
+    """This organization's own subscription payments. Never anyone else's."""
+    return await billing.history()
+
+
+# --- The provider webhook (DEMO-027) --------------------------------------
+#
+# Its own router with NO idempotency route class and NO authentication
+# dependency, both deliberately.
+#
+# Not `IdempotentRoute`, because that keys on a client-supplied
+# `Idempotency-Key` header and a payment gateway sends its own event id
+# instead — de-duplication belongs on that id, in the database, where a replay
+# cannot slip past a header nobody sent.
+#
+# Not authenticated, because a gateway has no Lacteva account. What replaces
+# authentication is a signature over the raw body, checked in constant time
+# against a secret that exists only in deployment configuration.
+webhook_router = APIRouter(prefix="/payments", tags=["subscription"])
+
+
+@webhook_router.post("/webhooks/{provider}", status_code=200)
+async def receive_payment_webhook(provider: str, request: Request) -> dict[str, str]:
+    """Accept one provider notification.
+
+    Returns 200 for anything it has correctly handled — INCLUDING a replay and
+    an unknown reference. That is deliberate: a gateway reads a non-2xx as
+    "retry", and asking it to redeliver an event that was already applied, or
+    one about a payment this platform has never heard of, achieves nothing and
+    eventually pages somebody.
+
+    401 and 404 say only that the request was refused, never which check
+    refused it.
+    """
+    body = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    try:
+        result = await webhook_processing.process_webhook(
+            provider_name=provider, body=body, headers=headers
+        )
+    except WebhookVerificationError as exc:
+        raise UnauthorizedError("webhook rejected") from exc
+    except PaymentProviderUnavailable as exc:
+        raise NotFoundError("unknown payment provider") from exc
+    return {"outcome": result.outcome}
 
 
 # --- Business calendar and financial periods (DEMO-020) -------------------
@@ -3766,5 +3901,6 @@ for sub in (
     locale_router,
     calendar_router,
     subscription_router,
+    webhook_router,
 ):
     router.include_router(sub)

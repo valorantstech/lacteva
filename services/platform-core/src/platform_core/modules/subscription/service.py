@@ -86,6 +86,13 @@ class EntitlementView(BaseModel):
     #: `None` when the plan does not limit centres (the trial).
     centre_allowance: int | None = None
     within_centre_allowance: bool
+    #: DEMO-027. When a `past_due` subscription stops operating, and when the
+    #: current paid period ends. Both null unless they apply — a screen should
+    #: be able to say WHEN without a second call and without arithmetic of its
+    #: own, because a date computed in a browser is computed in the browser's
+    #: timezone.
+    grace_ends_on: date | None = None
+    current_period_end: date | None = None
 
 
 @dataclass(frozen=True)
@@ -181,7 +188,10 @@ class SubscriptionService:
         )
         return Entitlement(
             status=status,
-            can_operate=status in ("trialing", "active"),
+            # `past_due` OPERATES. That is the point of a grace period: the
+            # subscription is in trouble, the dairy is not, and the platform
+            # does not confuse the two.
+            can_operate=status in ("trialing", "active", "past_due"),
             centre_allowance=allowance,
             active_centres=await self.active_centres(),
         )
@@ -220,6 +230,8 @@ class SubscriptionService:
             status=status,
             business_date=today,
             trial_days_remaining=remaining,
+            grace_ends_on=subscription.grace_ends_on,
+            current_period_end=subscription.current_period_end,
             can_operate=entitlement.can_operate,
             can_read=True,
             active_centres=entitlement.active_centres,
@@ -326,6 +338,13 @@ class SubscriptionService:
         """
         if subscription.status == "cancelled":
             return "cancelled"
+        if subscription.status == "past_due":
+            # DEMO-027. A renewal the PROVIDER said failed. Access continues to
+            # the end of the grace window and then stops — it does not stop the
+            # hour a bank declined a card, because on the other side of that
+            # decline is a dairy with milk arriving.
+            grace = subscription.grace_ends_on
+            return "expired" if grace is not None and today >= grace else "past_due"
         if subscription.status == "active":
             end = subscription.current_period_end
             return "expired" if end is not None and today >= end else "active"
