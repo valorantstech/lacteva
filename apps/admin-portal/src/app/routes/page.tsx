@@ -106,7 +106,7 @@ export default function RoutesPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
         description="Which customers a round visits, in what order, and who took it out today."
         title="Routes and runs"

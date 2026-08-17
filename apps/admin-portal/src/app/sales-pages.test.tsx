@@ -1044,6 +1044,7 @@ describe("the delivery report by route (DEMO-037)", () => {
     // few seconds of version skew into a blank page.
     routeAll({
       "/v1/deliveries/report": () => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { by_route: _dropped, ...older } = REPORT;
         return json(older);
       },

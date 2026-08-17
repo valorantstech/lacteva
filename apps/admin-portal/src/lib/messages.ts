@@ -171,6 +171,11 @@ const en: Catalog = {
   "nav.receivables": "Who owes money",
   "nav.reports": "Reports",
   "nav.routes": "Routes and runs",
+  "shell.notYourArea": "This area is not part of your access.",
+  "shell.notYourAreaDetail":
+    "Your role does not include this part of the dairy. Everything you do have access to is in the navigation — nothing here is broken.",
+  "shell.driverGoesMobile":
+    "Your routes and deliveries are in the Lacteva mobile app on your phone.",
   "nav.roles": "Roles",
   "nav.sales": "Sales",
   "nav.settings": "Settings",
@@ -590,6 +595,11 @@ const hi: Catalog = {
   "nav.receivables": "बकाया राशि",
   "nav.reports": "रिपोर्ट",
   "nav.routes": "मार्ग और फेरे",
+  "shell.notYourArea": "यह हिस्सा आपकी पहुँच में नहीं है।",
+  "shell.notYourAreaDetail":
+    "आपकी भूमिका में डेयरी का यह हिस्सा शामिल नहीं है। जो कुछ आपकी पहुँच में है वह नेविगेशन में है — यहाँ कुछ भी टूटा नहीं है।",
+  "shell.driverGoesMobile":
+    "आपके रूट और डिलीवरी आपके फ़ोन पर Lacteva मोबाइल ऐप में हैं।",
   "nav.roles": "भूमिकाएँ",
   "nav.sales": "बिक्री",
   "nav.settings": "सेटिंग्स",
@@ -1009,6 +1019,11 @@ const ar: Catalog = {
   "nav.receivables": "المبالغ المستحقة",
   "nav.reports": "التقارير",
   "nav.routes": "المسارات والجولات",
+  "shell.notYourArea": "هذه المنطقة ليست ضمن صلاحياتك.",
+  "shell.notYourAreaDetail":
+    "دورك لا يشمل هذا الجزء من الألبان. كل ما لديك صلاحية له موجود في التنقل — لا شيء معطل هنا.",
+  "shell.driverGoesMobile":
+    "مساراتك وتوصيلاتك موجودة في تطبيق Lacteva على هاتفك.",
   "nav.roles": "الأدوار",
   "nav.sales": "المبيعات",
   "nav.settings": "الإعدادات",

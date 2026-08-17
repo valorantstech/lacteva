@@ -66,7 +66,7 @@ import {
   setActingTenant,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { LocaleProvider, translatorFor } from "@/lib/i18n";
+import { LocaleProvider, translatorFor, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -285,6 +285,47 @@ const GROUPS: { titleKey: string; entries: Entry[] }[] = [
 /** The dashboard needs a session but no particular permission. */
 const visibleTo = (session: Session | null, entry: Entry) =>
   entry.permission === "*dashboard" ? true : can(session, entry.permission);
+
+/**
+ * The page the current path belongs to, if the nav knows it (P0-UX-001).
+ *
+ * A detail page like `/customers/abc` belongs to `/customers`, so the match is
+ * by prefix with the more specific entry winning. Used to keep somebody OUT of
+ * a page their role cannot use — the browser walkthrough found a driver
+ * deep-linking to `/routes` and being offered the office's "Add a route" forms
+ * with a raw permission-key error where data should be. The platform refused
+ * everything (that part worked); the page just should not have promised it.
+ */
+const entryFor = (pathname: string): Entry | undefined => {
+  const all = [...OPERATIONS, ...SALES, ...PRICING, ...FINANCE, ...PLATFORM];
+  return all
+    .filter((e) => pathname === e.href || pathname.startsWith(`${e.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+};
+
+/**
+ * The calm refusal, in the dashboard banner's own words. A DRIVER gets one
+ * extra sentence: their work genuinely lives somewhere else, and "not part of
+ * your access" alone reads like a mistake to somebody holding a phone that
+ * says otherwise.
+ */
+function NotYourArea({ session }: { session: Session | null }) {
+  const t = useT();
+  const driver = can(session, "logistics.run.execute");
+  return (
+    <div className="mx-auto max-w-3xl px-6 py-16">
+      <div className="rounded-lg border border-border bg-background p-6">
+        <p className="font-medium">{t("shell.notYourArea")}</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {t("shell.notYourAreaDetail")}
+        </p>
+        {driver && (
+          <p className="mt-3 text-sm">{t("shell.driverGoesMobile")}</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -554,7 +595,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             currency={org?.currency_code ?? null}
             timezone={org?.timezone ?? null}
           >
-            {children}
+            {/* P0-UX-001: a page whose nav entry this role cannot use renders
+                the calm refusal instead of office forms the platform will 403.
+                Client-side courtesy only — the server's own guards are the
+                security, and they were verified to hold without this. */}
+            {(() => {
+              const entry = signedIn ? entryFor(pathname) : undefined;
+              if (entry && !visibleTo(session, entry)) {
+                return <NotYourArea session={session} />;
+              }
+              return children;
+            })()}
           </LocaleProvider>
         </main>
       </div>
