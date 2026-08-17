@@ -749,6 +749,20 @@ class ApiClient {
         as Map<String, dynamic>;
   }
 
+  /// Today's delivery runs — the route the rider is actually on (DEMO-034).
+  ///
+  /// The date is OMITTED deliberately, for the same reason the report omits
+  /// it: a phone cannot work out the dairy's calendar date, and the platform
+  /// can. It answers for the organization's today.
+  ///
+  /// A run carries no money and no quantity. It says which customers are
+  /// visited and in what order, who is driving and in what — the round's
+  /// SEQUENCE, which the round screen could not know before this existed.
+  Future<List<Map<String, dynamic>>> listDeliveryRuns() async {
+    final result = await _send('GET', '/v1/delivery-runs');
+    return ((result as List?) ?? const []).cast<Map<String, dynamic>>();
+  }
+
   /// Record a delivery.
   ///
   /// THE APP SENDS A QUANTITY AND NOTHING ELSE ABOUT MONEY. The rate lives on

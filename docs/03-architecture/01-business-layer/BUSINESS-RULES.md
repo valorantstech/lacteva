@@ -3,7 +3,7 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.17"
+version: "1.18"
 owner: Architecture Board
 created: 2026-08-03
 last-updated: 2026-08-11
@@ -351,6 +351,18 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0028 — A delivery run may not begin without both a driver and a vehicle, and completing one creates no financial record.
+
+**Clarification.** A run is the operational execution of a route: which customers are visited, in what order, by whom, in what, on the organization's business date. Two things follow, and both are enforced rather than described. First, a round that goes out with no driver or no vehicle recorded is a round nobody can be asked about afterwards — so `planned → in_progress` is refused unless both are set. This is deliberately a *guard* rather than an `assigned` status: assignment is the state of two columns, and a status repeating it would drift the first time somebody cleared a driver without moving the status back. Second, a run is **not a financial document**. It holds no quantity, no amount, no currency and no billing state; `milk_delivery` remains the only record of what was delivered and what it is worth, and a run composes those rows at read time rather than copying them. Completing a run therefore invents no invoice, no settlement and no receivable.
+
+**Enforcement.** `logistics/service.py` — `set_run_status()` refuses `in_progress` without `driver_id` and `vehicle_id`, and moves status by CAS (`UPDATE … WHERE status = <expected>` with a rowcount check); `RUN_TRANSITIONS` in `logistics/models.py` makes `completed` and `cancelled` terminal; the `logistics` module imports no other module's models, so it cannot read or write a financial table.
+
+**Verification.** `test_logistics.py` — `test_a_run_cannot_start_without_a_driver_and_a_vehicle`, `test_a_completed_run_is_terminal`, `test_completing_a_round_moves_no_money`, `test_the_run_carries_no_milk_and_no_money`, `test_the_logistics_module_never_reads_the_delivery_or_customer_TABLES`; `test_logistics_postgres.py` — `test_two_operators_completing_a_run_produce_one_transition`, `test_the_run_tables_carry_no_financial_column`, `test_no_logistics_table_references_a_financial_table`. Each guard was mutation-checked: removing it fails exactly the tests that claim it.
+
+**Status:** Active (since DEMO-034).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -364,6 +376,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.18 | 2026-08-17 | Architecture Board | DEMO-034: BR-0028 (a run needs a driver and a vehicle to start; completing one creates no financial record). |
 | 1.17 | 2026-08-11 | Architecture Board | PILOT-F03: BR-0027 (a late collection is carried forward; a closed period is never reopened). BR-0011's "adjustments fixed at 0" restated in code as a named rule rather than a placeholder literal. |
 | 1.16 | 2026-08-07 | Architecture Board | MSG-001: BR-0017 extended — retry only what a retry can fix; permanence is claimed, and unknown means retryable. |
 | 1.15 | 2026-08-06 | Architecture Board | MT-001: BR-0022 extended — the bypass must be set, is the only isolation inside itself, and tenant boundaries extend to key namespaces. |

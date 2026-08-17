@@ -42,6 +42,7 @@ from platform_core.modules.event_relay.projections import ProjectionRebuilder
 from platform_core.modules.event_relay.service import OutboxEventBus, RelayService
 from platform_core.modules.identity.models import User
 from platform_core.modules.identity.service import IdentityService
+from platform_core.modules.logistics.service import LogisticsService
 from platform_core.modules.milk_collection.service import MilkCollectionService
 from platform_core.modules.notification.reachability import ReachabilityService
 from platform_core.modules.notification.service import NotificationService
@@ -209,6 +210,13 @@ def get_customer_service(session: Session, audit: Audit) -> CustomerService:
 
 def get_delivery_service(session: Session, bus: Bus, audit: Audit) -> DeliveryService:
     return DeliveryService(session, bus, audit)
+
+
+def get_logistics_service(session: Session, bus: Bus, audit: Audit) -> LogisticsService:
+    """DEMO-034. Takes the bus because it composes `DeliveryService`, which
+    takes one — not because a run publishes anything. A route changes no
+    delivery and emits no delivery event."""
+    return LogisticsService(session, bus, audit)
 
 
 def get_billing_service(session: Session, bus: Bus, audit: Audit) -> BillingService:

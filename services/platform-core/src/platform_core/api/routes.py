@@ -123,6 +123,21 @@ from platform_core.modules.event_relay.service import (
 )
 from platform_core.modules.identity.schemas import RegisterUserCommand, UserView
 from platform_core.modules.identity.service import IdentityService
+from platform_core.modules.logistics.service import (
+    DriverInput,
+    DriverView,
+    LogisticsService,
+    RouteDetailView,
+    RouteInput,
+    RouteStopsInput,
+    RouteView,
+    RunAssignment,
+    RunInput,
+    RunStatusInput,
+    RunView,
+    VehicleInput,
+    VehicleView,
+)
 from platform_core.modules.milk_collection.service import (
     IdentifySupplierCommand,
     MilkCollectionService,
@@ -3966,6 +3981,143 @@ async def amend_delivery(
     return await service.amend(delivery_id, cmd, actor_id=p.id)
 
 
+# --- Logistics: routes, fleet and the daily run (DEMO-034 / CAP-0003 MCL) ----
+#
+# Its own router because a route is not a sale. Six endpoints and no more:
+# route management, the fleet lists, and a run's creation, assignment,
+# retrieval and status. Everything a screen shows about a run is composed by
+# the service at read time, so there is no per-stop endpoint to add — the
+# delivery domain already owns what happened at a stop.
+
+logistics_router = APIRouter(tags=["logistics"], route_class=IdempotentRoute)
+RouteRead = Annotated[Principal, Depends(require_permission("logistics.route.read"))]
+RouteManage = Annotated[Principal, Depends(require_permission("logistics.route.manage"))]
+FleetRead = Annotated[Principal, Depends(require_permission("logistics.fleet.read"))]
+FleetManage = Annotated[Principal, Depends(require_permission("logistics.fleet.manage"))]
+RunRead = Annotated[Principal, Depends(require_permission("logistics.run.read"))]
+RunManage = Annotated[Principal, Depends(require_permission("logistics.run.manage"))]
+LogisticsSvc = Annotated[LogisticsService, Depends(deps.get_logistics_service)]
+
+
+@logistics_router.post("/routes", response_model=RouteView, status_code=201)
+async def create_route(
+    body: RouteInput, service: LogisticsSvc, audit: deps.Audit, p: RouteManage
+) -> Any:
+    """Create a round. Its stops are set separately, by `PUT /routes/{id}/stops`."""
+    route = await service.create_route(body, actor_id=p.id, audit=audit)
+    return RouteView.model_validate(route)
+
+
+@logistics_router.get("/routes", response_model=list[RouteView])
+async def list_routes(service: LogisticsSvc, p: RouteRead, active: bool | None = None) -> Any:
+    return await service.list_routes(active=active)
+
+
+@logistics_router.get("/routes/{route_id}", response_model=RouteDetailView)
+async def get_route(route_id: uuid.UUID, service: LogisticsSvc, p: RouteRead) -> Any:
+    return await service.get_route(route_id)
+
+
+@logistics_router.put("/routes/{route_id}/stops", response_model=RouteDetailView)
+async def set_route_stops(
+    route_id: uuid.UUID,
+    body: RouteStopsInput,
+    service: LogisticsSvc,
+    audit: deps.Audit,
+    p: RouteManage,
+) -> Any:
+    """Replace the route's stops with this ordered list.
+
+    A PUT because the ORDER is the payload: an operator dragging stops into
+    sequence sends the sequence, and add/remove endpoints would need a third
+    one to reorder.
+    """
+    return await service.set_stops(route_id, body.customer_ids, actor_id=p.id, audit=audit)
+
+
+@logistics_router.post("/vehicles", response_model=VehicleView, status_code=201)
+async def create_vehicle(
+    body: VehicleInput, service: LogisticsSvc, audit: deps.Audit, p: FleetManage
+) -> Any:
+    vehicle = await service.create_vehicle(body, actor_id=p.id, audit=audit)
+    return VehicleView.model_validate(vehicle)
+
+
+@logistics_router.get("/vehicles", response_model=list[VehicleView])
+async def list_vehicles(service: LogisticsSvc, p: FleetRead, active: bool | None = None) -> Any:
+    return await service.list_vehicles(active=active)
+
+
+@logistics_router.post("/drivers", response_model=DriverView, status_code=201)
+async def create_driver(
+    body: DriverInput, service: LogisticsSvc, audit: deps.Audit, p: FleetManage
+) -> Any:
+    driver = await service.create_driver(body, actor_id=p.id, audit=audit)
+    return DriverView.model_validate(driver)
+
+
+@logistics_router.get("/drivers", response_model=list[DriverView])
+async def list_drivers(service: LogisticsSvc, p: FleetRead, active: bool | None = None) -> Any:
+    return await service.list_drivers(active=active)
+
+
+@logistics_router.post("/delivery-runs", response_model=RunView, status_code=201)
+async def create_delivery_run(
+    body: RunInput, service: LogisticsSvc, audit: deps.Audit, p: RunManage
+) -> Any:
+    """Plan one route's round for one of the DAIRY's days.
+
+    Omit `business_date` and the platform resolves the organization's today. A
+    phone in Nairobi and a browser in Delhi must both get the dairy's date.
+    """
+    return await service.create_run(body, actor_id=p.id, audit=audit)
+
+
+@logistics_router.get("/delivery-runs", response_model=list[RunView])
+async def list_delivery_runs(
+    service: LogisticsSvc,
+    p: RunRead,
+    business_date: date | None = None,
+    route_id: uuid.UUID | None = None,
+    status: str | None = None,
+    driver_id: uuid.UUID | None = None,
+) -> Any:
+    """Today's runs by default — the dairy's today, not the caller's."""
+    return await service.list_runs(
+        business_date=business_date, route_id=route_id, status=status, driver_id=driver_id
+    )
+
+
+@logistics_router.get("/delivery-runs/{run_id}", response_model=RunView)
+async def get_delivery_run(run_id: uuid.UUID, service: LogisticsSvc, p: RunRead) -> Any:
+    """The run with its ordered stops and each stop's delivery outcome."""
+    return await service.get_run(run_id)
+
+
+@logistics_router.post("/delivery-runs/{run_id}/assignment", response_model=RunView)
+async def assign_delivery_run(
+    run_id: uuid.UUID,
+    body: RunAssignment,
+    service: LogisticsSvc,
+    audit: deps.Audit,
+    p: RunManage,
+) -> Any:
+    """Put a vehicle and a driver on the run. Omitting one leaves it alone."""
+    return await service.assign(run_id, body, actor_id=p.id, audit=audit)
+
+
+@logistics_router.post("/delivery-runs/{run_id}/status", response_model=RunView)
+async def set_delivery_run_status(
+    run_id: uuid.UUID,
+    body: RunStatusInput,
+    service: LogisticsSvc,
+    audit: deps.Audit,
+    p: RunManage,
+) -> Any:
+    """Move the run along. Completing it creates NO financial record."""
+    return await service.set_run_status(run_id, body.status, actor_id=p.id, audit=audit)
+
+
 billing_router = APIRouter(tags=["sales-billing"], route_class=IdempotentRoute)
 InvoiceRead = Annotated[Principal, Depends(require_permission("sales.invoice.read"))]
 InvoiceManage = Annotated[Principal, Depends(require_permission("sales.invoice.manage"))]
@@ -4118,6 +4270,7 @@ for sub in (
     tenant_data_router,
     customer_router,
     delivery_router,
+    logistics_router,
     billing_router,
     locale_router,
     calendar_router,

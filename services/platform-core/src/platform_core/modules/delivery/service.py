@@ -578,6 +578,32 @@ class DeliveryService:
             raise NotFoundError("delivery not found")
         return delivery
 
+    async def status_by_customer(
+        self, customer_ids: list[uuid.UUID], day: date, slot: str
+    ) -> dict[uuid.UUID, str]:
+        """What happened at each of these customers on one day and slot.
+
+        The batch shape a route module needs (DEMO-034), and it lives HERE
+        because this module owns `MilkDelivery`. A logistics run displaying a
+        stop's outcome asks for it; it does not read this table, and it
+        certainly does not keep its own copy — a second per-stop status would
+        have to be kept in step with this one, and would not be.
+
+        A customer absent from the result has no delivery row yet, which a
+        caller should read as "not visited", not as "nothing happened".
+        """
+        if not customer_ids:
+            return {}
+        rows = await self._session.execute(
+            select(MilkDelivery.customer_id, MilkDelivery.status).where(
+                MilkDelivery.tenant_id == require_current_tenant(),
+                MilkDelivery.delivery_date == day,
+                MilkDelivery.slot == slot,
+                MilkDelivery.customer_id.in_(customer_ids),
+            )
+        )
+        return {row[0]: row[1] for row in rows}
+
     def _conditions(
         self,
         tenant_id: uuid.UUID,

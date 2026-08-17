@@ -3018,3 +3018,133 @@ export const cancelSubscriptionCheckout = () =>
 
 export const getSubscriptionPayments = () =>
   api<SubscriptionPaymentView[]>("/v1/organization/subscription/payments");
+
+// --- Logistics: routes, fleet and the daily run (DEMO-034) -------------------
+//
+// The route layer is OPERATIONAL. Nothing below carries a quantity, an amount
+// or a balance, and a run's stop shows the delivery domain's own status rather
+// than a second copy of it — which is why `delivery_status` is nullable: no
+// delivery row yet means the stop has not been visited.
+
+export type RouteStop = {
+  customer_id: string;
+  position: number;
+  code: string;
+  name: string;
+};
+
+export type Route = {
+  id: string;
+  code: string;
+  name: string;
+  center_id: string | null;
+  active: boolean;
+  notes: string;
+  stop_count: number;
+};
+
+export type RouteDetail = Route & { stops: RouteStop[] };
+
+export type Vehicle = {
+  id: string;
+  registration: string;
+  label: string;
+  center_id: string | null;
+  active: boolean;
+};
+
+export type Driver = {
+  id: string;
+  code: string;
+  full_name: string;
+  phone: string;
+  user_id: string | null;
+  center_id: string | null;
+  active: boolean;
+};
+
+export type RunStop = RouteStop & {
+  /** `MilkDelivery.status`, or null when the delivery domain has no row yet. */
+  delivery_status: string | null;
+};
+
+export type DeliveryRun = {
+  id: string;
+  route_id: string;
+  route_code: string;
+  route_name: string;
+  business_date: string;
+  slot: string;
+  vehicle_id: string | null;
+  vehicle_registration: string | null;
+  driver_id: string | null;
+  driver_name: string | null;
+  status: "planned" | "in_progress" | "completed" | "cancelled";
+  notes: string;
+  started_at: string | null;
+  finished_at: string | null;
+  stops: RunStop[];
+};
+
+export const listRoutes = () => api<Route[]>("/v1/routes");
+
+export const getRoute = (id: string) => api<RouteDetail>(`/v1/routes/${id}`);
+
+export const createRoute = (body: {
+  code: string;
+  name: string;
+  center_id?: string | null;
+}) => api<Route>("/v1/routes", { method: "POST", body: JSON.stringify(body) });
+
+/** The ORDER is the payload: send the sequence, not add/remove calls. */
+export const setRouteStops = (id: string, customerIds: string[]) =>
+  api<RouteDetail>(`/v1/routes/${id}/stops`, {
+    method: "PUT",
+    body: JSON.stringify({ customer_ids: customerIds }),
+  });
+
+export const listVehicles = () => api<Vehicle[]>("/v1/vehicles");
+
+export const createVehicle = (body: { registration: string; label?: string }) =>
+  api<Vehicle>("/v1/vehicles", { method: "POST", body: JSON.stringify(body) });
+
+export const listDrivers = () => api<Driver[]>("/v1/drivers");
+
+export const createDriver = (body: {
+  code: string;
+  full_name: string;
+  phone?: string;
+}) => api<Driver>("/v1/drivers", { method: "POST", body: JSON.stringify(body) });
+
+/**
+ * Today's runs — the DAIRY's today. The date is omitted deliberately: a
+ * browser in another timezone must not decide which day a dairy is having.
+ */
+export const listDeliveryRuns = (businessDate?: string) =>
+  api<DeliveryRun[]>(
+    businessDate ? `/v1/delivery-runs?business_date=${businessDate}` : "/v1/delivery-runs",
+  );
+
+export const getDeliveryRun = (id: string) => api<DeliveryRun>(`/v1/delivery-runs/${id}`);
+
+export const createDeliveryRun = (body: {
+  route_id: string;
+  slot?: string;
+  vehicle_id?: string | null;
+  driver_id?: string | null;
+}) => api<DeliveryRun>("/v1/delivery-runs", { method: "POST", body: JSON.stringify(body) });
+
+export const assignDeliveryRun = (
+  id: string,
+  body: { vehicle_id?: string | null; driver_id?: string | null },
+) =>
+  api<DeliveryRun>(`/v1/delivery-runs/${id}/assignment`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const setDeliveryRunStatus = (id: string, status: string) =>
+  api<DeliveryRun>(`/v1/delivery-runs/${id}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });

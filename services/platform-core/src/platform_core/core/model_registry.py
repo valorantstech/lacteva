@@ -55,6 +55,7 @@ def import_all_models() -> int:
     import platform_core.modules.delivery.models
     import platform_core.modules.event_relay.models
     import platform_core.modules.identity.models
+    import platform_core.modules.logistics.models
     import platform_core.modules.milk_collection.models
     import platform_core.modules.notification.models
     import platform_core.modules.operational_readiness.models

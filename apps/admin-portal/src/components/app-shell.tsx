@@ -34,6 +34,7 @@ import {
   Building2,
   ChevronDown,
   ClipboardList,
+  Map,
   Cog,
   FileText,
   Gauge,
@@ -124,6 +125,14 @@ const SALES: Entry[] = [
     labelKey: "nav.deliveries",
     permission: "sales.delivery.read",
     icon: Truck,
+  },
+  // DEMO-034 — the physical layer under the round. Gated on the route grant,
+  // so a finance officer never sees it.
+  {
+    href: "/routes",
+    labelKey: "nav.routes",
+    permission: "logistics.route.read",
+    icon: Map,
   },
   {
     href: "/billing",

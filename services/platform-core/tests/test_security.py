@@ -893,10 +893,17 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
     the policy from a snapshotted list — what it did not do was say so HERE,
     and the union below is deliberately hand-written so that a new tenant table
     cannot become protected by accident. The failure is the process working.
+
+    And once more in DEMO-034, on the five logistics tables — same shape, same
+    outcome: the migration installed the policies from its own snapshotted
+    list, and this union is where a human has to agree that it did.
     """
     from migrations.versions.a1c7f3b90e22_row_level_security import TENANT_TABLES
     from migrations.versions.a4f7c19d8b52_demo_020_business_calendar import (
         POLICY_TABLES as DEMO020_TABLES,
+    )
+    from migrations.versions.b5d1e07a4c39_demo_034_logistics import (
+        POLICY_TABLES as DEMO034_TABLES,
     )
     from migrations.versions.c7e4a2f19b83_demo_026_subscription import (
         POLICY_TABLES as DEMO026_TABLES,
@@ -933,6 +940,7 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
         | set(DEMO012_TABLES)
         | set(DEMO017_TABLES)
         | set(DEMO020_TABLES)
+        | set(DEMO034_TABLES)
         | set(DEMO026_TABLES)
         | set(DEMO027_TABLES)
         | set(DEMO029_TABLES)

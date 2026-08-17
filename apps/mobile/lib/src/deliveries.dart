@@ -35,6 +35,36 @@ String _deviceDate() =>
 
 String _money(Object? v) => v == null ? '—' : v.toString();
 
+/// The round in the ROUTE's order, with anybody not on the route after it.
+///
+/// A pure function, and PUBLIC so the rule is testable without a phone, a
+/// platform or a widget tree — the ordering is the one piece of real logic
+/// this screen gained, so it is the piece a test should be able to reach.
+/// Customers absent from the route are kept rather than hidden: a household
+/// somebody forgot to add to the round still takes milk, and dropping them
+/// from the screen would be the app deciding not to deliver.
+List<Map<String, dynamic>> inRouteOrder(
+  List<Map<String, dynamic>> customers,
+  Map<String, dynamic> run,
+) {
+  final positions = <String, int>{};
+  for (final stop in (run['stops'] as List? ?? const [])) {
+    final row = stop as Map<String, dynamic>;
+    positions[row['customer_id'].toString()] =
+        (row['position'] as num?)?.toInt() ?? 0;
+  }
+  if (positions.isEmpty) return customers;
+
+  final ordered = [...customers];
+  ordered.sort((a, b) {
+    // Not on the route sorts last, and keeps its own order among equals.
+    final pa = positions[a['id'].toString()] ?? 1 << 30;
+    final pb = positions[b['id'].toString()] ?? 1 << 30;
+    return pa.compareTo(pb);
+  });
+  return ordered;
+}
+
 /// Today's round: every customer, and what has happened to each so far.
 class DeliveryRoundScreen extends StatefulWidget {
   const DeliveryRoundScreen({
@@ -54,6 +84,12 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
   List<Map<String, dynamic>> _customers = const [];
   Map<String, Map<String, dynamic>> _doneToday = {};
   Map<String, dynamic>? _report;
+
+  /// Today's run for this rider's route, when one has been planned
+  /// (DEMO-034). Null is the ordinary case for a dairy that has not adopted
+  /// routes, and the round works exactly as it did before — which is why
+  /// nothing below is required for the screen to function.
+  Map<String, dynamic>? _run;
 
   /// The dairy's today, as the platform reported it on the last load.
   String _businessDate = _deviceDate();
@@ -103,12 +139,29 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
         final row = d as Map<String, dynamic>;
         done[row['customer_id'].toString()] = row;
       }
+
+      // DEMO-034: which route, and in what order. A separate grant, so a
+      // rider without it still gets the round — just unordered, as before.
+      List<Map<String, dynamic>> runs = const [];
+      try {
+        runs = await widget.client.listDeliveryRuns();
+      } on ApiException {
+        runs = const [];
+      }
+      final run = runs.isEmpty ? null : runs.first;
+
+      var list = ((customers['items'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>();
+      if (run != null) {
+        list = inRouteOrder(list, run);
+      }
+
       if (!mounted) return;
       setState(() {
-        _customers = ((customers['items'] as List?) ?? const [])
-            .cast<Map<String, dynamic>>();
+        _customers = list;
         _doneToday = done;
         _report = report;
+        _run = run;
         _businessDate = today;
         _pending = widget.client.pendingCount;
         _loading = false;
@@ -151,6 +204,7 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
         children: [
           _SyncBanner(pending: _pending, onSync: _sync, t: t),
           if (_report != null) _DayTotals(report: _report!),
+          if (_run != null) _RunBanner(run: _run!),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(16),
@@ -281,6 +335,55 @@ class _SyncBanner extends StatelessWidget {
 /// The day, as the DATABASE aggregated it (§7). Nothing here is summed on the
 /// phone — the totals cover the whole day, not the rows that happen to be in
 /// memory.
+/// Which route this is, who is driving it and in what (DEMO-034).
+///
+/// Deliberately three facts and no numbers. Everything a rider needs to know
+/// they are on the right round, and nothing about money — the day's figures
+/// are `_DayTotals`' job, and the run does not know them.
+class _RunBanner extends StatelessWidget {
+  const _RunBanner({required this.run});
+
+  final Map<String, dynamic> run;
+
+  @override
+  Widget build(BuildContext context) {
+    final route = (run['route_name'] ?? run['route_code'] ?? '').toString();
+    final driver = (run['driver_name'] ?? '').toString();
+    final vehicle = (run['vehicle_registration'] ?? '').toString();
+    final status = (run['status'] ?? '').toString();
+
+    final parts = <String>[
+      if (driver.isNotEmpty) driver,
+      if (vehicle.isNotEmpty) vehicle,
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      child: Row(
+        children: [
+          const Icon(Icons.alt_route, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(route, style: Theme.of(context).textTheme.titleSmall),
+                if (parts.isNotEmpty)
+                  Text(
+                    parts.join(' · '),
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+              ],
+            ),
+          ),
+          Text(status, style: Theme.of(context).textTheme.labelMedium),
+        ],
+      ),
+    );
+  }
+}
+
 class _DayTotals extends StatelessWidget {
   const _DayTotals({required this.report});
 

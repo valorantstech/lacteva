@@ -103,6 +103,21 @@ PERMISSIONS: dict[str, str] = {
     # scheduler, or a manager before the vans leave. Folding it into
     # `record` would have given every delivery operator that button.
     "sales.delivery.generate": "Generate the day's deliveries from standing orders",
+    # DEMO-034. The physical layer under a round: which customers, in what
+    # order, in whose van, driven by whom.
+    #
+    # Separate from `sales.*` because a route is not a sale. Planning the
+    # round and running it are also separate grants: a manager draws the route
+    # and assigns the van in the office, and a roundsman moves the run through
+    # its states from a phone at a gate. `run.manage` deliberately does NOT
+    # imply `route.manage` — a driver who can start today's round must not be
+    # able to redraw tomorrow's.
+    "logistics.route.read": "Read delivery routes and their stops",
+    "logistics.route.manage": "Create routes and set which customers they visit, in what order",
+    "logistics.fleet.read": "Read vehicles and drivers",
+    "logistics.fleet.manage": "Register vehicles and drivers",
+    "logistics.run.read": "Read daily delivery runs",
+    "logistics.run.manage": "Create a daily run, assign a vehicle and driver, and move it along",
     "sales.invoice.read": "Read customer invoices and statements",
     "sales.invoice.manage": "Generate customer invoices for a billing period",
     "sales.invoice.issue": "Issue an invoice (makes it immutable and payable)",
@@ -181,6 +196,13 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "sales.payment.read",
         "sales.payment.record",
         "sales.receipt.read",
+        # DEMO-034: the round's physical layer is part of running the business.
+        "logistics.route.read",
+        "logistics.route.manage",
+        "logistics.fleet.read",
+        "logistics.fleet.manage",
+        "logistics.run.read",
+        "logistics.run.manage",
         "organization.calendar.read",
         "organization.calendar.manage",
         "organization.period.manage",
@@ -212,6 +234,9 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "sales.invoice.read",
         "sales.payment.read",
         "sales.receipt.read",
+        "logistics.route.read",
+        "logistics.fleet.read",
+        "logistics.run.read",
     ],
 }
 
@@ -285,6 +310,10 @@ _AUDITOR_READS = [
     "receipt.read",
     "notification.read",
     "sync.read",
+    # DEMO-034. Reads the round's physical layer; changes none of it.
+    "logistics.route.read",
+    "logistics.fleet.read",
+    "logistics.run.read",
     *_SALES_READS,
 ]
 
@@ -325,6 +354,14 @@ NAMED_ROLES: dict[str, list[str]] = {
         "sales.invoice.read",
         "sales.payment.read",
         "sales.receipt.read",
+        # DEMO-034. Runs operations: draws the routes, keeps the fleet list and
+        # sends the rounds out.
+        "logistics.route.read",
+        "logistics.route.manage",
+        "logistics.fleet.read",
+        "logistics.fleet.manage",
+        "logistics.run.read",
+        "logistics.run.manage",
     ],
     # One centre's operation. The centre restriction is NOT expressed here —
     # a permission set cannot say "only centre A". It is enforced separately,
@@ -374,6 +411,13 @@ NAMED_ROLES: dict[str, list[str]] = {
         "sales.payment.read",
         "sales.payment.record",
         "sales.receipt.read",
+        # DEMO-034. The roundsman sees the route and moves today's run along.
+        # Deliberately WITHOUT `route.manage` and `fleet.manage`: redrawing
+        # tomorrow's round and buying a van are the office's, not the gate's.
+        "logistics.route.read",
+        "logistics.fleet.read",
+        "logistics.run.read",
+        "logistics.run.manage",
         "reporting.read",
     ],
     # Reads everything, changes nothing. Asserted by test rather than by
