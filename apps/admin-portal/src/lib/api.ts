@@ -2536,6 +2536,28 @@ export type DeliveryCustomerRow = {
   skipped: number;
 };
 
+/**
+ * One route's share of the window (DEMO-037).
+ *
+ * Derived at read time from the route's membership — no delivery carries a
+ * route id, so moving a stop between routes moves this report with it. The
+ * counts are the delivery domain's own statuses; there is no separate route
+ * outcome.
+ */
+export type DeliveryRouteRow = {
+  code: string;
+  name: string;
+  stops: number;
+  stops_with_deliveries: number;
+  deliveries: number;
+  scheduled: number;
+  skipped: number;
+  returned: number;
+  cancelled: number;
+  quantity: string | number;
+  amount: string | number;
+};
+
 export type DeliveryReport = {
   date_from: string;
   date_to: string;
@@ -2557,6 +2579,13 @@ export type DeliveryReport = {
   planned_quantity?: string | number;
   returned?: number;
   cancelled?: number;
+  /** DEMO-037. How many routes actually ran in this window — 0 for a dairy
+   *  that has not adopted routes, which is most of them. */
+  routes?: number;
+  /** Deliveries whose customer is on no route, so the route rows and the
+   *  round's totals reconcile rather than quietly not adding up. */
+  unrouted?: number;
+  by_route?: DeliveryRouteRow[];
   by_day: DeliveryDayRow[];
   by_customer: DeliveryCustomerRow[];
 };

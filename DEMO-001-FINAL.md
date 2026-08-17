@@ -118,8 +118,13 @@ On the deployed host, inside the API container (it already has the app and the
 database URL):
 
 ```bash
+# The image holds the APPLICATION, not the repository — there is no /app/infra.
+# Copy the script in, then run it. `infra/demo/README.md` is authoritative;
+# DEMO-010 and DEMO-013 recorded this, and the line that used to be here
+# (`python /app/infra/demo/seed_demo.py seed`) never worked.
+sudo docker cp infra/demo/seed_demo.py "$(sudo docker compose -f docker-compose.production.yml ps -q api)":/tmp/seed_demo.py
 sudo docker compose -f docker-compose.production.yml --env-file /etc/lacteva/.env.production \
-  exec -T api python /app/infra/demo/seed_demo.py seed
+  exec -T api python /tmp/seed_demo.py seed
 ```
 
 Full detail in [`infra/demo/README.md`](infra/demo/README.md).

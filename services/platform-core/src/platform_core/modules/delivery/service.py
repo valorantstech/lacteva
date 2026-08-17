@@ -14,6 +14,7 @@ resolved by the domain:
 
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -204,6 +205,53 @@ class DeliveryCustomerRow(BaseModel):
     skipped: int
 
 
+@dataclass(frozen=True)
+class RouteMembership:
+    """Which households one route visits, as the REPORT is handed it (DEMO-037).
+
+    A value, not a query. This module owns `milk_delivery` and knows nothing
+    about routes; the module that owns routes works out the membership and
+    passes it in — the same shape DEMO-022 used for `is_working` and DEMO-036
+    used for the scheduler's round scopes, and for the same reason: `logistics`
+    imports this module, so the reverse import would be a cycle.
+    """
+
+    code: str
+    name: str
+    customer_ids: frozenset[uuid.UUID]
+
+
+class DeliveryRouteRow(BaseModel):
+    """One route's share of the window (DEMO-037).
+
+    Derived at READ TIME from the route's membership and the deliveries this
+    module already aggregates. Nothing here is stored: `milk_delivery` gained
+    no `route_id` in DEMO-035 and gains none now, so a stop that moves between
+    routes changes this report the next time it is asked and cannot leave a
+    stale copy behind.
+
+    The counts are the delivery domain's own statuses, which is what "route
+    level success/failure where the existing state supports it" means here: a
+    round that went out is `deliveries`, one still waiting is `scheduled`, and
+    a household that took nothing is `skipped`. There is no separate route
+    outcome to invent.
+    """
+
+    code: str
+    name: str
+    #: Households on the route — the size of the round somebody planned.
+    stops: int
+    #: Stops with at least one delivery row in this window.
+    stops_with_deliveries: int
+    deliveries: int
+    scheduled: int
+    skipped: int
+    returned: int
+    cancelled: int
+    quantity: Decimal
+    amount: Decimal
+
+
 class DeliveryReport(BaseModel):
     date_from: date
     date_to: date
@@ -243,6 +291,13 @@ class DeliveryReport(BaseModel):
     #: Recorded in error and struck out. Reported so that a round whose count
     #: does not add up has somewhere to be explained from.
     cancelled: int
+    #: DEMO-037. How many routes had at least one delivery in this window.
+    #: Zero for a dairy that has not adopted routes, which is most of them.
+    routes: int = 0
+    #: Deliveries whose customer is on no route. Present so the route rows and
+    #: this figure reconcile with `planned` rather than quietly not adding up.
+    unrouted: int = 0
+    by_route: list[DeliveryRouteRow] = []
     by_day: list[DeliveryDayRow]
     by_customer: list[DeliveryCustomerRow]
 
@@ -757,6 +812,7 @@ class DeliveryService:
         date_from: date | None = None,
         date_to: date | None = None,
         customer_id: uuid.UUID | None = None,
+        route_membership: Callable[[], Awaitable[list[RouteMembership]]] | None = None,
     ) -> DeliveryReport:
         """ "What was delivered, to whom, and what is it worth?" — in SQL.
 
@@ -888,6 +944,70 @@ class DeliveryService:
             {row[0] for row in by_customer} | set(skipped_by_customer)
         )
 
+        # DEMO-037: the round BY ROUTE, derived rather than stored.
+        #
+        # ONE extra grouped query whatever the number of routes — per customer
+        # and status — folded into routes in Python against the membership the
+        # caller handed in. A query per route would make the report's cost a
+        # function of how many rounds a dairy runs, which is the shape §23
+        # forbids; and a `route_id` on `milk_delivery` would be the second
+        # source of truth DEMO-035 declined to create.
+        routes_count = 0
+        unrouted = 0
+        route_rows: list[DeliveryRouteRow] = []
+        memberships = await route_membership() if route_membership is not None else []
+        if memberships:
+            per_customer_status = (
+                await self._session.execute(
+                    select(
+                        MilkDelivery.customer_id,
+                        MilkDelivery.status,
+                        func.count(),
+                        func.coalesce(func.sum(cast(MilkDelivery.quantity, Numeric)), 0),
+                        func.coalesce(func.sum(cast(MilkDelivery.amount, Numeric)), 0),
+                    )
+                    .where(*billable)
+                    .group_by(MilkDelivery.customer_id, MilkDelivery.status)
+                )
+            ).all()
+
+            routed_customers = {c for m in memberships for c in m.customer_ids}
+            unrouted = sum(row[2] for row in per_customer_status if row[0] not in routed_customers)
+
+            for membership in memberships:
+                counts: dict[str, int] = {}
+                quantity = Decimal(0)
+                amount = Decimal(0)
+                touched: set[uuid.UUID] = set()
+                for customer_id, status, count, qty, amt in per_customer_status:
+                    if customer_id not in membership.customer_ids:
+                        continue
+                    counts[status] = counts.get(status, 0) + count
+                    touched.add(customer_id)
+                    if status in BILLABLE_STATUSES:
+                        quantity += Decimal(qty or 0)
+                        amount += Decimal(amt or 0)
+                delivered = sum(counts.get(s, 0) for s in BILLABLE_STATUSES)
+                route_rows.append(
+                    DeliveryRouteRow(
+                        code=membership.code,
+                        name=membership.name,
+                        stops=len(membership.customer_ids),
+                        stops_with_deliveries=len(touched),
+                        deliveries=delivered,
+                        scheduled=counts.get("scheduled", 0),
+                        skipped=counts.get("skipped", 0),
+                        returned=counts.get("returned", 0),
+                        cancelled=counts.get("cancelled", 0),
+                        quantity=litres(quantity),
+                        amount=money(amount),
+                    )
+                )
+            # "Participated" means a round actually happened on it, not that
+            # somebody drew it: a route with no rows this window is reported
+            # with zeroes rather than counted as having run.
+            routes_count = sum(1 for row in route_rows if row.stops_with_deliveries > 0)
+
         return DeliveryReport(
             date_from=date_from,
             date_to=date_to,
@@ -903,6 +1023,9 @@ class DeliveryService:
             planned_quantity=litres(intended),
             returned=by_status.get("returned", 0),
             cancelled=by_status.get("cancelled", 0),
+            routes=routes_count,
+            unrouted=unrouted,
+            by_route=route_rows,
             by_customer=[
                 DeliveryCustomerRow(
                     customer_id=row[0],

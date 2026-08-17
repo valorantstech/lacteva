@@ -445,6 +445,63 @@ function DeliveriesView() {
         state — and a screen that throws because a field it expected is absent
         turns a brief version skew into a blank page.
       */}
+      {/*
+        DEMO-037: the round BY ROUTE, shown only when there are routes. A dairy
+        that has not adopted them sees exactly the page it saw before — the
+        section is absent rather than empty, because an empty table is a
+        question an operator has to answer ("should there be routes here?").
+
+        `?.` for the same reason as below: during a rolling deploy this page can
+        be newer than the API.
+      */}
+      {report && report.by_route?.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">By route</CardTitle>
+            <CardDescription>
+              Which rounds ran, and what each one still has outstanding.
+              {report.unrouted
+                ? ` ${report.unrouted} deliveries are on no route.`
+                : ""}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <caption className="sr-only">By route</caption>
+                <thead className="text-left text-xs text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-4 font-medium">Route</th>
+                    <th className="py-1 pr-4 font-medium">Stops</th>
+                    <th className="py-1 pr-4 font-medium">Delivered</th>
+                    <th className="py-1 pr-4 font-medium">Outstanding</th>
+                    <th className="py-1 pr-4 font-medium">Skipped</th>
+                    <th className="py-1 font-medium">
+                      {report.quantity_unit ?? "L"}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.by_route.map((row) => (
+                    <tr className="border-t border-border" key={row.code}>
+                      <td className="py-2 pr-4">
+                        <span className="font-mono text-xs">{row.code}</span>{" "}
+                        {row.name}
+                      </td>
+                      <td className="py-2 pr-4">{row.stops}</td>
+                      <td className="py-2 pr-4">{row.deliveries}</td>
+                      <td className="py-2 pr-4">{row.scheduled}</td>
+                      <td className="py-2 pr-4">{row.skipped}</td>
+                      <td className="py-2">{String(row.quantity)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {report && report.by_customer?.length ? (
         <Card>
           <CardHeader>

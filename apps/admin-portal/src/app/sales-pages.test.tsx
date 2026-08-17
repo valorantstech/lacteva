@@ -138,6 +138,38 @@ const REPORT = {
   planned_quantity: "200.500",
   returned: 1,
   cancelled: 0,
+  // DEMO-037: the round by route. Two routes ran, and two deliveries belong to
+  // no route — a dairy mid-adoption, which is the honest default state.
+  routes: 2,
+  unrouted: 2,
+  by_route: [
+    {
+      code: "R-01",
+      name: "Kilima morning round",
+      stops: 6,
+      stops_with_deliveries: 6,
+      deliveries: 20,
+      scheduled: 1,
+      skipped: 2,
+      returned: 1,
+      cancelled: 0,
+      quantity: "100.000",
+      amount: "5600.00",
+    },
+    {
+      code: "R-02",
+      name: "Ngong Road round",
+      stops: 5,
+      stops_with_deliveries: 4,
+      deliveries: 14,
+      scheduled: 1,
+      skipped: 1,
+      returned: 0,
+      cancelled: 0,
+      quantity: "60.500",
+      amount: "3514.50",
+    },
+  ],
   by_customer: [
     {
       customer_id: "cu-1",
@@ -969,5 +1001,56 @@ describe("planned against delivered (DEMO-019)", () => {
     );
     expect(await screen.findByText("Milk delivered")).toBeInTheDocument();
     expect(screen.getByText("62.000")).toBeInTheDocument();
+  });
+});
+
+describe("the delivery report by route (DEMO-037)", () => {
+  it("shows which rounds ran and what each still has outstanding", async () => {
+    routeAll();
+    render(<DeliveriesPage />);
+
+    // Twice: the card title and the screen-reader caption, as with "By customer".
+    expect((await screen.findAllByText("By route")).length).toBeGreaterThan(0);
+    expect(screen.getByText("R-01")).toBeInTheDocument();
+    expect(screen.getByText("Kilima morning round")).toBeInTheDocument();
+    expect(screen.getByText("R-02")).toBeInTheDocument();
+  });
+
+  it("says how many deliveries are on no route, so the totals reconcile", async () => {
+    routeAll();
+    render(<DeliveriesPage />);
+
+    await screen.findAllByText("By route");
+    expect(screen.getByText(/2 deliveries are on no route/)).toBeInTheDocument();
+  });
+
+  it("hides the section entirely for a dairy with no routes", async () => {
+    // An empty table is a question an operator has to answer ("should there be
+    // routes here?"). A dairy that has not adopted routes sees the page it saw
+    // before DEMO-037.
+    routeAll({
+      "/v1/deliveries/report": () =>
+        json({ ...REPORT, routes: 0, unrouted: 0, by_route: [] }),
+    });
+    render(<DeliveriesPage />);
+
+    await screen.findAllByText("By customer");
+    expect(screen.queryAllByText("By route")).toHaveLength(0);
+  });
+
+  it("survives an API older than this page", async () => {
+    // Rolling deploy: the field is simply absent. DEMO-013 spent an outage in
+    // exactly that state, and a screen that throws on a missing field turns a
+    // few seconds of version skew into a blank page.
+    routeAll({
+      "/v1/deliveries/report": () => {
+        const { by_route: _dropped, ...older } = REPORT;
+        return json(older);
+      },
+    });
+    render(<DeliveriesPage />);
+
+    await screen.findAllByText("By customer");
+    expect(screen.queryAllByText("By route")).toHaveLength(0);
   });
 });

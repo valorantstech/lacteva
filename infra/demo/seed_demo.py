@@ -3,6 +3,7 @@
     python infra/demo/seed_demo.py seed      # build the demo dataset
     python infra/demo/seed_demo.py verify    # assert it is complete and correct
     python infra/demo/seed_demo.py purge     # remove it, leaving nothing else touched
+    python infra/demo/seed_demo.py adopt-routes  # DEMO-037: rounds over existing customers
     python infra/demo/seed_demo.py reset     # purge, then seed
 
 Every business fact here is produced by driving the platform's OWN API in
@@ -115,6 +116,33 @@ CUSTOMERS = [
     ("Kamau Household", "household", "+254701000115", "9 Valley View", "2.000", "62.00", "unbilled", False),
     ("Mutindi Household", "household", "+254701000116", "31 Church Street", "1.500", "62.00", "unbilled", False),
 ]
+
+
+#: DEMO-037: the ROUNDS a seeded dairy runs, as contiguous slices of the
+#: customer list above.
+#:
+#: Three routes rather than one, because DEMO-036 shipped route-aware
+#: scheduling whose only untested case was "a dairy with several routes", and a
+#: single route cannot show that each round is generated independently.
+#:
+#: Slices rather than a modulo, so a route is a recognisable neighbourhood run
+#: — R-01 is the first six households on the list, not every third one — and so
+#: reading the customer table tells you which round somebody is on.
+#:
+#: Two customers are deliberately left OFF every route. A dairy adopting routes
+#: does not finish the job in one afternoon, and the delivery report's
+#: `unrouted` figure only means something if something is actually unrouted.
+ROUTES = [
+    ("R-01", "Kilima morning round", 0, 6),
+    ("R-02", "Ngong Road round", 6, 11),
+    ("R-03", "Limuru ridge round", 11, 14),
+]
+
+#: One van and one driver. Enough for a run to be startable (BR-0028 refuses a
+#: run with neither), and deliberately not a fleet: DEMO-034's boundaries name
+#: capacity, maintenance and driver tracking as out of scope.
+DEMO_VEHICLE = ("KDA 337X", "Blue delivery van")
+DEMO_DRIVER = ("DRV-01", "Joseph Mwangi", "+254733000337")
 
 
 #: Days of delivery history. Enough for a monthly bill to be a real month.
@@ -1591,6 +1619,7 @@ async def build_sales(client, built: dict) -> dict:
     """
     h, today = built["headers"], built["today"]
     market: Market = built["market"]
+    customer_ids: list[str] = []
     summary = {
         "customers": 0,
         "deliveries": 0,
@@ -1635,6 +1664,7 @@ async def build_sales(client, built: dict) -> dict:
             what=f"customer {name}",
         )
         summary["customers"] += 1
+        customer_ids.append(customer["id"])
 
         # A month of deliveries. A few days are skipped, deterministically, so
         # the report has something other than a straight line to show — and so
@@ -1784,6 +1814,9 @@ async def build_sales(client, built: dict) -> dict:
         "not_due_today": first["not_due"],
     }
 
+    # DEMO-037: the ids, in declared order, so `build_routes` can draw rounds
+    # over the households this phase created without inventing any.
+    summary["customer_ids"] = customer_ids
     summary["ledger"] = records
     # DEMO-012 §4: a login that IS a customer, so the mobile customer
     # experience can be shown rather than described. Bound to the first
@@ -1794,6 +1827,88 @@ async def build_sales(client, built: dict) -> dict:
         client, built, customer=first_customer
     )
     built["summary"]["sales"] = summary
+    return built
+
+
+async def build_routes(client, built: dict) -> dict:
+    """Adopt routes over the customers this dairy already has (DEMO-037).
+
+    **No customer is created here and none is invented.** The routes are drawn
+    over the households `build_sales` already registered, by position in the
+    same declared list — so two runs a week apart produce the same rounds, and
+    a purge removes them with the rest of the tenant's rows because
+    `purge()` derives its table list from `core/rls.py` and already covers
+    `route`, `route_stop`, `vehicle`, `driver` and `delivery_run`.
+
+    It drives the ordinary API: `POST /v1/routes`, `PUT /…/stops`,
+    `POST /v1/vehicles`, `POST /v1/drivers`. Nothing is inserted into a table.
+
+    What it does NOT do is generate a round. Today's round already exists —
+    `build_sales` generated it through the whole-tenant path, which is what a
+    dairy without routes still gets — and generating again would either be a
+    no-op or a second claim on the same day. Exercising the route-aware
+    SCHEDULER is verification, not seeding, and it is done separately so that
+    seeding stays idempotent.
+    """
+    h = built["headers"]
+    customers = built["summary"]["sales"].get("customer_ids") or []
+    if not customers:
+        raise SeedError("build_routes ran before any customer existed")
+
+    summary: dict = {"routes": [], "vehicle": None, "driver": None}
+
+    for code, name, start, end in ROUTES:
+        stops = customers[start:end]
+        if not stops:
+            continue
+        route = await expect(
+            await client.post("/v1/routes", json={"code": code, "name": name}, headers=h),
+            201,
+            what=f"create route {code}",
+        )
+        detail = await expect(
+            await client.put(
+                f"/v1/routes/{route['id']}/stops",
+                json={"customer_ids": stops},
+                headers=h,
+            ),
+            200,
+            what=f"set stops on {code}",
+        )
+        summary["routes"].append(
+            {"code": code, "name": name, "stops": detail["stop_count"]}
+        )
+
+    registration, label = DEMO_VEHICLE
+    summary["vehicle"] = (
+        await expect(
+            await client.post(
+                "/v1/vehicles",
+                json={"registration": registration, "label": label},
+                headers=h,
+            ),
+            201,
+            what="register the demo vehicle",
+        )
+    )["registration"]
+
+    driver_code, full_name, phone = DEMO_DRIVER
+    summary["driver"] = (
+        await expect(
+            await client.post(
+                "/v1/drivers",
+                json={"code": driver_code, "full_name": full_name, "phone": phone},
+                headers=h,
+            ),
+            201,
+            what="register the demo driver",
+        )
+    )["code"]
+
+    summary["unrouted_customers"] = len(customers) - sum(
+        r["stops"] for r in summary["routes"]
+    )
+    built["summary"]["routes"] = summary
     return built
 
 
@@ -2099,6 +2214,118 @@ async def build_isolation_org(client, admin: dict, org: dict, market: Market = K
 # --- verify / purge ----------------------------------------------------------
 
 
+async def adopt_routes() -> dict:
+    """Draw rounds over the customers an ALREADY-SEEDED demo dairy has (DEMO-037).
+
+        python infra/demo/seed_demo.py adopt-routes
+
+    `seed` builds routes as part of a fresh dataset; this is the same work for a
+    host that was seeded before DEMO-037 existed — which is every host that has
+    the demo on it. Re-running `seed` there would fail at the first
+    organization, because slugs are unique.
+
+    **No customer is created and none is invented.** The households are the ones
+    already on the dairy's books, ordered by their CODE so the rounds are the
+    same on two hosts and after a restore. Nothing financial is written: a route
+    and a stop are operational records, and this creates no delivery, invoice or
+    payment.
+
+    Idempotent. A route whose code already exists is left alone rather than
+    duplicated, so running this twice is a no-op and running it after `seed` is
+    harmless.
+    """
+    from sqlalchemy import select
+
+    from platform_core.core.rls import platform_factory
+    from platform_core.main import create_app
+    from platform_core.modules.organization.models import Organization
+
+    await bootstrap()
+    client = AsgiClient(create_app())
+    admin = await platform_admin(client)
+
+    async with platform_factory("demo seed: find the demo dairies")() as session:
+        orgs = (
+            await session.execute(
+                select(Organization.id, Organization.slug).where(
+                    Organization.slug.in_(DEMO_SLUGS)
+                )
+            )
+        ).all()
+
+    adopted: dict = {"organizations": []}
+    for org_id, slug in sorted(orgs, key=lambda row: row[1]):
+        h = {**admin, "X-Tenant-ID": str(org_id)}
+
+        page = await expect(
+            await client.get("/v1/customers?limit=100", headers=h),
+            200,
+            what=f"list {slug} customers",
+        )
+        # By CODE, not by creation order: a restored database keeps the codes
+        # and may not keep the row order.
+        customers = sorted(page["items"], key=lambda c: c["code"])
+        if not customers:
+            adopted["organizations"].append({"slug": slug, "skipped": "no customers"})
+            continue
+
+        existing = {
+            r["code"] for r in await expect(
+                await client.get("/v1/routes", headers=h), 200, what=f"list {slug} routes"
+            )
+        }
+
+        summary: dict = {"slug": slug, "customers": len(customers), "routes": []}
+        for code, name, start, end in ROUTES:
+            stops = [c["id"] for c in customers[start:end]]
+            if not stops:
+                continue
+            if code in existing:
+                summary["routes"].append({"code": code, "stops": len(stops), "existing": True})
+                continue
+            route = await expect(
+                await client.post(
+                    "/v1/routes", json={"code": code, "name": name}, headers=h
+                ),
+                201,
+                what=f"create {slug} route {code}",
+            )
+            detail = await expect(
+                await client.put(
+                    f"/v1/routes/{route['id']}/stops",
+                    json={"customer_ids": stops},
+                    headers=h,
+                ),
+                200,
+                what=f"set stops on {slug} {code}",
+            )
+            summary["routes"].append(
+                {"code": code, "stops": detail["stop_count"], "existing": False}
+            )
+
+        registration, label = DEMO_VEHICLE
+        vehicle = await client.post(
+            "/v1/vehicles",
+            json={"registration": registration, "label": label},
+            headers=h,
+        )
+        summary["vehicle"] = registration if vehicle.status_code in (201, 409) else "FAILED"
+
+        driver_code, full_name, phone = DEMO_DRIVER
+        driver = await client.post(
+            "/v1/drivers",
+            json={"code": driver_code, "full_name": full_name, "phone": phone},
+            headers=h,
+        )
+        summary["driver"] = driver_code if driver.status_code in (201, 409) else "FAILED"
+
+        summary["unrouted_customers"] = len(customers) - sum(
+            r["stops"] for r in summary["routes"]
+        )
+        adopted["organizations"].append(summary)
+    return adopted
+
+
 async def demo_org_ids() -> list[str]:
     from platform_core.core.rls import platform_factory
     from platform_core.modules.organization.models import Organization
@@ -2189,6 +2416,49 @@ async def verify() -> dict:
             checks[label] = await session.scalar(
                 select(func.count()).select_from(model).where(model.tenant_id.in_(ids))
             )
+        # DEMO-037: the rounds, and that each is a route OF this dairy's own
+        # customers. A stop pointing at a household that does not exist would
+        # be a route the report could not explain.
+        from platform_core.modules.customer.models import Customer
+        from platform_core.modules.logistics.models import Driver, Route, RouteStop, Vehicle
+
+        for label, model in (("routes", Route), ("vehicles", Vehicle), ("drivers", Driver)):
+            checks[label] = await session.scalar(
+                select(func.count()).select_from(model).where(model.tenant_id.in_(ids))
+            )
+        checks["route_stops"] = await session.scalar(
+            select(func.count()).select_from(RouteStop).where(RouteStop.tenant_id.in_(ids))
+        )
+        if checks["routes"] and checks["routes"] % len(ROUTES) != 0:
+            problems.append(
+                f"expected a multiple of {len(ROUTES)} routes, found {checks['routes']}"
+            )
+        orphan_stops = await session.scalar(
+            select(func.count())
+            .select_from(RouteStop)
+            .where(
+                RouteStop.tenant_id.in_(ids),
+                ~RouteStop.customer_id.in_(
+                    select(Customer.id).where(Customer.tenant_id.in_(ids))
+                ),
+            )
+        )
+        if orphan_stops:
+            problems.append(f"{orphan_stops} route stop(s) point at no customer")
+        # Each route's stops must be uniquely positioned within it — the order
+        # is the round, and a duplicate would make it ambiguous.
+        duplicate_positions = await session.scalar(
+            select(func.count()).select_from(
+                select(RouteStop.route_id, RouteStop.customer_id)
+                .where(RouteStop.tenant_id.in_(ids))
+                .group_by(RouteStop.route_id, RouteStop.customer_id)
+                .having(func.count() > 1)
+                .subquery()
+            )
+        )
+        if duplicate_positions:
+            problems.append(f"{duplicate_positions} customer(s) appear twice on one route")
+
         checks["completed_transactions"] = await session.scalar(
             select(func.count())
             .select_from(MilkCollectionTransaction)
@@ -2429,6 +2699,9 @@ async def seed(markets: tuple[Market, ...] = (KENYA, INDIA)) -> dict:
             built["summary"]["organization_id"],
         )
         built = await build_sales(client, built)
+        # DEMO-037: rounds drawn over the households that phase just created.
+        # After sales, because a route is a route OF customers.
+        built = await build_routes(client, built)
         # Receipts and notifications are consumer work, exactly as in production.
         await run_consumers()
         summaries[market.key] = built["summary"]
@@ -2452,7 +2725,16 @@ async def seed(markets: tuple[Market, ...] = (KENYA, INDIA)) -> dict:
 
 
 def main() -> int:
-    command = sys.argv[1] if len(sys.argv) > 1 else "seed"
+    # No argument prints the usage rather than SEEDING (found while running this
+    # against the deployment for DEMO-037). It defaulted to `seed`, so a bare
+    # `python seed_demo.py` — a typo, a forgotten argument, a copied line — began
+    # writing a demo dataset into whatever database was configured. It did no
+    # harm on the dev host only because the organizations already existed and
+    # the create returned 409.
+    #
+    # Every documented invocation names its command, so nothing depended on the
+    # default. Writing data is not a sensible thing to do by omission.
+    command = sys.argv[1] if len(sys.argv) > 1 else "help"
     import json
 
     if command == "seed":
@@ -2473,6 +2755,10 @@ def main() -> int:
     if command == "reset":
         print(json.dumps(asyncio.run(purge()), indent=2))
         print(json.dumps(asyncio.run(seed()), indent=2))
+        return 0
+    if command == "adopt-routes":
+        # DEMO-037: rounds over an already-seeded dairy's existing customers.
+        print(json.dumps(asyncio.run(adopt_routes()), indent=2))
         return 0
     if command == "consumers":
         # Useful on its own: after a restore, or when a demo was seeded while

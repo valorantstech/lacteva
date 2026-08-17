@@ -25,7 +25,7 @@ from platform_core.modules.business_calendar.service import WorkingDayResolver
 from platform_core.modules.customer.service import CustomerService
 from platform_core.modules.delivery.generation import RoundScope
 from platform_core.modules.delivery.models import DELIVERY_SLOTS
-from platform_core.modules.delivery.service import DeliveryService
+from platform_core.modules.delivery.service import DeliveryService, RouteMembership
 from platform_core.modules.logistics.models import (
     OPEN_RUN_STATUSES,
     RUN_STATUSES,
@@ -282,6 +282,52 @@ async def scheduled_round_scopes(
                 )
             )
     return scopes
+
+
+async def route_memberships(session: AsyncSession, tenant_id: uuid.UUID) -> list[RouteMembership]:
+    """Which households each active route visits (DEMO-037).
+
+    The answer the delivery REPORT is handed, as values — the same arrangement
+    as `scheduled_round_scopes`, and for the same reason: the delivery module
+    owns `milk_delivery` and must not learn that routes exist.
+
+    Unlike the scheduler's scopes this is per ROUTE rather than per route and
+    slot: a report groups a round, and a dairy asking "how did R-01 do?" means
+    the route, not its morning half.
+
+    Empty for a dairy with no routes, which is the signal the report reads as
+    "no route breakdown to show" — the same fallback shape DEMO-036 uses.
+    """
+    routes = (
+        await session.scalars(
+            select(Route)
+            .where(Route.tenant_id == tenant_id, Route.active.is_(True))
+            .order_by(Route.code)
+        )
+    ).all()
+    if not routes:
+        return []
+
+    stops = (
+        await session.execute(
+            select(RouteStop.route_id, RouteStop.customer_id).where(
+                RouteStop.tenant_id == tenant_id,
+                RouteStop.route_id.in_([r.id for r in routes]),
+            )
+        )
+    ).all()
+    by_route: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for route_id, customer_id in stops:
+        by_route.setdefault(route_id, set()).add(customer_id)
+
+    return [
+        RouteMembership(
+            code=route.code,
+            name=route.name,
+            customer_ids=frozenset(by_route.get(route.id, set())),
+        )
+        for route in routes
+    ]
 
 
 class LogisticsService:

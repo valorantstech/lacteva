@@ -101,6 +101,7 @@ from platform_core.modules.delivery.service import (
     DeliveryView,
     GenerationRunView,
     RecordDeliveryCommand,
+    RouteMembership,
 )
 from platform_core.modules.event_relay.consumers import (
     ConsumerRunner,
@@ -138,6 +139,7 @@ from platform_core.modules.logistics.service import (
     RunView,
     VehicleInput,
     VehicleView,
+    route_memberships,
 )
 from platform_core.modules.milk_collection.service import (
     IdentifySupplierCommand,
@@ -3885,6 +3887,7 @@ async def search_deliveries(
 @delivery_router.get("/deliveries/report", response_model=DeliveryReport)
 async def delivery_report(
     service: DeliverySvc,
+    session: deps.Session,
     _: DeliveryRead,
     date_from: date | None = None,
     date_to: date | None = None,
@@ -3903,7 +3906,20 @@ async def delivery_report(
     The response echoes the dates it used, so a client can label the screen
     with the day it actually got.
     """
-    return await service.report(date_from=date_from, date_to=date_to, customer_id=customer_id)
+
+    # DEMO-037: the route breakdown is composed HERE, at the API, by handing the
+    # report a callable that answers "which households does each route visit?".
+    # The delivery module still knows nothing about routes, and a dairy with
+    # none gets an empty list and a report identical to the one it got before.
+    async def membership() -> list[RouteMembership]:
+        return await route_memberships(session, require_current_tenant())
+
+    return await service.report(
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        route_membership=membership,
+    )
 
 
 class GenerateDeliveriesRequest(BaseModel):
