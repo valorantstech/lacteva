@@ -225,7 +225,84 @@ the round screen already reads generated deliveries as ordinary ones.
 
 ## 8. Production verification
 
-*Recorded after deployment.*
+Deployed `main-2732244` to **https://dev.phoenixsoft.in**. A pre-deployment
+backup was taken first: `pre-demo035-20260817T094117Z.dump`, 3.1 MB.
+
+**No migration, and the deploy said so** — the schema stayed at
+`b5d1e07a4c39` and no "the schema moved" notice was printed. That is the
+correct outcome: this milestone changed four Python files and added no table
+and no column.
+
+| Check | Result |
+| --- | --- |
+| `/health/live`, `/health/ready` | **200** |
+| `POST /v1/delivery-runs/{id}/generate` in the live schema | present |
+| The same, unauthenticated | **401** |
+| Schema version | `b5d1e07a4c39` — unchanged |
+
+**The deployed code, inspected in the running container:**
+
+```
+generate_for_day narrowings: ['customer_ids', 'slot']
+delivery scoped entry point:  True
+logistics generate_for_run:   True
+logistics does NOT call record_run: True
+logistics computes no price:  True
+supersede is per slot:        True
+```
+
+**Financial safety — the before and after files are byte-identical:**
+
+| Table | Count | Sum |
+| --- | --- | --- |
+| `settlement` | 84 → 84 | 353,417.50 → 353,417.50 |
+| `customer_invoice` | 31 → 31 | 809,038.00 → 809,038.00 |
+| `customer_payment` | 24 → 24 | 444,105.00 → 444,105.00 |
+| `customer_receipt` | 24 → 24 | 444,105.00 → 444,105.00 |
+| `payment` | 42 → 42 | 168,675.50 → 168,675.50 |
+| `receipt` | 36 → 36 | 138,903.00 → 138,903.00 |
+| `milk_delivery` | 1,303 → 1,303 | 821,667.00 → 821,667.00 |
+| `delivery_plan` | 34 → 34 | — |
+
+### What could NOT be proven in production, and why
+
+**Production holds 0 routes, 0 stops and 0 runs.** Route generation therefore
+could not be exercised there at all, and **no route, stop, run or delivery was
+manufactured to make it look as though it had been.** The work order is
+explicit on this point and it is the right call: creating fake households on a
+fake round would have written 1,303 → 1,3xx into the delivery table of a
+system whose financial totals this report claims are untouched.
+
+So the production evidence is: the endpoint exists, refuses an anonymous
+caller, the deployed code has the right shape, the schema did not move, and no
+figure changed. **The behaviour itself is proven only by the test suite and the
+PostgreSQL proof** — see §11.
+
+### The deploy failed once first, and the cause was mine
+
+The first attempt failed at step 3 of 6 with **`No space left on device`**. The
+production disk was at **100%** (196 MB free). Production was unaffected — it
+stayed on `main-483bca8` and kept serving throughout, which is the deploy
+script's rollback behaviour working.
+
+The cause: since DEMO-033 my `rsync` to the host had been shipping
+**`apps/mobile/build/`** — 2.2 GB of Flutter artifacts created by running the
+mobile tests locally. Release directories grew from ~877 MB to **3.4 GB each**.
+
+`infra/deploy/disk-guard.sh` exists precisely for this (written after "the disk
+reached 100% twice during DEMO-009"), its systemd timer was **active and had
+run two hours earlier**, and it was working exactly as designed — it keeps 3
+releases, which had silently become a 10 GB commitment instead of a 2.6 GB one.
+**The guard did not fail; I broke its assumption.**
+
+Fixed both halves: `--force` reclaimed to 89%, and the sync now excludes
+`build/`, `.dart_tool/`, `.next/` and the Python caches, with
+`--delete-excluded` so what had already been shipped was removed. Staging fell
+from **3.4 GB to 714 MB** and the disk to **82%, 7.1 GB free**. Releases are
+back to their intended size, so the guard's arithmetic holds again.
+
+Recorded here rather than quietly fixed, because a deploy pipeline that fills a
+production disk is worth one paragraph in the milestone that did it.
 
 ## 9. Financial safety
 
