@@ -1108,6 +1108,9 @@ export type MilkTransaction = {
   cancelled_reason: string | null;
   created_at: string;
   completed_at: string | null;
+  // P0-BIZ-003: the parchi's number; null before completion and on history
+  // that completed before slips existed.
+  slip_number: string | null;
 };
 
 /**
@@ -1304,6 +1307,44 @@ export const getCollectionChain = (transactionId: string) =>
 
 export const getMilkTransactionEvents = (id: string) =>
   api<TransactionEvent[]>(`/v1/milk-transactions/${id}/events`);
+
+/**
+ * P0-BIZ-003: the collection slip (parchi), composed by the platform. The
+ * money fields are the transaction's own stored strings — the portal prints
+ * them verbatim and never recomputes.
+ */
+export type CollectionSlip = {
+  slip_number: string;
+  transaction_id: string;
+  organization_name: string;
+  center_name: string;
+  session_label: string;
+  business_date: string;
+  collected_at: string;
+  completed_at: string;
+  milk_type: string | null;
+  milk_type_custom: string | null;
+  quantity: number | null;
+  weight_unit: string | null;
+  gross_weight: number | null;
+  tare_weight: number | null;
+  fat: number | null;
+  snf: number | null;
+  clr: number | null;
+  supplier_code: string | null;
+  supplier_name: string | null;
+  operator_name: string;
+  decision: string;
+  rejected_reason: string | null;
+  pricing_status: string | null;
+  unit_price: string | number | null;
+  gross_amount: string | number | null;
+  currency: string | null;
+  text: string;
+};
+
+export const getCollectionSlip = (id: string) =>
+  api<CollectionSlip>(`/v1/milk-transactions/${id}/slip`);
 
 // --- Notifications (NOT-001) ------------------------------------------------
 

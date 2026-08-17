@@ -7,7 +7,9 @@ import {
   Banknote,
   Building2,
   Check,
+  Copy,
   Handshake,
+  Printer,
   Receipt as ReceiptIcon,
   Truck,
 } from "lucide-react";
@@ -15,6 +17,7 @@ import {
   ApiError,
   type CenterDetail,
   type CollectionChain,
+  type CollectionSlip,
   type Member,
   type MilkTransaction,
   type SupplierDetail,
@@ -22,11 +25,13 @@ import {
   type User,
   getCenterDetail,
   getCollectionChain,
+  getCollectionSlip,
   getMilkTransaction,
   getMilkTransactionEvents,
   getSupplierDetail,
   listPeople,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { formatStamp } from "@/components/datetime";
 import {
   Card,
@@ -350,6 +355,8 @@ export default function TransactionDetailPage({
             <PricingBreakdown tx={t} />
           </div>
 
+          {t.state === "COMPLETED" ? <SlipCard txId={t.id} /> : null}
+
           <div className="grid gap-6 lg:grid-cols-3">
             <ChainCard
               title="Settlement"
@@ -512,6 +519,147 @@ export default function TransactionDetailPage({
         </>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The collection slip / parchi (P0-BIZ-003).
+ *
+ * The farmer's copy of this collection, composed entirely by the platform:
+ * the portal prints the fields it was sent and never recomputes a figure.
+ * Print produces only the slip (see the `[data-slip-print]` rules in
+ * globals.css); Copy carries the platform's shareable text — bilingual when
+ * the organization's language is Hindi — for WhatsApp or SMS.
+ */
+function SlipCard({ txId }: { txId: string }) {
+  const [slip, setSlip] = useState<Load<CollectionSlip>>(LOADING);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    getCollectionSlip(txId).then(
+      (data) => {
+        if (live) setSlip({ state: "ready", data });
+      },
+      (e: unknown) => {
+        if (live) setSlip({ state: "error", message: describe(e) });
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [txId]);
+
+  if (slip.state === "loading") {
+    return <LoadingState label="Preparing the collection slip…" />;
+  }
+  if (slip.state === "error") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Collection slip</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ErrorState
+            message={`The slip could not be prepared — ${slip.message}.`}
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const s = slip.data;
+  const milk = s.milk_type_custom ?? s.milk_type ?? "—";
+  const farmer =
+    [s.supplier_code, s.supplier_name].filter(Boolean).join(" · ") || "—";
+  const copyText = async () => {
+    try {
+      await navigator.clipboard.writeText(s.text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard can be unavailable (permissions, http); the text stays
+      // selectable on screen, so failing silently loses nothing.
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          Collection slip · <span className="tabular-nums">{s.slip_number}</span>
+        </CardTitle>
+        <CardDescription>
+          The farmer&apos;s copy (parchi). Every figure is the platform&apos;s
+          stored value — printing and sharing change nothing.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div
+          data-slip-print
+          className="mx-auto w-full max-w-sm rounded-md border bg-card p-4 text-sm"
+        >
+          <p className="text-center font-semibold">{s.organization_name}</p>
+          <p className="text-center text-muted-foreground">
+            {s.center_name}
+            {s.session_label ? ` · ${s.session_label}` : ""}
+          </p>
+          <dl className="mt-3 flex flex-col gap-1.5">
+            <Row label="Slip">
+              <span className="tabular-nums">{s.slip_number}</span>
+            </Row>
+            <Row label="Date">
+              <span className="tabular-nums">{stamp(s.collected_at)}</span>
+            </Row>
+            <Row label="Farmer">{farmer}</Row>
+            <Row label="Milk">{milk}</Row>
+            <Row label="Quantity">
+              <Quantity value={s.quantity} unit={s.weight_unit ?? "kg"} />
+            </Row>
+            <Row label="FAT / SNF / CLR">
+              <span className="tabular-nums">
+                {s.fat ?? "—"} / {s.snf ?? "—"} / {s.clr ?? "—"}
+              </span>
+            </Row>
+            {s.decision === "REJECTED" ? (
+              <Row label="Decision">
+                <span className="text-destructive">
+                  REJECTED{s.rejected_reason ? ` — ${s.rejected_reason}` : ""}
+                </span>
+              </Row>
+            ) : s.unit_price != null && s.gross_amount != null ? (
+              <>
+                <Row label="Rate">
+                  <Money amount={s.unit_price} currency={s.currency ?? ""} />
+                </Row>
+                <Row label="Amount">
+                  <Money
+                    amount={s.gross_amount}
+                    currency={s.currency ?? ""}
+                    emphasis
+                  />
+                </Row>
+              </>
+            ) : (
+              <Row label="Rate">
+                <span className="text-muted-foreground">pending</span>
+              </Row>
+            )}
+            <Row label="Operator">{s.operator_name || "—"}</Row>
+          </dl>
+        </div>
+        <div className="flex flex-wrap justify-center gap-2 print:hidden">
+          <Button type="button" variant="outline" onClick={() => window.print()}>
+            <Printer aria-hidden className="me-1.5 size-4" />
+            Print
+          </Button>
+          <Button type="button" variant="outline" onClick={copyText}>
+            <Copy aria-hidden className="me-1.5 size-4" />
+            {copied ? "Copied" : "Copy text"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -128,3 +128,23 @@
     @apply font-sans;
   }
 }
+
+/* P0-BIZ-003: printing a page that CONTAINS a collection slip prints only the
+   slip — the farmer's copy, not the office chrome around it. Scoped with
+   :has() so every other page keeps printing exactly as before. */
+@media print {
+  body:has([data-slip-print]) * {
+    visibility: hidden;
+  }
+  body:has([data-slip-print]) [data-slip-print],
+  body:has([data-slip-print]) [data-slip-print] * {
+    visibility: visible;
+  }
+  body:has([data-slip-print]) [data-slip-print] {
+    position: fixed;
+    inset: 0 auto auto 0;
+    width: 100%;
+    max-width: 28rem;
+    border: none;
+  }
+}

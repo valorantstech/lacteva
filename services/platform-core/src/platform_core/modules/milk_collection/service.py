@@ -15,13 +15,14 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from platform_core.core.business_time import business_date_of
+from platform_core.core.business_time import business_date_of, format_in_zone
 from platform_core.core.db import as_utc, utcnow
+from platform_core.core.document_numbers import next_document_number
 from platform_core.core.errors import ConflictError, NotFoundError
-from platform_core.core.org_context import tenant_timezone
+from platform_core.core.org_context import tenant_locale, tenant_timezone
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.infrastructure.hardware import (
@@ -32,6 +33,7 @@ from platform_core.infrastructure.hardware import (
 )
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.collection_center.models import CollectionCenter
+from platform_core.modules.identity.models import User
 from platform_core.modules.milk_collection.models import (
     MILK_TYPES,
     TERMINAL_STATES,
@@ -42,6 +44,7 @@ from platform_core.modules.milk_collection.models import (
     TransactionSnapshot,
 )
 from platform_core.modules.operational_readiness.service import OperationalReadinessService
+from platform_core.modules.organization.models import Organization
 from platform_core.modules.supplier.models import (
     Supplier,
     SupplierCenterAssignment,
@@ -103,6 +106,17 @@ def product_code_for(milk_type: str | None) -> str | None:
     if not milk_type or milk_type == "custom":
         return None
     return f"RAW-{milk_type.upper()}-MILK"
+
+
+# P0-BIZ-003: the collection slip (parchi) — the eighth document series on the
+# shared per-tenant-year counter, beside STL-/INV-/RCP- and their kin.
+SLIP_DOC_TYPE = "collection_slip"
+SLIP_PREFIX = "SLP"
+
+#: Hindi names for the fixed milk vocabulary, used on the shareable text when
+#: the organization's default language is Hindi. `custom` renders its own
+#: free-text name and needs no entry.
+_SLIP_MILK_HI = {"cow": "गाय", "buffalo": "भैंस", "goat": "बकरी", "mixed": "मिश्रित"}
 
 
 # --- DTOs ------------------------------------------------------------------
@@ -199,6 +213,9 @@ class TransactionView(BaseModel):
     cancelled_reason: str | None
     created_at: datetime
     completed_at: datetime | None
+    # P0-BIZ-003: the parchi's number. NULL until completion, and NULL on
+    # history that completed before slips existed (minted lazily on slip read).
+    slip_number: str | None
 
     model_config = {"from_attributes": True}
 
@@ -228,6 +245,93 @@ class TransactionEventView(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class SlipView(BaseModel):
+    """The collection slip (parchi) — every field a farmer sees on a real
+    Indian dairy receipt, composed server-side so a print, a WhatsApp text and
+    the API all show the same document.
+
+    The money fields are the transaction's OWN Decimal columns, passed through
+    unmodified — the slip renders the books, it never recomputes them.
+    """
+
+    slip_number: str
+    transaction_id: uuid.UUID
+    organization_name: str
+    center_name: str
+    session_label: str
+    business_date: date
+    collected_at: datetime
+    completed_at: datetime
+    milk_type: str | None
+    milk_type_custom: str | None
+    quantity: float | None
+    weight_unit: str | None
+    gross_weight: float | None
+    tare_weight: float | None
+    fat: float | None
+    snf: float | None
+    clr: float | None
+    supplier_code: str | None
+    supplier_name: str | None
+    operator_name: str
+    decision: str  # ACCEPTED | REJECTED
+    rejected_reason: str | None
+    pricing_status: str | None
+    unit_price: Decimal | None
+    gross_amount: Decimal | None
+    currency: str | None
+    #: The shareable plain-text parchi — WhatsApp-pasteable, printer-plain.
+    text: str
+
+
+def render_slip_text(slip: SlipView, *, language: str, timezone_name: str | None) -> str:
+    """The farmer's copy, as plain text: short lines, no markup, nothing to
+    install. Labels are bilingual (English + Hindi) when the organization's
+    default language is Hindi; amounts are the stored strings, verbatim.
+    """
+    hindi = (language or "").lower().startswith("hi")
+
+    def label(en: str, hi: str) -> str:
+        return f"{en} / {hi}" if hindi else en
+
+    milk = slip.milk_type_custom or slip.milk_type or "—"
+    if hindi and slip.milk_type in _SLIP_MILK_HI:
+        milk = f"{slip.milk_type} / {_SLIP_MILK_HI[slip.milk_type]}"
+
+    farmer = " · ".join(x for x in (slip.supplier_code, slip.supplier_name) if x) or "—"
+    lines = [
+        slip.organization_name,
+        f"{slip.center_name} · {label('Shift', 'पाली')}: {slip.session_label or '—'}",
+        f"{label('Slip', 'पर्ची')}: {slip.slip_number}",
+        f"{label('Date', 'दिनांक')}: {format_in_zone(slip.collected_at, timezone_name)}",
+        f"{label('Farmer', 'किसान')}: {farmer}",
+        f"{label('Milk', 'दूध')}: {milk}",
+    ]
+    if slip.quantity is not None:
+        lines.append(f"{label('Qty', 'मात्रा')}: {slip.quantity:g} {slip.weight_unit or 'kg'}")
+    quality = "  ".join(
+        f"{name} {value:g}"
+        for name, value in (("FAT", slip.fat), ("SNF", slip.snf), ("CLR", slip.clr))
+        if value is not None
+    )
+    if quality:
+        lines.append(quality)
+    if slip.decision == "REJECTED":
+        refused = f"{label('REJECTED', 'अस्वीकृत')}"
+        lines.append(f"{refused}: {slip.rejected_reason}" if slip.rejected_reason else refused)
+    elif slip.unit_price is not None and slip.gross_amount is not None:
+        per = f"/{slip.weight_unit}" if slip.weight_unit else ""
+        lines.append(f"{label('Rate', 'दर')}: {slip.unit_price}{per}")
+        amount = f"{slip.currency or ''} {slip.gross_amount}".strip()
+        lines.append(f"{label('Amount', 'राशि')}: {amount}")
+    else:
+        # Accepted but unpriced (no published rate card covered it) — say so
+        # rather than print a blank that looks like zero.
+        lines.append(label("Rate pending", "दर बाद में"))
+    lines.append(f"{label('Operator', 'ऑपरेटर')}: {slip.operator_name}")
+    return "\n".join(lines)
 
 
 class MilkCollectionService:
@@ -665,6 +769,14 @@ class MilkCollectionService:
         decision = tx.state
         tx.completed_at = utcnow()
         tx.state = "COMPLETED"
+        # P0-BIZ-003: the parchi's number is minted at the moment the
+        # transaction becomes immutable — BEFORE the snapshot freezes, so the
+        # frozen record carries the number the farmer's slip will show.
+        # Rejected completions get one too: proof of rejection is a document
+        # the farmer is owed as much as proof of acceptance.
+        tx.slip_number = await next_document_number(
+            self._session, tenant_id=tx.tenant_id, doc_type=SLIP_DOC_TYPE, prefix=SLIP_PREFIX
+        )
         snapshot = TransactionSnapshot(
             tenant_id=tx.tenant_id, transaction_id=tx.id, data=self._freeze(tx, decision)
         )
@@ -699,6 +811,7 @@ class MilkCollectionService:
                 "gross_amount": str(tx.gross_amount) if tx.gross_amount is not None else None,
                 "currency": tx.currency,
                 "rejected": tx.rejected_reason is not None,
+                "slip_number": tx.slip_number,
             },
             actor_id,
         )
@@ -790,6 +903,118 @@ class MilkCollectionService:
             .order_by(TransactionEvent.sequence)
         )
         return list(rows.all())
+
+    async def slip(self, tx_id: uuid.UUID) -> SlipView:
+        """The parchi for a completed transaction (P0-BIZ-003).
+
+        Read-only over the books: every money figure is the transaction's own
+        column, passed through. The single write this method can perform is
+        minting a slip number for a transaction that completed before slips
+        existed — and that touches `slip_number` alone.
+        """
+        tx = await self._get_tx(tx_id)
+        if tx.state != "COMPLETED":
+            raise ConflictError(
+                f"a slip exists only for completed transactions; this one is {tx.state}"
+            )
+        if tx.slip_number is None:
+            tx = await self._mint_historical_slip_number(tx)
+
+        # The frozen decision, from the snapshot completion wrote. The
+        # fallback covers a snapshot-less row, which should not exist.
+        snapshot = await self._session.scalar(
+            select(TransactionSnapshot).where(TransactionSnapshot.transaction_id == tx.id)
+        )
+        decision = (snapshot.data.get("decision") if snapshot else None) or (
+            "REJECTED" if tx.rejected_reason else "ACCEPTED"
+        )
+
+        center = await self._session.get(CollectionCenter, tx.center_id)
+        csession = await self._session.get(CollectionSession, tx.session_id)
+        organization = await self._session.get(Organization, tx.tenant_id)
+        operator = await self._session.get(User, tx.operator_id)
+        supplier = await self._session.get(Supplier, tx.supplier_id) if tx.supplier_id else None
+        profile = (
+            await self._session.scalar(
+                select(SupplierProfile).where(SupplierProfile.supplier_id == tx.supplier_id)
+            )
+            if tx.supplier_id
+            else None
+        )
+        locale = await tenant_locale(self._session, tx.tenant_id)
+        tz = await tenant_timezone(self._session, tx.tenant_id)
+
+        collected_at = as_utc(tx.arrived_at or tx.created_at)
+        view = SlipView(
+            slip_number=tx.slip_number,
+            transaction_id=tx.id,
+            organization_name=getattr(organization, "name", "") or "",
+            center_name=center.name if center else "",
+            session_label=csession.label if csession else "",
+            business_date=business_date_of(collected_at, tz),
+            collected_at=collected_at,
+            completed_at=as_utc(tx.completed_at),
+            milk_type=tx.milk_type,
+            milk_type_custom=tx.milk_type_custom,
+            quantity=tx.net_weight,
+            weight_unit=tx.weight_unit,
+            gross_weight=tx.gross_weight,
+            tare_weight=tx.tare_weight,
+            fat=tx.fat,
+            snf=tx.snf,
+            clr=tx.clr,
+            supplier_code=supplier.code if supplier else None,
+            supplier_name=profile.full_name if profile else None,
+            operator_name=operator.full_name if operator else "",
+            decision=decision,
+            rejected_reason=tx.rejected_reason,
+            pricing_status=tx.pricing_status,
+            unit_price=tx.unit_price,
+            gross_amount=tx.gross_amount,
+            currency=tx.currency,
+            text="",
+        )
+        return view.model_copy(
+            update={
+                "text": render_slip_text(view, language=locale.default_language, timezone_name=tz)
+            }
+        )
+
+    async def _mint_historical_slip_number(
+        self, tx: MilkCollectionTransaction
+    ) -> MilkCollectionTransaction:
+        """First slip read of a pre-slip completed transaction mints its number.
+
+        CAS-guarded — `WHERE slip_number IS NULL` lets exactly one of two
+        concurrent readers assign. The loser ROLLS BACK, which undoes its own
+        sequence increment (so the series stays gapless), rebinds the
+        transaction-scoped RLS setting the rollback discarded, and reads the
+        winner's number.
+        """
+        # Captured BEFORE the possible rollback: the rollback expires `tx`,
+        # and touching an expired instance's attributes from asyncio raises
+        # MissingGreenlet rather than lazily refreshing.
+        tx_id = tx.id
+        number = await next_document_number(
+            self._session, tenant_id=tx.tenant_id, doc_type=SLIP_DOC_TYPE, prefix=SLIP_PREFIX
+        )
+        result = await self._session.execute(
+            update(MilkCollectionTransaction)
+            .where(
+                MilkCollectionTransaction.id == tx_id,
+                MilkCollectionTransaction.slip_number.is_(None),
+            )
+            .values(slip_number=number)
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount == 0:
+            from platform_core.core.rls import rebind_tenant
+
+            await self._session.rollback()
+            await rebind_tenant(self._session, require_current_tenant())
+            return await self._get_tx(tx_id)
+        tx.slip_number = number
+        return tx
 
     # --- internals ----------------------------------------------------------
 
@@ -911,6 +1136,7 @@ class MilkCollectionService:
                 "detail": tx.pricing_detail,
             },
             "rejected_reason": tx.rejected_reason,
+            "slip_number": tx.slip_number,
             "created_at": tx.created_at.isoformat(),
             "completed_at": tx.completed_at.isoformat() if tx.completed_at else None,
         }

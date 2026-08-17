@@ -55,6 +55,38 @@ const TX = {
   rejected_reason: null,
   created_at: "2026-08-10T07:30:00+00:00",
   completed_at: "2026-08-10T07:45:00+00:00",
+  slip_number: "SLP-2026-000007",
+};
+
+// P0-BIZ-003: what the platform composes for the farmer's copy.
+const SLIP = {
+  slip_number: "SLP-2026-000007",
+  transaction_id: "tx-1",
+  organization_name: "Kilima Dairy Cooperative",
+  center_name: "Kilima Hill",
+  session_label: "morning",
+  business_date: "2026-08-10",
+  collected_at: "2026-08-10T07:30:00+00:00",
+  completed_at: "2026-08-10T07:45:00+00:00",
+  milk_type: "cow",
+  milk_type_custom: null,
+  quantity: 10,
+  weight_unit: "kg",
+  gross_weight: 12,
+  tare_weight: 2,
+  fat: 4.2,
+  snf: 8.6,
+  clr: 28.5,
+  supplier_code: "SUP-001",
+  supplier_name: "Amina Njoroge",
+  operator_name: "Test User",
+  decision: "ACCEPTED",
+  rejected_reason: null,
+  pricing_status: "priced",
+  unit_price: "45.0000",
+  gross_amount: "450.00",
+  currency: "KES",
+  text: "Kilima Dairy Cooperative\nSlip: SLP-2026-000007",
 };
 
 const EVENTS = [
@@ -151,6 +183,7 @@ function routeAll(overrides: Record<string, () => Response> = {}) {
     if (url.includes("/reports/collection/daily")) return json(DAILY);
     if (url.includes("/chain")) return json(CHAIN);
     if (url.includes("/milk-transactions/tx-1/events")) return json(EVENTS);
+    if (url.includes("/milk-transactions/tx-1/slip")) return json(SLIP);
     if (url.includes("/milk-transactions/tx-1")) return json(TX);
     if (url.includes("/milk-transactions"))
       return json({ items: [TX], total: 1, limit: 15, offset: 0 });
@@ -371,6 +404,74 @@ describe("collection detail", () => {
     // The pricing card still renders; only the timeline reports a failure.
     expect(await screen.findByText("= 450.00 KES")).toBeInTheDocument();
     expect(screen.getByText(/event trail is unavailable/i)).toBeInTheDocument();
+  });
+
+  // --- the collection slip / parchi (P0-BIZ-003) ---------------------------
+
+  it("shows the parchi with the platform's exact strings, and offers print/share", async () => {
+    routeAll();
+    await renderDetail(<TransactionDetailPage params={params()} />);
+
+    // The number, twice: the card title and the slip body.
+    expect(
+      (await screen.findAllByText("SLP-2026-000007")).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Kilima Dairy Cooperative")).toBeInTheDocument();
+    expect(screen.getByText(/Kilima Hill · morning/)).toBeInTheDocument();
+    expect(screen.getByText("SUP-001 · Amina Njoroge")).toBeInTheDocument();
+    // The four-decimal rate survives verbatim inside the slip — the portal
+    // renders the stored string, it does not reformat money.
+    const slip = document.querySelector("[data-slip-print]");
+    expect(slip?.textContent).toContain("45.0000");
+    expect(slip?.textContent).toContain("450.00");
+    expect(screen.getByRole("button", { name: /print/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /copy text/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("a rejected collection's slip says REJECTED and shows no amount", async () => {
+    routeAll({
+      "/milk-transactions/tx-1/slip": () =>
+        json({
+          ...SLIP,
+          decision: "REJECTED",
+          rejected_reason: "adulteration suspected",
+          pricing_status: null,
+          unit_price: null,
+          gross_amount: null,
+        }),
+    });
+    await renderDetail(<TransactionDetailPage params={params()} />);
+
+    expect(
+      await screen.findByText(/REJECTED — adulteration suspected/),
+    ).toBeInTheDocument();
+    const slip = document.querySelector("[data-slip-print]");
+    expect(slip?.textContent).not.toContain("450.00");
+  });
+
+  it("offers no slip before completion", async () => {
+    routeAll({
+      "/milk-transactions/tx-1/events": () => json(EVENTS),
+      "/milk-transactions/tx-1": () =>
+        json({ ...TX, state: "QUALITY_PENDING", slip_number: null }),
+    });
+    await renderDetail(<TransactionDetailPage params={params()} />);
+    await screen.findByText("Transaction created");
+    expect(screen.queryByText(/collection slip/i)).toBeNull();
+  });
+
+  it("keeps the page whole when the slip cannot be prepared", async () => {
+    routeAll({
+      "/milk-transactions/tx-1/slip": () => json({ detail: "sequence down" }, 500),
+    });
+    await renderDetail(<TransactionDetailPage params={params()} />);
+    expect(
+      await screen.findByText(/slip could not be prepared/i),
+    ).toBeInTheDocument();
+    // The rest of the page is untouched by the slip's failure.
+    expect(screen.getByText("= 450.00 KES")).toBeInTheDocument();
   });
 
   it("explains a collection that cannot be loaded and offers the way back", async () => {

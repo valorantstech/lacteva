@@ -57,6 +57,10 @@ class CollectionSession(Base, IdMixin):
 
 class MilkCollectionTransaction(Base, IdMixin):
     __tablename__ = "milk_collection_transaction"
+    # P0-BIZ-003: one slip number per transaction, per tenant. NULLs do not
+    # collide (both engines), so pre-slip history and in-flight transactions
+    # coexist with the constraint.
+    __table_args__ = (UniqueConstraint("tenant_id", "slip_number", name="uq_milk_tx_slip"),)
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     session_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
@@ -107,6 +111,12 @@ class MilkCollectionTransaction(Base, IdMixin):
     cancelled_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # P0-BIZ-003: the parchi's human-readable number (SLP-2026-000001), minted
+    # from the shared per-tenant-year document series at completion. NULL means
+    # the transaction completed before slips existed — the slip endpoint mints
+    # lazily on first read, so history gets numbers without a data migration.
+    slip_number: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
 
 class TransactionEvent(Base, IdMixin):

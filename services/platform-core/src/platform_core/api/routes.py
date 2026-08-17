@@ -152,6 +152,7 @@ from platform_core.modules.milk_collection.service import (
     RejectCommand,
     SessionPage,
     SessionView,
+    SlipView,
     TransactionEventView,
     TransactionPage,
     TransactionView,
@@ -1898,6 +1899,12 @@ async def get_milk_transaction(tx_id: uuid.UUID, service: MilkSvc, _: TxRead) ->
 @milk_router.get("/milk-transactions/{tx_id}/events", response_model=list[TransactionEventView])
 async def get_milk_transaction_events(tx_id: uuid.UUID, service: MilkSvc, _: TxRead) -> Any:
     return await service.list_events(tx_id)
+
+
+@milk_router.get("/milk-transactions/{tx_id}/slip", response_model=SlipView)
+async def get_milk_transaction_slip(tx_id: uuid.UUID, service: MilkSvc, _: TxRead) -> Any:
+    """P0-BIZ-003: the collection slip (parchi) for a completed transaction."""
+    return await service.slip(tx_id)
 
 
 # --- Pricing (Rate Card Foundation — lifecycle only, no calculations) -------
