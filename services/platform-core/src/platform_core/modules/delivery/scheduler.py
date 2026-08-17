@@ -57,7 +57,11 @@ from platform_core.core.business_time import zone
 from platform_core.core.db import get_session_factory, utcnow
 from platform_core.core.rls import platform_session, rebind_tenant
 from platform_core.modules.business_calendar.service import WorkingDayResolver
-from platform_core.modules.delivery.generation import GenerationResult, generate_for_day
+from platform_core.modules.delivery.generation import (
+    GenerationResult,
+    RoundScope,
+    generate_for_day,
+)
 from platform_core.modules.delivery.models import MAX_ATTEMPTS, DeliveryGenerationRun
 
 log = structlog.get_logger("delivery.scheduler")
@@ -171,6 +175,7 @@ async def run_for_tenant(
     generation_hour: int,
     trigger: str = "scheduler",
     force_date: date | None = None,
+    route_scopes: RouteScopeProvider | None = None,
 ) -> DeliveryGenerationRun | None:
     """Generate one tenant's round, if it is due, and record what happened.
 
@@ -211,6 +216,14 @@ async def run_for_tenant(
             label=tenant.slug,
             now=now,
             is_working=resolver.is_working,
+            # DEMO-036: handed the same way `is_working` is — a callable that
+            # answers "which routes has this dairy planned for this day?", so
+            # this module still knows nothing about routes.
+            route_scopes=(
+                (lambda: route_scopes(session, tenant.id, day))
+                if route_scopes is not None
+                else None
+            ),
         )
         return run
 
@@ -312,6 +325,77 @@ async def _claim(
     return await _run_for(session, tenant_id, day)
 
 
+async def _generate_the_day(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    day: date,
+    is_working: Callable[[uuid.UUID | None], Awaitable[bool]] | None,
+    route_scopes: Callable[[], Awaitable[list[RoundScope]]] | None,
+) -> GenerationResult:
+    """The day's round — route by route where routes exist (DEMO-036).
+
+    **This runs INSIDE `record_run`'s claim, and that is the whole point.**
+    DEMO-035 found that calling `record_run` per ROUTE makes the first route
+    claim the tenant's date and every later route silently generate nothing.
+    The fix is not to abandon the claim — it is what stops two scheduler
+    workers doing the same dairy's day twice — but to claim the day ONCE and
+    iterate routes underneath it. One claim per tenant-day, many routes within.
+
+    **No routes means no change.** A tenant that has not adopted routes gets
+    exactly the call it got before this function existed, byte for byte, which
+    is what makes route adoption optional rather than a migration.
+
+    A route that raises does NOT let the others report success by omission: the
+    exception propagates, `record_run` marks the day `failed` with the route's
+    label in the message, and the attempt is retried. Recording a partial round
+    as a success is the failure mode this milestone must not have — an operator
+    reading `success` has no reason to look for the round that never went out.
+    """
+    scopes = await route_scopes() if route_scopes is not None else []
+    if not scopes:
+        # The pre-DEMO-036 path, unchanged.
+        return await generate_for_day(
+            session, tenant_id=tenant_id, day=day, actor_id=None, is_working=is_working
+        )
+
+    totals = GenerationResult(
+        business_date=day,
+        due=0,
+        created=0,
+        already_present=0,
+        not_due=0,
+        inactive_customers=0,
+        skipped_holiday=0,
+    )
+    for scope in scopes:
+        try:
+            result = await generate_for_day(
+                session,
+                tenant_id=tenant_id,
+                day=day,
+                actor_id=None,
+                is_working=is_working,
+                customer_ids=set(scope.customer_ids),
+                slot=scope.slot,
+            )
+        except Exception as exc:
+            # Named, so the failure says WHICH round did not go out. Re-raised
+            # rather than swallowed: a day with one broken route is a failed
+            # day, not a successful one with a footnote.
+            raise RuntimeError(f"route {scope.label!r} failed to generate: {exc}") from exc
+        totals = GenerationResult(
+            business_date=day,
+            due=totals.due + result.due,
+            created=totals.created + result.created,
+            already_present=totals.already_present + result.already_present,
+            not_due=totals.not_due + result.not_due,
+            inactive_customers=totals.inactive_customers + result.inactive_customers,
+            skipped_holiday=totals.skipped_holiday + result.skipped_holiday,
+        )
+    return totals
+
+
 async def record_run(
     session: AsyncSession,
     *,
@@ -321,6 +405,7 @@ async def record_run(
     label: str = "",
     now: datetime | None = None,
     is_working: Callable[[uuid.UUID | None], Awaitable[bool]] | None = None,
+    route_scopes: Callable[[], Awaitable[list[RoundScope]]] | None = None,
 ) -> tuple[DeliveryGenerationRun | None, GenerationResult]:
     """Generate one day's round and record what happened, on a caller's session.
 
@@ -372,8 +457,12 @@ async def record_run(
 
     started = time.monotonic()
     try:
-        result = await generate_for_day(
-            session, tenant_id=tenant_id, day=day, actor_id=None, is_working=is_working
+        result = await _generate_the_day(
+            session,
+            tenant_id=tenant_id,
+            day=day,
+            is_working=is_working,
+            route_scopes=route_scopes,
         )
     except Exception as exc:
         # The failure has to be recorded in a transaction of its own: the
@@ -474,8 +563,21 @@ async def record_run(
     return run, result
 
 
+#: How the scheduler is told about routes (DEMO-036).
+#:
+#: `(session, tenant_id, day) -> [RoundScope, …]`, empty when the dairy has no
+#: routes — which is the fallback and the ordinary case. Supplied by the
+#: composition point in `main.py`, never imported here: `logistics` depends on
+#: `delivery`, so the reverse import would be a cycle, and DEMO-022 already
+#: settled the shape of this problem by passing `is_working` in.
+RouteScopeProvider = Callable[[AsyncSession, uuid.UUID, date], Awaitable[list[RoundScope]]]
+
+
 async def run_once(
-    *, generation_hour: int, now: datetime | None = None
+    *,
+    generation_hour: int,
+    now: datetime | None = None,
+    route_scopes: RouteScopeProvider | None = None,
 ) -> list[DeliveryGenerationRun]:
     """One pass over every active tenant.
 
@@ -487,7 +589,12 @@ async def run_once(
     runs: list[DeliveryGenerationRun] = []
     for tenant in await active_tenants():
         try:
-            run = await run_for_tenant(tenant, now=now, generation_hour=generation_hour)
+            run = await run_for_tenant(
+                tenant,
+                now=now,
+                generation_hour=generation_hour,
+                route_scopes=route_scopes,
+            )
         except Exception:
             log.exception("delivery_scheduler_tenant_error", tenant=tenant.slug)
             continue

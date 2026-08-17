@@ -124,11 +124,20 @@ async def _delivery_scheduler_loop() -> None:
     when a dairy has no round.
     """
     from platform_core.modules.delivery.scheduler import run_once
+    from platform_core.modules.logistics.service import scheduled_round_scopes
 
+    # DEMO-036: the composition point, and the ONLY place the two modules meet.
+    # `logistics` depends on `delivery`, so `delivery` importing routes would
+    # be a cycle — the scheduler is handed a callable instead, exactly as
+    # DEMO-022 handed it `is_working`. A tenant with no routes gets an empty
+    # list back and the pre-DEMO-036 whole-tenant path, unchanged.
     settings = get_settings()
     while not workers.stopping():
         try:
-            await run_once(generation_hour=settings.scheduler_generation_hour)
+            await run_once(
+                generation_hour=settings.scheduler_generation_hour,
+                route_scopes=scheduled_round_scopes,
+            )
         except Exception:
             # Never fatal to the loop: tomorrow is another business date, and
             # a scheduler that exits on one bad pass is a dairy with no round.

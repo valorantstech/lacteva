@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
@@ -86,6 +87,25 @@ class GenerationResult(BaseModel):
     #: not working today (DEMO-022). Zero on every manual run, because manual
     #: generation is not calendar-suppressed.
     skipped_holiday: int = 0
+
+
+@dataclass(frozen=True)
+class RoundScope:
+    """One route's worth of a day, as the SCHEDULER is handed it (DEMO-036).
+
+    A value, not a service call. The delivery module gains no dependency on
+    logistics for the same reason DEMO-022 handed it `is_working` as a callable
+    rather than a calendar: it is given the answer, and the module that owns
+    routes is the one that works it out.
+
+    `label` is for the log and the failure message — a route code an operator
+    recognises, never an id they would have to look up.
+    """
+
+    label: str
+    customer_ids: frozenset[uuid.UUID]
+    slot: str
+    center_id: uuid.UUID | None = None
 
 
 def _due_plans_query(

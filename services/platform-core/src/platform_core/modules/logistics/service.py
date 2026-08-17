@@ -23,6 +23,7 @@ from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.business_calendar.service import WorkingDayResolver
 from platform_core.modules.customer.service import CustomerService
+from platform_core.modules.delivery.generation import RoundScope
 from platform_core.modules.delivery.models import DELIVERY_SLOTS
 from platform_core.modules.delivery.service import DeliveryService
 from platform_core.modules.logistics.models import (
@@ -210,6 +211,77 @@ class RunView(BaseModel):
 
 
 # --- service ---------------------------------------------------------------
+
+
+async def scheduled_round_scopes(
+    session: AsyncSession, tenant_id: uuid.UUID, day: date
+) -> list[RoundScope]:
+    """Which routes this dairy has planned for this day (DEMO-036).
+
+    The answer the scheduler is handed, as VALUES — the module that owns routes
+    works it out, and the delivery module never learns that routes exist. Same
+    shape as DEMO-022's `is_working`, and for the same reason: `logistics`
+    depends on `delivery`, so the reverse import would be a cycle.
+
+    **An empty list is the fallback signal**, and it is the honest one: a dairy
+    with no routes, only inactive ones, or only empty ones has planned no
+    rounds, and the scheduler then generates the whole tenant exactly as it did
+    before this function existed. Route adoption stays optional.
+
+    A module-level function rather than a method because the scheduler has no
+    request, no audit trail and no actor — it is a read, and constructing a
+    service with a null audit to perform it would be furniture.
+
+    Scoped to the tenant explicitly as well as by RLS. The scheduler runs
+    inside the tenant's own binding, so the policies filter this anyway; the
+    predicate is the defence-in-depth the platform applies everywhere.
+    """
+    routes = (
+        await session.scalars(
+            select(Route)
+            .where(Route.tenant_id == tenant_id, Route.active.is_(True))
+            # Ordered by code so a dairy's rounds are generated in a stable,
+            # human-recognisable sequence — and so a log of two runs reads the
+            # same way twice.
+            .order_by(Route.code)
+        )
+    ).all()
+    if not routes:
+        return []
+
+    stops = (
+        await session.execute(
+            select(RouteStop.route_id, RouteStop.customer_id)
+            .where(
+                RouteStop.tenant_id == tenant_id,
+                RouteStop.route_id.in_([r.id for r in routes]),
+            )
+            .order_by(RouteStop.route_id, RouteStop.position, RouteStop.created_at)
+        )
+    ).all()
+    by_route: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for route_id, customer_id in stops:
+        by_route.setdefault(route_id, set()).add(customer_id)
+
+    scopes: list[RoundScope] = []
+    for route in routes:
+        customers = by_route.get(route.id)
+        if not customers:
+            # A route with no stops is not a round. Skipped rather than
+            # refused: the scheduler is generating every route a dairy has, and
+            # one unfinished route must not stop the others going out. The
+            # operator-facing endpoint still refuses it loudly (DEMO-035).
+            continue
+        for slot in DELIVERY_SLOTS:
+            scopes.append(
+                RoundScope(
+                    label=f"{route.code}/{slot}",
+                    customer_ids=frozenset(customers),
+                    slot=slot,
+                    center_id=route.center_id,
+                )
+            )
+    return scopes
 
 
 class LogisticsService:
