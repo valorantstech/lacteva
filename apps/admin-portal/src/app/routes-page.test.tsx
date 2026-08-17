@@ -92,8 +92,9 @@ describe("routes and runs", () => {
     stubApi();
     render(<RoutesPage />);
 
-    await screen.findByText("Today's runs");
-    expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+    // Wait for the RUN, not the heading: the heading is static, so asserting
+    // after it races the load and fails only when the machine is busy.
+    expect(await screen.findByRole("button", { name: "Start" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     // A planned run cannot be completed, so the button is not offered.
     expect(screen.queryByRole("button", { name: "Complete" })).toBeNull();
@@ -128,8 +129,7 @@ describe("routes and runs", () => {
     );
     render(<RoutesPage />);
 
-    await screen.findByText("Today's runs");
-    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start" }));
 
     expect(
       await screen.findByText(
@@ -145,14 +145,73 @@ describe("routes and runs", () => {
       .mockResolvedValue({ ...RUN, vehicle_id: "v-1" } as never);
     render(<RoutesPage />);
 
-    await screen.findByText("Today's runs");
-    fireEvent.change(screen.getByLabelText("Vehicle"), {
+    fireEvent.change(await screen.findByLabelText("Vehicle"), {
       target: { value: "v-1" },
     });
 
     await waitFor(() =>
       expect(spy).toHaveBeenCalledWith("run-1", { vehicle_id: "v-1" }),
     );
+  });
+
+  it("generates the round and reports what the delivery domain did", async () => {
+    // DEMO-035. The counts are the delivery domain's, passed through — this
+    // screen computes nothing.
+    stubApi();
+    const spy = vi.spyOn(api, "generateDeliveryRun").mockResolvedValue({
+      run_id: "run-1",
+      route_code: "R-01",
+      business_date: "2026-08-17",
+      slot: "morning",
+      stops: 3,
+      due: 2,
+      created: 2,
+      already_present: 0,
+      not_due: 1,
+      inactive_customers: 0,
+      skipped_holiday: 0,
+    } as never);
+    render(<RoutesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Generate round" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledWith("run-1"));
+    expect(
+      await screen.findByText(/2 of 3 stops generated/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/1 not due today/)).toBeInTheDocument();
+  });
+
+  it("says a second generation found the round already there", async () => {
+    // `created: 0` is idempotency holding, not a failure, so the sentence has
+    // to say which it is rather than showing a bare zero.
+    stubApi();
+    vi.spyOn(api, "generateDeliveryRun").mockResolvedValue({
+      run_id: "run-1",
+      route_code: "R-01",
+      business_date: "2026-08-17",
+      slot: "morning",
+      stops: 3,
+      due: 3,
+      created: 0,
+      already_present: 3,
+      not_due: 0,
+      inactive_customers: 0,
+      skipped_holiday: 0,
+    } as never);
+    render(<RoutesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Generate round" }));
+
+    expect(await screen.findByText(/3 already there/)).toBeInTheDocument();
+  });
+
+  it("does not offer to generate into a closed round", async () => {
+    stubApi({ runs: [{ ...RUN, status: "completed" }] });
+    render(<RoutesPage />);
+
+    expect(await screen.findByText("completed")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Generate round" })).toBeNull();
   });
 
   it("shows no money anywhere, because a route is not a financial document", async () => {

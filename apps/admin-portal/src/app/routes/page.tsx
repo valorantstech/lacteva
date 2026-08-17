@@ -7,12 +7,14 @@ import {
   type DeliveryRun,
   type Driver,
   type Route,
+  type RunGeneration,
   type Vehicle,
   assignDeliveryRun,
   createDeliveryRun,
   createDriver,
   createRoute,
   createVehicle,
+  generateDeliveryRun,
   listDeliveryRuns,
   listDrivers,
   listRoutes,
@@ -65,6 +67,7 @@ export default function RoutesPage() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [runs, setRuns] = useState<DeliveryRun[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [generated, setGenerated] = useState<RunGeneration | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -133,10 +136,28 @@ export default function RoutesPage() {
         </p>
       )}
 
+      {generated && (
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+          {/* `created: 0` is idempotency holding, not a failure — so the
+              sentence says which it is rather than leaving a bare zero. */}
+          <strong>{generated.route_code}</strong> · {generated.business_date} ·{" "}
+          {generated.slot}: {generated.created} of {generated.stops} stops generated
+          {generated.already_present > 0 &&
+            `, ${generated.already_present} already there`}
+          {generated.not_due > 0 && `, ${generated.not_due} not due today`}
+          {generated.inactive_customers > 0 &&
+            `, ${generated.inactive_customers} inactive`}
+          .
+        </p>
+      )}
+
       <TodaysRuns
         drivers={drivers}
         onAssign={(id, body) => act(() => assignDeliveryRun(id, body))}
         onCreate={(routeId) => act(() => createDeliveryRun({ route_id: routeId }))}
+        onGenerate={(id) =>
+          act(async () => setGenerated(await generateDeliveryRun(id)))
+        }
         onStatus={(id, status) => act(() => setDeliveryRunStatus(id, status))}
         routes={routes}
         runs={runs}
@@ -225,6 +246,7 @@ function TodaysRuns({
   vehicles,
   drivers,
   onCreate,
+  onGenerate,
   onAssign,
   onStatus,
 }: {
@@ -233,6 +255,7 @@ function TodaysRuns({
   vehicles: Vehicle[];
   drivers: Driver[];
   onCreate: (routeId: string) => void;
+  onGenerate: (id: string) => void;
   onAssign: (id: string, body: { vehicle_id?: string; driver_id?: string }) => void;
   onStatus: (id: string, status: string) => void;
 }) {
@@ -288,6 +311,18 @@ function TodaysRuns({
                   <span className="text-xs text-muted-foreground">
                     {run.business_date} · {run.slot}
                   </span>
+                  {/* Generating into a closed round would add work to a day
+                      somebody has signed off, so the platform refuses it and
+                      the button is not offered either. */}
+                  {run.status !== "completed" && run.status !== "cancelled" && (
+                    <Button
+                      onClick={() => onGenerate(run.id)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      Generate round
+                    </Button>
+                  )}
                   {NEXT_ACTIONS[run.status]?.map((action) => (
                     <Button
                       key={action.status}

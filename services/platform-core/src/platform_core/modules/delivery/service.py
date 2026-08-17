@@ -13,6 +13,7 @@ resolved by the domain:
 """
 
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -28,7 +29,7 @@ from platform_core.core.tenancy import enforce_customer_scope, require_current_t
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.customer.service import CustomerName, CustomerService
-from platform_core.modules.delivery.generation import GenerationResult
+from platform_core.modules.delivery.generation import GenerationResult, generate_for_day
 from platform_core.modules.delivery.models import (
     BILLABLE_STATUSES,
     DELIVERY_SLOTS,
@@ -525,6 +526,70 @@ class DeliveryService:
                 "already_present": result.already_present,
                 "not_due": result.not_due,
                 "inactive_customers": result.inactive_customers,
+            },
+        )
+        return result
+
+    async def generate_for_customers(
+        self,
+        *,
+        day: date,
+        customer_ids: set[uuid.UUID],
+        slot: str,
+        actor_id: uuid.UUID,
+        is_working: Callable[[uuid.UUID | None], Awaitable[bool]] | None = None,
+        reference: str = "",
+    ) -> GenerationResult:
+        """Generate a round for a NAMED set of households, in one slot (DEMO-035).
+
+        The seam a route-driven round uses, and it lives HERE because this
+        module owns `milk_delivery` and the rules that fill it. Logistics hands
+        in the customers on a route and the run's slot; quantity, rate,
+        currency, `scheduled` status and the ON CONFLICT that makes a re-run a
+        no-op are all this module's, unchanged.
+
+        **It deliberately does NOT go through `record_run`.** That function
+        claims the tenant's DAY — `uq_generation_run_tenant_date` — and returns
+        `created: 0` to whoever loses the claim. Correct for the scheduler,
+        where a day has one whole-tenant round; wrong here, where a dairy has
+        several routes on the same date. Routed through it, the first route
+        would claim the day and every later route would silently generate
+        nothing while reporting success. `DeliveryGenerationRun` stays what it
+        is: the record of the tenant's day, not of one route.
+
+        Idempotency is therefore not weaker for skipping the run log — it never
+        came from there. It comes from `uq_delivery_customer_date_slot` and the
+        ON CONFLICT DO NOTHING that respects it.
+        """
+        tenant_id = require_current_tenant()
+        result = await generate_for_day(
+            self._session,
+            tenant_id=tenant_id,
+            day=day,
+            actor_id=actor_id,
+            is_working=is_working,
+            customer_ids=customer_ids,
+            slot=slot,
+        )
+        await self._audit.record(
+            action="sales.delivery.generated_for_route",
+            resource_type="milk_delivery",
+            resource_id=None,
+            actor_id=actor_id,
+            detail={
+                "date": str(result.business_date),
+                "slot": slot,
+                "stops": len(customer_ids),
+                "due": result.due,
+                "created": result.created,
+                # The interesting number on a second run: everything was
+                # already there, which is idempotency holding rather than the
+                # generator failing.
+                "already_present": result.already_present,
+                "not_due": result.not_due,
+                "inactive_customers": result.inactive_customers,
+                "skipped_holiday": result.skipped_holiday,
+                "reference": reference,
             },
         )
         return result

@@ -132,6 +132,7 @@ from platform_core.modules.logistics.service import (
     RouteStopsInput,
     RouteView,
     RunAssignment,
+    RunGenerationView,
     RunInput,
     RunStatusInput,
     RunView,
@@ -4092,6 +4093,28 @@ async def list_delivery_runs(
 async def get_delivery_run(run_id: uuid.UUID, service: LogisticsSvc, p: RunRead) -> Any:
     """The run with its ordered stops and each stop's delivery outcome."""
     return await service.get_run(run_id)
+
+
+@logistics_router.post(
+    "/delivery-runs/{run_id}/generate", response_model=RunGenerationView, status_code=201
+)
+async def generate_delivery_run(
+    run_id: uuid.UUID,
+    service: LogisticsSvc,
+    audit: deps.Audit,
+    p: RunManage,
+) -> Any:
+    """Generate the deliveries this run's route is for (DEMO-035).
+
+    Idempotent: calling it twice creates the round once and reports
+    `created: 0` the second time, because `uq_delivery_customer_date_slot` and
+    the generator's ON CONFLICT DO NOTHING decide — not a check in Python.
+
+    Behind `logistics.run.manage`, which is the roundsman's grant. It creates
+    `scheduled` deliveries worth 0.00 that become billable only when somebody
+    says the milk arrived, so it moves no money.
+    """
+    return await service.generate_for_run(run_id, actor_id=p.id, audit=audit)
 
 
 @logistics_router.post("/delivery-runs/{run_id}/assignment", response_model=RunView)

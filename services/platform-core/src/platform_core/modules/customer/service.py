@@ -319,6 +319,17 @@ class CustomerService:
         A rate change SUPERSEDES the previous plan rather than editing it: a
         delivery priced last week has to remain explainable, and it points at
         the plan that priced it.
+
+        **Superseding is per SLOT (found by DEMO-035).** It used to match on
+        `(customer, product)` alone, which made the model's own documented
+        intent impossible to express: `DeliveryPlan` says "a customer taking
+        milk twice a day has two plans", and setting an evening plan silently
+        deactivated the morning one. A household on a twice-daily round then
+        stopped receiving its morning milk because somebody agreed an evening
+        rate, with nothing anywhere saying so.
+
+        A plan is stopped deliberately, by `effective_to` or by pausing it —
+        never as a side effect of agreeing a different slot.
         """
         customer = await self.get(customer_id)
         tenant_id = require_current_tenant()
@@ -328,6 +339,7 @@ class CustomerService:
                     DeliveryPlan.tenant_id == tenant_id,
                     DeliveryPlan.customer_id == customer.id,
                     DeliveryPlan.product == plan.product,
+                    DeliveryPlan.slot == plan.slot,
                     DeliveryPlan.active.is_(True),
                 )
             )
@@ -371,6 +383,7 @@ class CustomerService:
             detail={
                 "customer": customer.code,
                 "product": row.product,
+                "slot": row.slot,
                 "unit_price": str(row.unit_price),
                 "weekdays": row.weekdays,
                 "quantity": str(row.default_quantity),

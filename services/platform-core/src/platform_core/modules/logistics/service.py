@@ -149,6 +149,31 @@ class RunAssignment(BaseModel):
     driver_id: uuid.UUID | None = None
 
 
+class RunGenerationView(BaseModel):
+    """What generating a run's round did (DEMO-035).
+
+    The delivery domain's own counts, passed through unaltered, plus the route
+    facts that say WHICH round they describe. `created == 0` on a second call is
+    idempotency holding, not a failure — and `stops` beside `due` is how an
+    operator sees that a route of forty households produced twelve deliveries
+    because twenty-eight plans were not due today.
+    """
+
+    run_id: uuid.UUID
+    route_code: str
+    business_date: date
+    slot: str
+    #: Stops on the route — the size of the round somebody planned.
+    stops: int
+    #: Plans that were actually due for those stops in this slot.
+    due: int
+    created: int
+    already_present: int
+    not_due: int
+    inactive_customers: int
+    skipped_holiday: int
+
+
 class RunStopView(BaseModel):
     """A stop, with whatever the delivery domain says happened at it.
 
@@ -602,6 +627,93 @@ class LogisticsService:
             detail={"from": previous, "to": status},
         )
         return await self._run_view(run)
+
+    async def generate_for_run(
+        self, run_id: uuid.UUID, *, actor_id: uuid.UUID, audit: AuditService
+    ) -> RunGenerationView:
+        """Generate the deliveries this run's route is for (DEMO-035).
+
+        The call that makes the route layer load-bearing rather than
+        descriptive. Everything it does is a composition of things that already
+        existed:
+
+        * the run supplies the route, the slot and the DAIRY's business date;
+        * the route supplies the ordered households;
+        * the delivery domain supplies the round — quantity from the plan, rate
+          from the plan, `scheduled` status, and the ON CONFLICT that makes a
+          re-run a no-op.
+
+        This module computes no quantity, no price and no date arithmetic. It
+        names a set of customers and asks the module that owns deliveries.
+        """
+        tenant_id = require_current_tenant()
+        run = await self._run(run_id)
+        route = await self._route(run.route_id)
+
+        if not route.active:
+            raise ConflictError("route is not active")
+        if run.status in ("completed", "cancelled"):
+            # Generating into a closed round would add work to a day somebody
+            # has already signed off.
+            raise ConflictError(f"a {run.status} run cannot generate deliveries")
+
+        stops = await self._stops(route.id)
+        if not stops:
+            # A route with no stops is not a round. Refused rather than
+            # returning a cheerful zero, because "generated 0 of 0" reads like
+            # success to whoever is waiting for a van.
+            raise ConflictError("route has no stops to generate for")
+
+        # The one working-day answer (DEMO-022), asked at the route's centre.
+        # `create_run` already checked this, and it is checked AGAIN here: a
+        # holiday can be declared between planning a run and generating it, and
+        # the work order is explicit that nothing generates on a non-working
+        # day.
+        resolver = WorkingDayResolver(self._session, tenant_id, run.business_date)
+        if not await resolver.is_working(route.center_id):
+            raise ConflictError(
+                f"{run.business_date.isoformat()} is not a working day for this route"
+            )
+
+        result = await self._deliveries.generate_for_customers(
+            day=run.business_date,
+            customer_ids={s.customer_id for s in stops},
+            slot=run.slot,
+            actor_id=actor_id,
+            # Handed the resolver as a callable, the way generation already
+            # takes it — this module gains no dependency on either calendar.
+            is_working=resolver.is_working,
+            reference=f"route:{route.code}",
+        )
+
+        await audit.record(
+            action="logistics.run_generated",
+            resource_type="delivery_run",
+            resource_id=run.id,
+            actor_id=actor_id,
+            detail={
+                "route": route.code,
+                "business_date": run.business_date.isoformat(),
+                "slot": run.slot,
+                "stops": len(stops),
+                "created": result.created,
+                "already_present": result.already_present,
+            },
+        )
+
+        return RunGenerationView(
+            run_id=run.id,
+            route_code=route.code,
+            business_date=run.business_date,
+            slot=run.slot,
+            stops=len(stops),
+            due=result.due,
+            created=result.created,
+            already_present=result.already_present,
+            not_due=result.not_due,
+            inactive_customers=result.inactive_customers,
+            skipped_holiday=result.skipped_holiday,
+        )
 
     async def list_runs(
         self,

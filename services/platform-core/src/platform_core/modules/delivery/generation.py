@@ -88,8 +88,21 @@ class GenerationResult(BaseModel):
     skipped_holiday: int = 0
 
 
-def _due_plans_query(tenant_id: uuid.UUID, day: date) -> Select:
+def _due_plans_query(
+    tenant_id: uuid.UUID,
+    day: date,
+    *,
+    customer_ids: set[uuid.UUID] | None = None,
+    slot: str | None = None,
+) -> Select:
     """Active, in-date, not-paused plans for one tenant.
+
+    `customer_ids` and `slot` NARROW the same query rather than replacing it
+    (DEMO-035). A route-driven round is the tenant's round restricted to the
+    households on one route, in one slot — every other rule the generator
+    applies still applies, which is the point of narrowing here instead of
+    writing a second generator. `None` for either means "no restriction", so
+    the scheduler's whole-tenant call is unchanged.
 
     The weekday test is deliberately NOT in SQL. A seven-character mask
     indexed by `date.weekday()` is trivial in Python and would be a
@@ -112,6 +125,12 @@ def _due_plans_query(tenant_id: uuid.UUID, day: date) -> Select:
                 DeliveryPlan.paused_from > day,
                 and_(DeliveryPlan.paused_to.is_not(None), DeliveryPlan.paused_to < day),
             ),
+            # DEMO-035. An empty set is NOT the same as None: a route with no
+            # usable stops must generate nothing, and `in_(())` is how SQL says
+            # that. Collapsing the two would turn an empty route into the whole
+            # dairy's round.
+            *([DeliveryPlan.customer_id.in_(customer_ids)] if customer_ids is not None else []),
+            *([DeliveryPlan.slot == slot] if slot is not None else []),
         )
         .order_by(DeliveryPlan.customer_id)
     )
@@ -140,6 +159,8 @@ async def generate_for_day(
     day: date,
     actor_id: uuid.UUID | None,
     is_working: Callable[[uuid.UUID | None], Awaitable[bool]] | None = None,
+    customer_ids: set[uuid.UUID] | None = None,
+    slot: str | None = None,
 ) -> GenerationResult:
     """Produce one day's scheduled deliveries from the active standing orders.
 
@@ -162,8 +183,19 @@ async def generate_for_day(
     A callable rather than a service, so this module gains no dependency on
     either calendar: it is handed an answer, exactly as `resolve_working_day`
     is handed opinions rather than going to look for them.
+
+    **`customer_ids` and `slot` scope the round (DEMO-035)** — the seam a
+    route-driven round uses. The logistics module hands in the households on a
+    route and the run's slot; everything else, including the ON CONFLICT that
+    makes a re-run a no-op, is unchanged. There is deliberately no second
+    generator: a route round that computed its own quantities or prices would
+    be a fork of this file, and the two would disagree within a milestone.
     """
-    due_rows = (await session.execute(_due_plans_query(tenant_id, day))).all()
+    due_rows = (
+        await session.execute(
+            _due_plans_query(tenant_id, day, customer_ids=customer_ids, slot=slot)
+        )
+    ).all()
 
     candidates: list[dict] = []
     not_due = 0

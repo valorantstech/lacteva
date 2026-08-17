@@ -821,3 +821,66 @@ async def test_a_round_of_three_hundred_is_one_statement(client):
     again = await _generate(client, admin, MONDAY)
     assert again["created"] == 0
     assert again["already_present"] == 300
+
+
+# --- superseding is per SLOT (pre-existing defect, found by DEMO-035) ----------
+
+
+async def test_an_evening_plan_does_not_stop_the_morning_round(client):
+    """A pre-existing defect, found by executing DEMO-035 rather than reading.
+
+    `set_plan` superseded on `(customer, product)` and ignored `slot`, so
+    agreeing an evening rate silently deactivated the morning plan — and a
+    household on a twice-daily round stopped receiving its morning milk with
+    nothing anywhere saying so. `DeliveryPlan`'s own docstring had said for two
+    milestones that "a customer taking milk twice a day has two plans".
+
+    It surfaced here because DEMO-035 generates per slot, and a slot-scoped
+    generator is meaningless if a customer can never hold two slots.
+    """
+    admin, customer = await _plan_env(client)
+
+    r = await client.post(
+        f"/v1/customers/{customer['id']}/plan",
+        json={
+            "product": "RAW-COW-MILK",
+            "default_quantity": "1.000",
+            "quantity_unit": "L",
+            "unit_price": "58.0000",
+            "effective_from": str(MONDAY),
+            "slot": "evening",
+        },
+        headers=admin,
+    )
+    assert r.status_code in (200, 201), r.text
+
+    detail = (await client.get(f"/v1/customers/{customer['id']}", headers=admin)).json()
+    active = [p for p in detail["plans"] if p["active"]]
+    assert {p["slot"] for p in active} == {"morning", "evening"}, active
+
+    # And the round proves it: both slots generate.
+    result = await _generate(client, admin, MONDAY)
+    assert result["created"] == 2, result
+
+
+async def test_a_rate_change_still_supersedes_within_the_same_slot(client):
+    """The original guarantee, unchanged: one active plan per slot."""
+    admin, customer = await _plan_env(client)
+
+    r = await client.post(
+        f"/v1/customers/{customer['id']}/plan",
+        json={
+            "product": "RAW-COW-MILK",
+            "default_quantity": "2.000",
+            "quantity_unit": "L",
+            "unit_price": "60.0000",
+            "effective_from": str(MONDAY),
+        },
+        headers=admin,
+    )
+    assert r.status_code in (200, 201), r.text
+
+    detail = (await client.get(f"/v1/customers/{customer['id']}", headers=admin)).json()
+    active = [p for p in detail["plans"] if p["active"]]
+    assert len(active) == 1, "a rate change stopped superseding"
+    assert active[0]["unit_price"] == "60.0000"

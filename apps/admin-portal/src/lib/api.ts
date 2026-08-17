@@ -3148,3 +3148,29 @@ export const setDeliveryRunStatus = (id: string, status: string) =>
     method: "POST",
     body: JSON.stringify({ status }),
   });
+
+/**
+ * Generate the deliveries this run's route is for (DEMO-035).
+ *
+ * Idempotent: called twice it creates the round once and reports
+ * `created: 0` the second time. The counts come from the delivery domain
+ * unaltered — this endpoint computes no quantity and no price.
+ */
+export type RunGeneration = {
+  run_id: string;
+  route_code: string;
+  business_date: string;
+  slot: string;
+  /** Stops on the route — the size of the round somebody planned. */
+  stops: number;
+  /** Plans actually due for those stops, in this slot. */
+  due: number;
+  created: number;
+  already_present: number;
+  not_due: number;
+  inactive_customers: number;
+  skipped_holiday: number;
+};
+
+export const generateDeliveryRun = (id: string) =>
+  api<RunGeneration>(`/v1/delivery-runs/${id}/generate`, { method: "POST" });
