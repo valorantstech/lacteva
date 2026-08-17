@@ -124,10 +124,28 @@ async def idempotency_guard(
     body = await request.body()
     fingerprint = idempotency.fingerprint_of(request.method, request.url.path, body)
 
+    # P0-MOB defect fix, pre-existing since IDM-001 and latent until the first
+    # keyed request from a token-authenticated client hit real PostgreSQL:
+    # `get_session` bound RLS from the X-Tenant-ID header (authentication has
+    # not run yet), token clients send no header, so the session sat on a NULL
+    # tenant while the reservation row carried the token's tenant — and the
+    # WITH CHECK half of the policy refused the INSERT with a 500. SQLite
+    # tests could never see it, and no keyed request had ever reached a live
+    # deployment before the driver's round did.
+    #
+    # The claim is VERIFIED crypto (`decode_token` checks signature, issuer,
+    # expiry and type), so rebinding on it here is exactly as trustworthy as
+    # authentication, which re-binds to the same value moments later.
+    tenant_id = _tenant_of(request)
+    if tenant_id is not None:
+        from platform_core.core.rls import rebind_tenant
+
+        await rebind_tenant(session, tenant_id)
+
     try:
         record = await idempotency.reserve(
             session,
-            tenant_id=_tenant_of(request),
+            tenant_id=tenant_id,
             key=key,
             fingerprint=fingerprint,
             method=request.method,

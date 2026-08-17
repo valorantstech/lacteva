@@ -4110,9 +4110,7 @@ async def link_driver_user(
     One login drives at most one active driver — a second link is refused, not
     silently rehomed.
     """
-    return await service.link_driver_user(
-        driver_id, body.user_id, actor_id=p.id, audit=audit
-    )
+    return await service.link_driver_user(driver_id, body.user_id, actor_id=p.id, audit=audit)
 
 
 @logistics_router.get("/delivery-runs/mine", response_model=list[RunView])
@@ -4163,9 +4161,7 @@ async def record_stop_outcome(
     idempotency (this router is an `IdempotentRoute`), same fill-in of a
     generated row, same money rules (none here: the platform prices it).
     """
-    return await service.record_stop_outcome(
-        run_id, customer_id, body, user_id=p.id, audit=audit
-    )
+    return await service.record_stop_outcome(run_id, customer_id, body, user_id=p.id, audit=audit)
 
 
 @logistics_router.post("/delivery-runs", response_model=RunView, status_code=201)
