@@ -316,8 +316,98 @@ back mid-way and which was believed to have landed.
 
 ## 14. Production verification
 
-*Filled in below after deployment. Each item is either verified live or stated
-as not verified — see §16.*
+Deployed `main-5afcd47` to **https://dev.phoenixsoft.in** through the existing
+path. **The schema moved** — the deploy said so explicitly and printed the
+rollback caveat — and landed on `a7c3e21f9b64`, matching the image. A
+pre-deployment backup was taken first: `pre-demo033-20260816T184328Z.dump`,
+3.1 MB.
+
+Deploy checks, all green: PostgreSQL accepting connections, schema matching the
+image, **every tenant-owned table has a policy**, **policies are FORCED**, the
+API role `lacteva_app` is `NOSUPERUSER`/`NOBYPASSRLS`, the API and schema owner
+are different roles, Redis responding, projections healthy, nginx serving, smoke
+test passed.
+
+**The registry on production:**
+
+```
+total 57  |  whatsapp 24  |  unmapped 24  |  ready 0
+optional segments on whatsapp: 0
+approval states: ['NOT_CONFIGURED']
+languages: ['ar', 'en', 'hi', 'sw']
+```
+
+**The DEMO-032 finding is gone from production, not merely from a test.** Zero
+WhatsApp templates carry an optional segment, where 8 of 8 could not be approved
+templates before. `ready = 0` and every state `NOT_CONFIGURED`, which is the
+honest reading: nothing has been submitted to any provider.
+
+**Variant selection, live:**
+
+```
+select no-quantity   -> settlement_finalized_base
+select with-quantity -> settlement_finalized_with_quantity
+select on sms        -> settlement_finalized          (identity — unchanged)
+```
+
+**SMS and email regression, live** (§6): SMS omits the quantity segment when
+absent, shows it when present, and is shorter without it. Email omits all three
+optional variables when absent and renders them when present. Both channels
+behave exactly as they did before this milestone.
+
+**Refusals, live:** an unknown parameter and a missing parameter are each
+refused with `TemplateRenderError` on the deployed code.
+
+| Check | Result |
+|---|---|
+| `/health/live`, `/health/ready` | **200** |
+| `GET /v1/notification-templates/registry` unauthenticated | **401** |
+| `POST /v1/notification-templates/approval` unauthenticated | **401** |
+| Writable template endpoints in the live schema | only `/preview` and `/approval` |
+| Rows in `notification_template_approval` | **0** — nothing backfilled, nothing fabricated |
+| RLS on that table | `f/f` — platform-global, deliberately |
+| Tenant-owned tables without a policy | **0** |
+| `messaging_mode` | `test` |
+| Vendor templates configured | **0** |
+| Notifications created in the last 2 hours | **0** |
+
+**Financial safety, before and after the deploy — identical in every figure:**
+
+| Table | Count | Sum |
+| --- | --- | --- |
+| `settlement` | 84 → 84 | 353,417.50 → 353,417.50 |
+| `customer_invoice` | 31 → 31 | 809,038.00 → 809,038.00 |
+| `customer_payment` | 24 → 24 | 444,105.00 → 444,105.00 |
+| `customer_receipt` | 24 → 24 | 444,105.00 → 444,105.00 |
+| `payment` | 42 → 42 | 168,675.50 → 168,675.50 |
+| `receipt` | 36 → 36 | 138,903.00 → 138,903.00 |
+
+**No external provider was contacted, no credential exists, and no real message
+was sent.**
+
+### The verification found one more defect — in this milestone's own code
+
+Reading the live positional list showed:
+
+```
+fixed_parameters(template, partial_variables)
+  -> ('S-1', 'Grace', '', '', '', '310', 'L', '', '', '')
+```
+
+`fixed_parameters` substituted an **empty string** for any absent variable. It
+was never reachable in dispatch, which calls `assert_fixed_parameters` first and
+refuses — so nothing was ever sent that way. But §5 says do not silently invent
+a parameter, and a blank `{{3}}` is a farmer reading a message with a hole where
+a figure belongs. A safety that depends on the caller remembering to call
+something else is not a safety.
+
+`fixed_parameters` now refuses a missing variable itself, mutation-checked:
+removing the guard fails
+`test_the_parameter_list_refuses_a_gap_rather_than_blanking_it` with a raw
+`KeyError`. Shipped in the follow-up deploy recorded below.
+
+**This is the fourth defect this milestone found by executing rather than
+reading**, and the only one of the four that was DEMO-033's own.
 
 ## 15. Financial safety
 

@@ -201,6 +201,24 @@ def test_the_positional_parameters_are_complete_and_ordered():
     assert params == tuple(f"v-{name}" for name in template.variables)
 
 
+def test_the_parameter_list_refuses_a_gap_rather_than_blanking_it():
+    """Found by DEMO-033's own production verification.
+
+    `fixed_parameters` substituted an empty string for an absent variable, so
+    calling it without `assert_fixed_parameters` first produced a positional
+    list with holes — `('S-1', 'Grace', '', '', …)`. Dispatch does assert
+    first, so nothing was ever sent that way; but a blank `{{3}}` is a farmer
+    reading a message with a hole where a figure belongs, and a safety that
+    depends on the caller remembering to call something else is not a safety.
+    """
+    template = get_template("settlement_finalized_with_quantity", "whatsapp", "en")
+    values = {name: f"v-{name}" for name in template.variables}
+    values.pop(template.variables[2])
+
+    with pytest.raises(TemplateRenderError, match="missing"):
+        fixed_parameters(template, values)
+
+
 def test_a_template_that_still_varies_is_refused_on_a_fixed_channel():
     """Belt to the brace: if a varying template ever reaches WhatsApp again."""
     from platform_core.modules.notification.templates import Template

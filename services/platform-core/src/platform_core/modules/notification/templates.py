@@ -1000,8 +1000,20 @@ def fixed_parameters(template: Template, variables: dict) -> tuple[str, ...]:
     """The parameter values, in the template's declared order (DEMO-033).
 
     Positional and complete — what a `{{1}}, {{2}}` template API is handed.
+
+    It refuses a missing variable itself rather than substituting an empty
+    string. Dispatch already calls `assert_fixed_parameters` first, so this is
+    defence in depth — but a blank `{{3}}` is a farmer reading a message with a
+    hole where a figure belongs, and a safety that depends on the caller
+    remembering to call something else is not a safety.
     """
-    return tuple(str(variables.get(name, "")) for name in template.variables)
+    missing = sorted(name for name in template.variables if name not in variables)
+    if missing:
+        raise TemplateRenderError(
+            f"template {template.key!r} cannot build a fixed parameter list: "
+            f"missing {', '.join(missing)}"
+        )
+    return tuple(str(variables[name]) for name in template.variables)
 
 
 def journey_family(key: str) -> set[str]:
