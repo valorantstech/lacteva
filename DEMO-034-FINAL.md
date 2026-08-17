@@ -285,7 +285,82 @@ is read by more people than the record it describes.
 
 ## 12. Production verification
 
-*Recorded after deployment — see the section added below.*
+Deployed `main-483bca8` to **https://dev.phoenixsoft.in** through the existing
+path. **The schema moved** — the deploy said so and printed the rollback caveat
+— and landed on `b5d1e07a4c39`. A pre-deployment backup was taken first:
+`pre-demo034-20260817T084827Z.dump`, 3.1 MB. Deploy checks all green, smoke test
+passed.
+
+**The five new tables, live:**
+
+```
+delivery_run | rls=t | forced=t | policies=1
+driver       | rls=t | forced=t | policies=1
+route        | rls=t | forced=t | policies=1
+route_stop   | rls=t | forced=t | policies=1
+vehicle      | rls=t | forced=t | policies=1
+rows: 0 / 0 / 0 / 0 / 0
+```
+
+**Zero rows in every one of them.** No production delivery run, route, van or
+driver was manufactured to demonstrate the feature — the work order asked for
+safe, read-only verification and that is what was done.
+
+**The domain rules, read off the deployed code:**
+
+```
+run statuses:        ('planned', 'in_progress', 'completed', 'cancelled')
+assigned is absent:  True
+terminal:            completed -> [],  cancelled -> []
+logistics permissions: 6
+driver cannot redraw routes: True
+financial columns on the route layer: []
+```
+
+**Existing functionality unchanged, verified rather than assumed:**
+
+| Check | Result |
+| --- | --- |
+| `milk_delivery` statuses | `('scheduled','delivered','skipped','returned','cancelled')` — unchanged |
+| `BILLABLE_STATUSES` | `('delivered',)` — unchanged |
+| `milk_delivery` route/run/vehicle/driver columns | **0** — the delivery domain gained nothing |
+| Foreign keys joining the route layer to any table | **none, in either direction** |
+| Notification template registry | **57**, `ready_whatsapp = 0` — DEMO-033 intact |
+| `messaging_mode` | `test` |
+| Notifications created since the deploy | **0** |
+
+**The live API:** 9 paths, 13 operations, exactly as designed. `/health/live`
+and `/health/ready` both **200**. Every logistics endpoint answers **401**
+unauthenticated (four GETs and a POST checked individually).
+
+**Financial safety — the before and after files are byte-identical:**
+
+| Table | Count | Sum |
+| --- | --- | --- |
+| `settlement` | 84 → 84 | 353,417.50 → 353,417.50 |
+| `customer_invoice` | 31 → 31 | 809,038.00 → 809,038.00 |
+| `customer_payment` | 24 → 24 | 444,105.00 → 444,105.00 |
+| `customer_receipt` | 24 → 24 | 444,105.00 → 444,105.00 |
+| `payment` | 42 → 42 | 168,675.50 → 168,675.50 |
+| `receipt` | 36 → 36 | 138,903.00 → 138,903.00 |
+| `milk_delivery` | 1,303 → 1,303 | 821,667.00 → 821,667.00 |
+| `delivery_plan` | 34 → 34 | — |
+
+**The full suite found one failure, and it was the process working.**
+`test_every_tenant_owned_table_is_covered_by_a_policy` refused the five new
+tables. The migration *did* install their policies from its own snapshotted
+list — what it had not done was say so in that test's deliberately
+hand-written union, which exists precisely so a new tenant table cannot become
+protected by accident. Registering `DEMO034_TABLES` fixed it, and the
+registration was mutation-checked: removing it makes the guard fail again, so
+the drift guard is still live rather than satisfied by an edit. That test has
+now earned its keep six times — IDM-001, PROD-001, DEMO-009, DEMO-012,
+DEMO-026 and DEMO-034.
+
+**The portal page and the mobile round were NOT verified in a browser or on a
+device.** The Chrome extension is not connected in this session and no handset
+is attached, so both were verified by their own tests and by the API. Same gap
+as the previous eight milestones, stated rather than glossed.
 
 ## 13. Financial safety
 
