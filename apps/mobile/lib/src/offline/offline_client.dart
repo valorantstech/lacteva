@@ -282,6 +282,103 @@ class OfflineApiClient extends ApiClient {
   /// answer — 4xx — is not retried forever: it is marked failed so a person
   /// sees it, because replaying a rejected delivery nightly is how a queue
   /// becomes a haunted house.
+  /// A driver's stop outcome, captured durably (P0-MOB-002).
+  ///
+  /// Same contract as `recordDeliveryOffline`: online, the platform answers
+  /// now and a refusal reaches the driver; offline, the outcome goes into the
+  /// SAME durable queue with the operation id that will be its idempotency
+  /// key, so a replay after signal returns is recognised rather than recorded
+  /// twice. `targetRef` carries the run-scoped path, because unlike a plain
+  /// delivery the endpoint is addressed per run and stop.
+  Future<Map<String, dynamic>> recordRunOutcomeOffline({
+    required String runId,
+    required String customerId,
+    required String status,
+    String? quantity,
+    String? notes,
+  }) async {
+    if (isOnline) {
+      try {
+        return await recordRunOutcome(
+          runId: runId,
+          customerId: customerId,
+          status: status,
+          quantity: quantity,
+          notes: notes,
+        );
+      } on ApiException {
+        // The platform ANSWERED — a refusal (closed run, off-route customer)
+        // is a real answer and must reach the driver now, not haunt a queue.
+        rethrow;
+      } catch (_) {
+        _believedOnline = false;
+      }
+    }
+    await queue.load();
+    await queue.enqueue(
+      operationId: _operationId(),
+      kind: 'run_outcome',
+      clientReference: _localId('outcome'),
+      targetRef: '/v1/delivery-runs/$runId/stops/$customerId/outcome',
+      payload: {
+        'status': status,
+        if (quantity != null && quantity.isNotEmpty) 'quantity': quantity,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+      },
+    );
+    return {
+      'customer_id': customerId,
+      'status': status,
+      // NO amount, for the operator round's reason: the phone must not guess
+      // what milk is worth.
+      '_queued': true,
+    };
+  }
+
+  /// Drain queued driver outcomes — the same loop shape as `_drainDeliveries`,
+  /// with the path read from each operation's `targetRef`.
+  Future<(int, int)> _drainRunOutcomes() async {
+    await queue.load();
+    final mine = queue
+        .due()
+        .where((op) => op.kind == 'run_outcome' && op.targetRef != null)
+        .toList(growable: false);
+    if (mine.isEmpty) return (0, 0);
+    var sent = 0;
+    var failed = 0;
+    for (final op in mine) {
+      try {
+        await sendIdempotent(
+          'POST',
+          op.targetRef!,
+          idempotencyKey: op.operationId,
+          body: op.payload,
+        );
+        queue.applyResult(op, {
+          'operation_id': op.operationId,
+          'status': 'applied',
+        });
+        sent++;
+      } on ApiException catch (e) {
+        if (e.status >= 400 && e.status < 500 && e.status != 409) {
+          queue.applyResult(op, {
+            'operation_id': op.operationId,
+            'status': 'conflict',
+            'detail': e.detail,
+          });
+        } else {
+          queue.markBatchFailed([op], e.detail);
+        }
+        failed++;
+      } catch (e) {
+        queue.markBatchFailed([op], 'offline');
+        failed++;
+      }
+    }
+    await queue.save();
+    return (sent, failed);
+  }
+
   Future<(int, int)> _drainDeliveries() async {
     await queue.load();
     final mine = queue
@@ -327,16 +424,19 @@ class OfflineApiClient extends ApiClient {
   Future<SyncRunResult> syncNow() async {
     await queue.load();
     final (deliverySent, deliveryFailed) = await _drainDeliveries();
+    final (outcomeSent, outcomeFailed) = await _drainRunOutcomes();
     final result = await engine.sync();
-    if (result.error == null && deliveryFailed == 0) _believedOnline = true;
+    if (result.error == null && deliveryFailed == 0 && outcomeFailed == 0) {
+      _believedOnline = true;
+    }
     // Deliveries fold into the same tally the collection engine reports, so
     // one screen can say "12 sent, 1 queued" without knowing which protocol
     // carried which operation.
     return SyncRunResult(
-      applied: result.applied + deliverySent,
+      applied: result.applied + deliverySent + outcomeSent,
       duplicates: result.duplicates,
       conflicts: result.conflicts,
-      failed: result.failed + deliveryFailed,
+      failed: result.failed + deliveryFailed + outcomeFailed,
       batches: result.batches,
       cancelled: result.cancelled,
       error: result.error,

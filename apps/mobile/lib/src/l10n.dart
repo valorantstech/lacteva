@@ -22,6 +22,24 @@ import 'session.dart';
 typedef Catalog = Map<String, String>;
 
 const Catalog _en = {
+  'driver.title': "Today's route",
+  'driver.start': 'Start run',
+  'driver.complete': 'Complete run',
+  'driver.record': 'Record',
+  'driver.remaining': '{count} stops remaining',
+  'driver.pending': '{count} waiting to sync',
+  'driver.sync': 'Sync now',
+  'driver.needsSignal': 'Starting or completing a run needs a connection.',
+  'driver.notLinked': 'Not set up as a driver yet',
+  'driver.notLinkedDetail':
+      'Your login exists, but no driver profile is linked to it. Ask the dairy office.',
+  'driver.noRun': 'No run assigned today',
+  'driver.noRunDetail': 'When the office assigns you a run, it appears here.',
+  'driver.skippedDefaultNote': 'skipped at the gate',
+  'driver.outcome.delivered': 'Delivered',
+  'driver.outcome.skipped': 'Skipped',
+  'driver.outcome.returned': 'Returned',
+  'driver.outcome.cancelled': 'Cancelled',
   'round.title': "Today's round",
   'round.empty': 'No customers on this round',
   'round.emptyDetail': 'Customers appear here once the dairy registers them.',
@@ -89,6 +107,24 @@ const Catalog _en = {
 };
 
 const Catalog _hi = {
+  'driver.title': 'आज का रूट',
+  'driver.start': 'रन शुरू करें',
+  'driver.complete': 'रन पूरा करें',
+  'driver.record': 'दर्ज करें',
+  'driver.remaining': '{count} स्टॉप बाक़ी',
+  'driver.pending': '{count} सिंक के लिए प्रतीक्षा में',
+  'driver.sync': 'अभी सिंक करें',
+  'driver.needsSignal': 'रन शुरू या पूरा करने के लिए कनेक्शन चाहिए।',
+  'driver.notLinked': 'अभी ड्राइवर के रूप में सेट नहीं',
+  'driver.notLinkedDetail':
+      'आपका लॉगिन मौजूद है, पर कोई ड्राइवर प्रोफ़ाइल जुड़ी नहीं है। डेयरी कार्यालय से कहें।',
+  'driver.noRun': 'आज कोई रन नहीं मिला',
+  'driver.noRunDetail': 'कार्यालय के रन सौंपते ही वह यहाँ दिखेगा।',
+  'driver.skippedDefaultNote': 'गेट पर छोड़ा गया',
+  'driver.outcome.delivered': 'डिलीवर हुआ',
+  'driver.outcome.skipped': 'छोड़ा गया',
+  'driver.outcome.returned': 'वापस आया',
+  'driver.outcome.cancelled': 'रद्द',
   'round.title': 'आज का राउंड',
   'round.empty': 'इस राउंड में कोई ग्राहक नहीं',
   'round.emptyDetail': 'डेयरी द्वारा पंजीकृत होने पर ग्राहक यहाँ दिखेंगे।',
@@ -154,6 +190,24 @@ const Catalog _hi = {
 };
 
 const Catalog _ar = {
+  'driver.title': 'مسار اليوم',
+  'driver.start': 'بدء الجولة',
+  'driver.complete': 'إنهاء الجولة',
+  'driver.record': 'تسجيل',
+  'driver.remaining': '{count} محطات متبقية',
+  'driver.pending': '{count} بانتظار المزامنة',
+  'driver.sync': 'مزامنة الآن',
+  'driver.needsSignal': 'بدء الجولة أو إنهاؤها يحتاج اتصالاً.',
+  'driver.notLinked': 'لست معدًّا كسائق بعد',
+  'driver.notLinkedDetail':
+      'حسابك موجود، لكن لا يوجد ملف سائق مرتبط به. راجع مكتب الألبان.',
+  'driver.noRun': 'لا توجد جولة اليوم',
+  'driver.noRunDetail': 'عندما يسند المكتب جولة إليك ستظهر هنا.',
+  'driver.skippedDefaultNote': 'تخطٍّ عند البوابة',
+  'driver.outcome.delivered': 'تم التسليم',
+  'driver.outcome.skipped': 'تم التخطي',
+  'driver.outcome.returned': 'أُرجع',
+  'driver.outcome.cancelled': 'أُلغي',
   'round.title': 'جولة اليوم',
   'round.empty': 'لا يوجد عملاء في هذه الجولة',
   'round.emptyDetail': 'يظهر العملاء هنا بمجرد أن تسجّلهم الألبان.',

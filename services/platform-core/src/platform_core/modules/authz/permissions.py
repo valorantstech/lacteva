@@ -118,6 +118,15 @@ PERMISSIONS: dict[str, str] = {
     "logistics.fleet.manage": "Register vehicles and drivers",
     "logistics.run.read": "Read daily delivery runs",
     "logistics.run.manage": "Create a daily run, assign a vehicle and driver, and move it along",
+    # P0-MOB-001. The DELIVERY DRIVER's own grant, deliberately distinct from
+    # both `run.manage` (the office plans and assigns) and
+    # `sales.delivery.record` (the sales operator's round book). The audit
+    # found the mobile experience keyed on the operator grant, which would
+    # have collapsed driver and operator into one persona — so the driver
+    # capability is its own key, held by the DRIVER role and by nobody else.
+    # Everything it opens is scoped to the runs assigned to the caller's own
+    # driver profile; another driver's run is a 404, never a 403.
+    "logistics.run.execute": "See and execute your own assigned delivery runs",
     "sales.invoice.read": "Read customer invoices and statements",
     "sales.invoice.manage": "Generate customer invoices for a billing period",
     "sales.invoice.issue": "Issue an invoice (makes it immutable and payable)",
@@ -419,6 +428,18 @@ NAMED_ROLES: dict[str, list[str]] = {
         "logistics.run.read",
         "logistics.run.manage",
         "reporting.read",
+    ],
+    # P0-MOB-001 — the DELIVERY driver, on the mobile app.
+    #
+    # One grant, and that is the design: a driver sees and executes the runs
+    # assigned to their own linked driver profile — start, record outcomes at
+    # each stop, complete — and nothing else. No `route.manage` (cannot redraw
+    # tomorrow's round), no `fleet.manage`, no `sales.*` (cannot amend another
+    # day's book), no procurement side at all. The mobile app routes a holder
+    # of this key into the driver experience BEFORE the operator keys are
+    # consulted, which is what keeps the personas separate.
+    "DRIVER": [
+        "logistics.run.execute",
     ],
     # Reads everything, changes nothing. Asserted by test rather than by
     # inspection: no key in this list ends in manage/record/finalize/retry.

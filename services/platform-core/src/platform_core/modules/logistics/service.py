@@ -9,6 +9,7 @@ the deliveries it describes, and completing a run creates no financial event.
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select, update
@@ -143,6 +144,12 @@ class RunStatusInput(BaseModel):
         return value
 
 
+class DriverUserLink(BaseModel):
+    """`null` clears the link — a driver who left keeps their record, not a login."""
+
+    user_id: uuid.UUID | None = None
+
+
 class RunAssignment(BaseModel):
     """Either or both. `None` means "leave it alone", not "clear it"."""
 
@@ -175,6 +182,28 @@ class RunGenerationView(BaseModel):
     skipped_holiday: int
 
 
+class StopOutcomeInput(BaseModel):
+    """What a driver says happened at a stop (P0-MOB-002).
+
+    `cancelled` is deliberately not offered: that status means "recorded in
+    error" and is an office correction, not a doorstep outcome. Quantity is
+    optional — omitted, the delivery domain uses the plan's standing quantity,
+    exactly as the operator round does.
+    """
+
+    status: str
+    quantity: Decimal | None = Field(default=None, ge=0)
+    notes: str = Field(default="", max_length=300)
+
+    @field_validator("status")
+    @classmethod
+    def _driver_outcome(cls, value: str) -> str:
+        allowed = ("delivered", "skipped", "returned")
+        if value not in allowed:
+            raise ValueError(f"a driver outcome must be one of {', '.join(allowed)}")
+        return value
+
+
 class RunStopView(BaseModel):
     """A stop, with whatever the delivery domain says happened at it.
 
@@ -187,6 +216,10 @@ class RunStopView(BaseModel):
     position: int
     code: str = ""
     name: str = ""
+    #: How a driver finds and reaches the household (P0-MOB-002). Read from the
+    #: customer module's own contact batch, never joined into it.
+    phone: str = ""
+    address: str = ""
     delivery_status: str | None = None
 
 
@@ -873,6 +906,201 @@ class LogisticsService:
             raise NotFoundError("delivery run not found")
         return run
 
+    # --- the driver's own surface (P0-MOB-001/002) --------------------------
+    #
+    # Everything below is scoped to the caller's OWN driver profile, resolved
+    # from their user id — never from a client-supplied driver id. Another
+    # driver's run is a 404, never a 403, exactly as another tenant's is: a
+    # probe must not learn that the run exists.
+
+    async def link_driver_user(
+        self,
+        driver_id: uuid.UUID,
+        user_id: uuid.UUID | None,
+        *,
+        actor_id: uuid.UUID,
+        audit: AuditService,
+    ) -> DriverView:
+        """Give a driver a login, or take it away (P0-MOB-001).
+
+        One login drives at most one active driver per dairy. Without that
+        rule, "my runs" would be ambiguous the day a user was linked twice —
+        enforced here rather than by a schema constraint because the column
+        predates this milestone and NULLs (drivers without logins) are the
+        common case a partial unique index would have to dance around.
+        """
+        tenant_id = require_current_tenant()
+        driver = await self._session.scalar(
+            select(Driver).where(Driver.tenant_id == tenant_id, Driver.id == driver_id)
+        )
+        if driver is None:
+            raise NotFoundError("driver not found")
+        if user_id is not None:
+            already = await self._session.scalar(
+                select(Driver.code).where(
+                    Driver.tenant_id == tenant_id,
+                    Driver.user_id == user_id,
+                    Driver.id != driver_id,
+                    Driver.active.is_(True),
+                )
+            )
+            if already:
+                raise ConflictError(f"that login already drives as {already!r}")
+        previous = driver.user_id
+        driver.user_id = user_id
+        await audit.record(
+            action="logistics.driver_user_linked",
+            resource_type="driver",
+            resource_id=driver.id,
+            actor_id=actor_id,
+            detail={
+                "code": driver.code,
+                "linked": user_id is not None,
+                "changed": str(previous) != str(user_id),
+            },
+        )
+        return DriverView.model_validate(driver)
+
+    async def driver_for_user(self, user_id: uuid.UUID) -> Driver | None:
+        """The caller's own driver profile, or None when the login drives nobody."""
+        return await self._session.scalar(
+            select(Driver).where(
+                Driver.tenant_id == require_current_tenant(),
+                Driver.user_id == user_id,
+                Driver.active.is_(True),
+            )
+        )
+
+    async def _my_driver(self, user_id: uuid.UUID) -> Driver:
+        driver = await self.driver_for_user(user_id)
+        if driver is None:
+            # The clear empty state the app renders: the login exists and holds
+            # the permission, but no driver profile is linked to it yet.
+            raise NotFoundError("no driver profile is linked to this login")
+        return driver
+
+    async def my_runs(self, *, user_id: uuid.UUID) -> list[RunView]:
+        """Today's runs for the caller's own driver profile — the DAIRY's today.
+
+        Full views including stops: a driver has one or two runs, and the round
+        IS the stops. An unlinked login gets an empty list rather than an
+        error, because "nothing assigned" and "not a driver yet" are both
+        states the screen has to render calmly; `/drivers/me` is how the app
+        tells them apart.
+        """
+        driver = await self.driver_for_user(user_id)
+        if driver is None:
+            return []
+        tenant_id = require_current_tenant()
+        today = business_today(await tenant_timezone(self._session, tenant_id))
+        runs = (
+            await self._session.scalars(
+                select(DeliveryRun)
+                .where(
+                    DeliveryRun.tenant_id == tenant_id,
+                    DeliveryRun.driver_id == driver.id,
+                    DeliveryRun.business_date == today,
+                )
+                .order_by(DeliveryRun.slot, DeliveryRun.created_at)
+            )
+        ).all()
+        return [await self._run_view(run) for run in runs]
+
+    async def _my_run(self, run_id: uuid.UUID, *, user_id: uuid.UUID) -> DeliveryRun:
+        """The run, if and only if it is assigned to the caller's own driver."""
+        driver = await self._my_driver(user_id)
+        run = await self._session.scalar(
+            select(DeliveryRun).where(
+                DeliveryRun.tenant_id == require_current_tenant(),
+                DeliveryRun.id == run_id,
+                DeliveryRun.driver_id == driver.id,
+            )
+        )
+        if run is None:
+            # Not distinguishable from "does not exist" on purpose.
+            raise NotFoundError("delivery run not found")
+        return run
+
+    async def start_my_run(
+        self, run_id: uuid.UUID, *, user_id: uuid.UUID, audit: AuditService
+    ) -> RunView:
+        """planned → in_progress, for the caller's own run.
+
+        Composes the existing transition — CAS, BR-0028's driver-and-vehicle
+        guard, the audit entry — after the ownership check. No second state
+        machine.
+        """
+        run = await self._my_run(run_id, user_id=user_id)
+        return await self.set_run_status(run.id, "in_progress", actor_id=user_id, audit=audit)
+
+    async def complete_my_run(
+        self, run_id: uuid.UUID, *, user_id: uuid.UUID, audit: AuditService
+    ) -> RunView:
+        """in_progress → completed, for the caller's own run."""
+        run = await self._my_run(run_id, user_id=user_id)
+        return await self.set_run_status(run.id, "completed", actor_id=user_id, audit=audit)
+
+    async def record_stop_outcome(
+        self,
+        run_id: uuid.UUID,
+        customer_id: uuid.UUID,
+        outcome: StopOutcomeInput,
+        *,
+        user_id: uuid.UUID,
+        audit: AuditService,
+    ) -> RunStopView:
+        """What happened at one stop, said by the driver who was there.
+
+        The narrow door that makes the broad `sales.delivery.record` grant
+        unnecessary for a driver: the run must be the caller's own and OPEN,
+        the customer must be ON the route, the date and slot are the RUN's —
+        and then the delivery domain records it exactly as it records the
+        operator's round, filling in a generated row rather than colliding
+        with it. This module still computes no quantity, no price and no date.
+        """
+        run = await self._my_run(run_id, user_id=user_id)
+        if run.status not in OPEN_RUN_STATUSES:
+            raise ConflictError(f"a {run.status} run cannot record outcomes")
+
+        on_route = await self._session.scalar(
+            select(RouteStop.id).where(
+                RouteStop.tenant_id == run.tenant_id,
+                RouteStop.route_id == run.route_id,
+                RouteStop.customer_id == customer_id,
+            )
+        )
+        if on_route is None:
+            raise NotFoundError("that customer is not a stop on this run")
+
+        from platform_core.modules.delivery.service import RecordDeliveryCommand
+
+        delivery = await self._deliveries.record(
+            RecordDeliveryCommand(
+                customer_id=customer_id,
+                delivery_date=run.business_date,
+                slot=run.slot,
+                status=outcome.status,
+                quantity=outcome.quantity,
+                notes=outcome.notes,
+            ),
+            actor_id=user_id,
+        )
+
+        contacts = await self._customers.contact_directory({customer_id})
+        contact = contacts.get(customer_id)
+        position = await self._session.scalar(
+            select(RouteStop.position).where(RouteStop.id == on_route)
+        )
+        return RunStopView(
+            customer_id=customer_id,
+            position=position or 0,
+            code=contact.code if contact else "",
+            name=contact.name if contact else "",
+            phone=contact.phone if contact else "",
+            address=contact.address if contact else "",
+            delivery_status=delivery.status,
+        )
+
     async def _assert_assignable(
         self, vehicle_id: uuid.UUID | None, driver_id: uuid.UUID | None
     ) -> None:
@@ -918,12 +1146,18 @@ class LogisticsService:
             outcomes = await self._deliveries.status_by_customer(
                 [s.customer_id for s in route_stops], run.business_date, run.slot
             )
+            # One batch for how to find and reach each household (P0-MOB-002),
+            # through the module that owns customers — never a join, never a
+            # query per stop.
+            contacts = await self._customers.contact_directory({s.customer_id for s in route_stops})
             stops = [
                 RunStopView(
                     customer_id=s.customer_id,
                     position=s.position,
                     code=s.code,
                     name=s.name,
+                    phone=contacts[s.customer_id].phone if s.customer_id in contacts else "",
+                    address=contacts[s.customer_id].address if s.customer_id in contacts else "",
                     delivery_status=outcomes.get(s.customer_id),
                 )
                 for s in route_stops

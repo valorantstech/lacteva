@@ -126,6 +126,7 @@ from platform_core.modules.identity.schemas import RegisterUserCommand, UserView
 from platform_core.modules.identity.service import IdentityService
 from platform_core.modules.logistics.service import (
     DriverInput,
+    DriverUserLink,
     DriverView,
     LogisticsService,
     RouteDetailView,
@@ -136,7 +137,9 @@ from platform_core.modules.logistics.service import (
     RunGenerationView,
     RunInput,
     RunStatusInput,
+    RunStopView,
     RunView,
+    StopOutcomeInput,
     VehicleInput,
     VehicleView,
     route_memberships,
@@ -4013,6 +4016,9 @@ FleetRead = Annotated[Principal, Depends(require_permission("logistics.fleet.rea
 FleetManage = Annotated[Principal, Depends(require_permission("logistics.fleet.manage"))]
 RunRead = Annotated[Principal, Depends(require_permission("logistics.run.read"))]
 RunManage = Annotated[Principal, Depends(require_permission("logistics.run.manage"))]
+# P0-MOB-001: the driver's own grant. Distinct from RunManage (the office) and
+# from the sales operator's DeliveryRecord — the personas must not collapse.
+RunExecute = Annotated[Principal, Depends(require_permission("logistics.run.execute"))]
 LogisticsSvc = Annotated[LogisticsService, Depends(deps.get_logistics_service)]
 
 
@@ -4076,6 +4082,90 @@ async def create_driver(
 @logistics_router.get("/drivers", response_model=list[DriverView])
 async def list_drivers(service: LogisticsSvc, p: FleetRead, active: bool | None = None) -> Any:
     return await service.list_drivers(active=active)
+
+
+@logistics_router.get("/drivers/me", response_model=DriverView)
+async def my_driver_profile(service: LogisticsSvc, p: RunExecute) -> Any:
+    """The caller's own driver profile (P0-MOB-001).
+
+    404 when the login is not linked to a driver — which is how the app tells
+    "you are not set up as a driver yet" apart from "no run assigned today".
+    """
+    driver = await service.driver_for_user(p.id)
+    if driver is None:
+        raise NotFoundError("no driver profile is linked to this login")
+    return DriverView.model_validate(driver)
+
+
+@logistics_router.post("/drivers/{driver_id}/user", response_model=DriverView)
+async def link_driver_user(
+    driver_id: uuid.UUID,
+    body: DriverUserLink,
+    service: LogisticsSvc,
+    audit: deps.Audit,
+    p: FleetManage,
+) -> Any:
+    """Give a driver a login, or clear it (P0-MOB-001). Office action, audited.
+
+    One login drives at most one active driver — a second link is refused, not
+    silently rehomed.
+    """
+    return await service.link_driver_user(
+        driver_id, body.user_id, actor_id=p.id, audit=audit
+    )
+
+
+@logistics_router.get("/delivery-runs/mine", response_model=list[RunView])
+async def my_delivery_runs(service: LogisticsSvc, p: RunExecute) -> Any:
+    """Today's runs for the caller's own driver profile — the DAIRY's today.
+
+    Declared BEFORE `/delivery-runs/{run_id}`, because FastAPI matches in
+    declaration order and "mine" is not a UUID.
+    """
+    return await service.my_runs(user_id=p.id)
+
+
+@logistics_router.post("/delivery-runs/{run_id}/start", response_model=RunView)
+async def start_my_run(
+    run_id: uuid.UUID, service: LogisticsSvc, audit: deps.Audit, p: RunExecute
+) -> Any:
+    """The driver starts their own run. BR-0028 still guards it; another
+    driver's run is a 404."""
+    return await service.start_my_run(run_id, user_id=p.id, audit=audit)
+
+
+@logistics_router.post("/delivery-runs/{run_id}/complete", response_model=RunView)
+async def complete_my_run(
+    run_id: uuid.UUID, service: LogisticsSvc, audit: deps.Audit, p: RunExecute
+) -> Any:
+    """The driver closes their own round."""
+    return await service.complete_my_run(run_id, user_id=p.id, audit=audit)
+
+
+@logistics_router.post(
+    "/delivery-runs/{run_id}/stops/{customer_id}/outcome",
+    response_model=RunStopView,
+    status_code=201,
+)
+async def record_stop_outcome(
+    run_id: uuid.UUID,
+    customer_id: uuid.UUID,
+    body: StopOutcomeInput,
+    service: LogisticsSvc,
+    audit: deps.Audit,
+    p: RunExecute,
+) -> Any:
+    """What happened at one stop, said by the driver who was there (P0-MOB-002).
+
+    The narrow door that keeps the broad sales grant off a driver: own run,
+    open run, customer on the route, the RUN's date and slot — then the
+    delivery domain records it exactly as the operator's round, same
+    idempotency (this router is an `IdempotentRoute`), same fill-in of a
+    generated row, same money rules (none here: the platform prices it).
+    """
+    return await service.record_stop_outcome(
+        run_id, customer_id, body, user_id=p.id, audit=audit
+    )
 
 
 @logistics_router.post("/delivery-runs", response_model=RunView, status_code=201)

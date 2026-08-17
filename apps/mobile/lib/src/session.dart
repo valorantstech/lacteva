@@ -221,6 +221,14 @@ enum Experience {
   /// A household: their deliveries, their bill, their balance.
   customer,
 
+  /// A delivery DRIVER: their own assigned runs, and nothing else
+  /// (P0-MOB-001). Deliberately keyed on `logistics.run.execute` — its own
+  /// grant, held only by the DRIVER role — and checked BEFORE the operator
+  /// keys below, because the collection-hardware audit found the delivery
+  /// experience keyed on the sales grant, which would have collapsed driver
+  /// and operator into one persona.
+  driver,
+
   /// The delivery round: today's schedule, record what was dropped.
   delivery,
 
@@ -246,6 +254,7 @@ enum Experience {
 ///    is hidden by its own permission check.
 Experience experienceFor(Session session) {
   if (session.isCustomer) return Experience.customer;
+  if (session.can('logistics.run.execute')) return Experience.driver;
   if (session.can('sales.delivery.record')) return Experience.delivery;
   if (session.can('collection.session.manage')) return Experience.collection;
   if (session.can('sales.delivery.read')) return Experience.delivery;

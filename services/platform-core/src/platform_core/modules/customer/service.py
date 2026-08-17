@@ -197,6 +197,22 @@ class CustomerView(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CustomerContact(BaseModel):
+    """A customer as a DRIVER at the gate needs them (P0-MOB-002).
+
+    `CustomerName` plus how to find and reach the household — a driver on an
+    unfamiliar round needs the address, and "customer not answering" is solved
+    by a phone number, not a support ticket. Still deliberately narrow: no
+    balance, no plan, no billing state, because a stop is not a ledger.
+    """
+
+    id: uuid.UUID
+    code: str
+    name: str
+    phone: str
+    address: str
+
+
 class CustomerName(BaseModel):
     """Just enough of a customer to label a row somebody else owns.
 
@@ -489,6 +505,32 @@ class CustomerService:
             )
         ).all()
         return {row[0]: CustomerName(id=row[0], code=row[1], name=row[2]) for row in rows}
+
+    async def contact_directory(
+        self, customer_ids: set[uuid.UUID]
+    ) -> dict[uuid.UUID, CustomerContact]:
+        """`directory`, plus phone and address, in ONE query (P0-MOB-002).
+
+        The batch shape the module boundary needs, exactly as `directory`
+        established it: a run view naming its stops asks once for the set,
+        never once per stop.
+        """
+        if not customer_ids:
+            return {}
+        tenant_id = require_current_tenant()
+        rows = (
+            await self._session.execute(
+                select(
+                    Customer.id, Customer.code, Customer.name, Customer.phone, Customer.address
+                ).where(Customer.tenant_id == tenant_id, Customer.id.in_(customer_ids))
+            )
+        ).all()
+        return {
+            row[0]: CustomerContact(
+                id=row[0], code=row[1], name=row[2], phone=row[3], address=row[4]
+            )
+            for row in rows
+        }
 
     async def active_plan(self, customer_id: uuid.UUID, product: str) -> DeliveryPlan | None:
         tenant_id = require_current_tenant()

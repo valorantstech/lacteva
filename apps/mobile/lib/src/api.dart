@@ -763,6 +763,63 @@ class ApiClient {
     return ((result as List?) ?? const []).cast<Map<String, dynamic>>();
   }
 
+  /// The caller's own driver profile (P0-MOB-001).
+  ///
+  /// 404 means "this login is not set up as a driver yet" — the app renders
+  /// that as its own calm state, distinct from "no run assigned today".
+  Future<Map<String, dynamic>> driverMe() async =>
+      await _send('GET', '/v1/drivers/me') as Map<String, dynamic>;
+
+  /// Today's runs for the caller's own driver profile — the DAIRY's today.
+  ///
+  /// No date parameter on purpose, for the same reason the report omits it: a
+  /// phone must not decide which day a dairy is having.
+  Future<List<Map<String, dynamic>>> myRuns() async {
+    final result = await _send('GET', '/v1/delivery-runs/mine');
+    return ((result as List?) ?? const []).cast<Map<String, dynamic>>();
+  }
+
+  /// Start / complete the driver's own run. Online-first deliberately: a run
+  /// transition needs the platform's answer (BR-0028 may refuse), and a
+  /// driver can keep RECORDING outcomes offline regardless — those queue.
+  Future<Map<String, dynamic>> startMyRun(String runId) async =>
+      await _send('POST', '/v1/delivery-runs/$runId/start')
+          as Map<String, dynamic>;
+
+  Future<Map<String, dynamic>> completeMyRun(String runId) async =>
+      await _send('POST', '/v1/delivery-runs/$runId/complete')
+          as Map<String, dynamic>;
+
+  /// What happened at one stop, through the driver's own narrow door
+  /// (P0-MOB-002). The platform checks own-run, open-run and on-route, uses
+  /// the RUN's date and slot, and prices from the plan — this app sends no
+  /// money and no date, exactly like the operator round.
+  Future<Map<String, dynamic>> recordRunOutcome({
+    required String runId,
+    required String customerId,
+    required String status,
+    String? quantity,
+    String? notes,
+    String? idempotencyKey,
+  }) async {
+    final body = <String, dynamic>{
+      'status': status,
+      'quantity': ?quantity,
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
+    };
+    final path = '/v1/delivery-runs/$runId/stops/$customerId/outcome';
+    if (idempotencyKey != null) {
+      return await sendIdempotent(
+            'POST',
+            path,
+            idempotencyKey: idempotencyKey,
+            body: body,
+          )
+          as Map<String, dynamic>;
+    }
+    return await _send('POST', path, body: body) as Map<String, dynamic>;
+  }
+
   /// Record a delivery.
   ///
   /// THE APP SENDS A QUANTITY AND NOTHING ELSE ABOUT MONEY. The rate lives on

@@ -38,7 +38,39 @@ void main() {
       expect(experienceFor(s), Experience.collection);
     });
 
-    test('someone who records deliveries opens the round', () {
+    test('a driver opens their own route, and only on their own grant', () {
+      // P0-MOB-001. The collection-hardware audit found the delivery
+      // experience keyed on the sales operator's grant, which would have
+      // collapsed driver and operator into one persona — so the driver
+      // routes on `logistics.run.execute`, checked before the operator keys.
+      final s = _session(permissions: {'logistics.run.execute'});
+      expect(experienceFor(s), Experience.driver);
+    });
+
+    test('a sales operator does NOT become a driver', () {
+      final s = _session(
+        permissions: {'sales.delivery.record', 'sales.customer.read'},
+      );
+      expect(experienceFor(s), Experience.delivery);
+    });
+
+    test('a collection operator does NOT become a driver', () {
+      final s = _session(
+        permissions: {'collection.session.manage', 'supplier.read'},
+      );
+      expect(experienceFor(s), Experience.collection);
+    });
+
+    test('the driver grant outranks an operator grant held alongside it', () {
+      // If a dairy ever hands one person both, the phone is the driver's tool
+      // and the office is the portal's job.
+      final s = _session(
+        permissions: {'logistics.run.execute', 'sales.delivery.record'},
+      );
+      expect(experienceFor(s), Experience.driver);
+    });
+
+        test('someone who records deliveries opens the round', () {
       final s = _session(
         permissions: {'sales.delivery.record', 'sales.customer.read'},
       );

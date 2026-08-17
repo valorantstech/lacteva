@@ -475,7 +475,10 @@ async def test_no_tenant_role_can_reach_another_dairys_fleet(client):
     from platform_core.modules.authz.permissions import PERMISSIONS
 
     keys = [k for k in PERMISSIONS if k.startswith("logistics.")]
-    assert len(keys) == 6
+    # Seven since P0-MOB-001 added `run.execute`, the driver's own grant. The
+    # count is deliberate: a new logistics key must be REGISTERED here, so it
+    # gets read by a human before it gets granted to anyone.
+    assert len(keys) == 7, sorted(keys)
     assert all(k.count(".") == 2 for k in keys)
 
 

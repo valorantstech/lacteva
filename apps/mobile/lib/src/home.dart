@@ -28,6 +28,7 @@ import 'package:flutter/material.dart';
 import 'centers.dart';
 import 'customer_portal.dart';
 import 'deliveries.dart';
+import 'driver.dart';
 import 'l10n.dart';
 import 'offline/offline_client.dart';
 import 'push.dart';
@@ -128,6 +129,10 @@ class _HomeRouterState extends State<HomeRouter> {
   Widget _experience(Session session) {
     return switch (experienceFor(session)) {
       Experience.customer => CustomerHomeScreen(
+        client: widget.client,
+        session: session,
+      ),
+      Experience.driver => DriverHomeScreen(
         client: widget.client,
         session: session,
       ),
