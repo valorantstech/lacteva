@@ -192,11 +192,139 @@ nothing. The report endpoint keeps `sales.delivery.read`; unauthenticated is
 
 ## 10. Production and dev verification
 
-*Recorded after deployment.*
+Deployed `main-d7a0f45`. Backup taken first:
+`pre-demo037-20260817T124910Z.dump`, 3.1 MB. **No migration and no "schema
+moved" notice** — the schema stayed at `b5d1e07a4c39`, which is the correct
+outcome for a milestone that added no table and no column.
+
+| Check | Result |
+| --- | --- |
+| `/health/live`, `/health/ready` | **200** |
+| `DeliveryReport` in the live schema | `routes`, `unrouted`, `by_route` all present; `DeliveryRouteRow` defined |
+| `GET /v1/deliveries/report` unauthenticated | **401** |
+| Schema version | `b5d1e07a4c39` — unchanged |
+
+### The dev routes, adopted
+
+Run inside the API container via the documented `docker cp` route:
+
+```
+lacteva-demo        16 customers  →  R-01 6 stops, R-02 5, R-03 3, 2 unrouted
+lacteva-india-demo  17 customers  →  R-01 6 stops, R-02 5, R-03 3, 3 unrouted
+lacteva-isolation-demo            →  skipped: no customers
+```
+
+**A second run created nothing** — all six routes reported `existing: true`, 0
+created — so adoption is idempotent on real data.
+
+The seeder's own `verify` then passed: `ok: true`, **6 routes, 28 route stops**,
+2 vehicles, 2 drivers, 33 customers, **`problems: []`** — including the new
+checks that no stop points at a non-existent customer and no customer appears
+twice on one route.
+
+### Route-aware generation, executed on DEV through the real path
+
+`run_for_tenant(..., route_scopes=scheduled_round_scopes)` — the same function
+`main.py`'s loop calls, with the same provider. `force_date` was set to
+tomorrow, and that is the one difference worth stating plainly: today's rounds
+were generated hours earlier by the previous build and the tenant-day is
+correctly claimed, so the loop itself has nothing to do until tomorrow morning.
+
+```
+lacteva-demo        2026-08-18  success  plans_due 14  created 14  already_present  0
+lacteva-india-demo  2026-08-18  success  plans_due 14  created  0  already_present 14
+```
+
+The Indian dairy created nothing because rows for that date already existed —
+**idempotency holding against real seeded data**, not a failure.
+
+### The route-level report, read against that round
+
+```
+lacteva-demo        2026-08-18   routes 3   planned 14   unrouted 0   amount 0.00
+  R-01 Kilima morning round   stops 6  with deliveries 6  scheduled 6
+  R-02 Ngong Road round       stops 5  with deliveries 5  scheduled 5
+  R-03 Limuru ridge round     stops 3  with deliveries 3  scheduled 3
+
+lacteva-india-demo  2026-08-18   routes 3   planned 17   unrouted 3   amount 0.00
+```
+
+The two dairies illustrate the design between them:
+
+* Kenya's round was generated **route-aware**, so it covers the 14 routed
+  households and the two off-route customers have no rows — `unrouted 0`;
+* India's round pre-existed as a **whole-tenant** round, so all 17 households
+  have rows and the report separates 14 routed from **3 unrouted** — which are
+  exactly the three customers deliberately left off the routes.
+
+`14 + 3 = 17 = planned`. **The reconciliation holds on real data**, which is
+what §"overall round totals remain consistent" asked for.
+
+### Financial comparison
+
+**The books are byte-identical.** Every count and every sum:
+
+| Table | Before | After |
+| --- | --- | --- |
+| `settlement` | 84 / 353,417.50 | **84 / 353,417.50** |
+| `customer_invoice` | 31 / 809,038.00 | **31 / 809,038.00** |
+| `customer_payment` | 24 / 444,105.00 | **24 / 444,105.00** |
+| `customer_receipt` | 24 / 444,105.00 | **24 / 444,105.00** |
+| `payment` | 42 / 168,675.50 | **42 / 168,675.50** |
+| `receipt` | 36 / 138,903.00 | **36 / 138,903.00** |
+
+What did change, and why each is not a financial record:
+
+| Table | Before → After | Why |
+| --- | --- | --- |
+| `route` | 0 → **6** | The adopted rounds. Operational. |
+| `route_stop` | 0 → **28** | Their stops. Operational. |
+| `delivery_generation_run` | 17 → **19** | One run record per dairy for the forced date. A log. |
+| `milk_delivery` | 1,303 → **1,317** | 14 rows for tomorrow's Kenyan round — and **the amount sum is unchanged at 821,667.00**, because a generated delivery is `scheduled` and worth `0.00` until somebody says the milk arrived. |
+| `delivery_run` | 0 → **0** | No operational run was created; only the scheduler path was exercised. |
+
+So: **no financial record was altered.** Fourteen zero-value operational rows
+appeared for a future date, which is precisely what generation does, and the
+milk-delivery money total did not move by a cent.
 
 ## 11. REAL versus TEST versus NOT PROVEN
 
-*Completed after deployment — see §10.*
+**REAL** — executed on the deployment, against real seeded data:
+
+* **route adoption** on two dairies over their existing customers, idempotent on
+  a second run, and passing the seeder's own `verify`;
+* **route-aware generation through the real scheduler function**, with the real
+  provider — `created: 14` on one dairy, `already_present: 14` on the other.
+  This closes DEMO-036's NOT PROVEN item **for the dev deployment**;
+* **the route-level report** read against that round, with the routed/unrouted
+  reconciliation holding;
+* the report endpoint live, 401 unauthenticated, `by_route` in the served schema;
+* the books unchanged.
+
+**TEST** — proven in the suite and the PostgreSQL proof, not in deployed traffic:
+
+* the report's behaviour under concurrent generation;
+* RLS filtering the membership provider;
+* a stop moving between routes moving the report;
+* the query-count budget;
+* every refusal and every mutation check.
+
+**NOT PROVEN — and not claimed:**
+
+* **The scheduler's own loop has not yet run the route branch on its own clock.**
+  It runs the fallback path today because today's rounds were already generated;
+  the route branch was exercised by calling the same function with a forced
+  date. The loop will reach it unaided tomorrow morning, and that has not been
+  observed.
+* **No browser or device verification.** The Chrome extension is not connected
+  and no handset is attached, so the "By route" card is proven by its four tests
+  and the API, not visually. Same gap as every milestone since DEMO-028.
+* **No real driver, no real physical delivery, no GPS, no maps, no
+  optimization.** The generated round is fourteen `scheduled` rows for a future
+  date; no milk moved.
+* **These are demo tenants.** `lacteva-demo` and `lacteva-india-demo` are the
+  seeder's own organizations. No other tenant on the deployment has routes, and
+  none was given any.
 
 ## 12. Known limitations
 
@@ -245,7 +373,14 @@ DEMO-034 through DEMO-036.
 
 ## 14. Commits and build
 
-*Recorded after deployment.*
+| What | Identifier |
+| --- | --- |
+| Feature commit | **`d7a0f45`** — `feat(reporting): the round, reported by route — and a dev dairy that has routes` |
+| Verification commit | recorded in the CHANGELOG entry for this milestone |
+| Deployed image tag | **`main-d7a0f45`** (platform-core and admin-portal) |
+| Previous release | `main-fa374b2` — rollback target |
+| Schema | `b5d1e07a4c39` — unchanged, no migration |
+| Backup | `pre-demo037-20260817T124910Z.dump` (3.1 MB) |
 
 ## 15. Recommended DEMO-038
 
