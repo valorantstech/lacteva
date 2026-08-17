@@ -144,6 +144,8 @@ from platform_core.modules.notification.reachability import (
 )
 from platform_core.modules.notification.receipts import UnknownReceiptProvider
 from platform_core.modules.notification.service import (
+    ApprovalCommand,
+    ApprovalView,
     MessagingPosture,
     NotificationPage,
     NotificationService,
@@ -2459,7 +2461,7 @@ NotificationSvc = Annotated[NotificationService, Depends(deps.get_notification_s
     "/notification-templates/registry",
     dependencies=[Depends(require_permission("notification.read"))],
 )
-async def read_template_registry() -> TemplateRegistryView:
+async def read_template_registry(service: NotificationSvc) -> TemplateRegistryView:
     """Every template Lacteva can send, and whether a provider knows it.
 
     **Read-only.** A template is code — reviewed, tested, shipped, and
@@ -2472,7 +2474,31 @@ async def read_template_registry() -> TemplateRegistryView:
     per-tenant is the channel a dairy chose, which lives in the configuration
     store behind RLS and is not exposed here.
     """
-    return NotificationService.registry()
+    return await service.registry_with_approvals()
+
+
+@notification_router.post(
+    "/notification-templates/approval",
+    dependencies=[Depends(require_permission("notification.template.approve"))],
+)
+async def record_template_approval(
+    service: NotificationSvc,
+    audit: deps.Audit,
+    principal: deps.CurrentPrincipal,
+    body: ApprovalCommand,
+) -> ApprovalView:
+    """Record what an EXTERNAL provider or regulator decided (DEMO-033).
+
+    **This does not approve anything.** It writes down that somebody outside
+    Lacteva decided something, and who wrote it down. Behind a platform-admin
+    permission that no tenant role holds — the messaging account is Lacteva's,
+    so a dairy recording an approval would be asserting something about
+    somebody else's account.
+
+    The template must exist in that channel and language: an approval for
+    something Lacteva cannot send is a note about nothing.
+    """
+    return await service.record_approval(body, actor_id=principal.id, audit=audit)
 
 
 @notification_router.get(

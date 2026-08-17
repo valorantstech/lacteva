@@ -1481,11 +1481,24 @@ export type TemplateRegistryEntry = {
   provider_template: string | null;
   whatsapp_ready: boolean;
   whatsapp_blocker: string | null;
+  /**
+   * DEMO-033. `NOT_CONFIGURED` is the absence of a record, not a judgement.
+   * `APPROVED` means an external provider said so and an operator recorded it —
+   * Lacteva never approves a vendor's template on the vendor's behalf.
+   */
+  approval_state: "NOT_CONFIGURED" | "PENDING" | "APPROVED" | "REJECTED";
+  approval_provider: string | null;
+  approval_note: string | null;
+  /** Valid shape + supported language + APPROVED + a provider mapping. */
+  ready: boolean;
+  /** Every reason this template cannot be sent, not just the first. */
+  blockers: string[];
 };
 
 export type TemplateRegistry = {
   total: number;
   unmapped_whatsapp: number;
+  ready_whatsapp: number;
   entries: TemplateRegistryEntry[];
 };
 

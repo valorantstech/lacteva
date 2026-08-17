@@ -84,12 +84,15 @@ def test_variables_for_spans_every_channel_and_language():
 
 def test_variable_order_is_deterministic():
     """A positional-parameter API needs the same order every time."""
+    # DEMO-033: on WhatsApp the journey is a fixed-parameter VARIANT.
+    key = "settlement_finalized_with_quantity"
     for _ in range(5):
-        assert get_template("settlement_finalized", "whatsapp", "en").variables == (
-            get_template("settlement_finalized", "whatsapp", "en").variables
+        assert get_template(key, "whatsapp", "en").variables == (
+            get_template(key, "whatsapp", "en").variables
         )
-    template = get_template("settlement_finalized", "whatsapp", "en")
+    template = get_template(key, "whatsapp", "en")
     assert template.variables[0] == "number", "declared order, not alphabetical"
+    assert not template.optional_variables, "a fixed-parameter template cannot vary"
 
 
 def test_an_unknown_channel_is_rejected_rather_than_guessed():
@@ -163,44 +166,44 @@ def test_sms_and_email_are_not_reported_as_unmapped():
 
 
 def test_a_configured_mapping_is_reported(monkeypatch):
+    # DEMO-033: mapping is per VARIANT, because each variant is a separate
+    # template a vendor approves separately.
+    key = "settlement_finalized_with_quantity"
     monkeypatch.setattr(
         get_settings(),
         "notification_vendor_templates",
-        {"settlement_finalized.whatsapp": "lacteva_settlement_v1"},
+        {f"{key}.whatsapp": "lacteva_settlement_v1"},
     )
     registry = NotificationService.registry()
-    mapped = [
-        e for e in registry.entries if e.key == "settlement_finalized" and e.channel == "whatsapp"
-    ]
+    total_whatsapp = sum(1 for e in registry.entries if e.channel == "whatsapp")
+    mapped = [e for e in registry.entries if e.key == key and e.channel == "whatsapp"]
     assert mapped
     assert all(e.provider_mapping_status == "CONFIGURED" for e in mapped)
     assert all(e.provider_template == "lacteva_settlement_v1" for e in mapped)
-    # And the outstanding count drops by exactly those.
-    assert registry.unmapped_whatsapp == 8 - len(mapped)
+    assert registry.unmapped_whatsapp == total_whatsapp - len(mapped)
 
 
 # --- the WhatsApp finding (§7) ---------------------------------------------------
 
 
-def test_the_registry_reports_which_templates_cannot_be_whatsapp_templates():
-    """The finding this milestone surfaced, pinned so it cannot be forgotten.
+def test_no_whatsapp_template_still_carries_an_optional_segment():
+    """DEMO-032 found every business WhatsApp template unapprovable; DEMO-033
+    fixed it, and this is the assertion inverted.
 
-    An approved WhatsApp template has a FIXED parameter count. DEMO-028 added
-    optional segments — the quantity line, the brought-forward balance — which
-    appear only when they mean something. Both designs are right on their own
-    terms and they are incompatible: every business WhatsApp template Lacteva
-    has is currently unusable as an approved template.
-
-    This test does not assert the conflict is resolved. It asserts the registry
-    SAYS SO, because before DEMO-032 nothing did.
+    The guarantee is unchanged — the registry tells the truth about whether a
+    template could be approved. What changed is the truth: each journey now has
+    explicit fixed-parameter variants instead of one template that varies.
     """
     registry = NotificationService.registry()
     whatsapp = [e for e in registry.entries if e.channel == "whatsapp"]
-    blocked = [e for e in whatsapp if not e.whatsapp_ready]
-    assert blocked, "the finding disappeared without being recorded"
-    for entry in blocked:
-        assert entry.whatsapp_blocker, "a blocked template with no stated reason"
-        assert "optional segments" in entry.whatsapp_blocker
+    assert whatsapp, "the WhatsApp templates disappeared"
+    blocked = [(e.key, e.language, e.whatsapp_blocker) for e in whatsapp if not e.whatsapp_ready]
+    assert not blocked, f"a WhatsApp template still cannot be approved: {blocked}"
+    for entry in whatsapp:
+        assert entry.optional_variables == [], (
+            f"{entry.key} still varies — an approved template cannot"
+        )
+        assert entry.variables, "a template with nothing to substitute is not a template"
 
 
 def test_a_template_with_no_parameters_is_also_reported():
@@ -232,15 +235,19 @@ def test_a_template_with_no_parameters_is_also_reported():
 @pytest.mark.parametrize("language", ["en", "hi", "ar", "sw"])
 def test_every_business_journey_is_registered_in_every_language(language):
     """The existing language support, preserved and now visible in the registry."""
+    from platform_core.modules.notification.templates import select_template_key
+
     registry = NotificationService.registry()
     for key in ("settlement_finalized", "invoice_issued"):
         for channel in ("sms", "whatsapp", "email"):
+            # DEMO-033: on WhatsApp the journey resolves to a variant.
+            resolved = select_template_key(key, channel, {})
             matches = [
                 e
                 for e in registry.entries
-                if e.key == key and e.channel == channel and e.language == language
+                if e.key == resolved and e.channel == channel and e.language == language
             ]
-            assert matches, f"{key}/{channel} has no {language} entry"
+            assert matches, f"{resolved}/{channel} has no {language} entry"
 
 
 def test_the_registry_contains_no_country():
@@ -324,14 +331,20 @@ async def test_no_endpoint_can_modify_a_template(client):
     A template is code: reviewed, shipped, and re-rendered months later for a
     retry. A database-editable message a farmer receives about their money is a
     change nobody reviewed.
+
+    Two POSTs are exempt because neither touches a template's text: `/preview`
+    renders one and returns it, and DEMO-033's `/approval` records what an
+    external provider decided ABOUT a template. Approving a wording does not
+    change the wording — and if it ever did, this list is where it would show.
     """
+    exempt = ("/preview", "/approval")
     schema = (await client.get("/openapi.json")).json()
     writable = [
         (path, method)
         for path, operations in schema["paths"].items()
         if "notification-templates" in path
         for method in operations
-        if method in ("post", "put", "patch", "delete") and not path.endswith("/preview")
+        if method in ("post", "put", "patch", "delete") and not path.endswith(exempt)
     ]
     assert not writable, f"a template can be changed at runtime: {writable}"
 

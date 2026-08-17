@@ -62,6 +62,27 @@ class TemplateRenderError(Exception):
 #: this platform sends.
 PURPOSES: dict[str, str] = {
     "settlement_finalized": "Tells a farmer their settlement is final and what they are owed",
+    # DEMO-033: the fixed-parameter WhatsApp variants of the two business
+    # journeys. Same purpose, stated per variant because the registry is keyed
+    # by template and an operator submitting one for approval needs to read
+    # what it is for without cross-referencing.
+    "settlement_finalized_base": (
+        "Tells a farmer their settlement is final and what they are owed (WhatsApp)"
+    ),
+    "settlement_finalized_with_quantity": (
+        "Tells a farmer their settlement is final, including how much milk it covers (WhatsApp)"
+    ),
+    "invoice_issued_base": "Tells a customer their bill for a period is ready (WhatsApp)",
+    "invoice_issued_with_quantity": (
+        "Tells a customer their bill is ready, including how much was delivered (WhatsApp)"
+    ),
+    "invoice_issued_with_balance": (
+        "Tells a customer their bill is ready, including an earlier unpaid balance (WhatsApp)"
+    ),
+    "invoice_issued_with_quantity_and_balance": (
+        "Tells a customer their bill is ready, with quantity delivered and an "
+        "earlier unpaid balance (WhatsApp)"
+    ),
     "payment_completed": "Tells a farmer a settlement payment has been executed",
     "receipt_available": "Tells a farmer a payment receipt is available",
     "invoice_issued": "Tells a customer their bill for a period is ready",
@@ -84,6 +105,12 @@ PURPOSES: dict[str, str] = {
 BUSINESS_PURPOSE_KEYS = frozenset(
     {
         "settlement_finalized",
+        "settlement_finalized_base",
+        "settlement_finalized_with_quantity",
+        "invoice_issued_base",
+        "invoice_issued_with_quantity",
+        "invoice_issued_with_balance",
+        "invoice_issued_with_quantity_and_balance",
         "payment_completed",
         "receipt_available",
         "invoice_issued",
@@ -242,58 +269,6 @@ TEMPLATES: tuple[Template, ...] = (
     ),
     _t(
         "settlement_finalized",
-        "whatsapp",
-        "en",
-        "Settlement {number} ready",
-        "Hello {name},\n\nYour settlement *{number}* is finalised.\n"
-        "Period: {period_from} to {period_to}\n"
-        "Collections: {line_count}\n"
-        "[[Quantity: {quantity} {quantity_unit}\n]]"
-        "Gross: {gross_amount} {currency}\n"
-        "Net payable: *{net_amount} {currency}*\n\n"
-        "Contact your collection centre if anything looks wrong.",
-    ),
-    _t(
-        "settlement_finalized",
-        "whatsapp",
-        "sw",
-        "Malipo {number} tayari",
-        "Habari {name},\n\nMalipo yako *{number}* yamekamilika.\n"
-        "Kipindi: {period_from} hadi {period_to}\n"
-        "Mizigo: {line_count}\n"
-        "[[Kiasi: {quantity} {quantity_unit}\n]]"
-        "Jumla: {gross_amount} {currency}\n"
-        "Malipo halisi: *{net_amount} {currency}*\n\n"
-        "Wasiliana na kituo chako cha ukusanyaji ikiwa kuna tatizo.",
-    ),
-    _t(
-        "settlement_finalized",
-        "whatsapp",
-        "hi",
-        "भुगतान {number} तैयार",
-        "नमस्ते {name},\n\nआपका भुगतान *{number}* अंतिम रूप से तैयार है।\n"
-        "अवधि: {period_from} से {period_to}\n"
-        "संग्रह: {line_count}\n"
-        "[[मात्रा: {quantity} {quantity_unit}\n]]"
-        "कुल: {gross_amount} {currency}\n"
-        "देय राशि: *{net_amount} {currency}*\n\n"
-        "कोई गड़बड़ी लगे तो अपने संग्रह केंद्र से संपर्क करें।",
-    ),
-    _t(
-        "settlement_finalized",
-        "whatsapp",
-        "ar",
-        "تسوية {number} جاهزة",
-        "مرحبا {name}،\n\nتسويتك *{number}* مكتملة.\n"
-        "الفترة: من {period_from} إلى {period_to}\n"
-        "عمليات الجمع: {line_count}\n"
-        "[[الكمية: {quantity} {quantity_unit}\n]]"
-        "الإجمالي: {gross_amount} {currency}\n"
-        "الصافي المستحق: *{net_amount} {currency}*\n\n"
-        "تواصل مع مركز الجمع إذا كان هناك خطأ.",
-    ),
-    _t(
-        "settlement_finalized",
         "email",
         "en",
         "Settlement {number} is ready",
@@ -424,42 +399,6 @@ TEMPLATES: tuple[Template, ...] = (
     ),
     _t(
         "invoice_issued",
-        "whatsapp",
-        "en",
-        "Bill {number} ready",
-        "Hello {name},\n\nYour bill *{number}* is ready.\n"
-        "Period: {period_from} to {period_to}\n"
-        "[[Delivered: {quantity} {quantity_unit}\n]]"
-        "[[Brought forward: {previous_balance} {currency}\n]]"
-        "Amount due: *{amount} {currency}*\n\n"
-        "Thank you for taking milk from us.",
-    ),
-    _t(
-        "invoice_issued",
-        "whatsapp",
-        "hi",
-        "बिल {number} तैयार",
-        "नमस्ते {name},\n\nआपका बिल *{number}* तैयार है।\n"
-        "अवधि: {period_from} से {period_to}\n"
-        "[[वितरित: {quantity} {quantity_unit}\n]]"
-        "[[पिछला शेष: {previous_balance} {currency}\n]]"
-        "देय राशि: *{amount} {currency}*\n\n"
-        "हमसे दूध लेने के लिए धन्यवाद।",
-    ),
-    _t(
-        "invoice_issued",
-        "whatsapp",
-        "ar",
-        "الفاتورة {number} جاهزة",
-        "مرحبا {name}،\n\nفاتورتك *{number}* جاهزة.\n"
-        "الفترة: من {period_from} إلى {period_to}\n"
-        "[[الكمية: {quantity} {quantity_unit}\n]]"
-        "[[رصيد سابق: {previous_balance} {currency}\n]]"
-        "المبلغ المستحق: *{amount} {currency}*\n\n"
-        "شكرا لتعاملكم معنا.",
-    ),
-    _t(
-        "invoice_issued",
         "email",
         "en",
         "Your bill {number} is ready",
@@ -478,18 +417,6 @@ TEMPLATES: tuple[Template, ...] = (
     #
     # A test now asserts that every tenant-SELECTABLE template offers the same
     # languages on every channel it supports, so this gap cannot reopen.
-    _t(
-        "invoice_issued",
-        "whatsapp",
-        "sw",
-        "Bili {number} tayari",
-        "Habari {name},\n\nBili yako *{number}* iko tayari.\n"
-        "Kipindi: {period_from} hadi {period_to}\n"
-        "[[Imepokelewa: {quantity} {quantity_unit}\n]]"
-        "[[Salio la awali: {previous_balance} {currency}\n]]"
-        "Kiasi cha kulipa: *{amount} {currency}*\n\n"
-        "Asante kwa kuchukua maziwa kwetu.",
-    ),
     _t(
         "invoice_issued",
         "email",
@@ -563,6 +490,283 @@ TEMPLATES: tuple[Template, ...] = (
         "الإجمالي: {gross_amount} {currency}\n"
         "الصافي المستحق: {net_amount} {currency}\n\n"
         "هذا ملخص لتسوية مسجلة في Lacteva. تواصل مع مركز الجمع إذا كان هناك خطأ.",
+    ),
+    # --- DEMO-033: fixed-parameter WhatsApp variants -----------------------
+    #
+    # An approved WhatsApp template has a FIXED parameter count and a fixed
+    # order. Lacteva's optional segments do not — DEMO-032 found that this made
+    # all 8 business WhatsApp templates unapprovable, and DEMO-028 added those
+    # segments for a reason that has not gone away: a retry re-renders from a
+    # payload that may predate a field.
+    #
+    # So the two designs stop sharing a template. SMS and email keep the
+    # segments and behave exactly as before; WhatsApp gets one explicit variant
+    # per real combination, each with a deterministic parameter list.
+    #
+    # **The wordings are not new.** Every variant body was generated by taking
+    # the existing WhatsApp template and either inlining or removing each
+    # optional segment — so the Hindi, Arabic and Swahili text is the text that
+    # was already reviewed, not a translation invented here.
+    #
+    # Six variants, and only six, because two optional GROUPS exist:
+    # `{quantity, quantity_unit}` on both journeys and `{previous_balance}` on
+    # the invoice. Every one of the six is reachable — a settlement or invoice
+    # with mixed units reports no quantity, a bill with nothing carried forward
+    # reports no balance, and a notification stored before DEMO-028 has neither
+    # when it is retried.
+    _t(
+        "invoice_issued_base",
+        "whatsapp",
+        "ar",
+        "الفاتورة {number} جاهزة",
+        "مرحبا {name}،\n\nفاتورتك *{number}* جاهزة.\n"
+        "الفترة: من {period_from} إلى {period_to}\n"
+        "المبلغ المستحق: *{amount} {currency}*\n\nشكرا لتعاملكم معنا.",
+    ),
+    _t(
+        "invoice_issued_base",
+        "whatsapp",
+        "en",
+        "Bill {number} ready",
+        "Hello {name},\n\nYour bill *{number}* is ready.\n"
+        "Period: {period_from} to {period_to}\n"
+        "Amount due: *{amount} {currency}*\n\n"
+        "Thank you for taking milk from us.",
+    ),
+    _t(
+        "invoice_issued_base",
+        "whatsapp",
+        "hi",
+        "बिल {number} तैयार",
+        "नमस्ते {name},\n\nआपका बिल *{number}* तैयार है।\n"
+        "अवधि: {period_from} से {period_to}\nदेय राशि: *{amount} {currency}*\n"
+        "\nहमसे दूध लेने के लिए धन्यवाद।",
+    ),
+    _t(
+        "invoice_issued_base",
+        "whatsapp",
+        "sw",
+        "Bili {number} tayari",
+        "Habari {name},\n\nBili yako *{number}* iko tayari.\n"
+        "Kipindi: {period_from} hadi {period_to}\n"
+        "Kiasi cha kulipa: *{amount} {currency}*\n\n"
+        "Asante kwa kuchukua maziwa kwetu.",
+    ),
+    _t(
+        "invoice_issued_with_balance",
+        "whatsapp",
+        "ar",
+        "الفاتورة {number} جاهزة",
+        "مرحبا {name}،\n\nفاتورتك *{number}* جاهزة.\n"
+        "الفترة: من {period_from} إلى {period_to}\n"
+        "رصيد سابق: {previous_balance} {currency}\n"
+        "المبلغ المستحق: *{amount} {currency}*\n\nشكرا لتعاملكم معنا.",
+    ),
+    _t(
+        "invoice_issued_with_balance",
+        "whatsapp",
+        "en",
+        "Bill {number} ready",
+        "Hello {name},\n\nYour bill *{number}* is ready.\n"
+        "Period: {period_from} to {period_to}\n"
+        "Brought forward: {previous_balance} {currency}\n"
+        "Amount due: *{amount} {currency}*\n\n"
+        "Thank you for taking milk from us.",
+    ),
+    _t(
+        "invoice_issued_with_balance",
+        "whatsapp",
+        "hi",
+        "बिल {number} तैयार",
+        "नमस्ते {name},\n\nआपका बिल *{number}* तैयार है।\n"
+        "अवधि: {period_from} से {period_to}\n"
+        "पिछला शेष: {previous_balance} {currency}\n"
+        "देय राशि: *{amount} {currency}*\n\nहमसे दूध लेने के लिए धन्यवाद।",
+    ),
+    _t(
+        "invoice_issued_with_balance",
+        "whatsapp",
+        "sw",
+        "Bili {number} tayari",
+        "Habari {name},\n\nBili yako *{number}* iko tayari.\n"
+        "Kipindi: {period_from} hadi {period_to}\n"
+        "Salio la awali: {previous_balance} {currency}\n"
+        "Kiasi cha kulipa: *{amount} {currency}*\n\n"
+        "Asante kwa kuchukua maziwa kwetu.",
+    ),
+    _t(
+        "invoice_issued_with_quantity",
+        "whatsapp",
+        "ar",
+        "الفاتورة {number} جاهزة",
+        "مرحبا {name}،\n\nفاتورتك *{number}* جاهزة.\n"
+        "الفترة: من {period_from} إلى {period_to}\n"
+        "الكمية: {quantity} {quantity_unit}\n"
+        "المبلغ المستحق: *{amount} {currency}*\n\nشكرا لتعاملكم معنا.",
+    ),
+    _t(
+        "invoice_issued_with_quantity",
+        "whatsapp",
+        "en",
+        "Bill {number} ready",
+        "Hello {name},\n\nYour bill *{number}* is ready.\n"
+        "Period: {period_from} to {period_to}\n"
+        "Delivered: {quantity} {quantity_unit}\n"
+        "Amount due: *{amount} {currency}*\n\n"
+        "Thank you for taking milk from us.",
+    ),
+    _t(
+        "invoice_issued_with_quantity",
+        "whatsapp",
+        "hi",
+        "बिल {number} तैयार",
+        "नमस्ते {name},\n\nआपका बिल *{number}* तैयार है।\n"
+        "अवधि: {period_from} से {period_to}\nवितरित: {quantity} {quantity_unit}"
+        "\nदेय राशि: *{amount} {currency}*\n\nहमसे दूध लेने के लिए धन्यवाद।",
+    ),
+    _t(
+        "invoice_issued_with_quantity",
+        "whatsapp",
+        "sw",
+        "Bili {number} tayari",
+        "Habari {name},\n\nBili yako *{number}* iko tayari.\n"
+        "Kipindi: {period_from} hadi {period_to}\n"
+        "Imepokelewa: {quantity} {quantity_unit}\n"
+        "Kiasi cha kulipa: *{amount} {currency}*\n\n"
+        "Asante kwa kuchukua maziwa kwetu.",
+    ),
+    _t(
+        "invoice_issued_with_quantity_and_balance",
+        "whatsapp",
+        "ar",
+        "الفاتورة {number} جاهزة",
+        "مرحبا {name}،\n\nفاتورتك *{number}* جاهزة.\n"
+        "الفترة: من {period_from} إلى {period_to}\n"
+        "الكمية: {quantity} {quantity_unit}\n"
+        "رصيد سابق: {previous_balance} {currency}\n"
+        "المبلغ المستحق: *{amount} {currency}*\n\nشكرا لتعاملكم معنا.",
+    ),
+    _t(
+        "invoice_issued_with_quantity_and_balance",
+        "whatsapp",
+        "en",
+        "Bill {number} ready",
+        "Hello {name},\n\nYour bill *{number}* is ready.\n"
+        "Period: {period_from} to {period_to}\n"
+        "Delivered: {quantity} {quantity_unit}\n"
+        "Brought forward: {previous_balance} {currency}\n"
+        "Amount due: *{amount} {currency}*\n\n"
+        "Thank you for taking milk from us.",
+    ),
+    _t(
+        "invoice_issued_with_quantity_and_balance",
+        "whatsapp",
+        "hi",
+        "बिल {number} तैयार",
+        "नमस्ते {name},\n\nआपका बिल *{number}* तैयार है।\n"
+        "अवधि: {period_from} से {period_to}\nवितरित: {quantity} {quantity_unit}"
+        "\nपिछला शेष: {previous_balance} {currency}\n"
+        "देय राशि: *{amount} {currency}*\n\nहमसे दूध लेने के लिए धन्यवाद।",
+    ),
+    _t(
+        "invoice_issued_with_quantity_and_balance",
+        "whatsapp",
+        "sw",
+        "Bili {number} tayari",
+        "Habari {name},\n\nBili yako *{number}* iko tayari.\n"
+        "Kipindi: {period_from} hadi {period_to}\n"
+        "Imepokelewa: {quantity} {quantity_unit}\n"
+        "Salio la awali: {previous_balance} {currency}\n"
+        "Kiasi cha kulipa: *{amount} {currency}*\n\n"
+        "Asante kwa kuchukua maziwa kwetu.",
+    ),
+    _t(
+        "settlement_finalized_base",
+        "whatsapp",
+        "ar",
+        "تسوية {number} جاهزة",
+        "مرحبا {name}،\n\nتسويتك *{number}* مكتملة.\n"
+        "الفترة: من {period_from} إلى {period_to}\nعمليات الجمع: {line_count}\n"
+        "الإجمالي: {gross_amount} {currency}\n"
+        "الصافي المستحق: *{net_amount} {currency}*\n\n"
+        "تواصل مع مركز الجمع إذا كان هناك خطأ.",
+    ),
+    _t(
+        "settlement_finalized_base",
+        "whatsapp",
+        "en",
+        "Settlement {number} ready",
+        "Hello {name},\n\nYour settlement *{number}* is finalised.\n"
+        "Period: {period_from} to {period_to}\nCollections: {line_count}\n"
+        "Gross: {gross_amount} {currency}\n"
+        "Net payable: *{net_amount} {currency}*\n\n"
+        "Contact your collection centre if anything looks wrong.",
+    ),
+    _t(
+        "settlement_finalized_base",
+        "whatsapp",
+        "hi",
+        "भुगतान {number} तैयार",
+        "नमस्ते {name},\n\nआपका भुगतान *{number}* अंतिम रूप से तैयार है।\n"
+        "अवधि: {period_from} से {period_to}\nसंग्रह: {line_count}\n"
+        "कुल: {gross_amount} {currency}\nदेय राशि: *{net_amount} {currency}*\n"
+        "\nकोई गड़बड़ी लगे तो अपने संग्रह केंद्र से संपर्क करें।",
+    ),
+    _t(
+        "settlement_finalized_base",
+        "whatsapp",
+        "sw",
+        "Malipo {number} tayari",
+        "Habari {name},\n\nMalipo yako *{number}* yamekamilika.\n"
+        "Kipindi: {period_from} hadi {period_to}\nMizigo: {line_count}\n"
+        "Jumla: {gross_amount} {currency}\n"
+        "Malipo halisi: *{net_amount} {currency}*\n\n"
+        "Wasiliana na kituo chako cha ukusanyaji ikiwa kuna tatizo.",
+    ),
+    _t(
+        "settlement_finalized_with_quantity",
+        "whatsapp",
+        "ar",
+        "تسوية {number} جاهزة",
+        "مرحبا {name}،\n\nتسويتك *{number}* مكتملة.\n"
+        "الفترة: من {period_from} إلى {period_to}\nعمليات الجمع: {line_count}\n"
+        "الكمية: {quantity} {quantity_unit}\n"
+        "الإجمالي: {gross_amount} {currency}\n"
+        "الصافي المستحق: *{net_amount} {currency}*\n\n"
+        "تواصل مع مركز الجمع إذا كان هناك خطأ.",
+    ),
+    _t(
+        "settlement_finalized_with_quantity",
+        "whatsapp",
+        "en",
+        "Settlement {number} ready",
+        "Hello {name},\n\nYour settlement *{number}* is finalised.\n"
+        "Period: {period_from} to {period_to}\nCollections: {line_count}\n"
+        "Quantity: {quantity} {quantity_unit}\nGross: {gross_amount} {currency}"
+        "\nNet payable: *{net_amount} {currency}*\n\n"
+        "Contact your collection centre if anything looks wrong.",
+    ),
+    _t(
+        "settlement_finalized_with_quantity",
+        "whatsapp",
+        "hi",
+        "भुगतान {number} तैयार",
+        "नमस्ते {name},\n\nआपका भुगतान *{number}* अंतिम रूप से तैयार है।\n"
+        "अवधि: {period_from} से {period_to}\nसंग्रह: {line_count}\n"
+        "मात्रा: {quantity} {quantity_unit}\nकुल: {gross_amount} {currency}\n"
+        "देय राशि: *{net_amount} {currency}*\n\n"
+        "कोई गड़बड़ी लगे तो अपने संग्रह केंद्र से संपर्क करें।",
+    ),
+    _t(
+        "settlement_finalized_with_quantity",
+        "whatsapp",
+        "sw",
+        "Malipo {number} tayari",
+        "Habari {name},\n\nMalipo yako *{number}* yamekamilika.\n"
+        "Kipindi: {period_from} hadi {period_to}\nMizigo: {line_count}\n"
+        "Kiasi: {quantity} {quantity_unit}\nJumla: {gross_amount} {currency}\n"
+        "Malipo halisi: *{net_amount} {currency}*\n\n"
+        "Wasiliana na kituo chako cha ukusanyaji ikiwa kuna tatizo.",
     ),
     _t(
         "invoice_issued",
@@ -690,16 +894,142 @@ def render(template: Template, variables: dict) -> RenderedMessage:
     )
 
 
-def variables_for(key: str) -> set[str]:
-    """Every variable any template with this key can display (DEMO-032).
+#: Which template key a journey uses on a FIXED-PARAMETER channel (DEMO-033).
+#:
+#: Keyed by the journey and by which optional GROUPS the data actually
+#: supports. The groups are named rather than positional so adding one later is
+#: a new entry rather than a re-ordering.
+#:
+#: This is the whole of §4's "business layer determines the variant": it reads
+#: available data and picks a template. It contains no vendor, no provider
+#: template id, and no channel-specific transport concern — a different
+#: fixed-parameter channel would reuse it unchanged.
+VARIANTS: dict[str, dict[frozenset[str], str]] = {
+    "settlement_finalized": {
+        frozenset(): "settlement_finalized_base",
+        frozenset({"quantity"}): "settlement_finalized_with_quantity",
+    },
+    "invoice_issued": {
+        frozenset(): "invoice_issued_base",
+        frozenset({"quantity"}): "invoice_issued_with_quantity",
+        frozenset({"balance"}): "invoice_issued_with_balance",
+        frozenset({"quantity", "balance"}): "invoice_issued_with_quantity_and_balance",
+    },
+}
 
-    Required and optional, across every channel and language. This is the set a
-    dispatch builder may legitimately supply, because one builder feeds all of
-    a key's channels.
+#: What each optional group needs in order to be considered present. A group is
+#: present only when EVERY variable in it has a non-empty value — half a group
+#: is not a group, and rendering half of one is the "half-supplied segment"
+#: failure DEMO-028 already refused.
+VARIANT_GROUPS: dict[str, tuple[str, ...]] = {
+    "quantity": ("quantity", "quantity_unit"),
+    "balance": ("previous_balance",),
+}
+
+#: Channels whose templates are approved with a fixed parameter list, so a
+#: variant must be selected. A property of the CHANNEL, not of a vendor.
+FIXED_PARAMETER_CHANNELS = ("whatsapp",)
+
+
+def present_groups(variables: dict) -> frozenset[str]:
+    """Which optional groups the data actually supports."""
+    return frozenset(
+        name
+        for name, members in VARIANT_GROUPS.items()
+        if all(str(variables.get(member, "") or "").strip() for member in members)
+    )
+
+
+def select_template_key(key: str, channel: str, variables: dict) -> str:
+    """The template key to render, given the data (DEMO-033 §4).
+
+    On a flexible channel this is the key unchanged — SMS and email keep their
+    optional segments and behave exactly as they did.
+
+    On a fixed-parameter channel it resolves to the variant whose parameter
+    list the data exactly supports. A journey with no variants registered is
+    returned unchanged, because most templates have no optional segments and
+    need no variant.
     """
+    if channel not in FIXED_PARAMETER_CHANNELS:
+        return key
+    variants = VARIANTS.get(key)
+    if not variants:
+        return key
+    groups = present_groups(variables)
+    chosen = variants.get(groups)
+    if chosen is None:
+        # Every subset a journey can produce must have a variant. Reaching here
+        # means the data supports a combination nobody registered — refuse,
+        # rather than silently sending a message missing a figure.
+        raise TemplateNotFoundError(
+            f"no {channel} variant of {key!r} for the available fields "
+            f"{sorted(groups) or ['none']} — an approved template cannot vary"
+        )
+    return chosen
+
+
+def assert_fixed_parameters(template: Template, variables: dict) -> None:
+    """§5. A fixed-parameter template gets EXACTLY its parameters.
+
+    Not a superset and not a subset: an approved template is approved as a
+    parameter list, and a vendor rejects a message that does not match it.
+    Dispatch legitimately carries a superset — one builder feeds every channel
+    of a journey — so this is where the superset is narrowed and checked, and
+    where a mismatch becomes an error instead of a silently dropped figure.
+    """
+    if template.channel not in FIXED_PARAMETER_CHANNELS:
+        return
+    if template.optional_variables:
+        raise TemplateRenderError(
+            f"template {template.key!r} is on a fixed-parameter channel and still "
+            "has optional segments — an approved template cannot vary"
+        )
+    required = set(template.variables)
+    supplied = {
+        name for name, value in variables.items() if str(value or "").strip() or name in required
+    }
+    missing = sorted(required - supplied)
+    if missing:
+        raise TemplateRenderError(
+            f"template {template.key!r} is missing parameter(s): {', '.join(missing)}"
+        )
+
+
+def fixed_parameters(template: Template, variables: dict) -> tuple[str, ...]:
+    """The parameter values, in the template's declared order (DEMO-033).
+
+    Positional and complete — what a `{{1}}, {{2}}` template API is handed.
+    """
+    return tuple(str(variables.get(name, "")) for name in template.variables)
+
+
+def journey_family(key: str) -> set[str]:
+    """Every template key belonging to the same journey as `key` (DEMO-033).
+
+    A journey key plus its fixed-parameter variants — or, given a variant, the
+    journey and its siblings. One dispatch builder feeds the whole family, so
+    the family is the unit that decides which variables are legitimate.
+    """
+    for journey, variants in VARIANTS.items():
+        if key == journey or key in variants.values():
+            return {journey, *variants.values()}
+    return {key}
+
+
+def variables_for(key: str) -> set[str]:
+    """Every variable any template in this journey can display (DEMO-032).
+
+    Required and optional, across every channel, language AND variant. This is
+    the set a dispatch builder may legitimately supply, because one builder
+    feeds all of a journey's channels — `invoice_issued` supplies `period` for
+    push and `previous_balance` for the variant that shows a carried balance,
+    and the variant that shows neither is still fed by the same builder.
+    """
+    family = journey_family(key)
     names: set[str] = set()
     for template in TEMPLATES:
-        if template.key == key:
+        if template.key in family:
             names.update(template.variables)
             names.update(template.optional_variables)
     return names

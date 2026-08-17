@@ -54,6 +54,12 @@ def push_settings(monkeypatch):
     from platform_core.core.config import get_settings
 
     settings = get_settings()
+    # DEMO-031's mode gate refuses a real gateway call while `messaging_mode`
+    # is `test`, which is the default and the right default. These tests drive
+    # the REAL adapter against a mock transport, so they opt in out loud —
+    # exactly the way a sandbox deployment does. The gate itself is proven in
+    # tests/test_gateway_sandbox.py, which asserts the refusal.
+    monkeypatch.setattr(settings, "messaging_mode", "sandbox")
     original = (settings.push_api_url, settings.push_api_key)
     settings.push_api_url = "https://push.example/send"
     settings.push_api_key = "test-key-not-a-real-credential"

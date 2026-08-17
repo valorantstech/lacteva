@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.db import as_utc, utcnow
-from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.errors import ConflictError, NotFoundError, ValidationError
 from platform_core.core.metrics import (
     NOTIFICATION_PROVIDER_ERRORS,
     NOTIFICATION_PROVIDER_SECONDS,
@@ -51,9 +51,12 @@ from platform_core.modules.notification.providers import (
 from platform_core.modules.notification.templates import (
     TemplateNotFoundError,
     TemplateRenderError,
+    assert_fixed_parameters,
     catalog,
+    fixed_parameters,
     get_template,
     render,
+    select_template_key,
 )
 
 log = structlog.get_logger("notification")
@@ -265,12 +268,25 @@ class TemplateRegistryEntry(BaseModel):
     #: credential — a template name is not a secret, and an operator needs it
     #: to check an approval against a vendor console.
     provider_template: str | None = None
-    #: Whether this template COULD be sent as an approved WhatsApp template:
-    #: it needs at least one positional parameter and no optional segments,
-    #: because a template message with a varying parameter count is not a
-    #: template.
+    #: Whether the template's SHAPE could be approved: at least one positional
+    #: parameter and no optional segments, because a template message with a
+    #: varying parameter count is not a template.
     whatsapp_ready: bool = True
     whatsapp_blocker: str | None = None
+
+    #: DEMO-033. `NOT_CONFIGURED` | `PENDING` | `APPROVED` | `REJECTED`.
+    #:
+    #: NOT_CONFIGURED is the absence of a record, not a judgement: nothing has
+    #: been submitted and nothing is claimed. Lacteva never approves anything —
+    #: APPROVED means an external provider or regulator said so and an operator
+    #: recorded it.
+    approval_state: str = "NOT_CONFIGURED"
+    approval_provider: str | None = None
+    approval_note: str | None = None
+    #: READY only when the shape is valid, the language is supported, approval
+    #: is APPROVED and a provider mapping exists. Anything else lists why.
+    ready: bool = False
+    blockers: list[str] = []
 
 
 class TemplateRegistryView(BaseModel):
@@ -279,7 +295,38 @@ class TemplateRegistryView(BaseModel):
     total: int
     #: How many WhatsApp templates still have no approved vendor name.
     unmapped_whatsapp: int
+    #: How many WhatsApp templates are READY to be sent through a provider.
+    #: Zero on every deployment today, and honestly so.
+    ready_whatsapp: int = 0
     entries: list[TemplateRegistryEntry]
+
+
+class ApprovalCommand(BaseModel):
+    """What an operator records about an EXTERNAL decision (DEMO-033).
+
+    Note what it cannot say: nothing here approves anything. It records that a
+    provider or a regulator decided something, and who wrote it down.
+    """
+
+    template_key: str
+    channel: str
+    language: str
+    provider: str
+    #: `pending` | `approved` | `rejected`.
+    state: str
+    provider_template_id: str | None = None
+    note: str | None = None
+
+
+class ApprovalView(BaseModel):
+    template_key: str
+    channel: str
+    language: str
+    provider: str
+    state: str
+    provider_template_id: str | None = None
+    note: str | None = None
+    updated_at: datetime
 
 
 class TemplateView(BaseModel):
@@ -494,12 +541,24 @@ class NotificationService:
             if not recipient:
                 raise ProviderSendError("no recipient address on file")
             notification.recipient = recipient
-            template = get_template(
-                notification.template_key, notification.channel, notification.language
-            )
             variables = dict(notification.payload)
+            # DEMO-033. On a fixed-parameter channel the journey resolves to a
+            # VARIANT chosen from the data — `settlement_finalized` becomes
+            # `…_with_quantity` when a quantity is known and `…_base` when it
+            # is not. Selected here rather than at dispatch so a retry
+            # re-selects from the STORED payload and lands on the same variant
+            # months later.
+            #
+            # `name` is resolved first because it is one of the parameters, and
+            # a variant's parameter list must be complete before it is checked.
+            resolved_key = select_template_key(
+                notification.template_key, notification.channel, variables
+            )
+            template = get_template(resolved_key, notification.channel, notification.language)
             if "name" in template.variables and "name" not in variables:
                 variables["name"] = await self._recipient_name(notification)
+            # §5: exactly the approved parameter list, no more and no less.
+            assert_fixed_parameters(template, variables)
             # SEC-003 / F-04: two renders of the same template. The provider
             # gets the real secret; everything that is stored, shown or logged
             # gets the redacted one. Rendering twice rather than substituting
@@ -530,13 +589,8 @@ class NotificationService:
                         # template parameters rather than text. Derived from
                         # what the template already declares — the domain gains
                         # no new concept and no vendor appears anywhere here.
-                        parameters=tuple(
-                            str({**variables, **secrets_in_play}.get(name, ""))
-                            for name in template.variables
-                        ),
-                        vendor_template=vendor_template_for(
-                            notification.template_key, notification.channel
-                        ),
+                        parameters=fixed_parameters(template, {**variables, **secrets_in_play}),
+                        vendor_template=vendor_template_for(template.key, notification.channel),
                     )
                 )
         except PermanentSendError as exc:
@@ -906,8 +960,112 @@ class NotificationService:
             offset=offset,
         )
 
+    async def record_approval(
+        self, command: ApprovalCommand, *, actor_id: uuid.UUID, audit
+    ) -> ApprovalView:
+        """Record what an EXTERNAL approver decided (DEMO-033 §7, §9).
+
+        **Lacteva approves nothing.** This writes down that a provider or a
+        regulator said something, and who wrote it down. The distinction is not
+        pedantry: a state that the platform could set on its own would make
+        `APPROVED` mean "we believe this is fine", and the whole point of the
+        field is that somebody outside said so.
+
+        Audited with previous state, new state, actor and reason, through the
+        existing audit service — the same shape DEMO-030 used for a contact
+        repair.
+        """
+        from platform_core.modules.notification.models import (
+            TEMPLATE_APPROVAL_STATES,
+            NotificationTemplateApproval,
+        )
+        from platform_core.modules.notification.templates import TEMPLATES
+
+        state = command.state.strip().lower()
+        if state not in TEMPLATE_APPROVAL_STATES:
+            raise ValidationError(
+                f"unknown approval state {command.state!r} — "
+                f"expected one of {', '.join(TEMPLATE_APPROVAL_STATES)}"
+            )
+        # The template must exist, in that channel and that language. Recording
+        # an approval for something Lacteva cannot send is a note about nothing.
+        if not any(
+            template.key == command.template_key
+            and template.channel == command.channel
+            and template.language == command.language
+            for template in TEMPLATES
+        ):
+            raise NotFoundError(
+                f"no template {command.template_key!r} on channel "
+                f"{command.channel!r} for language {command.language!r}"
+            )
+
+        existing = await self._session.scalar(
+            select(NotificationTemplateApproval).where(
+                NotificationTemplateApproval.template_key == command.template_key,
+                NotificationTemplateApproval.channel == command.channel,
+                NotificationTemplateApproval.language == command.language,
+                NotificationTemplateApproval.provider == command.provider,
+            )
+        )
+        previous = existing.state if existing else "NOT_CONFIGURED"
+        if existing is None:
+            existing = NotificationTemplateApproval(
+                template_key=command.template_key,
+                channel=command.channel,
+                language=command.language,
+                provider=command.provider,
+            )
+            self._session.add(existing)
+        existing.state = state
+        existing.provider_template_id = command.provider_template_id
+        existing.note = (command.note or None) and command.note[:500]
+        existing.updated_by = actor_id
+        await self._session.flush()
+
+        await audit.record(
+            action="notification.template_approval_recorded",
+            resource_type="notification_template",
+            resource_id=f"{command.template_key}/{command.channel}/{command.language}",
+            actor_id=actor_id,
+            detail={
+                "from": previous,
+                "to": state,
+                "provider": command.provider,
+                "provider_template_id": command.provider_template_id,
+                **({"note": command.note[:200]} if command.note else {}),
+            },
+        )
+        return ApprovalView(
+            template_key=existing.template_key,
+            channel=existing.channel,
+            language=existing.language,
+            provider=existing.provider,
+            state=existing.state,
+            provider_template_id=existing.provider_template_id,
+            note=existing.note,
+            updated_at=existing.updated_at,
+        )
+
+    async def approvals(self) -> dict:
+        """Every recorded approval, keyed by template/channel/language."""
+        from platform_core.modules.notification.models import NotificationTemplateApproval
+
+        rows = (await self._session.scalars(select(NotificationTemplateApproval))).all()
+        return {(r.template_key, r.channel, r.language): r for r in rows}
+
+    async def registry_with_approvals(self) -> TemplateRegistryView:
+        """The registry, plus what an external approver has said (DEMO-033)."""
+        recorded = await self.approvals()
+        return NotificationService._registry(recorded)
+
     @staticmethod
     def registry() -> TemplateRegistryView:
+        """The registry with no approval records — the shape-only view."""
+        return NotificationService._registry({})
+
+    @staticmethod
+    def _registry(recorded: dict) -> TemplateRegistryView:
         """Every template Lacteva can send, and whether a provider knows it.
 
         **Read-only, and deliberately.** A template is code: reviewed, tested,
@@ -923,11 +1081,13 @@ class NotificationService:
         from platform_core.modules.notification.providers import vendor_template_for
         from platform_core.modules.notification.templates import (
             BUSINESS_PURPOSE_KEYS,
+            FIXED_PARAMETER_CHANNELS,
             catalog,
         )
 
         entries: list[TemplateRegistryEntry] = []
         unmapped = 0
+        ready_count = 0
         for template in catalog():
             mapped = vendor_template_for(template.key, template.channel)
             if template.channel == "whatsapp":
@@ -946,6 +1106,29 @@ class NotificationService:
             elif template.optional_variables:
                 blocker = "has optional segments, which a fixed-parameter template cannot carry"
 
+            approval = recorded.get((template.key, template.channel, template.language))
+            approval_state = approval.state.upper() if approval else "NOT_CONFIGURED"
+            # §11. READY is the conjunction, and every missing condition is
+            # named — "not ready" with no reason is a dead end for whoever has
+            # to fix it.
+            blockers: list[str] = []
+            if template.channel in FIXED_PARAMETER_CHANNELS:
+                if blocker:
+                    blockers.append(blocker)
+                if approval_state != "APPROVED":
+                    blockers.append(
+                        "approval pending"
+                        if approval_state == "PENDING"
+                        else "approval rejected"
+                        if approval_state == "REJECTED"
+                        else "not submitted for approval"
+                    )
+                if not mapped:
+                    blockers.append("provider template id missing")
+            ready = template.channel in FIXED_PARAMETER_CHANNELS and not blockers
+            if ready:
+                ready_count += 1
+
             entries.append(
                 TemplateRegistryEntry(
                     key=template.key,
@@ -963,10 +1146,18 @@ class NotificationService:
                     provider_template=mapped,
                     whatsapp_ready=blocker is None,
                     whatsapp_blocker=blocker,
+                    approval_state=approval_state,
+                    approval_provider=approval.provider if approval else None,
+                    approval_note=approval.note if approval else None,
+                    ready=ready,
+                    blockers=blockers,
                 )
             )
         return TemplateRegistryView(
-            total=len(entries), unmapped_whatsapp=unmapped, entries=entries
+            total=len(entries),
+            unmapped_whatsapp=unmapped,
+            ready_whatsapp=ready_count,
+            entries=entries,
         )
 
     @staticmethod

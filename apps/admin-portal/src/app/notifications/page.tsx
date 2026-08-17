@@ -1017,6 +1017,21 @@ function MessagingPosturePanel() {
  * The column that matters is the last one: an approved WhatsApp template has a
  * FIXED parameter count, and Lacteva's optional segments do not.
  */
+/**
+ * Channels whose provider requires a template registered in advance with a
+ * FIXED positional parameter list. Mirrors the backend's own list; SMS and
+ * email are absent because they render freely and always have.
+ */
+const FIXED_PARAMETER_CHANNELS = ["whatsapp"];
+
+/** Read as an operator reads it. Lacteva approves nothing — a provider does. */
+const APPROVAL_LABEL: Record<string, string> = {
+  NOT_CONFIGURED: "not submitted",
+  PENDING: "submitted, awaiting provider",
+  APPROVED: "approved by provider",
+  REJECTED: "rejected by provider",
+};
+
 function TemplateRegistryPanel() {
   const [registry, setRegistry] = useState<TemplateRegistry | null>(null);
   const [businessOnly, setBusinessOnly] = useState(true);
@@ -1046,6 +1061,9 @@ function TemplateRegistryPanel() {
               {registry.unmapped_whatsapp} WhatsApp not mapped to a provider
             </Badge>
           )}
+          <Badge variant={registry.ready_whatsapp > 0 ? "outline" : "secondary"}>
+            {registry.ready_whatsapp} WhatsApp ready to send
+          </Badge>
           <Button
             onClick={() => setBusinessOnly((v) => !v)}
             size="sm"
@@ -1063,9 +1081,11 @@ function TemplateRegistryPanel() {
                 <th className="py-1 pr-4 font-medium">Purpose</th>
                 <th className="py-1 pr-4 font-medium">Channel</th>
                 <th className="py-1 pr-4 font-medium">Lang</th>
-                <th className="py-1 pr-4 font-medium">Variables</th>
+                <th className="py-1 pr-4 font-medium">Parameters</th>
                 <th className="py-1 pr-4 font-medium">Status</th>
-                <th className="py-1 font-medium">Provider mapping</th>
+                <th className="py-1 pr-4 font-medium">Approval</th>
+                <th className="py-1 pr-4 font-medium">Provider mapping</th>
+                <th className="py-1 font-medium">Readiness</th>
               </tr>
             </thead>
             <tbody>
@@ -1081,20 +1101,59 @@ function TemplateRegistryPanel() {
                   <td className="py-2 pr-4">{entry.channel}</td>
                   <td className="py-2 pr-4">{entry.language}</td>
                   <td className="py-2 pr-4 font-mono text-xs">
-                    {entry.variables.length}
-                    {entry.optional_variables.length > 0 &&
-                      ` +${entry.optional_variables.length} optional`}
+                    {FIXED_PARAMETER_CHANNELS.includes(entry.channel) ? (
+                      // A fixed-parameter channel gets the positional list a
+                      // vendor console asks for, in the template's own order.
+                      <span title={entry.variables.join(", ")}>
+                        {entry.variables.length} fixed
+                        {entry.variables.length > 0 && (
+                          <span className="block text-muted-foreground">
+                            {entry.variables
+                              .map((v, i) => `{{${i + 1}}} ${v}`)
+                              .join(" ")}
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <>
+                        {entry.variables.length}
+                        {entry.optional_variables.length > 0 &&
+                          ` +${entry.optional_variables.length} optional`}
+                      </>
+                    )}
                   </td>
                   <td className="py-2 pr-4">
                     {entry.active ? `v${entry.version}` : "retired"}
                   </td>
-                  <td className="py-2">
+                  <td className="py-2 pr-4">
+                    {FIXED_PARAMETER_CHANNELS.includes(entry.channel) ? (
+                      <>
+                        {APPROVAL_LABEL[entry.approval_state]}
+                        {entry.approval_provider && (
+                          <span className="block text-xs text-muted-foreground">
+                            {entry.approval_provider}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="py-2 pr-4">
                     {entry.provider_mapping_status === "NOT_APPLICABLE"
                       ? "—"
                       : (entry.provider_template ?? "not configured")}
-                    {entry.channel === "whatsapp" && !entry.whatsapp_ready && (
-                      <span className="block text-xs text-destructive">
-                        cannot be an approved template: {entry.whatsapp_blocker}
+                  </td>
+                  <td className="py-2">
+                    {!FIXED_PARAMETER_CHANNELS.includes(entry.channel) ? (
+                      "—"
+                    ) : entry.ready ? (
+                      <Badge variant="outline">ready</Badge>
+                    ) : (
+                      // Every reason, not just the first: an operator who fixes
+                      // one blocker and finds another was told half the truth.
+                      <span className="text-xs text-destructive">
+                        not ready: {entry.blockers.join("; ")}
                       </span>
                     )}
                   </td>

@@ -219,3 +219,63 @@ class NotificationReceiptEvent(Base, IdMixin):
     #: tell "acted on" from "recognised and correctly ignored".
     outcome: Mapped[str] = mapped_column(String(40))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+#: What Lacteva knows about a template's standing with an EXTERNAL approver
+#: (DEMO-033 §7).
+#:
+#: The absence of a row is `NOT_CONFIGURED` — nothing has been submitted and
+#: nothing is claimed. That is why no migration backfills anything: every
+#: template shipped before this milestone stays NOT_CONFIGURED until somebody
+#: records a real external outcome.
+#:
+#: **Lacteva does not approve anything.** A row records what a provider or a
+#: regulator decided, entered by an authorized operator. `APPROVED` means "we
+#: were told it was approved", never "we checked it and it looks fine".
+TEMPLATE_APPROVAL_STATES = ("pending", "approved", "rejected")
+
+
+class NotificationTemplateApproval(Base, IdMixin):
+    """One template's approval standing with one provider (DEMO-033).
+
+    **Platform-global, deliberately.** The messaging account a template is
+    approved against is LACTEVA's, not a dairy's — see `core/rls.py`'s
+    PLATFORM_GLOBAL entry. Scoping this per tenant would mean five dairies each
+    separately tracking the same external decision about the same account, and
+    four of them would be wrong.
+
+    Keyed by (template, channel, language, provider) because approval is that
+    specific: an English template being approved says nothing about the Hindi
+    one, and an approval with one provider says nothing about another.
+    """
+
+    __tablename__ = "notification_template_approval"
+    __table_args__ = (
+        UniqueConstraint(
+            "template_key",
+            "channel",
+            "language",
+            "provider",
+            name="uq_notification_template_approval",
+        ),
+        Index("ix_notification_template_approval_key", "template_key", "channel"),
+    )
+
+    template_key: Mapped[str] = mapped_column(String(80))
+    channel: Mapped[str] = mapped_column(String(10))
+    language: Mapped[str] = mapped_column(String(8))
+    #: Whose approval this is. Not a credential and not a secret — the name of
+    #: a provider, which an operator needs in order to read the row.
+    provider: Mapped[str] = mapped_column(String(40))
+    state: Mapped[str] = mapped_column(String(12), default="pending", index=True)
+    #: The provider's own id for the approved template, when it issues one.
+    #: Configuration-shaped, never a credential.
+    provider_template_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    #: What the provider said, verbatim and short — a rejection reason is the
+    #: thing an operator has to act on.
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

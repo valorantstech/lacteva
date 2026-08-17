@@ -49,6 +49,12 @@ def smtp_settings(monkeypatch):
     monkeypatch.setattr(settings, "smtp_password", "not-a-real-password")
     monkeypatch.setattr(settings, "smtp_from_address", "receipts@lacteva.example")
     monkeypatch.setattr(settings, "smtp_security", "starttls")
+    # DEMO-031's mode gate refuses a real gateway call while `messaging_mode`
+    # is `test`, which is the default and the right default. These tests drive
+    # the REAL adapter against a mock transport, so they opt in out loud —
+    # exactly the way a sandbox deployment does. The gate itself is proven in
+    # tests/test_gateway_sandbox.py, which asserts the refusal.
+    monkeypatch.setattr(settings, "messaging_mode", "sandbox")
     return settings
 
 
@@ -182,6 +188,9 @@ async def test_an_unconfigured_host_fails_permanently_rather_than_pretending(mon
     consume a retry budget per supplier."""
     from platform_core.core.config import get_settings
 
+    # Opt past DEMO-031's mode gate, or this asserts the gate rather than the
+    # missing host — the two refusals are both permanent and look alike.
+    monkeypatch.setattr(get_settings(), "messaging_mode", "sandbox")
     monkeypatch.setattr(get_settings(), "smtp_host", "")
     with pytest.raises(PermanentSendError, match="SMTP_HOST"):
         await SmtpEmailProvider().send(_message())

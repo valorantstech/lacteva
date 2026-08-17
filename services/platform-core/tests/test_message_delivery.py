@@ -289,10 +289,17 @@ def test_the_settlement_slip_exists_in_every_supported_language(language, marker
 
 @pytest.mark.parametrize("language", ["en", "hi", "ar"])
 def test_the_invoice_message_exists_in_every_supported_language(language):
-    from platform_core.modules.notification.templates import get_template, render
+    from platform_core.modules.notification.templates import (
+        get_template,
+        render,
+        select_template_key,
+    )
 
     for channel in ("sms", "whatsapp"):
-        template = get_template("invoice_issued", channel, language)
+        # DEMO-033: on WhatsApp the journey resolves to a fixed-parameter
+        # variant, so ask for it the way dispatch does.
+        resolved = select_template_key("invoice_issued", channel, {})
+        template = get_template(resolved, channel, language)
         message = render(
             template,
             {

@@ -300,6 +300,7 @@ LACTEVA_TEST_POSTGRES_URL="$(app_url_for "${TESTS_DB}")" \
   tests/test_contact_repair_postgres.py \
   tests/test_gateway_sandbox_postgres.py \
   tests/test_template_registry_postgres.py \
+  tests/test_template_variants_postgres.py \
   -v --no-header -rs --junitxml="${JUNIT}" 2>&1 | tee "${RLS_LOG}" \
   || fail "PostgreSQL-only tests failed"
 

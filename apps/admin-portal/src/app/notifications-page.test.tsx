@@ -61,11 +61,13 @@ function stubApi(messages: api.Notification[] = [MESSAGE]) {
   } as never);
   vi.spyOn(api, "listNotificationTemplates").mockResolvedValue([] as never);
   vi.spyOn(api, "getTemplateRegistry").mockResolvedValue({
-    total: 41,
+    total: 57,
     unmapped_whatsapp: 8,
+    ready_whatsapp: 1,
     entries: [
       {
-        key: "settlement_finalized",
+        // DEMO-033: on WhatsApp the journey is a fixed-parameter variant.
+        key: "settlement_finalized_base",
         purpose:
           "Tells a farmer their settlement is final and what they are owed",
         channel: "whatsapp",
@@ -73,15 +75,43 @@ function stubApi(messages: api.Notification[] = [MESSAGE]) {
         title: "Settlement {number} ready",
         body: "Hello {name}…",
         variables: ["number", "name"],
-        optional_variables: ["quantity", "quantity_unit"],
+        optional_variables: [],
         version: 1,
         active: true,
         business: true,
         provider_mapping_status: "NOT_CONFIGURED",
         provider_template: null,
-        whatsapp_ready: false,
-        whatsapp_blocker:
-          "has optional segments, which a fixed-parameter template cannot carry",
+        whatsapp_ready: true,
+        whatsapp_blocker: null,
+        approval_state: "PENDING",
+        approval_provider: "acme-bsp",
+        approval_note: null,
+        ready: false,
+        blockers: ["approval pending", "provider template id missing"],
+      },
+      {
+        // Approved AND mapped: the only shape that is ready to send.
+        key: "settlement_finalized_with_quantity",
+        purpose:
+          "Tells a farmer their settlement is final, what they are owed and how much milk it covers",
+        channel: "whatsapp",
+        language: "hi",
+        title: "…",
+        body: "…",
+        variables: ["number", "name", "quantity", "quantity_unit"],
+        optional_variables: [],
+        version: 1,
+        active: true,
+        business: true,
+        provider_mapping_status: "CONFIGURED",
+        provider_template: "lacteva_settlement_qty_v1",
+        whatsapp_ready: true,
+        whatsapp_blocker: null,
+        approval_state: "APPROVED",
+        approval_provider: "acme-bsp",
+        approval_note: null,
+        ready: true,
+        blockers: [],
       },
       {
         key: "password_reset",
@@ -99,6 +129,11 @@ function stubApi(messages: api.Notification[] = [MESSAGE]) {
         provider_template: null,
         whatsapp_ready: true,
         whatsapp_blocker: null,
+        approval_state: "NOT_CONFIGURED",
+        approval_provider: null,
+        approval_note: null,
+        ready: false,
+        blockers: [],
       },
     ],
   } as never);
@@ -387,9 +422,11 @@ describe("the template registry panel", () => {
     render(<NotificationsPage />);
 
     expect(await screen.findByText("Message templates")).toBeInTheDocument();
+    // Each variant carries its own purpose — that is how an operator tells
+    // two WhatsApp templates for one journey apart.
     expect(
-      screen.getByText(/Tells a farmer their settlement is final/),
-    ).toBeInTheDocument();
+      screen.getAllByText(/Tells a farmer their settlement is final/),
+    ).toHaveLength(2);
   });
 
   it("says how many WhatsApp templates no provider knows", async () => {
@@ -406,16 +443,80 @@ describe("the template registry panel", () => {
     );
   });
 
-  it("says plainly when a template cannot be an approved WhatsApp template", async () => {
-    // The finding: an approved template has a FIXED parameter count and
-    // Lacteva's optional segments do not.
+  it("no longer reports a WhatsApp template that cannot be a template", async () => {
+    // DEMO-032 found it; DEMO-033 fixed it by giving WhatsApp explicit
+    // fixed-parameter variants. The guarantee is preserved and inverted: the
+    // panel should have nothing of the sort left to say.
     stubApi();
     render(<NotificationsPage />);
 
+    await screen.findByText("Message templates");
+    expect(screen.queryByText(/cannot be an approved template/)).toBeNull();
+    expect(screen.queryByText(/optional segments/)).toBeNull();
+  });
+
+  it("shows the fixed parameter structure a vendor console asks for", async () => {
+    // §10. Position and name, in the template's own order — an operator
+    // registering the template with a provider types exactly this.
+    stubApi();
+    render(<NotificationsPage />);
+
+    await screen.findByText("Message templates");
+    expect(screen.getByText("{{1}} number {{2}} name")).toBeInTheDocument();
     expect(
-      await screen.findByText(/cannot be an approved template/),
+      screen.getByText(
+        "{{1}} number {{2}} name {{3}} quantity {{4}} quantity_unit",
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/optional segments/)).toBeInTheDocument();
+  });
+
+  it("attributes approval to the provider, never to Lacteva", async () => {
+    // §7. Lacteva records what a provider decided. It does not decide.
+    stubApi();
+    render(<NotificationsPage />);
+
+    await screen.findByText("Message templates");
+    expect(
+      screen.getByText("submitted, awaiting provider"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("approved by provider")).toBeInTheDocument();
+    const text = document.body.textContent ?? "";
+    expect(text).not.toContain("approved by Lacteva");
+  });
+
+  it("lists every reason a template is not ready, not just the first", async () => {
+    // §11. An operator who fixes one blocker and finds another was told half
+    // the truth.
+    stubApi();
+    render(<NotificationsPage />);
+
+    await screen.findByText("Message templates");
+    expect(
+      screen.getByText(
+        "not ready: approval pending; provider template id missing",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("reports readiness only where approval and mapping both exist", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+
+    expect(await screen.findByText("1 WhatsApp ready to send")).toBeVisible();
+    expect(screen.getByText("ready")).toBeInTheDocument();
+  });
+
+  it("says nothing about approval for SMS and email", async () => {
+    // §6. Flexible channels are unchanged; an approval column would imply a
+    // lifecycle they do not have.
+    stubApi();
+    render(<NotificationsPage />);
+
+    await screen.findByText("Message templates");
+    fireEvent.click(screen.getByRole("button", { name: "Show all" }));
+    const row = (await screen.findByText("password_reset")).closest("tr");
+    expect(row?.textContent).not.toContain("provider");
+    expect(row?.textContent).not.toContain("not ready");
   });
 
   it("filters to business messages, and can show the rest", async () => {

@@ -138,11 +138,20 @@ def test_a_business_message_offers_the_same_languages_on_every_channel(key):
 @pytest.mark.parametrize("key", BUSINESS_TEMPLATES)
 @pytest.mark.parametrize("language", ["en", "hi", "ar", "sw"])
 def test_every_business_message_renders_in_every_language(key, language):
-    """Rendered, not merely present — the catalog-without-callers defect."""
+    """Rendered, not merely present — the catalog-without-callers defect.
+
+    Resolved the way DISPATCH resolves it (DEMO-033): on WhatsApp a journey is
+    a fixed-parameter VARIANT chosen from the data, so asking for the journey
+    key directly would now legitimately find nothing. The journey still exists
+    in every language on every channel; its WhatsApp key is a variant's.
+    """
+    from platform_core.modules.notification.templates import select_template_key
+
     for channel in ("sms", "whatsapp", "email"):
-        template = get_template(key, channel, language)
+        resolved = select_template_key(key, channel, {})
+        template = get_template(resolved, channel, language)
         assert template.language == language, (
-            f"{key}/{channel} fell back to {template.language} for {language}"
+            f"{resolved}/{channel} fell back to {template.language} for {language}"
         )
         variables = {name: "X" for name in template.variables}
         message = render(template, variables)

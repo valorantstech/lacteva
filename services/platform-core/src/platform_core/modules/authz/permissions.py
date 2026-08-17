@@ -29,6 +29,11 @@ PERMISSIONS: dict[str, str] = {
     # payment is a thing only Lacteva does. Collapsing them would have given
     # every tenant administrator the operator's override.
     "organization.subscription.pay": "Pay for this organization's subscription",
+    # DEMO-033. Recording what an EXTERNAL provider or regulator decided about
+    # a message template. Platform-admin only, and deliberately: the messaging
+    # account is Lacteva's, so a dairy recording an approval would be asserting
+    # something about somebody else's account.
+    "notification.template.approve": "Record a template's external approval outcome",
     "organization.structure.manage": "Create and administer workspaces and branches",
     "organization.member.read": "Read members and invitations",
     "organization.member.manage": "Invite and administer members",

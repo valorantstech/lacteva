@@ -56,6 +56,15 @@ BYPASS_SETTING = "lacteva.bypass_rls"
 # be written down where the next reviewer will look.
 
 PLATFORM_GLOBAL: dict[str, str] = {
+    "notification_template_approval": (
+        "DEMO-033. A message template's standing with an external approver — a "
+        "messaging provider or a regulator. The account it is approved against "
+        "is LACTEVA's, not a dairy's, so the decision is one platform fact "
+        "rather than one per tenant; scoping it per tenant would have five "
+        "dairies separately tracking the same external outcome and four of "
+        "them wrong. It holds no tenant data, no recipient and no credential, "
+        "and only a platform administrator may change it."
+    ),
     "consumer_cursor": (
         "One row per consumer, not per tenant. The consumer loop is "
         "definitionally cross-tenant and reads this under an audited bypass."

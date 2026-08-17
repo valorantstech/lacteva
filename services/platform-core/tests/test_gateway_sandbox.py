@@ -290,12 +290,16 @@ def test_the_parameters_are_the_templates_own_declared_order():
     order the template already declares."""
     from platform_core.modules.notification.templates import get_template
 
-    template = get_template("settlement_finalized", "whatsapp", "en")
+    # DEMO-033: on WhatsApp the journey is a fixed-parameter VARIANT, so the
+    # old key no longer resolves — which is the point. What DEMO-031 asserted
+    # (the order is the template's own) is unchanged and now stronger, because
+    # the variant has NO optional segments at all.
+    template = get_template("settlement_finalized_with_quantity", "whatsapp", "en")
     assert template.variables[0] == "number"
     assert "name" in template.variables
-    # Optional segments are NOT positional parameters — a template message with
-    # a variable number of parameters is not a template.
-    assert set(template.optional_variables).isdisjoint(template.variables)
+    assert template.optional_variables == (), (
+        "a WhatsApp template with a varying parameter count is not a template"
+    )
 
 
 async def test_dispatch_carries_the_parameters_to_the_boundary(client, provider_guard, monkeypatch):  # noqa: F811

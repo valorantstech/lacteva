@@ -145,11 +145,16 @@ async def test_a_channel_mismatch_is_rejected(factory):
 
 
 async def test_whatsapp_parameters_are_positional_and_stable(factory):
-    """§7. `{{1}}, {{2}}` is the template's own declared order."""
+    """§7. `{{1}}, {{2}}` is the template's own declared order.
+
+    DEMO-033: on WhatsApp the journey is a fixed-parameter VARIANT, so the
+    journey key no longer resolves there — which is the point.
+    """
     from platform_core.modules.notification.templates import get_template
 
-    first = get_template("settlement_finalized", "whatsapp", "en").variables
-    second = get_template("settlement_finalized", "whatsapp", "en").variables
+    key = "settlement_finalized_with_quantity"
+    first = get_template(key, "whatsapp", "en").variables
+    second = get_template(key, "whatsapp", "en").variables
     assert first == second
     assert first[0] == "number"
     assert len(first) == len(set(first)), "a duplicated positional parameter"
@@ -159,7 +164,8 @@ async def test_whatsapp_parameters_are_positional_and_stable(factory):
 async def test_language_selection_does_not_fall_back_silently(factory, language):
     from platform_core.modules.notification.templates import get_template
 
-    template = get_template("settlement_finalized", "whatsapp", language)
+    # DEMO-033: ask for a variant, the way dispatch resolves it.
+    template = get_template("settlement_finalized_with_quantity", "whatsapp", language)
     assert template.language == language, "a language silently fell back to English"
 
 
@@ -180,15 +186,16 @@ async def test_a_configured_mapping_is_reported(factory, monkeypatch):
     from platform_core.core.config import get_settings
     from platform_core.modules.notification.service import NotificationService
 
+    # DEMO-033: mapping is per VARIANT — each is a separate template a
+    # vendor approves separately.
+    key = "settlement_finalized_with_quantity"
     monkeypatch.setattr(
         get_settings(),
         "notification_vendor_templates",
-        {"settlement_finalized.whatsapp": "lacteva_settlement_v1"},
+        {f"{key}.whatsapp": "lacteva_settlement_v1"},
     )
     registry = NotificationService.registry()
-    mapped = [
-        e for e in registry.entries if e.key == "settlement_finalized" and e.channel == "whatsapp"
-    ]
+    mapped = [e for e in registry.entries if e.key == key and e.channel == "whatsapp"]
     assert mapped and all(e.provider_template == "lacteva_settlement_v1" for e in mapped)
 
 

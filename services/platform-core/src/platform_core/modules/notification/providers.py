@@ -19,7 +19,7 @@ import uuid
 from dataclasses import dataclass, field
 from email.message import EmailMessage
 from email.utils import formataddr
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 import structlog
 
@@ -368,7 +368,7 @@ class SandboxGatewayProvider:
 
     #: Last digit of the recipient → what the "gateway" does. Deterministic so
     #: a test can address an outcome without patching anything.
-    _OUTCOMES = {"7": "temporary", "8": "permanent"}
+    _OUTCOMES: ClassVar[dict[str, str]] = {"7": "temporary", "8": "permanent"}
 
     def __init__(self, channel: str = "sms") -> None:
         self.name = f"sandbox-{channel}"
