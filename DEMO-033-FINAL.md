@@ -404,7 +404,18 @@ something else is not a safety.
 `fixed_parameters` now refuses a missing variable itself, mutation-checked:
 removing the guard fails
 `test_the_parameter_list_refuses_a_gap_rather_than_blanking_it` with a raw
-`KeyError`. Shipped in the follow-up deploy recorded below.
+`KeyError`.
+
+**Shipped and verified live.** `main-7160918` deployed through the same path,
+smoke test passed, and the deployed code now answers:
+
+```
+complete list ok: True
+gap refused: template 'settlement_finalized_with_quantity' cannot build a
+             fixed parameter list: missing …
+```
+
+Financial counts and sums re-checked after the second deploy — identical again.
 
 **This is the fourth defect this milestone found by executing rather than
 reading**, and the only one of the four that was DEMO-033's own.
