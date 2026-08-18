@@ -44,6 +44,7 @@ import {
   KeyRound,
   Landmark,
   Menu,
+  Milestone,
   Receipt,
   RefreshCw,
   ScrollText,
@@ -272,6 +273,16 @@ const PLATFORM: Entry[] = [
     permission: "organization.read",
     icon: Globe,
   },
+  // P0-PRODUCT-VISIBILITY-001. An honest, non-interactive page that keeps
+  // "available today" and "on the roadmap" visibly separate. It needs no
+  // permission — knowing what is coming is not a privileged act — so it uses
+  // the same always-visible sentinel as the dashboard.
+  {
+    href: "/roadmap",
+    labelKey: "nav.roadmap",
+    permission: "*roadmap",
+    icon: Milestone,
+  },
 ];
 
 const GROUPS: { titleKey: string; entries: Entry[] }[] = [
@@ -282,9 +293,12 @@ const GROUPS: { titleKey: string; entries: Entry[] }[] = [
   { titleKey: "nav.platform", entries: PLATFORM },
 ];
 
-/** The dashboard needs a session but no particular permission. */
+/**
+ * The dashboard and the roadmap need a session but no particular permission —
+ * a `*`-prefixed sentinel marks an entry every signed-in person may see.
+ */
 const visibleTo = (session: Session | null, entry: Entry) =>
-  entry.permission === "*dashboard" ? true : can(session, entry.permission);
+  entry.permission.startsWith("*") ? true : can(session, entry.permission);
 
 /**
  * The page the current path belongs to, if the nav knows it (P0-UX-001).
