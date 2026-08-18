@@ -674,7 +674,7 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                     leading: StatusChip(status: detail.center.status),
                     title: Text(detail.center.code),
                     subtitle: Text(
-                      '${detail.center.status} · ${detail.center.timezone}',
+                      '${detail.center.status} · ${detail.center.timezone ?? 'org timezone'}',
                     ),
                   ),
                 ),

@@ -35,6 +35,10 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   http: ^1.6.0
+  # P0-PILOT-004: the offline queue file needs the app's real documents
+  # directory — a relative path lands in '/' on Android (read-only) and
+  # crashed every offline write on the first physical handset.
+  path_provider: ^2.1.4
   qr_flutter: ^4.1.0
 
 dev_dependencies:

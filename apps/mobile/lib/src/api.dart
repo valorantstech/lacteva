@@ -64,16 +64,30 @@ class ApiClient {
       String detail = 'Request failed (${response.statusCode})';
       Map<String, dynamic>? extra;
       try {
-        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        // bodyBytes + explicit UTF-8: `response.body` falls back to
+        // Latin-1 when the server omits a charset, which turned an em-dash
+        // into mojibake on the first physical handset — and would do the
+        // same to every Hindi name the platform serves (P0-PILOT-004).
+        final decoded =
+            jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
         detail = (decoded['detail'] ?? decoded['title'] ?? detail).toString();
-        if (decoded['extra'] is Map<String, dynamic>) {
-          extra = decoded['extra'] as Map<String, dynamic>;
+        final rawExtra = decoded['extra'];
+        if (rawExtra is Map<String, dynamic>) {
+          extra = rawExtra;
+        } else if (rawExtra is String && rawExtra.isNotEmpty) {
+          // The platform localizes `detail` and often carries the SPECIFIC
+          // reason as a plain string in `extra` — "supplier is not assigned
+          // to this collection center". An operator can act on that; they
+          // cannot act on "The resource already exists." Found on the first
+          // physical handset (P0-PILOT-004), where the generic sentence was
+          // all the capture wizard could show.
+          detail = rawExtra;
         }
       } catch (_) {}
       throw ApiException(response.statusCode, detail, extra: extra);
     }
-    if (response.body.isEmpty) return null;
-    return jsonDecode(response.body);
+    if (response.bodyBytes.isEmpty) return null;
+    return jsonDecode(utf8.decode(response.bodyBytes));
   }
 
   Future<void> login(String email, String password, {String? tenantId}) async {
@@ -950,7 +964,12 @@ class CenterSummary {
     name: json['name'] as String,
     code: json['code'] as String,
     status: json['status'] as String,
-    timezone: json['timezone'] as String,
+    // P0-PILOT-004: nullable BY DESIGN (DEMO-014 timezone hierarchy) — a
+    // centre without its own timezone inherits the organization's, and the
+    // platform sends null. Casting it non-null crashed the centres list on
+    // the first real handset against the India org — found on glass, not in
+    // any suite, because every fixture obligingly set a timezone.
+    timezone: json['timezone'] as String?,
   );
 
   final String id;
@@ -958,7 +977,7 @@ class CenterSummary {
   final String name;
   final String code;
   final String status;
-  final String timezone;
+  final String? timezone;
 }
 
 class CenterPage {

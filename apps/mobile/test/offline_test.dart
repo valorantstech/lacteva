@@ -139,6 +139,18 @@ Future<Map<String, dynamic>> _collectOffline(OfflineApiClient client) async {
 }
 
 void main() {
+  test('offline, the session lookup answers empty so entry can queue (P0-PILOT-004)', () async {
+    final client = OfflineApiClient(
+      queue: SyncQueue(MemoryOfflineStore()),
+      deviceId: 'test-device',
+      forceOffline: true,
+    );
+    expect(await client.listOpenSessions('center-1'), isEmpty);
+    final session = await client.openCollectionSession('center-1');
+    expect(session['offline'], isTrue);
+    expect(client.pendingCount, 1);
+  });
+
   // --- collecting with no network -----------------------------------------
 
   test('a full collection can be captured with no connectivity', () async {

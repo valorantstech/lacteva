@@ -135,6 +135,77 @@ async def test_offline_session_creation_with_a_local_id(client):
     assert any(s["id"] == session_result["server_id"] for s in sessions["items"])
 
 
+async def test_an_offline_session_converges_onto_the_centres_open_one(client):
+    """P0-PILOT-004, found in a real airplane-mode drill on the first physical
+    handset: a device that cannot SEE the centre's open session opens its own
+    local one. Refusing that replay stranded the WHOLE offline capture behind
+    an unmappable local id — a morning of collections in "conflict" because
+    yesterday's session was still open. The operator's intent is "an open
+    session at this centre"; the existing one IS the answer, and every queued
+    step lands on it."""
+    headers, center, _supplier, session, qr = await _env(client)
+    # The centre's session stays OPEN — the exact state that stranded the
+    # handset. The device, blind to it, queued its own open_session.
+    ops = [
+        _op(
+            "open_session",
+            seq=0,
+            reference="local-session-dark",
+            payload={"center_id": center["id"], "label": "mobile-offline"},
+        ),
+        *_offline_collection("local-session-dark", "local-tx-dark", supplier_qr=qr),
+    ]
+    result = await _push(client, headers, ops)
+    assert result["applied"] == 8, result
+    assert result["conflicts"] == 0 and result["failed"] == 0
+
+    # The local session id mapped to the centre's EXISTING open session —
+    # no second session was created.
+    session_result = next(r for r in result["results"] if r["kind"] == "open_session")
+    assert session_result["server_id"] == session["id"]
+    sessions = (await client.get("/v1/collection-sessions", headers=headers)).json()
+    open_here = [
+        s for s in sessions["items"] if s["center_id"] == center["id"] and s["status"] == "open"
+    ]
+    assert len(open_here) == 1
+
+    # And the collection itself landed intact on that session.
+    page = (await client.get("/v1/milk-transactions", headers=headers)).json()
+    tx = page["items"][0]
+    assert tx["state"] == "COMPLETED"
+    assert tx["session_id"] == session["id"]
+
+
+async def test_a_genuinely_refused_session_still_conflicts(client):
+    """The convergence must not swallow real refusals: an INACTIVE centre has
+    no open session to converge onto, and the refusal stands."""
+    headers, center, _supplier, session, _qr = await _env(client)
+    assert (
+        await client.post(f"/v1/collection-sessions/{session['id']}/close", headers=headers)
+    ).status_code == 200
+    r = await client.post(
+        f"/v1/collection-centers/{center['id']}/status",
+        json={"status": "inactive"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+
+    result = await _push(
+        client,
+        headers,
+        [
+            _op(
+                "open_session",
+                seq=0,
+                reference="local-session-x",
+                payload={"center_id": center["id"], "label": "mobile-offline"},
+            )
+        ],
+    )
+    assert result["applied"] == 0
+    assert result["conflicts"] == 1
+
+
 async def test_business_rules_are_identical_offline(client):
     """The state machine is not relaxed for a device: skipping a step fails
     offline exactly as it would online."""

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 
 import 'src/centers.dart';
@@ -18,8 +19,22 @@ const apiUrl = String.fromEnvironment(
   defaultValue: 'http://localhost:8000',
 );
 
-void main() {
-  runApp(const LactevaApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // P0-PILOT-004, found on the first physical handset: the queue file was a
+  // RELATIVE path, which on Android resolves against '/' — a read-only
+  // filesystem — so every offline write crashed and the "durable queue"
+  // had never once persisted on a real device. The app's documents
+  // directory is the writable, restart-surviving home the comment below
+  // always promised.
+  String? queuePath;
+  try {
+    final dir = await getApplicationDocumentsDirectory();
+    queuePath = '${dir.path}/lacteva_sync_queue.json';
+  } catch (_) {
+    queuePath = null; // fall through to the in-memory stand-in
+  }
+  runApp(LactevaApp(queuePath: queuePath));
 }
 
 /// The app's single offline-capable client (OFF-001).
@@ -28,15 +43,26 @@ void main() {
 /// reboot, and crash. `MemoryOfflineStore` stands in when no writable
 /// directory is available — a queue that forgets still beats an app that
 /// cannot collect milk.
-OfflineApiClient buildClient({OfflineStore? store, String? deviceId}) {
+OfflineApiClient buildClient({
+  OfflineStore? store,
+  String? deviceId,
+  String? queuePath,
+}) {
   return OfflineApiClient(
-    queue: SyncQueue(store ?? FileOfflineStore('lacteva_sync_queue.json')),
+    queue: SyncQueue(
+      store ??
+          (queuePath != null
+              ? FileOfflineStore(queuePath)
+              : MemoryOfflineStore()),
+    ),
     deviceId: deviceId ?? 'mobile-device',
   );
 }
 
 class LactevaApp extends StatelessWidget {
-  const LactevaApp({super.key});
+  const LactevaApp({super.key, this.queuePath});
+
+  final String? queuePath;
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +72,7 @@ class LactevaApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1B5E20)),
         useMaterial3: true,
       ),
-      home: LoginScreen(client: buildClient()),
+      home: LoginScreen(client: buildClient(queuePath: queuePath)),
     );
   }
 }

@@ -63,6 +63,27 @@ class OfflineApiClient extends ApiClient {
   // --- intercepted collection calls ---------------------------------------
 
   @override
+  Future<List<Map<String, dynamic>>> listOpenSessions(String centerId) async {
+    // P0-PILOT-004, found in a real airplane-mode drill: this lookup sits in
+    // FRONT of `openCollectionSession`, whose offline branch was built for
+    // exactly this moment — but the lookup itself was a raw GET, threw a
+    // transport exception the caller's `on ApiException` never caught, and
+    // the operator's tap did nothing at all. Offline, the honest answer is
+    // "none that we know of": the caller then opens a session through the
+    // queue, which is the designed offline entry.
+    if (isOnline) {
+      try {
+        return await super.listOpenSessions(centerId);
+      } on ApiException {
+        rethrow; // the platform answered; that answer stands
+      } catch (_) {
+        _believedOnline = false;
+      }
+    }
+    return const [];
+  }
+
+  @override
   Future<Map<String, dynamic>> openCollectionSession(String centerId) async {
     if (isOnline) {
       try {

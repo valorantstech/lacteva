@@ -41,6 +41,7 @@ from platform_core.core.metrics import (
     SYNC_OPERATIONS,
 )
 from platform_core.core.tenancy import require_current_tenant
+from platform_core.modules.milk_collection.models import CollectionSession
 from platform_core.modules.milk_collection.service import (
     IdentifySupplierCommand,
     MilkCollectionService,
@@ -338,11 +339,33 @@ class SyncService:
         service = self._collection
         match op.kind:
             case "open_session":
-                return await service.open_session(
-                    uuid.UUID(str(payload["center_id"])),
-                    payload.get("label", "mobile-offline"),
-                    actor_id=actor_id,
-                )
+                center_id = uuid.UUID(str(payload["center_id"]))
+                try:
+                    return await service.open_session(
+                        center_id,
+                        payload.get("label", "mobile-offline"),
+                        actor_id=actor_id,
+                    )
+                except ConflictError:
+                    # P0-PILOT-004, found in a real airplane-mode drill on the
+                    # first physical handset: a device that could not SEE the
+                    # centre's open session opened its own local one. Refusing
+                    # the replay stranded the entire offline capture behind an
+                    # unmappable local session id — a whole morning of
+                    # collections in "conflict" because yesterday's session was
+                    # still open. The operator's intent is "an open session at
+                    # this centre"; if one exists, it IS the answer, and every
+                    # queued step lands on it. Any other conflict (inactive
+                    # centre, NOT_READY) still refuses.
+                    existing = await self._session.scalar(
+                        select(CollectionSession).where(
+                            CollectionSession.center_id == center_id,
+                            CollectionSession.status == "open",
+                        )
+                    )
+                    if existing is not None:
+                        return existing
+                    raise
             case "close_session":
                 return await service.close_session(target, actor_id=actor_id)
             case "create_transaction":
