@@ -3,6 +3,7 @@
 import uuid
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, or_, select
@@ -71,6 +72,19 @@ class CreateCustomerCommand(BaseModel):
     @classmethod
     def _upper(cls, v: str | None) -> str | None:
         return v.upper() if v else v
+
+
+class CustomerImportRowResult(BaseModel):
+    row: int
+    status: str  # created | error
+    customer_id: uuid.UUID | None = None
+    code: str | None = None
+    error: str | None = None
+
+
+#: Same ceiling as the supplier import: a pilot's outlet list is tens of rows,
+#: and anything past this belongs in batches, not one request.
+MAX_IMPORT_ROWS = 500
 
 
 class UpdateCustomerCommand(BaseModel):
@@ -288,6 +302,36 @@ class CustomerService:
             detail={"code": customer.code, "name": customer.name},
         )
         return customer
+
+    async def import_rows(
+        self, rows: list[dict[str, Any]], *, actor_id: uuid.UUID
+    ) -> list[CustomerImportRowResult]:
+        """P0-PILOT-002: the outlet list, loaded the way the farmer list is.
+
+        Rows are validated individually so one bad row cannot fail the batch —
+        the same contract as the supplier import. A row may carry an inline
+        `plan`, so an outlet arrives with its standing order in one line.
+        Every created customer goes through `create()`, which numbers, prices
+        and audits it exactly as a hand-entered one.
+        """
+        if len(rows) > MAX_IMPORT_ROWS:
+            raise ConflictError(f"import limited to {MAX_IMPORT_ROWS} rows")
+        results: list[CustomerImportRowResult] = []
+        for index, raw in enumerate(rows):
+            try:
+                cmd = CreateCustomerCommand(**raw)
+                customer = await self.create(cmd, actor_id=actor_id)
+                results.append(
+                    CustomerImportRowResult(
+                        row=index,
+                        status="created",
+                        customer_id=customer.id,
+                        code=customer.code,
+                    )
+                )
+            except Exception as exc:
+                results.append(CustomerImportRowResult(row=index, status="error", error=str(exc)))
+        return results
 
     async def update(
         self, customer_id: uuid.UUID, cmd: UpdateCustomerCommand, *, actor_id: uuid.UUID

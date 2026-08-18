@@ -82,6 +82,7 @@ from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.customer.service import (
     CreateCustomerCommand,
     CustomerDetailView,
+    CustomerImportRowResult,
     CustomerPage,
     CustomerService,
     CustomerView,
@@ -3788,6 +3789,15 @@ async def search_customers(
     return await service.search(
         q=q, status=status, customer_type=customer_type, limit=limit, offset=offset
     )
+
+
+@customer_router.post("/import", response_model=list[CustomerImportRowResult])
+async def import_customers(body: ImportRequest, service: CustomerSvc, p: CustomerManage) -> Any:
+    """P0-PILOT-002: outlet-list onboarding, mirroring `/suppliers/import` —
+    per-row validation, inline standing orders, one bad row never fails the
+    batch. Declared before the `/{customer_id}` routes so the literal path
+    wins the match."""
+    return await service.import_rows(body.rows, actor_id=p.id)
 
 
 @customer_router.get("/{customer_id}", response_model=CustomerDetailView)

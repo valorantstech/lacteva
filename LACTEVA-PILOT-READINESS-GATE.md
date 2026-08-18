@@ -18,8 +18,9 @@ what exactly prevents us from operating their business for 7 days?
 
 **The answer, up front:** almost nothing in engineering. The genuine gate is
 **four business artifacts** (rate chart, farmer list, outlet list, settlement
-rules), **one operational installation** (a scheduled backup on the host —
-the scripts are proven, the cron does not exist), **one legal minimum**
+rules), ~~one operational installation~~ *(the "no scheduled backup" claim
+was wrong — corrected and the whole chain live-verified in P0-PILOT-002,
+see §3-E)*, **one legal minimum**
 (a DPDPA notice and consent line — zero code exists today), and **one
 validation debt** (no screen of either mobile experience has ever been seen
 on a physical handset). Messaging vendors, hardware, AI, and SAP block
@@ -92,15 +93,20 @@ BSP (weeks). Neither gates day 1.
 personal data under the DPDPA and **the repository contains zero consent or
 notice machinery**. The pilot minimum is small (§10) but it is not optional.
 
-**E. Operational/process** — the sharpest finding of this audit: **the host
-has no scheduled backup.** `/opt/lacteva/backups` holds only pre-deployment
-dumps; no crontab entry exists. The logical-backup and restore scripts are
-written and *proven* (VER-001/DR-001) — nobody ever installed the schedule.
-Running a real dairy's money for 7 days on a single EC2 host without a
-nightly off-host backup is the one operational fact that would be negligent
-to ignore. Also: single-host DEV infrastructure double-booked as the pilot
-environment (acceptable for a pilot, must be a conscious decision), disk at
-71%, and no written onboarding/day-0 runbook.
+**E. Operational/process** — *(corrected by P0-PILOT-002)*: this audit
+originally reported "the host has no scheduled backup", from checking
+crontab and the deploy-dump directory. **That finding was wrong** — the
+backup schedule is systemd timers, and `lacteva-backup-nightly.timer`,
+the weekly restore drill, the watchdog and the off-site replication were
+installed and running; P0-PILOT-002 verified the whole chain live (fresh
+backup → S3 replication → fetch-back → checksum verify → isolated restore
+drill with per-table and per-money-sum comparison, all green) and fixed one
+real defect it found (the drill migrated its throwaway server to `head`
+instead of the backup's own schema revision, so it failed falsely on any
+deploy day that carried a migration). What remains true operationally:
+single-host DEV infrastructure double-booked as the pilot environment
+(acceptable for a pilot, must be a conscious decision) and — at the time —
+no written onboarding/day-0 runbook (closed by LACTEVA-PILOT-ONBOARDING-PACK).
 
 **F. UX/device validation** — nothing *known broken*, one honest debt: no
 physical handset has ever rendered either mobile experience (§9).
@@ -244,8 +250,8 @@ offline capture/replay; reporting; IN localization; backup/restore *scripts*;
 deployment with auto-rollback.
 
 **B. REQUIRED BEFORE FIRST PILOT** — (1) the four business artifacts (chart,
-farmers, outlets, settlement rules); (2) **install the nightly off-host
-backup schedule** and restore-test it once; (3) DPDPA minimum kit (notice +
+farmers, outlets, settlement rules); (2) ~~install~~ **verify** the nightly
+off-host backup chain *(done in P0-PILOT-002)*; (3) DPDPA minimum kit (notice +
 consent fact + register); (4) one physical-handset validation day (Hindi +
 offline included); (5) day-0 onboarding runbook, executed once against a
 clean org; (6) conditional: litres and/or FAT×SNF increment *only if the
@@ -266,8 +272,9 @@ integration; multi-pilot SaaS onboarding automation; Arabic visual pass.
 
 ### The shortest path to the first real dairy (≤10 engineering actions)
 
-1. Install and verify the scheduled off-host backup on the host; restore it
-   once to a scratch instance (scripts exist — this is wiring, then proof).
+1. ~~Install~~ **Verify** the scheduled off-host backup chain end to end
+   *(done in P0-PILOT-002: it was already installed; the restore drill's
+   deploy-day defect was found and fixed).*
 2. Write and execute the day-0 onboarding runbook against a clean org
    (org → centres → roles → logins → import → plans → rate card).
 3. Add the consent-acknowledgment fact to supplier/customer onboarding and

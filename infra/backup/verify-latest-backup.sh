@@ -116,10 +116,19 @@ log "drill server ready (isolated; production untouched)"
 DRILL_URL="postgresql+asyncpg://drill:${DRILL_PASSWORD}@${DRILL_NAME}:5432/lacteva"
 
 # --- 4. migrate, then restore ------------------------------------------------
-# A real recovery restores into a MIGRATED database, so the drill does too.
-log "applying migrations to the drill server"
+# A real recovery restores into a database at the BACKUP'S schema revision —
+# not whatever head happens to be on the day of the drill. Those differ on
+# every deploy day that carries a migration: the newest backup is then the
+# pre-deployment safety dump, `upgrade head` put the drill one revision ahead
+# of it, and the restore's schema-mismatch guard (correctly) refused — so the
+# drill failed and paged, on a healthy system, for doing its job. The manifest
+# records the revision the backup was taken at; the drill honours it.
+REVISION="$(sed -n 's/.*"schema_revision"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
+  "${LATEST}/manifest.json" | head -1)"
+[ -n "${REVISION}" ] || fail "could not read schema_revision from ${LATEST}/manifest.json"
+log "applying migrations to the drill server (to ${REVISION}, the backup's own revision)"
 ${COMPOSE} run --rm --no-deps -T -e "LACTEVA_DATABASE_URL=${DRILL_URL}" api \
-  alembic upgrade head >/dev/null || fail "migrations did not apply to the drill server"
+  alembic upgrade "${REVISION}" >/dev/null || fail "migrations did not apply to the drill server"
 
 log "restoring ${STAMP}"
 ${COMPOSE} run --rm --no-deps -T -e "LACTEVA_DATABASE_URL=${DRILL_URL}" api \
