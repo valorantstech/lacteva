@@ -29,16 +29,25 @@ from tests.test_org_structure import _tenant_admin
 
 UTC = ZoneInfo("UTC")
 
-#: 06:00 in Nairobi on Monday 17 August 2026 — past a 05:00 generation hour,
-#: and unambiguous: UTC and Kenya agree on the date at this instant, so a test
-#: that fails here has failed for its own reason and not a boundary one.
-KENYA_MORNING = datetime(2026, 8, 17, 3, 0, tzinfo=UTC)
-KENYA_DAY = date(2026, 8, 17)
+#: TOMORROW, not a frozen literal. These constants were `date(2026, 8, 17)` —
+#: "today" on the day this file was written — and became a PAST day at the
+#: next midnight, at which point every standing order the tests create
+#: (effective from the day the test runs) postdated the generation day and
+#: three tests failed on `created == 0` (found by P0-PILOT-002's gate run).
+#: Anchoring to tomorrow keeps the plans in force on the day generated for,
+#: on every date this suite will ever run.
+#:
+#: The chosen INSTANTS keep their boundary meaning on any date: at 03:00 UTC
+#: Nairobi (UTC+3, 06:00 — past a 05:00 generation hour) and UTC agree on the
+#: date, so a failure there is the test's own; at 00:00 UTC India (UTC+5:30)
+#: has been on the date for five and a half hours while UTC has just reached
+#: it — the disagreement the tenant-date tests exist to probe.
+_DAY = date.today() + timedelta(days=1)
+KENYA_MORNING = datetime(_DAY.year, _DAY.month, _DAY.day, 3, 0, tzinfo=UTC)
+KENYA_DAY = _DAY
 KENYA_TZ = "Africa/Nairobi"
 
-#: 05:30 in Bengaluru on the same Monday — 00:00 UTC, so UTC is still on the
-#: 17th but India has been on it for five and a half hours.
-INDIA_MORNING = datetime(2026, 8, 17, 0, 0, tzinfo=UTC)
+INDIA_MORNING = datetime(_DAY.year, _DAY.month, _DAY.day, 0, 0, tzinfo=UTC)
 INDIA_TZ = "Asia/Kolkata"
 
 
@@ -319,7 +328,7 @@ async def test_the_suppressed_day_is_the_tenants_own_date_not_utcs(client):
     await _customer_with_plan(client, headers, "India Household")
     tenant = await _tenant_of(client, headers, INDIA_TZ)
 
-    india_day = date(2026, 8, 17)
+    india_day = KENYA_DAY
     await _declare(client, headers, india_day, working=False, kind="holiday")
 
     run = await _generate(tenant, now=INDIA_MORNING)
