@@ -248,10 +248,15 @@ export default function SuppliersPage() {
         title="Suppliers"
         description="The producers who deliver milk. Activity figures cover the last 30 days and are computed by the platform."
         actions={
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => (window.location.href = "/suppliers/import")}>
+              Import CSV
+            </Button>
           <Button type="button" onClick={() => setForm({ mode: "create" })}>
             <Plus aria-hidden className="me-1.5 size-4" />
             New supplier
           </Button>
+          </div>
         }
       />
 

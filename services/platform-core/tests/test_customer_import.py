@@ -84,3 +84,36 @@ async def test_the_import_has_a_ceiling(client):
 async def test_the_import_needs_the_manage_permission(client):
     r = await client.post("/v1/customers/import", json={"rows": []})
     assert r.status_code == 401
+
+
+async def test_reimporting_the_same_file_names_the_duplicates_instead_of_minting_them(client):
+    """P0-PILOT-003: the dairy WILL hand over the same spreadsheet twice."""
+    _, admin = await _tenant_admin(client)
+    rows = [_row("Sharma General Stores"), _row("Hotel Annapurna")]
+    first = await client.post("/v1/customers/import", json={"rows": rows}, headers=admin)
+    assert [x["status"] for x in first.json()] == ["created", "created"]
+
+    again = await client.post("/v1/customers/import", json={"rows": rows}, headers=admin)
+    results = again.json()
+    assert [x["status"] for x in results] == ["error", "error"]
+    assert "duplicate of existing customer CUS-" in results[0]["error"]
+
+    page = (await client.get("/v1/customers", headers=admin)).json()
+    assert page["total"] == 2, "a re-run must create nothing"
+
+
+async def test_a_duplicate_inside_one_batch_is_caught_too(client):
+    _, admin = await _tenant_admin(client)
+    rows = [_row("Same Outlet"), _row("Same Outlet")]
+    r = await client.post("/v1/customers/import", json={"rows": rows}, headers=admin)
+    assert [x["status"] for x in r.json()] == ["created", "error"]
+
+
+async def test_same_name_different_phone_is_not_a_duplicate(client):
+    """Two 'Sharma General Stores' in different villages are two customers."""
+    _, admin = await _tenant_admin(client)
+    a = _row("Sharma General Stores")
+    b = _row("Sharma General Stores")
+    b["phone"] = "+91 98450 99999"
+    r = await client.post("/v1/customers/import", json={"rows": [a, b]}, headers=admin)
+    assert [x["status"] for x in r.json()] == ["created", "created"]

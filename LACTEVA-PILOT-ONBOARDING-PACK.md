@@ -56,10 +56,13 @@ Everything below uses surfaces that exist and are tested today. Steps marked
       the portal correctly refuses them), office/finance
 - [ ] Link each driver login to their driver profile
       (`POST /v1/drivers/{id}/user`)
-- [ ] ⚑ Farmer list → `POST /v1/suppliers/import` (code, name, phone,
-      village, centre codes); activate; print QR cards if used
-- [ ] ⚑ Outlet list → `POST /v1/customers/import` — each row may carry the
-      standing order inline (`plan`: product, quantity, unit, agreed price)
+- [ ] ⚑ Farmer list → **Suppliers → Import CSV** in the portal (or
+      `POST /v1/suppliers/import`); preview, import, fix failed rows;
+      activate; print QR cards if used
+- [ ] ⚑ Outlet list → **Customers → Import CSV** in the portal (or
+      `POST /v1/customers/import`) — each row may carry its standing order
+      (plan_product/quantity/unit/price); a re-import names duplicates
+      instead of creating them twice
 - [ ] Routes and stops; vehicles; assign drivers (logistics surface)
 - [ ] ⚑ Rate card: create → matrices per product (cow / buffalo) → bands
       from the photographed chart → **human review** (next section) →
@@ -145,7 +148,48 @@ feature at pilot stage (P0-REG-001 §5: core DPDPA obligations commence
 *(Reviewed wording, not legal advice — the dairy's and Phoenix's signatories
 adopt it as part of the commercial agreement.)*
 
-## 5. Physical-handset validation script (Track C — run when a handset is available)
+## 5. Days 1–7 — running the pilot (P0-PILOT-003)
+
+Daily rhythm; the responsible person in brackets. Everything here uses
+surfaces that exist today.
+
+**Every morning and evening shift** *(operator)* — open the session with the
+right label; capture every collection fully (farmer → milk type → weight →
+FAT/SNF → price shown → accept/reject → complete); hand over the parchi
+(print or share). A `QualityDeviationFlagged` line in a transaction's trail
+is information, not an accusation — re-test the sample, note the outcome.
+*(driver)* — start the run on the phone, record every stop (delivered /
+skipped / returned), complete the run; airplane-mode capture is fine, sync
+when signal returns.
+
+**Every evening** *(owner/office)* — portal dashboard: collections vs
+yesterday, quantity, value, average FAT; deliveries and any skipped stops
+(ask why); "who owes money" for anything unexpected.
+
+**Settlement day(s), per the dairy's cycle** *(office)* — create the
+settlement for the period, review lines against the parchis, finalize, print
+statements; record payments as they are made.
+
+**Day 6, deliberately** *(pilot lead)* — the failure drill: one airplane-mode
+collection and replay; one operator retry (must 409, not duplicate); confirm
+last night's backup replicated off-site (`backup.cli status` / watchdog
+green).
+
+**Day 7** *(owner + pilot lead)* — reconciliation, below, then the review.
+
+### The two reconciliations (day 7, on paper)
+
+**Milk bought:** pick any 3 parchis at random →
+`quantity × rate = amount` on each slip → find each in the settlement's
+lines → settlement total = sum of its lines → the amount paid/payable
+matches. Any mismatch at any step is a finding — Lacteva's figures are
+byte-traceable end to end, so the discrepancy is locatable.
+
+**Milk sold:** pick any customer → standing order (plan) → the week's
+generated deliveries → driver outcomes → invoice lines → invoice total →
+payments/receivables. Same rule: every figure must trace.
+
+## 6. Physical-handset validation script (Track C — run when a handset is available)
 
 Device: any Android 10+ phone, Chrome not required. Install
 `app-release.apk` (built against `https://dev.phoenixsoft.in`). Two runs:

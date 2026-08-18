@@ -1343,6 +1343,33 @@ export type CollectionSlip = {
   text: string;
 };
 
+
+// --- Business-data import (P0-PILOT-003) -------------------------------------
+// Rows are loose objects by design: the SERVER validates each row
+// individually and answers per row, so one bad line in the dairy's
+// spreadsheet never fails the batch — and never silently alters it.
+
+export type ImportRowOutcome = {
+  row: number;
+  status: string; // created | error
+  supplier_id?: string | null;
+  customer_id?: string | null;
+  code?: string | null;
+  error?: string | null;
+};
+
+export const importSuppliers = (rows: Array<Record<string, unknown>>) =>
+  api<ImportRowOutcome[]>(`/v1/suppliers/import`, {
+    method: "POST",
+    body: JSON.stringify({ rows }),
+  });
+
+export const importCustomers = (rows: Array<Record<string, unknown>>) =>
+  api<ImportRowOutcome[]>(`/v1/customers/import`, {
+    method: "POST",
+    body: JSON.stringify({ rows }),
+  });
+
 export const getCollectionSlip = (id: string) =>
   api<CollectionSlip>(`/v1/milk-transactions/${id}/slip`);
 

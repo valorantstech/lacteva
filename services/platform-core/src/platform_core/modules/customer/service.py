@@ -316,10 +316,29 @@ class CustomerService:
         """
         if len(rows) > MAX_IMPORT_ROWS:
             raise ConflictError(f"import limited to {MAX_IMPORT_ROWS} rows")
+        tenant_id = require_current_tenant()
         results: list[CustomerImportRowResult] = []
         for index, raw in enumerate(rows):
             try:
                 cmd = CreateCustomerCommand(**raw)
+                # P0-PILOT-003: a re-run of the same file must not mint the
+                # outlet twice. Customers have no natural code in the source
+                # list, so exact (name, phone) against a live customer is the
+                # duplicate signal — surfaced as a row error NAMING the
+                # existing code, never a silent skip and never a merge: the
+                # operator decides. Flushed rows count, so a duplicate within
+                # one batch is caught the same way.
+                duplicate = await self._session.scalar(
+                    select(Customer).where(
+                        Customer.tenant_id == tenant_id,
+                        Customer.name == cmd.name,
+                        Customer.phone == cmd.phone,
+                    )
+                )
+                if duplicate is not None:
+                    raise ConflictError(
+                        f"duplicate of existing customer {duplicate.code} ({duplicate.name})"
+                    )
                 customer = await self.create(cmd, actor_id=actor_id)
                 results.append(
                     CustomerImportRowResult(

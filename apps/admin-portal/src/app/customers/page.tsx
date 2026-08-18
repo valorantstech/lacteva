@@ -186,10 +186,15 @@ function CustomersView() {
         title="Customers"
         description="The households and businesses this dairy delivers to — and what each of them owes."
         actions={
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => (window.location.href = "/customers/import")}>
+              Import CSV
+            </Button>
           <Button type="button" onClick={() => setShowCreate((v) => !v)}>
             <Plus aria-hidden className="me-1.5 size-4" />
             New customer
           </Button>
+          </div>
         }
       />
 

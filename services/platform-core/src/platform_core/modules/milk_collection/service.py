@@ -12,6 +12,7 @@ to the ordered transaction event log, audited, and published on the bus.
 import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from statistics import fmean, pstdev
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
@@ -88,6 +89,7 @@ BUS_EVENTS = {
     "MilkReceived": "collection.milk-received.v1",
     "WeightCaptured": "collection.weight-captured.v1",
     "QualityCaptured": "collection.quality-captured.v1",
+    "QualityDeviationFlagged": "collection.quality-deviation-flagged.v1",
     "PricingRequested": "collection.pricing-requested.v1",
     "PricingCompleted": "collection.pricing-completed.v1",
     "PricingUnavailable": "collection.pricing-unavailable.v1",
@@ -107,6 +109,18 @@ def product_code_for(milk_type: str | None) -> str | None:
         return None
     return f"RAW-{milk_type.upper()}-MILK"
 
+
+# P0-PILOT-003 (the one AI MVP): a reading far from THIS supplier's own
+# recent baseline gets a non-blocking flag. Statistics, not ML, and honest
+# about it: nothing is refused, nothing is scored by a vendor — an event is
+# appended for the operator and the report to see. Same-milk-type history
+# only (a buffalo baseline says nothing about cow milk); a minimum history
+# so a new farmer is never flagged for lacking a past; and an absolute floor
+# so a supplier with an unnaturally tight baseline is not flagged for noise.
+DEVIATION_MIN_HISTORY = 5
+DEVIATION_WINDOW = 20
+DEVIATION_SIGMA = 3.0
+DEVIATION_FLOOR = 0.5
 
 # P0-BIZ-003: the collection slip (parchi) — the eighth document series on the
 # shared per-tenant-year counter, beside STL-/INV-/RCP- and their kin.
@@ -621,8 +635,62 @@ class MilkCollectionService:
             {"fat": tx.fat, "snf": tx.snf, "clr": tx.clr},
             actor_id,
         )
+        deviation = await self._quality_deviation(tx)
+        if deviation:
+            await self._record(
+                tx,
+                "QualityDeviationFlagged",
+                {"supplier_id": str(tx.supplier_id), "metrics": deviation},
+                actor_id,
+            )
         await self._apply_pricing(tx, actor_id)
         return tx
+
+    async def _quality_deviation(self, tx: MilkCollectionTransaction) -> dict[str, Any] | None:
+        """Is this FAT/SNF far from this supplier's own recent readings?
+
+        Baseline: the supplier's last DEVIATION_WINDOW decided (ACCEPTED or
+        COMPLETED) collections of the SAME milk type, this tenant. A metric
+        flags when it sits at least DEVIATION_SIGMA standard deviations AND
+        at least DEVIATION_FLOOR absolute units from that baseline's mean.
+        Never blocks, never prices, never reaches the parchi — the farmer's
+        slip must not accuse; the operator's event trail may inform.
+        """
+        if tx.supplier_id is None or tx.milk_type is None:
+            return None
+        rows = (
+            await self._session.execute(
+                select(MilkCollectionTransaction.fat, MilkCollectionTransaction.snf)
+                .where(
+                    MilkCollectionTransaction.tenant_id == tx.tenant_id,
+                    MilkCollectionTransaction.supplier_id == tx.supplier_id,
+                    MilkCollectionTransaction.id != tx.id,
+                    MilkCollectionTransaction.milk_type == tx.milk_type,
+                    MilkCollectionTransaction.state.in_(("ACCEPTED", "COMPLETED")),
+                )
+                .order_by(MilkCollectionTransaction.created_at.desc())
+                .limit(DEVIATION_WINDOW)
+            )
+        ).all()
+
+        flags: dict[str, Any] = {}
+        for metric, value in (("fat", tx.fat), ("snf", tx.snf)):
+            if value is None:
+                continue
+            series = [getattr(row, metric) for row in rows if getattr(row, metric) is not None]
+            if len(series) < DEVIATION_MIN_HISTORY:
+                continue
+            mean = fmean(series)
+            spread = pstdev(series)
+            deviation = abs(value - mean)
+            if deviation >= max(DEVIATION_SIGMA * spread, DEVIATION_FLOOR):
+                flags[metric] = {
+                    "value": value,
+                    "baseline_mean": round(mean, 2),
+                    "baseline_sd": round(spread, 3),
+                    "baseline_n": len(series),
+                }
+        return flags or None
 
     async def _apply_pricing(self, tx: MilkCollectionTransaction, actor_id: uuid.UUID) -> None:
         """MVP-001 integration: invoke the Pricing Platform (resolution ->
