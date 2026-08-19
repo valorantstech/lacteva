@@ -53,6 +53,9 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _failureMessage = e.detail);
+    } catch (_) {
+      // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
+      if (mounted) setState(() => _failureMessage = 'Could not reach the platform');
     }
   }
 
@@ -81,6 +84,9 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
           _failureStage = e.extra?['stage']?.toString();
         });
       }
+    } catch (_) {
+      // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
+      if (mounted) setState(() => _failureMessage = 'Could not reach the platform');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -107,6 +113,12 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text((e.extra?['reason'] ?? e.detail).toString())),
       );
+    } catch (_) {
+      // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not reach the platform')));
     }
   }
 

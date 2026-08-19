@@ -22,6 +22,7 @@ import 'api.dart';
 import 'offline/offline_client.dart';
 import 'l10n.dart';
 import 'session.dart';
+import 'sign_out.dart';
 
 /// The device's own UTC date — a LAST RESORT only (DEMO-013).
 ///
@@ -198,6 +199,7 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.refresh),
           ),
+          SignOutButton(client: widget.client, label: t.t('common.signOut')),
         ],
       ),
       body: Column(

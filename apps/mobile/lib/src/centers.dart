@@ -12,17 +12,23 @@ import 'receipts.dart';
 import 'pricing_resolution.dart';
 import 'rate_cards.dart';
 import 'settlements.dart';
+import 'sign_out.dart';
 import 'suppliers.dart';
 
 /// Login screen — SPRINT-003: first real auth flow in the mobile app.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.client});
+  const LoginScreen({super.key, required this.client, this.notice});
 
   /// DEMO-012: the OFFLINE client specifically. Sign-in leads to the delivery
   /// round, which captures into the durable queue — so the type that carries
   /// that queue has to reach it. Widening this to `ApiClient` would compile
   /// and then drop a rider's round on the first tunnel.
   final OfflineApiClient client;
+
+  /// Why the person is looking at this screen again, when there is a reason —
+  /// "Your session expired — sign in again" (P0-PRODUCT-008 D-2). Shown in
+  /// the same slot as an error, because it answers the same question.
+  final String? notice;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -34,6 +40,12 @@ class _LoginScreenState extends State<LoginScreen> {
   final _password = TextEditingController();
   String? _error;
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _error = widget.notice;
+  }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
@@ -156,6 +168,10 @@ class _CentersListScreenState extends State<CentersListScreen> {
       });
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.detail);
+    } catch (_) {
+      // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
+      // say so instead of leaving the spinner forever.
+      if (mounted) setState(() => _error = 'Could not reach the platform');
     }
   }
 
@@ -175,6 +191,7 @@ class _CentersListScreenState extends State<CentersListScreen> {
       appBar: AppBar(
         title: const Text('Collection centers'),
         actions: [
+          SignOutButton(client: widget.client),
           IconButton(
             icon: const Icon(Icons.people_outline),
             tooltip: 'Suppliers',
@@ -570,6 +587,10 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.detail);
+    } catch (_) {
+      // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
+      // say so instead of leaving the spinner forever.
+      if (mounted) setState(() => _error = 'Could not reach the platform');
     }
   }
 
@@ -582,6 +603,12 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.detail)));
+    } catch (_) {
+      // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not reach the platform')));
     }
   }
 
@@ -619,6 +646,12 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                 ScaffoldMessenger.of(
                   context,
                 ).showSnackBar(SnackBar(content: Text(e.detail)));
+              } catch (_) {
+                // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('Could not reach the platform')));
               }
             },
           ),
@@ -778,6 +811,10 @@ class _ReadinessScreenState extends State<ReadinessScreen> {
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.detail);
+    } catch (_) {
+      // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
+      // say so instead of leaving the spinner forever.
+      if (mounted) setState(() => _error = 'Could not reach the platform');
     }
   }
 

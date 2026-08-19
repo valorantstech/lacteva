@@ -40,6 +40,10 @@ class _RateCardsListScreenState extends State<RateCardsListScreen> {
       });
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.detail);
+    } catch (_) {
+      // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
+      // say so instead of leaving the spinner forever.
+      if (mounted) setState(() => _error = 'Could not reach the platform');
     }
   }
 
@@ -365,6 +369,10 @@ class _RateCardDetailScreenState extends State<RateCardDetailScreen> {
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.detail);
+    } catch (_) {
+      // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
+      // say so instead of leaving the spinner forever.
+      if (mounted) setState(() => _error = 'Could not reach the platform');
     }
   }
 
@@ -377,6 +385,12 @@ class _RateCardDetailScreenState extends State<RateCardDetailScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.detail)));
+    } catch (_) {
+      // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not reach the platform')));
     }
   }
 

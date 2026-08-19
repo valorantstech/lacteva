@@ -40,6 +40,10 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
       });
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.detail);
+    } catch (_) {
+      // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
+      // say so instead of leaving the spinner forever.
+      if (mounted) setState(() => _error = 'Could not reach the platform');
     }
   }
 
@@ -296,6 +300,10 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.detail);
+    } catch (_) {
+      // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
+      // say so instead of leaving the spinner forever.
+      if (mounted) setState(() => _error = 'Could not reach the platform');
     }
   }
 
@@ -308,6 +316,12 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.detail)));
+    } catch (_) {
+      // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not reach the platform')));
     }
   }
 

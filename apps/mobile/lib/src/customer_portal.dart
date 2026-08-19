@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'l10n.dart';
 import 'session.dart';
+import 'sign_out.dart';
 
 /// The device's own UTC date — a fallback only (DEMO-013).
 ///
@@ -140,6 +141,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.refresh),
           ),
+          SignOutButton(client: widget.client),
         ],
       ),
       body: _loading
@@ -477,6 +479,9 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = e.detail);
+    } catch (_) {
+      // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
+      if (mounted) setState(() => _error = 'Could not reach the platform');
     }
   }
 

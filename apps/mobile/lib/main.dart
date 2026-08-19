@@ -59,20 +59,52 @@ OfflineApiClient buildClient({
   );
 }
 
-class LactevaApp extends StatelessWidget {
+class LactevaApp extends StatefulWidget {
   const LactevaApp({super.key, this.queuePath});
 
   final String? queuePath;
 
   @override
+  State<LactevaApp> createState() => _LactevaAppState();
+}
+
+class _LactevaAppState extends State<LactevaApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  late final OfflineApiClient _client;
+
+  @override
+  void initState() {
+    super.initState();
+    _client = buildClient(queuePath: widget.queuePath);
+    // P0-PRODUCT-008 D-2: when the platform stops accepting the session, the
+    // app returns to sign-in ONCE, app-wide, instead of every screen dying on
+    // its own raw 401. The offline queue is untouched — captured work waits
+    // for the next sign-in and replays idempotently.
+    _client.onAuthExpired = _returnToSignIn;
+  }
+
+  void _returnToSignIn() {
+    _navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => LoginScreen(
+          client: _client,
+          notice: 'Your session expired — sign in again to continue',
+        ),
+      ),
+      (route) => false,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Lacteva',
+      navigatorKey: _navigatorKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1B5E20)),
         useMaterial3: true,
       ),
-      home: LoginScreen(client: buildClient(queuePath: queuePath)),
+      home: LoginScreen(client: _client),
     );
   }
 }

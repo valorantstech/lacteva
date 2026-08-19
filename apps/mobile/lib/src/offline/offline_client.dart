@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import '../api.dart';
+import '../push.dart';
 import 'queue.dart';
 import 'sync_engine.dart';
 
@@ -35,6 +36,16 @@ class OfflineApiClient extends ApiClient {
   final SyncQueue queue;
   final String deviceId;
   late final SyncEngine engine;
+
+  /// Explicit sign-out for a shared handset (P0-PRODUCT-008 D-2): give any
+  /// push token back (best effort — push.dart documents why), then forget the
+  /// session. The durable queue is deliberately untouched: captured work
+  /// survives, and every replayed operation is re-authorized by the platform
+  /// under the next sign-in.
+  Future<void> signOut() async {
+    await revokePush(this, deviceId);
+    logout();
+  }
 
   /// Test/demo switch: pretend the network is gone.
   bool forceOffline;
@@ -381,6 +392,15 @@ class OfflineApiClient extends ApiClient {
         });
         sent++;
       } on ApiException catch (e) {
+        if (e.status == 401) {
+          // Session expired mid-replay (P0-PRODUCT-008 D-3). This is NOT a
+          // refusal of the captured work — it is a refusal of the dead
+          // token. Keep the operation queued for retry after re-auth, and
+          // stop draining: every later operation would meet the same 401.
+          queue.markBatchFailed([op], 'session expired — sign in to sync');
+          failed++;
+          break;
+        }
         if (e.status >= 400 && e.status < 500 && e.status != 409) {
           queue.applyResult(op, {
             'operation_id': op.operationId,
@@ -423,6 +443,13 @@ class OfflineApiClient extends ApiClient {
         });
         sent++;
       } on ApiException catch (e) {
+        if (e.status == 401) {
+          // Same rule as _drainRunOutcomes (D-3): an expired session leaves
+          // the captured delivery queued and retryable, never a conflict.
+          queue.markBatchFailed([op], 'session expired — sign in to sync');
+          failed++;
+          break;
+        }
         if (e.status >= 400 && e.status < 500 && e.status != 409) {
           queue.applyResult(op, {
             'operation_id': op.operationId,

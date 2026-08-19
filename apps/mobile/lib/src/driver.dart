@@ -24,6 +24,7 @@ import 'api.dart';
 import 'l10n.dart';
 import 'offline/offline_client.dart';
 import 'session.dart';
+import 'sign_out.dart';
 
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({
@@ -143,6 +144,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.detail)));
+    } catch (_) {
+      // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not reach the platform')));
     }
   }
 
@@ -158,6 +165,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.refresh),
           ),
+          SignOutButton(client: widget.client, label: t.t('common.signOut')),
         ],
       ),
       body: Column(

@@ -104,6 +104,7 @@ const Catalog _en = {
   'common.loading': 'Loading…',
   'common.offline': 'No signal',
   'common.nothingHere': 'Nothing for this account on mobile',
+  'common.signOut': 'Sign out',
 };
 
 const Catalog _hi = {
@@ -187,6 +188,7 @@ const Catalog _hi = {
   'common.loading': 'लोड हो रहा है…',
   'common.offline': 'सिग्नल नहीं',
   'common.nothingHere': 'इस खाते के लिए मोबाइल पर कुछ नहीं',
+  'common.signOut': 'साइन आउट',
 };
 
 const Catalog _ar = {
@@ -269,6 +271,7 @@ const Catalog _ar = {
   'common.loading': 'جارٍ التحميل…',
   'common.offline': 'لا توجد شبكة',
   'common.nothingHere': 'لا يوجد شيء لهذا الحساب على الجوال',
+  'common.signOut': 'تسجيل الخروج',
 };
 
 const Map<String, Catalog> catalogs = {'en': _en, 'hi': _hi, 'ar': _ar};

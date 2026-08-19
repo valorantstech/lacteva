@@ -16,6 +16,17 @@ class ApiException implements Exception {
   String toString() => detail;
 }
 
+/// An AUTHENTICATED request answered 401: the session expired or was revoked
+/// (P0-PRODUCT-008 D-2). Distinct from a plain 401 on the login call itself,
+/// which stays an ordinary [ApiException] — wrong credentials are not an
+/// expired session. Subclasses [ApiException] so every existing
+/// `on ApiException` handler still shows the platform's detail; the client
+/// additionally fires [ApiClient.onAuthExpired] exactly once so the app can
+/// route the person back to sign-in without each screen having to know.
+class AuthExpiredException extends ApiException {
+  AuthExpiredException(String detail) : super(401, detail);
+}
+
 /// Thin API client for platform-core. Kept overridable for widget tests.
 /// TODO(M2): offline queue + sync engine replaces direct calls (Collect R09).
 class ApiClient {
@@ -24,7 +35,21 @@ class ApiClient {
   final http.Client _http;
   String? _token;
 
+  /// Invoked once when an authenticated request meets a 401 (D-2). The app
+  /// wires this to "return to sign-in"; tests and headless callers may leave
+  /// it null — the [AuthExpiredException] still surfaces to the caller either
+  /// way, so nothing silently swallows the failure.
+  void Function()? onAuthExpired;
+
   bool get isAuthenticated => _token != null;
+
+  /// Explicit sign-out (D-2): forget the token. The offline queue is NOT
+  /// touched — captured work must survive a sign-out on a shared handset, and
+  /// every replayed operation is re-authorized by the platform under whoever
+  /// signs in next, so keeping it grants nothing.
+  void logout() {
+    _token = null;
+  }
 
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
@@ -53,6 +78,7 @@ class ApiClient {
     String? idempotencyKey,
   }) async {
     final uri = Uri.parse('$apiUrl$path');
+    final hadToken = _token != null;
     final request = http.Request(method, uri)..headers.addAll(_headers);
     if (idempotencyKey != null) {
       request.headers['Idempotency-Key'] = idempotencyKey;
@@ -84,6 +110,15 @@ class ApiClient {
           detail = rawExtra;
         }
       } catch (_) {}
+      if (response.statusCode == 401 && hadToken) {
+        // The session this client was carrying is no longer accepted (D-2).
+        // Clear the dead token so nothing keeps sending it, tell the app
+        // once, and fail this call with the distinguishable subclass. A 401
+        // on the login call itself (no token yet) stays a plain refusal.
+        _token = null;
+        onAuthExpired?.call();
+        throw AuthExpiredException(detail);
+      }
       throw ApiException(response.statusCode, detail, extra: extra);
     }
     if (response.bodyBytes.isEmpty) return null;

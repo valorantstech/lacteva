@@ -43,6 +43,10 @@ class _MatrixListScreenState extends State<MatrixListScreen> {
       });
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.detail);
+    } catch (_) {
+      // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
+      // say so instead of leaving the spinner forever.
+      if (mounted) setState(() => _error = 'Could not reach the platform');
     }
   }
 
@@ -201,6 +205,10 @@ class _MatrixFormScreenState extends State<MatrixFormScreen> {
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.detail);
+    } catch (_) {
+      // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
+      // say so instead of leaving the spinner forever.
+      if (mounted) setState(() => _error = 'Could not reach the platform');
     }
   }
 
@@ -341,6 +349,10 @@ class _MatrixDetailScreenState extends State<MatrixDetailScreen> {
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.detail);
+    } catch (_) {
+      // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
+      // say so instead of leaving the spinner forever.
+      if (mounted) setState(() => _error = 'Could not reach the platform');
     }
   }
 
@@ -371,6 +383,9 @@ class _MatrixDetailScreenState extends State<MatrixDetailScreen> {
       await _load();
     } on ApiException catch (e) {
       _toast(e.detail);
+    } catch (_) {
+      // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
+      _toast('Could not reach the platform');
     }
   }
 
@@ -380,6 +395,9 @@ class _MatrixDetailScreenState extends State<MatrixDetailScreen> {
       await _load();
     } on ApiException catch (e) {
       _toast(e.detail);
+    } catch (_) {
+      // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
+      _toast('Could not reach the platform');
     }
   }
 

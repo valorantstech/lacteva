@@ -25,6 +25,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'api.dart';
 import 'centers.dart';
 import 'customer_portal.dart';
 import 'deliveries.dart';
@@ -33,6 +34,7 @@ import 'l10n.dart';
 import 'offline/offline_client.dart';
 import 'push.dart';
 import 'session.dart';
+import 'sign_out.dart';
 
 /// Resolves the session, then shows the experience it earns.
 class HomeRouter extends StatefulWidget {
@@ -141,7 +143,7 @@ class _HomeRouterState extends State<HomeRouter> {
         session: session,
       ),
       Experience.collection => CentersListScreen(client: widget.client),
-      Experience.none => _NothingToDo(session: session),
+      Experience.none => _NothingToDo(session: session, client: widget.client),
     };
   }
 }
@@ -151,14 +153,20 @@ class _HomeRouterState extends State<HomeRouter> {
 /// An honest dead end rather than a screen that 403s on every request. A
 /// finance officer's grants are real and useful — in the web portal.
 class _NothingToDo extends StatelessWidget {
-  const _NothingToDo({required this.session});
+  const _NothingToDo({required this.session, required this.client});
 
   final Session session;
+  final ApiClient client;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Lacteva')),
+      // The dead end especially needs the way out (D-2): the person this
+      // screen greets is on the wrong account by definition.
+      appBar: AppBar(
+        title: const Text('Lacteva'),
+        actions: [SignOutButton(client: client)],
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32),

@@ -54,6 +54,10 @@ class _NotificationHistoryScreenState extends State<NotificationHistoryScreen> {
       });
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.detail);
+    } catch (_) {
+      // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
+      // say so instead of leaving the spinner forever.
+      if (mounted) setState(() => _error = 'Could not reach the platform');
     }
   }
 
