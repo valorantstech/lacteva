@@ -112,6 +112,17 @@ class Settings(BaseSettings):
     # Row Level Security (PostgreSQL only; SQLite has no equivalent).
     rls_enabled: bool = True
 
+    #: Log the transaction's actual tenant binding whenever a request fails
+    #: with "not found" or "unauthorized". OFF by default and intended for
+    #: diagnosis, not production: it costs one extra round trip per failed
+    #: request, and a 404 is a normal answer, not a rare one.
+    #:
+    #: It exists because "the row was written, and the very next request could
+    #: not see it" is unanswerable from the outside — the only witness is what
+    #: `lacteva.tenant_id` actually held inside the failing transaction, and
+    #: nothing outside the session can read that.
+    session_diagnostics: bool = False
+
     # Data stores
     database_url: str = "postgresql+asyncpg://lacteva:lacteva@localhost:5432/lacteva"
     redis_url: str = "redis://localhost:6379/0"

@@ -61,6 +61,10 @@ export LACTEVA_RATE_LIMIT_BACKEND=memory
 # limiter's behaviour is proven by the backend suite — and this harness
 # observed it enforcing at the real boundary before this line was added.
 export LACTEVA_RATE_LIMIT_ENABLED=false
+# A refusal in this harness is always interesting, so the platform records what
+# its transaction actually had bound when it refused (off everywhere else). This
+# is what turned "a just-created row is not found" from a rumour into a cause.
+export LACTEVA_SESSION_DIAGNOSTICS="${LACTEVA_SESSION_DIAGNOSTICS:-true}"
 # The real invitation path: the platform will not hand a raw token back through
 # the API (SEC-003/F-04), so the harness receives it by real SMTP delivery.
 export LACTEVA_NOTIFICATION_EMAIL_PROVIDER=smtp
@@ -131,7 +135,8 @@ FAILED=0
 
 if [ "$WHAT" = "probe" ]; then
   # Ad-hoc investigation against the live, seeded platform.
-  "$PY" "${LACTEVA_E2E_PROBE:?set LACTEVA_E2E_PROBE to a script}" || FAILED=1
+  # shellcheck disable=SC2086 — the args are deliberately word-split
+  "$PY" "${LACTEVA_E2E_PROBE:?set LACTEVA_E2E_PROBE to a script}" ${LACTEVA_E2E_PROBE_ARGS:-} || FAILED=1
   exit "$FAILED"
 fi
 

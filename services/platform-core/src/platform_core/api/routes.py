@@ -17,6 +17,7 @@ from platform_core.api.deps import (
     require_permission,
 )
 from platform_core.api.idempotent_route import IdempotentRoute, idempotency_guard
+from platform_core.api.transactional_route import TransactionalRoute
 from platform_core.core import alerts, health, rate_limit, security_audit
 from platform_core.core.backup.service import (
     BackupRunView,
@@ -777,7 +778,7 @@ async def update_locale_settings(
 # --- Locale reference data ---------------------------------------------------
 
 
-locale_router = APIRouter(prefix="/locales", tags=["locales"])
+locale_router = APIRouter(prefix="/locales", tags=["locales"], route_class=TransactionalRoute)
 
 
 @locale_router.get("/countries")
@@ -802,7 +803,9 @@ async def list_countries(_: CurrentPrincipal) -> Any:
 # Nothing here accepts a status from the caller. There is no endpoint that
 # takes `status`, which is how "the client cannot forge a subscription state"
 # is guaranteed rather than validated.
-subscription_router = APIRouter(prefix="/organization", tags=["subscription"])
+subscription_router = APIRouter(
+    prefix="/organization", tags=["subscription"], route_class=TransactionalRoute
+)
 
 
 class ActivateSubscriptionRequest(BaseModel):
@@ -955,7 +958,9 @@ async def list_subscription_payments(
 # Not authenticated, because a gateway has no Lacteva account. What replaces
 # authentication is a signature over the raw body, checked in constant time
 # against a secret that exists only in deployment configuration.
-webhook_router = APIRouter(prefix="/payments", tags=["subscription"])
+webhook_router = APIRouter(
+    prefix="/payments", tags=["subscription"], route_class=TransactionalRoute
+)
 
 
 @webhook_router.post("/webhooks/{provider}", status_code=200)
@@ -990,7 +995,9 @@ async def receive_payment_webhook(provider: str, request: Request) -> dict[str, 
 # exposed — no endpoint converts an arbitrary instant, and none accepts a
 # timezone, because a client that could name the zone could name the wrong one
 # and the whole point is that the organization's clock is not negotiable.
-calendar_router = APIRouter(prefix="/organization", tags=["business-calendar"])
+calendar_router = APIRouter(
+    prefix="/organization", tags=["business-calendar"], route_class=TransactionalRoute
+)
 
 
 @calendar_router.get(
@@ -2462,7 +2469,9 @@ async def cancel_payment(
 # Not authenticated: a gateway has no Lacteva account. What replaces
 # authentication is a constant-time HMAC over the raw body, checked by the SAME
 # `core/webhook_security` the payment webhook uses.
-delivery_receipt_router = APIRouter(prefix="/notifications", tags=["notifications"])
+delivery_receipt_router = APIRouter(
+    prefix="/notifications", tags=["notifications"], route_class=TransactionalRoute
+)
 
 
 @delivery_receipt_router.post("/receipts/{provider}", status_code=200)

@@ -3,7 +3,7 @@ id: LACTEVA-P1-E2E-HARNESS-001
 title: Real Client↔Server E2E Harness
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Engineering
 created: 2026-08-19
 last-updated: 2026-08-19
@@ -26,8 +26,11 @@ under concurrent two-tenant load (0 leaks in 24 interleaved write/read cycles);
 it caught the rate limiter defending itself; it forced the seeder to walk the
 real onboarding runbook (a centre will not accept milk until it has hours, an
 active scale and an operator; a supplier is a draft until assigned and
-activated; a session refuses to close with work in flight); and it surfaced one
-**unresolved intermittent defect** (§19) that no unit suite could have seen.
+activated; a session refuses to close with work in flight); and it found a real
+product defect that no unit suite could have seen, because no unit suite can:
+**the platform answered every write before it committed it** (E2E-001, §19.1).
+Server-side instrumentation established the cause, it is fixed, and the fix is
+guarded by a test that was watched failing first.
 
 **Verdict: PARTIAL — GREEN for the API boundary, with browser-level E2E
 honestly deferred.** No browser driver is vendored in this repository and
@@ -160,24 +163,50 @@ leaves these tests is real.
 |---|---|---|---|
 | 1 | `inline` outbox mode races the relay workers a real server starts (`StaleDataError` on `event_outbox`) | harness defect (B) | **Fixed** — harness runs the production `background` mode |
 | 2 | SQLite cannot serve a real server's five concurrent workers (`StaleDataError` on `auth_session`, `consumer_cursor`) | environment limitation (C) | **Fixed** — harness uses real PostgreSQL, which also makes RLS genuine |
-| 3 | **Intermittent "not found" on a just-created row** — a row created moments earlier by the same principal is reported missing by the very next request. First seen as `POST /v1/suppliers/{id}/centers`; the investigation (§19.1) showed it is **not supplier-specific** — `device`, `branch` and `workspace` fail identically | **OPEN — cause not established** | Nine hypotheses tested and ruled out with evidence (§19.1). Reproduces on a **pristine database, first seeding, no load and no concurrency**. The seeder retries once and prints `E2E-WARNING`; the retry keeps the harness usable and **must not be read as the cause being understood**. |
+| 3 | **The platform answered before it committed (E2E-001)** — a row created moments earlier is reported missing by the very next request, across `supplier`, `device`, `branch`, `workspace` and `user_account` alike | **product defect — FIXED** | Root cause established by server-side instrumentation (§19.1): the response reached the client **0.3–1.1 ms before the commit**, every time. Fixed by committing inside the route handler; proven 107/150 → **0/150**. The seeder's retry was **removed**, not kept. |
 | 4 | My own probe mis-wired its id lists and reported false leaks | test defect (B) | **Fixed** before any conclusion was drawn |
-| 5 | **Authentication stops working process-wide and never recovers** — after some minutes of repeated seeding the platform refuses *every* request from *every* principal, including users registered seconds earlier, with `auth_failures_total{reason="session_revoked_or_expired"}` and **zero** `invalid_token`. Onset varied from the 3rd to the 8th seeding across runs; once it starts, no later request from any principal ever succeeds | **OPEN — cause not established** | Found while investigating finding 3, and potentially the more serious of the two: the counter is incremented **server-side**, on a freshly issued token, so the platform is refusing sessions it minted itself. Whether it can occur outside this harness's register-heavy loop is **unknown** — see §19.1. |
+| 5 | **Authentication refused a session the platform had just issued** — `auth_failures_total{reason="session_revoked_or_expired"}` with **zero** `invalid_token`, and `POST /v1/auth/token` answering "Email or password is incorrect" for a user registered a moment earlier | **same defect as 3 — FIXED** | Not a second bug: `auth_session` and `user_account` are rows like any other, so an uncommitted write answers 401 exactly where another answers 404. It looked unrecoverable because each retry re-ran the same losing race. Gone with the fix (0/150 sign-ins refused, 14/14 seedings clean). |
 | 6 | My own commit-lag measurement reported "40% of writes uncommitted, 124–313 ms" | test defect (B) | **Fixed** — the load ran as asyncio tasks in the same event loop as the measurement and starved it; re-measured with load in separate processes gives **0/60** |
 
-### 19.1 Investigation of finding 3 — what is now known
+### 19.1 E2E-001 — the platform answered before it committed
 
-The cause is **still not established**. What follows is the evidence, so the
-next person starts from the frontier rather than from the beginning. Every
-"ruled out" below is a measurement, not an argument.
+**Root cause, established and fixed.** Every request's transaction was
+committed in FastAPI's dependency teardown (`get_session`). The middleware
+stack is built on `BaseHTTPMiddleware`, whose `call_next` returns as soon as
+the response *starts* — so the answer reached the client while that teardown
+was still pending. The platform's own log, with the commit instrumented, says
+it plainly and says it every single time:
 
-**The shape.** A row is written and answered 2xx; the immediately following
-request from the same principal cannot see it. It fails **closed** (never a
-wrong row, never another tenant's row), and it is **not specific to any
-entity** — `supplier`, `device`, `branch` and `workspace` have all produced it.
-It reproduces on a **fresh database, on the very first seeding, with no
-concurrency and no load**, which rules out accumulation and contention as
-prerequisites.
+```
+53:28.755048  RESPONSE SENT     status=201 duration_ms=59.24
+53:28.756153  ABOUT TO COMMIT   txid=40622
+53:28.860199  RESPONSE SENT     status=201 duration_ms=52.05
+53:28.860594  ABOUT TO COMMIT   txid=40637
+```
+
+The window is 0.3–1.1 ms. A client that acts on its own answer within it —
+which a local client does constantly and a real one does sometimes — asks for a
+row that has not been committed yet, and is correctly told it does not exist.
+
+**The visible half was never the serious half.** Read-your-writes breaking is
+annoying. The dangerous half is that a commit failing *after* the response has
+gone cannot change it: the platform would have answered **201 for a write that
+never happened**. For a transaction, a settlement or a receipt, that is the one
+failure this codebase refuses to tolerate — and it was reachable.
+
+**Why it hid for so long.** It cannot happen in the backend suite: an in-process
+ASGI client waits for the whole application to finish, so the ordering is
+invisible however wrong it is. It needed a real client, a real server and a
+real database — the exact thing this milestone built — and even then it
+presented as nine different symptoms across five tables and two status codes.
+
+**The shape that misled the investigation.** A row written and answered 2xx;
+the next request from the same principal cannot see it. It fails **closed**,
+never with wrong data, and never with another tenant's row — which reads
+exactly like a tenancy or row-level-security fault, and is why the first nine
+hypotheses all looked plausible. It is **not specific to any entity**
+(`supplier`, `device`, `branch`, `workspace`, `user_account`) and needs
+**neither load nor concurrency**.
 
 **Ruled out, each with the evidence:**
 
@@ -194,24 +223,41 @@ prerequisites.
 | RLS hiding platform-owned rows from a bound session | The policy explicitly allows `tenant_id IS NULL` (`core/rls.py`) |
 | Contention | **9 concurrent seedings, 0 failures** |
 
-**The one mechanism still consistent with everything**: a request occasionally
-runs with an RLS binding that is not its own tenant, so the row is present but
-invisible. Nothing yet proves this, and the obvious candidate for *how* was
-checked and does not explain it: `get_current_principal` rebinds only when the
-token carries a tenant, so a platform-principal request keeps the
-header-derived binding — but the `tenant_id IS NULL` clause means platform rows
-stay visible anyway.
+Every one of those was ruled out by measurement, and every one was wrong about
+where to look. What finally answered it was **asking the server instead of
+inferring from outside**: a diagnostic (`session_diagnostics`, off by default)
+that logs the transaction's real tenant binding when a request refuses, and
+logs the commit it is about to make. The first line it printed ended the
+tenancy theory outright — `binding_matches_context=True`, the correct org
+bound — and the database said the row was simply **absent**.
 
-**What would settle it**, and why it was not done here: server-side
-instrumentation logging `current_setting('lacteva.tenant_id')` alongside the
-principal and the row id at the moment the `NotFoundError` is raised. That is a
-change to product code for diagnostic purposes; it belongs in a work order of
-its own rather than being slipped into a harness milestone.
+**The fix.** Commit inside the route handler, where the response is still ours
+to change: `TransactionalRoute` (new) and `IdempotentRoute` (which 32 of the 37
+routers already carry) both call `commit_request_session()` before returning.
+The write is durable before the answer exists, and a failed commit now becomes
+a 500 the caller can act on instead of a lie. `get_session` keeps its teardown
+commit as a backstop for non-routed use.
 
-Finding 5 (authentication stopping process-wide) is plausibly the same defect
-wearing a different status code — `auth_session` is itself a tenant-owned
-table, so a request that cannot see its own session row answers 401 exactly
-where another would answer 404. That is a hypothesis, not a conclusion.
+**Proof it is fixed** — the same probes that found it:
+
+| Measurement | Before | After |
+|---|---|---|
+| `register` answering 2xx with no row (real PostgreSQL) | **107/150** | **0/150** |
+| Sign-in refused for a user registered a moment earlier | **12/150** | **0/150** |
+| Full seeding runs completing (each ~40 writes) | 1 failure in ~4–8 runs | **14/14** |
+| Refusals for the platform to diagnose at all | many | **zero** |
+
+**Proof it stays fixed.** `tests/test_commit_before_response.py` asserts the
+ordering on the ASGI `send` channel — a test client would show it as correct
+however wrong it is — plus read-your-writes across two requests, plus a
+structural guard that **every** mutating route carries a committing route
+class, because forgetting one on a new router would reintroduce this silently.
+The ordering test was **watched failing** with the fix removed before it was
+kept.
+
+**The retry is gone.** The seeder's narrow 404 retry existed to survive an
+unexplained defect; with the defect fixed it would only hide the regression it
+was written for.
 
 Business rules the harness surfaced (all correct platform behaviour, now
 covered): centre readiness requires operating hours plus an **active,
@@ -222,9 +268,16 @@ step; portal sign-in answers 204.
 
 ## 20. Defects fixed
 
-Harness defects 1, 2, 4 and 6 above. **No product code was changed in this
-milestone** — the platform behaved correctly in every case the harness could
-explain, and the open findings (3 and 5) are reported rather than patched.
+Harness defects 1, 2, 4 and 6 above, plus a fifth found in the follow-up: the
+mail reader took the newest message and demanded a token be in it, so a
+"Welcome to Lacteva" arriving in the same moment failed a seeding the platform
+had served correctly. It now scans new messages for one that actually carries a
+token.
+
+**Product code was changed once, after the cause was established**: findings 3
+and 5 are one defect (E2E-001, §19.1) and it is fixed. The platform was
+answering before it committed. Everything else the harness examined, the
+platform got right — including every case where the harness was wrong first.
 
 ## 21. Tests added
 
@@ -271,8 +324,8 @@ infrastructure.
   against a real server is part of the browser gap above.
 - Settlement → payment → receipt and the sales side are covered by the backend
   suite in-process, not yet across a client boundary.
-- Findings 3 and 5 (§19, §19.1) remain open, with the evidence trail recorded
-  and the next diagnostic step named.
+- Nothing from §19 remains open: findings 3 and 5 were one defect, and it is
+  fixed and guarded (§19.1).
 
 ## 25. Roadmap preservation
 
@@ -303,17 +356,15 @@ implemented, mocked, or converted into a present commitment.
 
 ## 29. Risks
 
-- Open finding 3 is masked by a visible retry; if it also occurs in production
-  traffic it would surface as a spurious "not found" to a real operator. The
-  investigation (§19.1) established that it needs **neither load nor
-  concurrency** — it reproduces on a pristine database on the first seeding —
-  so "it only happens under stress" is not an available reassurance.
-- Open finding 5 is the more serious of the two if it generalises: a platform
-  that stops authenticating everyone, permanently, is a pilot-stopping failure.
-  It has so far been seen **only** under this harness's repeated
-  register-and-seed loop, and whether ordinary traffic can reach the same state
-  is **unknown**. It should be characterised before a dairy depends on a
-  long-running server.
+- E2E-001 is fixed, but it is worth naming what it implies: **every write the
+  platform has ever acknowledged was acknowledged before it was durable**. No
+  evidence of an actual lost write exists — a commit failing in that window
+  would have had to coincide with a database fault — but the guarantee was not
+  there, and no amount of review had noticed. Anything already in a deployed
+  database is unaffected; the exposure was forward-looking.
+- The fix depends on every mutating route carrying a committing route class.
+  That is now enforced by a test rather than by memory, which is the only
+  reason it is a closed risk rather than an open one.
 - The harness's value decays if it is not run: unwired from CI, it is a command
   someone must remember (§23).
 - E2E suites are slower than unit suites (~40s end to end here) and will grow;
@@ -321,25 +372,26 @@ implemented, mocked, or converted into a present commitment.
 
 ## 30. Recommended next milestone
 
-**A focused work order on findings 3 and 5** (§19.1). The nine cheap
-hypotheses are exhausted; the next step is deliberate server-side diagnostic
-instrumentation — logging the bound tenant GUC beside the principal and the row
-id at the moment a `NotFoundError` or a session-lookup miss occurs — which is a
-product-code change and therefore needs its own work order. Then either
-**P1-SCALE-RACE-001** (concurrency and large-import hardening, the same
-neighbourhood) or **P1-LOCALE-I18N-002**. Design System V1 remains after the
-functional track, as agreed.
+**P1-SCALE-RACE-001** (concurrency and large-import hardening) or
+**P1-LOCALE-I18N-002**. E2E-001 is closed, so the follow-up it would have
+needed is not required. One thing it leaves behind is worth a deliberate look
+in the scale milestone: the commit is now on the request's critical path, which
+is correct but makes write latency honest for the first time — the harness saw
+no regression, and a real load profile has never been measured (**TO
+CONFIRM**). Design System V1 remains after the functional track, as agreed.
 
 ## 31. Verdict
 
 **PARTIAL.** GREEN for the real API boundary — 20 cross-boundary tests, all
 passing, deterministic across repeated runs, on real PostgreSQL with RLS
 genuinely enforced. Browser-level and on-device E2E are honestly deferred for
-missing infrastructure rather than claimed. One open defect is reported, not
-hidden.
+missing infrastructure rather than claimed. The one defect it found is a real
+product defect, and it is fixed at the root with an executable guard rather
+than worked around: **the platform answered before it committed** (§19.1).
 
 ## Change Log
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.1 | 2026-08-19 | Engineering | Follow-up investigation closed the open finding. Server-side diagnostics (`session_diagnostics`, off by default) established the root cause: the response reached the client 0.3–1.1 ms BEFORE the commit, because `get_session` commits in FastAPI dependency teardown while the `BaseHTTPMiddleware` stack releases the response as soon as it starts. Both open findings (the intermittent "not found" and the 401 on a just-issued session) were this one defect. Fixed by committing inside the route handler (`TransactionalRoute`; `IdempotentRoute` likewise), proven 107/150 → 0/150 and 14/14 seedings, guarded by `tests/test_commit_before_response.py` (ASGI-level ordering, read-your-writes, and a structural check that every mutating route commits inside its handler), watched failing before being kept. The seeder's masking retry was removed and a fifth harness defect (mail reader took the newest message rather than one carrying a token) fixed (E2E-001). |
 | 1.0 | 2026-08-19 | Engineering | Real client↔server E2E harness: one-command environment (real PostgreSQL via the pgserver wheel, real FastAPI under uvicorn, local SMTP sink so the real invitation path delivers a real token), synthetic two-dairy dataset seeded entirely through the platform's own API along the documented onboarding runbook, 14 real mobile tests (auth, RLS/tenancy, full capture, parchi, offline replay, restart, history, session close) and 6 real portal tests (cookie auth, proxy, unauthenticated refusal, cross-tenant refusal, backend-authoritative 403). Tenant isolation verified under concurrent two-tenant load (0 leaks); three harness/environment defects fixed; one intermittent product finding reported open with the investigation trail; no product code changed; browser and on-device E2E deferred as missing infrastructure (P1-E2E-HARNESS-001). |

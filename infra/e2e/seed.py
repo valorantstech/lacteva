@@ -49,17 +49,20 @@ async def _await_invitation_token(*, after: int, timeout: float = 20.0) -> str:
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:
         files = sorted(MAILDIR.glob("msg-*.txt"))
-        if len(files) > after:
-            body = files[-1].read_text(encoding="utf-8", errors="replace")
+        # Read every NEW message, newest first, and take the first one that
+        # actually carries a token. Taking the newest and demanding a token be
+        # in it was wrong: an invitation is not the only mail the platform
+        # sends, and a "Welcome to Lacteva" arriving in the same moment made
+        # the harness fail on a platform that had done nothing wrong.
+        for path in reversed(files[after:]):
+            body = path.read_text(encoding="utf-8", errors="replace")
             # Quoted-printable soft line breaks split long tokens across lines.
             body = body.replace("=\n", "").replace("=\r\n", "")
-            match = re.search(r"registration:\s*(\S+?)\.(?:\s|$)", body)
-            if match:
-                return match.group(1)
-            match = re.search(r"registration:\s*(\S+)", body)
+            match = re.search(r"registration:\s*(\S+?)\.(?:\s|$)", body) or re.search(
+                r"registration:\s*(\S+)", body
+            )
             if match:
                 return match.group(1).rstrip(".")
-            raise RuntimeError(f"no token in the delivered message: {body[:400]!r}")
         await asyncio.sleep(0.25)
     raise RuntimeError("the platform delivered no invitation message to the sink")
 
@@ -69,26 +72,13 @@ class Seeder:
         self.c = client
 
     async def post(self, path: str, *, json_body: Any = None, headers: dict | None = None) -> Any:
+        # There was a retry here, for E2E-001: a row created moments earlier
+        # reported "not found" by the very next request. The cause is now known
+        # and fixed in the platform — it answered before it committed — so the
+        # retry is GONE rather than left in place. A retry that outlives its
+        # defect stops being a workaround and becomes a blindfold: it would
+        # turn the regression it was written for into a silent pass.
         r = await self.c.post(path, json=json_body, headers=headers or {})
-        if r.status_code == 404 and "/suppliers/" in path:
-            # OPEN FINDING 3 (P1-E2E-HARNESS-001 §19.1): a row created moments
-            # earlier is reported "not found" by the very next request from the
-            # same principal. The investigation showed it is NOT
-            # supplier-specific — device, branch and workspace fail identically
-            # — and that it needs neither load nor concurrency: it reproduces on
-            # a pristine database on the first seeding. Nine hypotheses are
-            # ruled out with measurements in §19.1; the cause is still not
-            # established, and settling it needs server-side instrumentation.
-            #
-            # The retry stays narrow ON PURPOSE. Widening it to every entity
-            # would make the harness pass more often while hiding more of the
-            # defect, and a green run is worth nothing if it is green by
-            # concealment. NOT silently swallowed — the warning is printed and
-            # the milestone document records it. It must not be read as the
-            # cause being understood.
-            print(f"E2E-WARNING: {path} → 404 on a just-created row; retrying once", flush=True)
-            await asyncio.sleep(0.5)
-            r = await self.c.post(path, json=json_body, headers=headers or {})
         if r.status_code >= 400:
             raise RuntimeError(f"POST {path} → {r.status_code}: {r.text}")
         return r.json() if r.content else None

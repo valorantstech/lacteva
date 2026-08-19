@@ -177,7 +177,7 @@ class IdempotentRoute(APIRoute):
         original = super().get_route_handler()
 
         async def handler(request: Request) -> Response:
-            from platform_core.core.db import current_request_session
+            from platform_core.core.db import commit_request_session, current_request_session
 
             try:
                 response = await original(request)
@@ -189,12 +189,18 @@ class IdempotentRoute(APIRoute):
                     headers={"Idempotent-Replay": "true"},
                 )
 
+            # E2E-001: commit while the response is still ours to change. See
+            # `commit_request_session` — every return below goes through it,
+            # because a keyless request (the common case) is exactly the one
+            # that was answering before it committed.
             record_id: uuid.UUID | None = getattr(request.state, _STATE, None)
             if record_id is None:
+                await commit_request_session()
                 return response
 
             session = current_request_session()
             if session is None:  # pragma: no cover - defensive
+                await commit_request_session()
                 return response
 
             if 200 <= response.status_code < 300:
@@ -209,6 +215,9 @@ class IdempotentRoute(APIRoute):
                 # is a fresh attempt at something that did not happen, and
                 # answering it with the failure forever would be wrong.
                 await idempotency.release(session, record_id)
+            # The idempotency record and the business change commit together,
+            # which is the whole point of reserving inside the transaction.
+            await commit_request_session()
             return response
 
         return handler

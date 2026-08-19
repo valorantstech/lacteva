@@ -170,4 +170,81 @@ describe("portal → platform, over the real boundary", () => {
     const problem = await write.json();
     expect(problem).toHaveProperty("title");
   });
+
+  // E2E-001 (P1-E2E-404-001). The defect this harness found: a row created
+  // moments earlier read back 404, because the platform answered BEFORE it
+  // committed. It could not be caught in-process — an ASGI test client waits
+  // for the application to finish and shows the ordering as correct however
+  // wrong it is — so the regression test has to live out here, against a real
+  // server and a real PostgreSQL, doing what a real client does: acting on its
+  // own answer immediately.
+  //
+  // Repeated, because the window was sub-millisecond: one pass proved nothing.
+  // Before the fix this failed within the first handful of iterations.
+  it("reads back every row it just created, 25 times running", async () => {
+    if (!harnessed) return;
+    await signIn(fx.users.admin.email, fx.org.id);
+    const { POST: proxyPost } = await import("@/app/api/proxy/[...path]/route");
+
+    const stamp = Date.now().toString().slice(-6);
+    const missing: string[] = [];
+    const created: string[] = [];
+
+    for (let i = 0; i < 25; i++) {
+      const create = await proxyPost(
+        new Request("http://portal.test/api/proxy/v1/suppliers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            full_name: `E2E Read-After-Write ${stamp}-${i} (TEST DATA)`,
+            phone: `+9198${stamp}${String(i).padStart(2, "0")}`,
+          }),
+        }),
+        params(["v1", "suppliers"]),
+      );
+      expect(create.status).toBe(201);
+      const { id } = (await create.json()) as { id: string };
+      created.push(id);
+
+      // The very next request, with nothing in between.
+      const readBack = await proxyGet(
+        new Request(`http://portal.test/api/proxy/v1/suppliers/${id}`),
+        params(["v1", "suppliers", id]),
+      );
+      if (readBack.status !== 200) missing.push(`${id} → ${readBack.status}`);
+    }
+
+    expect(missing).toEqual([]);
+    expect(created).toHaveLength(25);
+  });
+
+  it("keeps those new rows inside their own tenant", async () => {
+    if (!harnessed) return;
+    // The fix moved where the commit happens; it must not have moved who can
+    // see the row. A supplier created by this dairy stays invisible to the
+    // other one — decided by RLS in the database, not by the portal.
+    await signIn(fx.users.admin.email, fx.org.id);
+    const { POST: proxyPost } = await import("@/app/api/proxy/[...path]/route");
+    const create = await proxyPost(
+      new Request("http://portal.test/api/proxy/v1/suppliers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: `E2E Isolation ${Date.now()} (TEST DATA)`,
+          phone: `+9197${Date.now().toString().slice(-8)}`,
+        }),
+      }),
+      params(["v1", "suppliers"]),
+    );
+    expect(create.status).toBe(201);
+    const { id } = (await create.json()) as { id: string };
+
+    await signIn(fx.other_org.admin_email, fx.other_org.id);
+    const foreign = await proxyGet(
+      new Request(`http://portal.test/api/proxy/v1/suppliers/${id}`),
+      params(["v1", "suppliers", id]),
+    );
+    expect(foreign.status).not.toBe(200);
+    expect([403, 404]).toContain(foreign.status);
+  });
 });
