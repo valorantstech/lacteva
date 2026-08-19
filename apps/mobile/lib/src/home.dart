@@ -54,14 +54,46 @@ class HomeRouter extends StatefulWidget {
   State<HomeRouter> createState() => _HomeRouterState();
 }
 
-class _HomeRouterState extends State<HomeRouter> {
+class _HomeRouterState extends State<HomeRouter>
+    with WidgetsBindingObserver {
   Session? _session;
   String? _error;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _resolve();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Sync-on-resume (P1-MOBILE-COUNTER-001; audit D-13). The queue used to
+  /// wait for a manual tap after any transport blip — one dead spot at 5 a.m.
+  /// and every later capture silently queued all morning. Coming back to the
+  /// app is the natural moment to try again. Fire-and-forget: `syncNow` is
+  /// already idempotent (original keys, bounded backoff, no-op while a run is
+  /// in flight), an expired session surfaces through the D-2 flow, and a
+  /// failure simply leaves the queue for the next attempt.
+  void _maybeSync() {
+    if (widget.client.pendingCount > 0) {
+      unawaited(() async {
+        try {
+          await widget.client.syncNow();
+        } catch (_) {
+          // The queue keeps the work; the next resume or manual sync retries.
+        }
+      }());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _maybeSync();
   }
 
   Future<void> _resolve() async {
@@ -70,6 +102,9 @@ class _HomeRouterState extends State<HomeRouter> {
       final session = await loadSession(widget.client);
       if (!mounted) return;
       setState(() => _session = session);
+      // Signing in is also such a moment: whatever queued before this login
+      // replays now, re-authorized by the platform under this session.
+      _maybeSync();
       // After the session, never before: the platform binds the handset to
       // the authenticated principal, and a registration sent before sign-in
       // has nobody to belong to. Deliberately not awaited into the screen's

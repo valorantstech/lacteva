@@ -1,7 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'api.dart';
 import 'build_flags.dart';
+
+/// The platform's own capture bounds, mirrored for the OFFLINE path
+/// (P1-MOBILE-COUNTER-001; audit D-8). Online, the server refuses garbage
+/// immediately; offline, this check is the only thing standing between a
+/// mistyped 1200 kg and a conflict surfacing hours later at sync — when the
+/// farmer is gone. Values are copied from `milk_collection/service.py`
+/// (MAX_GROSS_KG, QUALITY_RANGES), never invented here; the backend stays
+/// authoritative and re-checks everything on sync.
+const kMaxGrossKg = 200.0;
+const kFatRange = (0.0, 15.0);
+const kSnfRange = (0.0, 15.0);
+const kClrRange = (20.0, 40.0);
 
 /// Milk Collection Transaction Wizard (SPRINT-007).
 /// Steps: supplier -> milk -> weight -> quality -> review -> completion.
@@ -31,6 +44,17 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
   Map<String, dynamic>? _tx;
   String? _error;
   bool _busy = false;
+
+  // The parchi (P1-MOBILE-COUNTER-001): fetched from the platform once the
+  // transaction is COMPLETED online. An offline completion has no slip yet —
+  // the number is minted by the platform, never invented on the phone.
+  Map<String, dynamic>? _slip;
+  bool _slipBusy = false;
+
+  // Rejection asks WHY (audit D-7): the reason prints on the farmer's
+  // official parchi, so a hardcoded placeholder was never acceptable.
+  bool _rejecting = false;
+  final _rejectReason = TextEditingController();
 
   // Supplier step
   final _supplierCode = TextEditingController();
@@ -95,43 +119,122 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
     nextStep: 2,
   );
 
-  Future<void> _weight({required bool mock}) => _run(
-    () => widget.client.txStep(
-      '/v1/milk-transactions/$_txId/weight',
-      body: {
-        'source': mock ? 'mock_scale' : 'manual',
-        if (!mock) 'gross': double.tryParse(_gross.text),
-        if (!mock) 'tare': double.tryParse(_tare.text),
-      },
-    ),
-    nextStep: 3,
-  );
+  /// The platform's weight rules, checked BEFORE anything can queue. Wording
+  /// mirrors the server's own refusals so online and offline read the same.
+  String? _weightProblem() {
+    final gross = double.tryParse(_gross.text.trim());
+    final tare = double.tryParse(_tare.text.trim());
+    if (gross == null || tare == null) {
+      return 'Enter gross and tare as numbers';
+    }
+    if (gross <= 0 || tare < 0) return 'gross must be > 0 and tare >= 0';
+    if (gross > kMaxGrossKg) return 'gross weight exceeds $kMaxGrossKg kg limit';
+    if (tare >= gross) return 'tare must be less than gross';
+    return null;
+  }
 
-  Future<void> _quality({required bool mock}) => _run(
-    () => widget.client.txStep(
-      '/v1/milk-transactions/$_txId/quality',
-      body: {
-        'source': mock ? 'mock_analyzer' : 'manual',
-        if (!mock) 'fat': double.tryParse(_fat.text),
-        if (!mock) 'snf': double.tryParse(_snf.text),
-        if (!mock) 'clr': double.tryParse(_clr.text),
-      },
-    ),
-    nextStep: 4,
-  );
+  /// The platform's quality plausibility bounds (QUALITY_RANGES), likewise.
+  String? _qualityProblem() {
+    final values = {
+      'fat': (double.tryParse(_fat.text.trim()), kFatRange),
+      'snf': (double.tryParse(_snf.text.trim()), kSnfRange),
+      'clr': (double.tryParse(_clr.text.trim()), kClrRange),
+    };
+    for (final entry in values.entries) {
+      final (value, (lo, hi)) = entry.value;
+      if (value == null) return 'Enter fat, snf and clr as numbers';
+      if (value < lo || value > hi) {
+        return '${entry.key} out of range [$lo, $hi]';
+      }
+    }
+    return null;
+  }
+
+  Future<void> _weight({required bool mock}) async {
+    if (!mock) {
+      final problem = _weightProblem();
+      if (problem != null) {
+        setState(() => _error = problem);
+        return;
+      }
+    }
+    await _run(
+      () => widget.client.txStep(
+        '/v1/milk-transactions/$_txId/weight',
+        body: {
+          'source': mock ? 'mock_scale' : 'manual',
+          if (!mock) 'gross': double.tryParse(_gross.text),
+          if (!mock) 'tare': double.tryParse(_tare.text),
+        },
+      ),
+      nextStep: 3,
+    );
+  }
+
+  Future<void> _quality({required bool mock}) async {
+    if (!mock) {
+      final problem = _qualityProblem();
+      if (problem != null) {
+        setState(() => _error = problem);
+        return;
+      }
+    }
+    await _run(
+      () => widget.client.txStep(
+        '/v1/milk-transactions/$_txId/quality',
+        body: {
+          'source': mock ? 'mock_analyzer' : 'manual',
+          if (!mock) 'fat': double.tryParse(_fat.text),
+          if (!mock) 'snf': double.tryParse(_snf.text),
+          if (!mock) 'clr': double.tryParse(_clr.text),
+        },
+      ),
+      nextStep: 4,
+    );
+  }
 
   Future<void> _decide(bool accept) async {
+    if (!accept && _rejectReason.text.trim().isEmpty) {
+      setState(() {
+        _rejecting = true;
+        _error = 'Say why the milk is rejected — it prints on the parchi';
+      });
+      return;
+    }
     await _run(() async {
       if (accept) {
         await widget.client.txStep('/v1/milk-transactions/$_txId/accept');
       } else {
         await widget.client.txStep(
           '/v1/milk-transactions/$_txId/reject',
-          body: {'reason': 'Rejected at review'},
+          body: {'reason': _rejectReason.text.trim()},
         );
       }
       return widget.client.txStep('/v1/milk-transactions/$_txId/complete');
     }, nextStep: 5);
+    // COMPLETED online → the platform has minted the slip; fetch the parchi.
+    // Queued offline → there is no slip yet, and the screen says so honestly.
+    if (_step == 5 && _tx?['offline'] != true) {
+      await _fetchSlip();
+    }
+  }
+
+  Future<void> _fetchSlip() async {
+    final id = _txId;
+    if (id == null) return;
+    setState(() => _slipBusy = true);
+    try {
+      final slip = await widget.client.transactionSlip(id);
+      if (mounted) setState(() => _slip = slip);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.detail);
+    } catch (_) {
+      // Transport failure ≠ refusal (P0-PRODUCT-008 D-1): the completion
+      // stands; the parchi has its own retry button below.
+      if (mounted) setState(() => _error = 'Could not reach the platform');
+    } finally {
+      if (mounted) setState(() => _slipBusy = false);
+    }
   }
 
   @override
@@ -294,10 +397,39 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                 onPressed: _busy ? null : () => _decide(true),
                 child: const Text('Accept & complete'),
               ),
-              OutlinedButton(
-                onPressed: _busy ? null : () => _decide(false),
-                child: const Text('Reject & complete'),
-              ),
+              if (!_rejecting)
+                OutlinedButton(
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() => _rejecting = true),
+                  child: const Text('Reject…'),
+                ),
+              if (_rejecting) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _rejectReason,
+                  decoration: const InputDecoration(
+                    labelText: 'Rejection reason',
+                    helperText:
+                        'The farmer reads this on the parchi — say what was '
+                        'actually wrong (sour, adulterated, smell…)',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: _busy ? null : () => _decide(false),
+                  child: const Text('Reject & complete'),
+                ),
+                TextButton(
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() {
+                          _rejecting = false;
+                          _rejectReason.clear();
+                        }),
+                  child: const Text('Keep reviewing'),
+                ),
+              ],
             ],
             if (_step == 5 && tx != null) ...[
               const SizedBox(height: 24),
@@ -313,11 +445,17 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
               const SizedBox(height: 12),
               Center(
                 child: Text(
-                  'Transaction ${tx['state']}',
+                  // The honest status line: an offline completion is SAVED
+                  // AND QUEUED, not submitted — the two must never blur.
+                  tx['offline'] == true
+                      ? 'Saved on this phone — queued to sync'
+                      : 'Transaction ${tx['state']}',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
               Center(child: Text('Net ${tx['net_weight']} kg')),
+              if (tx['rejected_reason'] != null)
+                Center(child: Text('Rejected: ${tx['rejected_reason']}')),
               if (tx['rejected_reason'] == null &&
                   tx['pricing_status'] == 'priced')
                 Center(
@@ -330,6 +468,61 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                   tx['pricing_status'] == 'priced')
                 const Center(
                   child: Text('Will appear in the next supplier settlement.'),
+                ),
+              const SizedBox(height: 16),
+              // --- The parchi (P1-MOBILE-COUNTER-001) -----------------------
+              if (tx['offline'] == true)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'The parchi is issued when this phone syncs — the slip '
+                      'number comes from the platform, and this device will '
+                      'not invent one.',
+                    ),
+                  ),
+                )
+              else if (_slip != null) ...[
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Parchi ${_slip!['slip_number']}',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${_slip!['text']}',
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  icon: const Icon(Icons.copy),
+                  label: const Text('Copy parchi text'),
+                  onPressed: () async {
+                    await Clipboard.setData(
+                      ClipboardData(text: '${_slip!['text']}'),
+                    );
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Parchi copied')),
+                    );
+                  },
+                ),
+              ] else
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: Text(_slipBusy ? 'Fetching parchi…' : 'Get parchi'),
+                  onPressed: _slipBusy ? null : _fetchSlip,
                 ),
               const SizedBox(height: 24),
               FilledButton(

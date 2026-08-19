@@ -14,6 +14,7 @@ import 'rate_cards.dart';
 import 'settlements.dart';
 import 'sign_out.dart';
 import 'suppliers.dart';
+import 'transactions_history.dart';
 
 /// Login screen — SPRINT-003: first real auth flow in the mobile app.
 class LoginScreen extends StatefulWidget {
@@ -41,10 +42,24 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _error;
   bool _busy = false;
 
+  /// Captured work waiting on this phone (P1-MOBILE-COUNTER-001 §5). After a
+  /// restart while offline the operator cannot sign in — but they CAN be told
+  /// their morning's work is safe in the durable queue and will sync after
+  /// sign-in. Visibility without authentication reveals only a count.
+  int _queuedOffline = 0;
+
   @override
   void initState() {
     super.initState();
     _error = widget.notice;
+    widget.client.queue
+        .load()
+        .then((_) {
+          if (mounted) {
+            setState(() => _queuedOffline = widget.client.pendingCount);
+          }
+        })
+        .catchError((_) {});
   }
 
   Future<void> _submit() async {
@@ -90,6 +105,21 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (_queuedOffline > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            '$_queuedOffline captured '
+                            '${_queuedOffline == 1 ? "record is" : "records are"} '
+                            'safe on this phone and will sync after you sign '
+                            'in.',
+                          ),
+                        ),
+                      ),
+                    ),
                   TextFormField(
                     controller: _email,
                     decoration: const InputDecoration(labelText: 'Email'),
@@ -594,6 +624,63 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
     }
   }
 
+  /// End the shift (P1-MOBILE-COUNTER-001): find the centre's open session,
+  /// ask — closing is a business act, the queue of that shift's collections
+  /// is unaffected — then let the PLATFORM close it. Its refusal (a session
+  /// with in-progress transactions, somebody else's session) renders
+  /// verbatim.
+  Future<void> _closeOpenSession(BuildContext context) async {
+    try {
+      final sessions = await widget.client.listOpenSessions(widget.centerId);
+      if (!context.mounted) return;
+      if (sessions.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No open session at this centre')),
+        );
+        return;
+      }
+      final session = sessions.first;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Close the session?'),
+          content: Text(
+            'Closing "${session['label'] ?? session['id']}" ends this shift '
+            'at the centre. Collections already captured are unaffected; a '
+            'new shift opens a new session.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Keep it open'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Close session'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
+      await widget.client.closeCollectionSession(session['id'] as String);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session closed')),
+      );
+    } on ApiException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.detail)));
+    } catch (_) {
+      // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not reach the platform')));
+    }
+  }
+
   Future<void> _setStatus(String status) async {
     try {
       await widget.client.setStatus(widget.centerId, status);
@@ -619,6 +706,28 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
       appBar: AppBar(
         title: Text(detail?.center.name ?? 'Center'),
         actions: [
+          // P1-MOBILE-COUNTER-001: the centre's collection history — the
+          // phone's answer to a farmer's dispute at the counter.
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Collections',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => TransactionHistoryScreen(
+                  client: widget.client,
+                  centerId: widget.centerId,
+                  centerName: detail?.center.name ?? 'Center',
+                ),
+              ),
+            ),
+          ),
+          // P1-MOBILE-COUNTER-001 (audit D-12): end-of-shift session close —
+          // the platform endpoint existed with no caller on any client.
+          IconButton(
+            icon: const Icon(Icons.event_busy_outlined),
+            tooltip: 'Close session',
+            onPressed: () => _closeOpenSession(context),
+          ),
           IconButton(
             icon: const Icon(Icons.local_drink_outlined),
             tooltip: 'Collect milk',

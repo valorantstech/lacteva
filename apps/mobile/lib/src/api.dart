@@ -311,6 +311,38 @@ class ApiClient {
     return items.map((e) => e as Map<String, dynamic>).toList();
   }
 
+  /// Close an open collection session — end-of-shift discipline
+  /// (P1-MOBILE-COUNTER-001; the platform endpoint existed with no caller on
+  /// any client, P0-PRODUCT-008 D-12).
+  Future<Map<String, dynamic>> closeCollectionSession(String sessionId) async {
+    return await _send('POST', '/v1/collection-sessions/$sessionId/close')
+        as Map<String, dynamic>;
+  }
+
+  /// The centre's collection history, newest first — the phone's answer to
+  /// "you wrote 12.5 kg, not 15" (P1-MOBILE-COUNTER-001). Read-only; the
+  /// platform pages and filters.
+  Future<Map<String, dynamic>> listMilkTransactions({
+    required String centerId,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    return await _send(
+          'GET',
+          '/v1/milk-transactions?center_id=$centerId&limit=$limit&offset=$offset',
+        )
+        as Map<String, dynamic>;
+  }
+
+  /// The parchi for a completed transaction (P0-BIZ-003) — slip number,
+  /// captured values, farmer identity, and the shareable plain-text bilingual
+  /// rendering, all composed by the platform. The slip renders the books;
+  /// nothing here recomputes them.
+  Future<Map<String, dynamic>> transactionSlip(String txId) async {
+    return await _send('GET', '/v1/milk-transactions/$txId/slip')
+        as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> txStep(String path, {Object? body}) async {
     return await _send('POST', path, body: body ?? {}) as Map<String, dynamic>;
   }
