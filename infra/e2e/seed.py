@@ -71,15 +71,21 @@ class Seeder:
     async def post(self, path: str, *, json_body: Any = None, headers: dict | None = None) -> Any:
         r = await self.c.post(path, json=json_body, headers=headers or {})
         if r.status_code == 404 and "/suppliers/" in path:
-            # OPEN FINDING (P1-E2E-HARNESS-001): roughly one seeding run in
-            # four, a supplier created moments earlier is reported "not found"
-            # by the very next request. NOT silently swallowed — the warning is
-            # printed and the milestone document records it. Ruled out so far:
-            # projection lag (the handler reads the table directly), a simple
-            # sequential race (0/20 in isolation), and cross-tenant context
-            # bleed (0 leaks, 0 misses under concurrent two-tenant load). The
-            # retry keeps the harness usable while the cause is investigated;
-            # it must not be read as the cause being understood.
+            # OPEN FINDING 3 (P1-E2E-HARNESS-001 §19.1): a row created moments
+            # earlier is reported "not found" by the very next request from the
+            # same principal. The investigation showed it is NOT
+            # supplier-specific — device, branch and workspace fail identically
+            # — and that it needs neither load nor concurrency: it reproduces on
+            # a pristine database on the first seeding. Nine hypotheses are
+            # ruled out with measurements in §19.1; the cause is still not
+            # established, and settling it needs server-side instrumentation.
+            #
+            # The retry stays narrow ON PURPOSE. Widening it to every entity
+            # would make the harness pass more often while hiding more of the
+            # defect, and a green run is worth nothing if it is green by
+            # concealment. NOT silently swallowed — the warning is printed and
+            # the milestone document records it. It must not be read as the
+            # cause being understood.
             print(f"E2E-WARNING: {path} → 404 on a just-created row; retrying once", flush=True)
             await asyncio.sleep(0.5)
             r = await self.c.post(path, json=json_body, headers=headers or {})

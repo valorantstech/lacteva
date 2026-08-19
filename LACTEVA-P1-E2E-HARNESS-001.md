@@ -160,8 +160,58 @@ leaves these tests is real.
 |---|---|---|---|
 | 1 | `inline` outbox mode races the relay workers a real server starts (`StaleDataError` on `event_outbox`) | harness defect (B) | **Fixed** — harness runs the production `background` mode |
 | 2 | SQLite cannot serve a real server's five concurrent workers (`StaleDataError` on `auth_session`, `consumer_cursor`) | environment limitation (C) | **Fixed** — harness uses real PostgreSQL, which also makes RLS genuine |
-| 3 | **Intermittent 404 on a just-created supplier** — roughly one seeding run in four, `POST /v1/suppliers/{id}/centers` reports "supplier not found" for a row created moments earlier | **OPEN — cause not established** | Ruled out: projection lag (the handler reads the table directly), simple sequential race (**0/20** in isolation), cross-tenant context bleed (**0 leaks / 0 misses** under concurrent load). The seeder retries once and prints `E2E-WARNING`; the retry keeps the harness usable and **must not be read as the cause being understood**. Recommended as the first item of a follow-up investigation. |
+| 3 | **Intermittent "not found" on a just-created row** — a row created moments earlier by the same principal is reported missing by the very next request. First seen as `POST /v1/suppliers/{id}/centers`; the investigation (§19.1) showed it is **not supplier-specific** — `device`, `branch` and `workspace` fail identically | **OPEN — cause not established** | Nine hypotheses tested and ruled out with evidence (§19.1). Reproduces on a **pristine database, first seeding, no load and no concurrency**. The seeder retries once and prints `E2E-WARNING`; the retry keeps the harness usable and **must not be read as the cause being understood**. |
 | 4 | My own probe mis-wired its id lists and reported false leaks | test defect (B) | **Fixed** before any conclusion was drawn |
+| 5 | **Authentication stops working process-wide and never recovers** — after some minutes of repeated seeding the platform refuses *every* request from *every* principal, including users registered seconds earlier, with `auth_failures_total{reason="session_revoked_or_expired"}` and **zero** `invalid_token`. Onset varied from the 3rd to the 8th seeding across runs; once it starts, no later request from any principal ever succeeds | **OPEN — cause not established** | Found while investigating finding 3, and potentially the more serious of the two: the counter is incremented **server-side**, on a freshly issued token, so the platform is refusing sessions it minted itself. Whether it can occur outside this harness's register-heavy loop is **unknown** — see §19.1. |
+| 6 | My own commit-lag measurement reported "40% of writes uncommitted, 124–313 ms" | test defect (B) | **Fixed** — the load ran as asyncio tasks in the same event loop as the measurement and starved it; re-measured with load in separate processes gives **0/60** |
+
+### 19.1 Investigation of finding 3 — what is now known
+
+The cause is **still not established**. What follows is the evidence, so the
+next person starts from the frontier rather than from the beginning. Every
+"ruled out" below is a measurement, not an argument.
+
+**The shape.** A row is written and answered 2xx; the immediately following
+request from the same principal cannot see it. It fails **closed** (never a
+wrong row, never another tenant's row), and it is **not specific to any
+entity** — `supplier`, `device`, `branch` and `workspace` have all produced it.
+It reproduces on a **fresh database, on the very first seeding, with no
+concurrency and no load**, which rules out accumulation and contention as
+prerequisites.
+
+**Ruled out, each with the evidence:**
+
+| Hypothesis | Evidence against |
+|---|---|
+| Read model / projection lag | The handlers read their own table directly, not a projection |
+| Simple sequential race | **0 failures / 40** create→act cycles with background noise |
+| Cross-tenant context bleed | **0 leaks, 0 own-row misses / 60** with two tenants under concurrent load |
+| GUC scope leaking across requests | Every `set_config` in `core/rls.py` passes `is_local=true` (transaction-scoped) |
+| Response returned before commit | **0/60 uncommitted at response, 0/60 follow-up 404s**, load in separate processes (the earlier contrary figure was finding 6 — my own starved event loop) |
+| Stale snapshot (REPEATABLE READ) | The engine takes PostgreSQL's default **READ COMMITTED**; no isolation level is set |
+| A mid-request commit dropping `SET LOCAL` | The three request-path commits (`api/deps.py`, `modules/auth/service.py`) each immediately precede a raise, so the request ends; `core/idempotency.py` reserves with `flush`, never `commit` |
+| Idempotency replay returning a stale response | The seeder sends no `Idempotency-Key`, and `idempotency_guard` returns immediately when the header is absent |
+| RLS hiding platform-owned rows from a bound session | The policy explicitly allows `tenant_id IS NULL` (`core/rls.py`) |
+| Contention | **9 concurrent seedings, 0 failures** |
+
+**The one mechanism still consistent with everything**: a request occasionally
+runs with an RLS binding that is not its own tenant, so the row is present but
+invisible. Nothing yet proves this, and the obvious candidate for *how* was
+checked and does not explain it: `get_current_principal` rebinds only when the
+token carries a tenant, so a platform-principal request keeps the
+header-derived binding — but the `tenant_id IS NULL` clause means platform rows
+stay visible anyway.
+
+**What would settle it**, and why it was not done here: server-side
+instrumentation logging `current_setting('lacteva.tenant_id')` alongside the
+principal and the row id at the moment the `NotFoundError` is raised. That is a
+change to product code for diagnostic purposes; it belongs in a work order of
+its own rather than being slipped into a harness milestone.
+
+Finding 5 (authentication stopping process-wide) is plausibly the same defect
+wearing a different status code — `auth_session` is itself a tenant-owned
+table, so a request that cannot see its own session row answers 401 exactly
+where another would answer 404. That is a hypothesis, not a conclusion.
 
 Business rules the harness surfaced (all correct platform behaviour, now
 covered): centre readiness requires operating hours plus an **active,
@@ -172,9 +222,9 @@ step; portal sign-in answers 204.
 
 ## 20. Defects fixed
 
-Harness defects 1, 2 and 4 above. **No product code was changed in this
-milestone** — the platform behaved correctly in every case the harness
-examined, and the one open finding (§19.3) is reported rather than patched.
+Harness defects 1, 2, 4 and 6 above. **No product code was changed in this
+milestone** — the platform behaved correctly in every case the harness could
+explain, and the open findings (3 and 5) are reported rather than patched.
 
 ## 21. Tests added
 
@@ -221,7 +271,8 @@ infrastructure.
   against a real server is part of the browser gap above.
 - Settlement → payment → receipt and the sales side are covered by the backend
   suite in-process, not yet across a client boundary.
-- §19.3 remains open.
+- Findings 3 and 5 (§19, §19.1) remain open, with the evidence trail recorded
+  and the next diagnostic step named.
 
 ## 25. Roadmap preservation
 
@@ -252,9 +303,17 @@ implemented, mocked, or converted into a present commitment.
 
 ## 29. Risks
 
-- The open finding (§19.3) is masked by a visible retry; if it also occurs in
-  production traffic it would surface as a spurious "not found" to a real
-  operator. It should be investigated before the pilot handles concurrent load.
+- Open finding 3 is masked by a visible retry; if it also occurs in production
+  traffic it would surface as a spurious "not found" to a real operator. The
+  investigation (§19.1) established that it needs **neither load nor
+  concurrency** — it reproduces on a pristine database on the first seeding —
+  so "it only happens under stress" is not an available reassurance.
+- Open finding 5 is the more serious of the two if it generalises: a platform
+  that stops authenticating everyone, permanently, is a pilot-stopping failure.
+  It has so far been seen **only** under this harness's repeated
+  register-and-seed loop, and whether ordinary traffic can reach the same state
+  is **unknown**. It should be characterised before a dairy depends on a
+  long-running server.
 - The harness's value decays if it is not run: unwired from CI, it is a command
   someone must remember (§23).
 - E2E suites are slower than unit suites (~40s end to end here) and will grow;
@@ -262,10 +321,14 @@ implemented, mocked, or converted into a present commitment.
 
 ## 30. Recommended next milestone
 
-**Investigate §19.3** (short, focused — the harness now reproduces it), then
-either **P1-SCALE-RACE-001** (concurrency and large-import hardening, which is
-the same neighbourhood) or **P1-LOCALE-I18N-002**. Design System V1 remains
-after the functional track, as agreed.
+**A focused work order on findings 3 and 5** (§19.1). The nine cheap
+hypotheses are exhausted; the next step is deliberate server-side diagnostic
+instrumentation — logging the bound tenant GUC beside the principal and the row
+id at the moment a `NotFoundError` or a session-lookup miss occurs — which is a
+product-code change and therefore needs its own work order. Then either
+**P1-SCALE-RACE-001** (concurrency and large-import hardening, the same
+neighbourhood) or **P1-LOCALE-I18N-002**. Design System V1 remains after the
+functional track, as agreed.
 
 ## 31. Verdict
 
