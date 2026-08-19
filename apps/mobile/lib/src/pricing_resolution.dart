@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'session.dart';
 
 /// Resolution + Calculator Test Screen (PRC-003/PRC-004). Operators check
 /// which pricing band a transaction WOULD use, then calculate the gross
@@ -10,10 +11,16 @@ class ResolutionTestScreen extends StatefulWidget {
     super.key,
     required this.client,
     required this.centerId,
+    this.session,
   });
 
   final ApiClient client;
   final String centerId;
+
+  /// Threaded for parity with the other centre screens
+  /// (P1-LOCALE-I18N-001); this screen's strings are deliberately NOT
+  /// localized yet — deferred with the back-office wave.
+  final Session? session;
 
   @override
   State<ResolutionTestScreen> createState() => _ResolutionTestScreenState();

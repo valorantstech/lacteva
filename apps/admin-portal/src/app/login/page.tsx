@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, login } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 
 /**
  * Sign in (DEMO-010).
@@ -28,6 +29,7 @@ import { ApiError, login } from "@/lib/api";
  * appears when it is needed and not before.
  */
 export default function LoginPage() {
+  const t = useT();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [tenantId, setTenantId] = useState("");
@@ -58,7 +60,7 @@ export default function LoginPage() {
         setNeedsTenant(true);
         setError(err.detail);
       } else {
-        setError(err instanceof ApiError ? err.detail : "Login failed");
+        setError(err instanceof ApiError ? err.detail : t("login.failed"));
       }
     } finally {
       setBusy(false);
@@ -69,15 +71,13 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center p-8">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Sign in to Lacteva</CardTitle>
-          <CardDescription>
-            Sign in with your email and password.
-          </CardDescription>
+          <CardTitle>{t("login.title")}</CardTitle>
+          <CardDescription>{t("login.subtitle")}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t("auth.email")}</Label>
               <Input
                 id="email"
                 type="email"
@@ -87,7 +87,7 @@ export default function LoginPage() {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t("auth.password")}</Label>
               <Input
                 id="password"
                 type="password"
@@ -98,22 +98,21 @@ export default function LoginPage() {
             </div>
             {needsTenant ? (
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="tenant">Organization</Label>
+                <Label htmlFor="tenant">{t("auth.organization")}</Label>
                 <Input
                   id="tenant"
-                  placeholder="organization id"
+                  placeholder={t("login.orgIdPlaceholder")}
                   value={tenantId}
                   onChange={(e) => setTenantId(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  This sign-in works for more than one organization. Paste the
-                  id of the one you want.
+                  {t("login.multiOrgHelp")}
                 </p>
               </div>
             ) : null}
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" disabled={busy}>
-              {busy ? "Signing in…" : "Sign in"}
+              {busy ? t("auth.signingIn") : t("auth.signIn")}
             </Button>
           </form>
         </CardContent>

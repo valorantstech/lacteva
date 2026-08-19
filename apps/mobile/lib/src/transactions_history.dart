@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api.dart';
+import 'l10n.dart';
+import 'session.dart';
 
 /// The centre's collection history (P1-MOBILE-COUNTER-001).
 ///
@@ -18,11 +20,15 @@ class TransactionHistoryScreen extends StatefulWidget {
     required this.client,
     required this.centerId,
     required this.centerName,
+    this.session,
   });
 
   final ApiClient client;
   final String centerId;
   final String centerName;
+
+  /// For language only (P1-LOCALE-I18N-001); null renders English.
+  final Session? session;
 
   @override
   State<TransactionHistoryScreen> createState() =>
@@ -74,7 +80,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
       if (mounted) {
         setState(() {
-          _error = 'Could not reach the platform';
+          _error = L10n.of(widget.session).t('common.couldNotReach');
           _loading = false;
         });
       }
@@ -87,6 +93,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
         builder: (_) => TransactionDetailScreen(
           client: widget.client,
           transaction: tx,
+          session: widget.session,
         ),
       ),
     );
@@ -94,8 +101,11 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = L10n.of(widget.session);
     return Scaffold(
-      appBar: AppBar(title: Text('Collections — ${widget.centerName}')),
+      appBar: AppBar(
+        title: Text(t.t('history.title', {'center': widget.centerName})),
+      ),
       body: RefreshIndicator(
         onRefresh: () => _load(reset: true),
         child: ListView(
@@ -114,7 +124,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                     ),
                     TextButton(
                       onPressed: _loading ? null : () => _load(reset: true),
-                      child: const Text('Try again'),
+                      child: Text(t.t('common.retry')),
                     ),
                   ],
                 ),
@@ -125,11 +135,9 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                 child: Center(child: CircularProgressIndicator()),
               ),
             if (!_loading && _items.isEmpty && _error == null)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(
-                  child: Text('No collections recorded at this centre yet.'),
-                ),
+              Padding(
+                padding: const EdgeInsets.all(32),
+                child: Center(child: Text(t.t('history.empty'))),
               ),
             for (final tx in _items)
               Card(
@@ -167,8 +175,11 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                     onPressed: _loading ? null : () => _load(),
                     child: Text(
                       _loading
-                          ? 'Loading…'
-                          : 'Load more (${_items.length} of $_total)',
+                          ? t.t('common.loading')
+                          : t.t('history.loadMore', {
+                              'n': _items.length,
+                              'total': _total,
+                            }),
                     ),
                   ),
                 ),
@@ -186,10 +197,14 @@ class TransactionDetailScreen extends StatefulWidget {
     super.key,
     required this.client,
     required this.transaction,
+    this.session,
   });
 
   final ApiClient client;
   final Map<String, dynamic> transaction;
+
+  /// For language only (P1-LOCALE-I18N-001); null renders English.
+  final Session? session;
 
   @override
   State<TransactionDetailScreen> createState() =>
@@ -221,7 +236,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       if (mounted) setState(() => _error = e.detail);
     } catch (_) {
       // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
-      if (mounted) setState(() => _error = 'Could not reach the platform');
+      if (mounted) {
+        setState(
+          () => _error = L10n.of(widget.session).t('common.couldNotReach'),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -231,9 +250,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   Widget build(BuildContext context) {
     final tx = widget.transaction;
     final slip = _slip;
+    final t = L10n.of(widget.session);
     return Scaffold(
       appBar: AppBar(
-        title: Text(tx['slip_number']?.toString() ?? 'Collection'),
+        title: Text(tx['slip_number']?.toString() ?? t.t('history.fallback')),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -244,18 +264,31 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('State: ${tx['state']}'),
-                  Text('Milk: ${tx['milk_type'] ?? '—'}'),
-                  Text('Net: ${tx['net_weight'] ?? '—'} kg'),
+                  // Values are server content ({vars}); only labels come
+                  // from the catalog.
+                  Text(t.t('history.state', {'state': tx['state']})),
+                  Text(t.t('history.milk', {'milk': tx['milk_type'] ?? '—'})),
+                  Text(t.t('history.net', {'kg': tx['net_weight'] ?? '—'})),
                   Text(
-                    'FAT ${tx['fat_percentage'] ?? tx['fat'] ?? '—'} · '
-                    'SNF ${tx['snf_percentage'] ?? tx['snf'] ?? '—'} · '
-                    'CLR ${tx['clr_value'] ?? tx['clr'] ?? '—'}',
+                    t.t('wizard.qualityLine', {
+                      'fat': tx['fat_percentage'] ?? tx['fat'] ?? '—',
+                      'snf': tx['snf_percentage'] ?? tx['snf'] ?? '—',
+                      'clr': tx['clr_value'] ?? tx['clr'] ?? '—',
+                    }),
                   ),
                   if (tx['gross_amount'] != null)
-                    Text('Amount: ${tx['gross_amount']} ${tx['currency']}'),
+                    Text(
+                      t.t('history.amount', {
+                        'amount': tx['gross_amount'],
+                        'currency': tx['currency'],
+                      }),
+                    ),
                   if (tx['rejected_reason'] != null)
-                    Text('Rejected: ${tx['rejected_reason']}'),
+                    Text(
+                      t.t('wizard.rejectedLine', {
+                        'reason': tx['rejected_reason'],
+                      }),
+                    ),
                 ],
               ),
             ),
@@ -270,7 +303,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 ),
                 TextButton(
                   onPressed: _busy ? null : _fetchSlip,
-                  child: const Text('Try again'),
+                  child: Text(t.t('common.retry')),
                 ),
               ],
             ),
@@ -289,7 +322,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Parchi ${slip['slip_number']}',
+                      t.t('wizard.parchi', {'number': slip['slip_number']}),
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 8),
@@ -306,12 +339,12 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             ),
             TextButton.icon(
               icon: const Icon(Icons.copy),
-              label: const Text('Copy parchi text'),
+              label: Text(t.t('wizard.copyParchi')),
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(text: '${slip['text']}'));
                 if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Parchi copied')),
+                  SnackBar(content: Text(t.t('wizard.parchiCopied'))),
                 );
               },
             ),

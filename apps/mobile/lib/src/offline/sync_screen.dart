@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../session.dart';
 import 'offline_client.dart';
 import 'queue.dart';
 import 'sync_engine.dart';
@@ -10,10 +11,18 @@ import 'sync_engine.dart';
 /// Deliberately never blocks: an operator at 5 a.m. with a queue of farmers
 /// must be able to keep collecting whatever this says.
 class OfflineBanner extends StatelessWidget {
-  const OfflineBanner({super.key, required this.client, this.onTap});
+  const OfflineBanner({
+    super.key,
+    required this.client,
+    this.onTap,
+    this.session,
+  });
 
   final OfflineApiClient client;
   final VoidCallback? onTap;
+
+  /// For language only (P1-LOCALE-I18N-001); null renders English.
+  final Session? session;
 
   @override
   Widget build(BuildContext context) {
@@ -60,9 +69,12 @@ class OfflineBanner extends StatelessWidget {
 
 /// The queue screen: what is waiting, what failed, what needs a decision.
 class SyncStatusScreen extends StatefulWidget {
-  const SyncStatusScreen({super.key, required this.client});
+  const SyncStatusScreen({super.key, required this.client, this.session});
 
   final OfflineApiClient client;
+
+  /// For language only (P1-LOCALE-I18N-001); null renders English.
+  final Session? session;
 
   @override
   State<SyncStatusScreen> createState() => _SyncStatusScreenState();

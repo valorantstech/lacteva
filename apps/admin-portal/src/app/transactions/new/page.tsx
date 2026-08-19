@@ -26,7 +26,7 @@ import {
 import { Stamp } from "@/components/datetime";
 import { EntityPicker } from "@/components/entity-picker";
 import { todayIn } from "@/components/date-range";
-import { useLocale } from "@/lib/i18n";
+import { useLocale, useT } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -85,14 +85,14 @@ const MILK_TYPES = ["cow", "buffalo", "goat", "mixed"] as const;
 type StepKey =
   "centre" | "supplier" | "milk" | "weight" | "quality" | "review" | "done";
 
-const STEPS: { key: StepKey; label: string }[] = [
-  { key: "centre", label: "Centre" },
-  { key: "supplier", label: "Supplier" },
-  { key: "milk", label: "Milk" },
-  { key: "weight", label: "Weight" },
-  { key: "quality", label: "Quality" },
-  { key: "review", label: "Review & accept" },
-  { key: "done", label: "Complete" },
+const STEPS: { key: StepKey; labelKey: string }[] = [
+  { key: "centre", labelKey: "tx.centre" },
+  { key: "supplier", labelKey: "entity.supplier" },
+  { key: "milk", labelKey: "txDetail.milk" },
+  { key: "weight", labelKey: "transaction.weight" },
+  { key: "quality", labelKey: "transaction.quality" },
+  { key: "review", labelKey: "wizard.reviewAccept" },
+  { key: "done", labelKey: "wizard.complete" },
 ];
 
 /** The platform's state, translated into which step the operator is on. */
@@ -122,14 +122,14 @@ function stepFor(tx: MilkTransaction | null): StepKey {
   }
 }
 
-const reason = (e: unknown) =>
+const reason = (e: unknown, fallback: string) =>
   e instanceof ApiError
     ? // The platform's `extra` carries the business reason; `detail` is the
       // generic RFC-9457 sentence. Prefer the specific one.
       (e.extra as string) || e.detail
     : e instanceof Error
       ? e.message
-      : "The platform refused that step.";
+      : fallback;
 
 export default function NewCollectionPage() {
   const [centers, setCenters] = useState<Center[]>([]);
@@ -145,7 +145,7 @@ export default function NewCollectionPage() {
   const [checkingReadiness, setCheckingReadiness] = useState(false);
 
   const [tx, setTx] = useState<MilkTransaction | null>(null);
-  const { timezone: orgTimezone } = useLocale();
+  const { timezone: orgTimezone, t } = useLocale();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resuming, setResuming] = useState(true);
@@ -239,7 +239,7 @@ export default function NewCollectionPage() {
         }
         return true;
       } catch (e) {
-        setError(reason(e));
+        setError(reason(e, t("wizard.platformRefused")));
         // Re-read: a refusal may mean the platform moved on without us
         // (a duplicate submit, another operator), and guessing would be worse
         // than asking.
@@ -255,7 +255,7 @@ export default function NewCollectionPage() {
         setBusy(false);
       }
     },
-    [tx],
+    [tx, t],
   );
 
   const startCollection = async () => {
@@ -280,7 +280,7 @@ export default function NewCollectionPage() {
       setTx(created);
       sessionStorage.setItem(STORAGE_KEY, created.id);
     } catch (e) {
-      setError(reason(e));
+      setError(reason(e, t("wizard.platformRefused")));
     } finally {
       setBusy(false);
     }
@@ -307,7 +307,7 @@ export default function NewCollectionPage() {
   if (resuming) {
     return (
       <div className="p-8">
-        <LoadingState label="Checking for a collection in progress…" />
+        <LoadingState label={t("wizard.checkingInProgress")} />
       </div>
     );
   }
@@ -778,9 +778,10 @@ export default function NewCollectionPage() {
 }
 
 function Stepper({ current }: { current: StepKey }) {
+  const t = useT();
   const index = STEPS.findIndex((s) => s.key === current);
   return (
-    <ol className="flex flex-wrap gap-2" aria-label="Progress">
+    <ol className="flex flex-wrap gap-2" aria-label={t("wizard.progress")}>
       {STEPS.map((s, i) => {
         const state =
           i < index ? "completed" : i === index ? "current" : "pending";
@@ -799,7 +800,7 @@ function Stepper({ current }: { current: StepKey }) {
             {state === "completed" ? (
               <Check aria-hidden className="size-3" />
             ) : null}
-            {s.label}
+            {t(s.labelKey)}
             <span className="sr-only"> — {state}</span>
           </li>
         );

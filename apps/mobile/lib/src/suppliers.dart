@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import 'api.dart';
+import 'session.dart';
 
 /// Supplier CRUD — SPRINT-005.
 class SuppliersListScreen extends StatefulWidget {
-  const SuppliersListScreen({super.key, required this.client});
+  const SuppliersListScreen({super.key, required this.client, this.session});
 
   final ApiClient client;
+
+  /// For language only (P1-LOCALE-I18N-001); null renders English.
+  final Session? session;
 
   @override
   State<SuppliersListScreen> createState() => _SuppliersListScreenState();

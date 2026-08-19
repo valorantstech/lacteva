@@ -138,6 +138,13 @@ Future<Map<String, dynamic>> _collectOffline(OfflineApiClient client) async {
   return client.txStep('/v1/milk-transactions/$id/complete');
 }
 
+/// Real disk IO under a loaded machine: `flutter test` runs suites
+/// concurrently, and the default 30-second per-test timeout is a machine-speed
+/// assertion, not a correctness one — it made this file fail intermittently
+/// only on slow runs (P1-LOCALE-I18N-001 housekeeping). The timeout is
+/// widened, never the assertions.
+const _ioTimeout = Timeout(Duration(minutes: 2));
+
 void main() {
   test('offline, the session lookup answers empty so entry can queue (P0-PILOT-004)', () async {
     final client = OfflineApiClient(
@@ -149,7 +156,7 @@ void main() {
     final session = await client.openCollectionSession('center-1');
     expect(session['offline'], isTrue);
     expect(client.pendingCount, 1);
-  });
+  }, timeout: _ioTimeout);
 
   // --- collecting with no network -----------------------------------------
 
@@ -177,7 +184,7 @@ void main() {
         'complete',
       ]),
     );
-  });
+  }, timeout: _ioTimeout);
 
   test('offline operations carry unique idempotency keys', () async {
     final client = _client(MemoryOfflineStore());
@@ -187,7 +194,7 @@ void main() {
     for (final id in ids) {
       expect(id, matches(RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-')));
     }
-  });
+  }, timeout: _ioTimeout);
 
   test(
     'a session opened offline is referenced locally by its collection',
@@ -204,6 +211,7 @@ void main() {
       expect(create.targetRef, session['id']);
       expect(tx['id'], startsWith('local-tx-'));
     },
+    timeout: _ioTimeout,
   );
 
   // --- durability ----------------------------------------------------------
@@ -221,7 +229,7 @@ void main() {
       restarted.queue.operations.every((o) => o.state == SyncState.pending),
       isTrue,
     );
-  });
+  }, timeout: _ioTimeout);
 
   test(
     'the queue survives on disk and tolerates a corrupt file',
@@ -266,7 +274,7 @@ void main() {
       isEmpty,
     );
     expect(recovered.queue.due().length, 7); // nothing stranded
-  });
+  }, timeout: _ioTimeout);
 
   // --- synchronisation ------------------------------------------------------
 
@@ -284,7 +292,7 @@ void main() {
     );
     expect(client.queue.lastSyncAt, isNotNull);
     expect(platform.batches.length, 1);
-  });
+  }, timeout: _ioTimeout);
 
   test('sync is batched', () async {
     final platform = _FakePlatform();
@@ -305,7 +313,7 @@ void main() {
     expect(result.applied, 7);
     expect(platform.batches.length, 3); // 3 + 3 + 1
     expect(platform.batches.first.length, 3);
-  });
+  }, timeout: _ioTimeout);
 
   test('replaying the same operations does not duplicate them', () async {
     final platform = _FakePlatform();
@@ -321,7 +329,7 @@ void main() {
     expect(second.duplicates, 7);
     expect(second.applied, 0);
     expect(platform.seenOperationIds.length, 7); // the server saw 7, ever
-  });
+  }, timeout: _ioTimeout);
 
   test('network loss mid-sync loses nothing and backs off', () async {
     final platform = _FakePlatform(failTimes: 1);
@@ -342,7 +350,7 @@ void main() {
     // …but the operator can force it, and everything lands.
     final retried = await client.engine.retryFailed();
     expect(retried.applied, 7);
-  });
+  }, timeout: _ioTimeout);
 
   test('partial synchronisation resumes where it stopped', () async {
     final platform = _FakePlatform();
@@ -370,14 +378,14 @@ void main() {
     final second = await client.syncNow();
     expect(second.applied, 7);
     expect(second.duplicates, 0);
-  });
+  }, timeout: _ioTimeout);
 
   test('backoff grows with attempts and is capped', () {
     expect(SyncQueue.backoff(1), const Duration(seconds: 2));
     expect(SyncQueue.backoff(2), const Duration(seconds: 4));
     expect(SyncQueue.backoff(3), const Duration(seconds: 8));
     expect(SyncQueue.backoff(20), const Duration(seconds: 300));
-  });
+  }, timeout: _ioTimeout);
 
   test('an exhausted operation stops retrying by itself', () async {
     final client = _client(MemoryOfflineStore());
@@ -390,7 +398,7 @@ void main() {
     expect(client.queue.due(), isEmpty); // maxAttempts reached
     client.queue.retryAll(); // the operator's explicit decision
     expect(client.queue.due().length, 7);
-  });
+  }, timeout: _ioTimeout);
 
   test('cancellation stops between batches and strands nothing', () async {
     late SyncEngine engine;
@@ -433,7 +441,7 @@ void main() {
     expect(resumed.applied, 5);
     expect(resumed.duplicates, 0);
     expect(queue.operations.every((o) => o.state == SyncState.synced), isTrue);
-  });
+  }, timeout: _ioTimeout);
 
   // --- conflicts ------------------------------------------------------------
 
@@ -452,7 +460,7 @@ void main() {
     expect(conflicted.conflictDetail, contains('archived'));
     // A conflict is NOT retried automatically — it needs a human.
     expect(client.queue.due(), isEmpty);
-  });
+  }, timeout: _ioTimeout);
 
   test('the id map learns local-to-server mappings as they sync', () async {
     final platform = _FakePlatform();
@@ -463,7 +471,7 @@ void main() {
     );
     await client.syncNow();
     expect(client.queue.resolve(tx['id'] as String), isNotNull);
-  });
+  }, timeout: _ioTimeout);
 
   // --- snapshot for the UI ---------------------------------------------------
 
@@ -484,7 +492,7 @@ void main() {
     expect(snapshot.conflicts, 1);
     expect(snapshot.outstanding, 0);
     expect(snapshot.lastSyncAt, isNotNull);
-  });
+  }, timeout: _ioTimeout);
 
   // --- business rules are the platform's, not the device's -------------------
 
@@ -502,6 +510,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(queue.operations, isEmpty); // nothing was queued behind the error
     },
+    timeout: _ioTimeout,
   );
 
   test('the device never prices milk', () async {
@@ -511,7 +520,7 @@ void main() {
     expect(tx['unit_price'], isNull);
     expect(tx['currency'], isNull);
     expect(tx['pricing_status'], 'pending_sync');
-  });
+  }, timeout: _ioTimeout);
 }
 
 /// Believes it is online and always gets a business rejection.

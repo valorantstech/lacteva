@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import 'api.dart';
 import 'build_flags.dart';
+import 'l10n.dart';
+import 'session.dart';
 
 /// The platform's own capture bounds, mirrored for the OFFLINE path
 /// (P1-MOBILE-COUNTER-001; audit D-8). Online, the server refuses garbage
@@ -23,11 +25,16 @@ class CollectionWizardScreen extends StatefulWidget {
     super.key,
     required this.client,
     required this.sessionId,
+    this.session,
     this.initialStep = 0,
   });
 
   final ApiClient client;
   final String sessionId;
+
+  /// The signed-in principal, for language only (P1-LOCALE-I18N-001).
+  /// Null renders English — no test constructor changes needed.
+  final Session? session;
 
   /// Which step to open on. Exists so a widget test can assert what a given
   /// step offers without driving five API round trips to reach it; the app
@@ -39,6 +46,8 @@ class CollectionWizardScreen extends StatefulWidget {
 }
 
 class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
+  L10n get _l => L10n.of(widget.session);
+
   late int _step = widget.initialStep;
   String? _txId;
   Map<String, dynamic>? _tx;
@@ -88,7 +97,7 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
     } on ApiException catch (e) {
       setState(() => _error = e.detail);
     } catch (_) {
-      setState(() => _error = 'Could not reach the platform');
+      setState(() => _error = _l.t('common.couldNotReach'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -124,6 +133,9 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
   String? _weightProblem() {
     final gross = double.tryParse(_gross.text.trim());
     final tare = double.tryParse(_tare.text.trim());
+    // Deliberately NOT localized (P1-LOCALE-I18N-001): mirrors the server's
+    // own refusal wording so online and offline read identically. Localizing
+    // both ends needs machine codes server-side — recorded TO CONFIRM.
     if (gross == null || tare == null) {
       return 'Enter gross and tare as numbers';
     }
@@ -142,6 +154,9 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
     };
     for (final entry in values.entries) {
       final (value, (lo, hi)) = entry.value;
+      // Deliberately NOT localized (P1-LOCALE-I18N-001): mirrors the server's
+      // own refusal wording so online and offline read identically. Localizing
+      // both ends needs machine codes server-side — recorded TO CONFIRM.
       if (value == null) return 'Enter fat, snf and clr as numbers';
       if (value < lo || value > hi) {
         return '${entry.key} out of range [$lo, $hi]';
@@ -197,7 +212,7 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
     if (!accept && _rejectReason.text.trim().isEmpty) {
       setState(() {
         _rejecting = true;
-        _error = 'Say why the milk is rejected — it prints on the parchi';
+        _error = _l.t('wizard.rejectWhy');
       });
       return;
     }
@@ -231,7 +246,7 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
     } catch (_) {
       // Transport failure ≠ refusal (P0-PRODUCT-008 D-1): the completion
       // stands; the parchi has its own retry button below.
-      if (mounted) setState(() => _error = 'Could not reach the platform');
+      if (mounted) setState(() => _error = _l.t('common.couldNotReach'));
     } finally {
       if (mounted) setState(() => _slipBusy = false);
     }
@@ -240,8 +255,9 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
   @override
   Widget build(BuildContext context) {
     final tx = _tx;
+    final t = _l;
     return Scaffold(
-      appBar: AppBar(title: Text('Collection — step ${_step + 1} of 6')),
+      appBar: AppBar(title: Text(t.t('wizard.stepTitle', {'n': _step + 1}))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -256,109 +272,131 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                 ),
               ),
             if (_step == 0) ...[
-              Text('Supplier', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                t.t('wizard.supplier'),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _supplierCode,
-                decoration: const InputDecoration(
-                  labelText: 'Supplier code',
-                  helperText: 'QR scanning arrives with device integration',
+                decoration: InputDecoration(
+                  labelText: t.t('wizard.supplierCode'),
+                  helperText: t.t('wizard.supplierCodeHelp'),
                 ),
               ),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _busy ? null : _identify,
-                child: const Text('Identify supplier'),
+                child: Text(t.t('wizard.identify')),
               ),
             ],
             if (_step == 1) ...[
-              Text('Milk', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                t.t('wizard.milk'),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _milkType,
-                decoration: const InputDecoration(labelText: 'Milk type'),
+                decoration: InputDecoration(labelText: t.t('wizard.milkType')),
+                // The LABEL comes from the catalog; the VALUE sent to the API
+                // stays the raw code (P1-LOCALE-I18N-001).
                 items: const ['cow', 'buffalo', 'goat', 'mixed']
-                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                    .map(
+                      (m) =>
+                          DropdownMenuItem(value: m, child: Text(t.t('milk.$m'))),
+                    )
                     .toList(),
                 onChanged: (v) => setState(() => _milkType = v ?? 'cow'),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _containerType,
-                decoration: const InputDecoration(labelText: 'Container type'),
+                decoration: InputDecoration(
+                  labelText: t.t('wizard.containerType'),
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _containerId,
-                decoration: const InputDecoration(
-                  labelText: 'Container identifier',
+                decoration: InputDecoration(
+                  labelText: t.t('wizard.containerId'),
                 ),
               ),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _busy ? null : _milk,
-                child: const Text('Receive milk'),
+                child: Text(t.t('wizard.receiveMilk')),
               ),
             ],
             if (_step == 2) ...[
-              Text('Weight', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                t.t('wizard.weight'),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _gross,
-                decoration: const InputDecoration(labelText: 'Gross (kg)'),
+                decoration: InputDecoration(labelText: t.t('wizard.grossKg')),
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _tare,
-                decoration: const InputDecoration(labelText: 'Tare (kg)'),
+                decoration: InputDecoration(labelText: t.t('wizard.tareKg')),
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _busy ? null : () => _weight(mock: false),
-                child: const Text('Capture weight'),
+                child: Text(t.t('wizard.captureWeight')),
               ),
               // SEC-003 / F-01: absent from a release build, not hidden.
               if (kMockHardwareEnabled)
                 TextButton(
                   onPressed: _busy ? null : () => _weight(mock: true),
-                  child: const Text('Use mock scale'),
+                  child: Text(t.t('wizard.mockScale')),
                 ),
             ],
             if (_step == 3) ...[
-              Text('Quality', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                t.t('wizard.quality'),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _fat,
-                decoration: const InputDecoration(labelText: 'FAT %'),
+                decoration: InputDecoration(labelText: t.t('wizard.fatLabel')),
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _snf,
-                decoration: const InputDecoration(labelText: 'SNF %'),
+                decoration: InputDecoration(labelText: t.t('wizard.snfLabel')),
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _clr,
-                decoration: const InputDecoration(labelText: 'CLR'),
+                decoration: InputDecoration(labelText: t.t('wizard.clrLabel')),
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _busy ? null : () => _quality(mock: false),
-                child: const Text('Capture quality'),
+                child: Text(t.t('wizard.captureQuality')),
               ),
               if (kMockHardwareEnabled)
                 TextButton(
                   onPressed: _busy ? null : () => _quality(mock: true),
-                  child: const Text('Use mock analyzer'),
+                  child: Text(t.t('wizard.mockAnalyzer')),
                 ),
             ],
             if (_step == 4 && tx != null) ...[
-              Text('Review', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                t.t('wizard.review'),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 12),
               Card(
                 child: Padding(
@@ -366,9 +404,15 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Net weight: ${tx['net_weight']} kg'),
                       Text(
-                        'FAT ${tx['fat']} · SNF ${tx['snf']} · CLR ${tx['clr']}',
+                        t.t('wizard.netWeightLine', {'kg': tx['net_weight']}),
+                      ),
+                      Text(
+                        t.t('wizard.qualityLine', {
+                          'fat': tx['fat'],
+                          'snf': tx['snf'],
+                          'clr': tx['clr'],
+                        }),
                       ),
                       const Divider(),
                       if (tx['pricing_status'] == 'priced') ...[
@@ -381,7 +425,11 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                           '${tx['pricing_detail']}',
                         ),
                       ] else ...[
-                        Text('Pricing: ${tx['pricing_status']}'),
+                        Text(
+                          t.t('wizard.pricingLine', {
+                            'status': tx['pricing_status'],
+                          }),
+                        ),
                         if (tx['pricing_detail'] != null)
                           Text(
                             '${tx['pricing_detail']}',
@@ -395,30 +443,28 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _busy ? null : () => _decide(true),
-                child: const Text('Accept & complete'),
+                child: Text(t.t('wizard.acceptComplete')),
               ),
               if (!_rejecting)
                 OutlinedButton(
                   onPressed: _busy
                       ? null
                       : () => setState(() => _rejecting = true),
-                  child: const Text('Reject…'),
+                  child: Text(t.t('wizard.reject')),
                 ),
               if (_rejecting) ...[
                 const SizedBox(height: 12),
                 TextField(
                   controller: _rejectReason,
-                  decoration: const InputDecoration(
-                    labelText: 'Rejection reason',
-                    helperText:
-                        'The farmer reads this on the parchi — say what was '
-                        'actually wrong (sour, adulterated, smell…)',
+                  decoration: InputDecoration(
+                    labelText: t.t('wizard.rejectReason'),
+                    helperText: t.t('wizard.rejectReasonHelp'),
                   ),
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton(
                   onPressed: _busy ? null : () => _decide(false),
-                  child: const Text('Reject & complete'),
+                  child: Text(t.t('wizard.rejectComplete')),
                 ),
                 TextButton(
                   onPressed: _busy
@@ -427,7 +473,7 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                           _rejecting = false;
                           _rejectReason.clear();
                         }),
-                  child: const Text('Keep reviewing'),
+                  child: Text(t.t('wizard.keepReviewing')),
                 ),
               ],
             ],
@@ -447,39 +493,46 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                 child: Text(
                   // The honest status line: an offline completion is SAVED
                   // AND QUEUED, not submitted — the two must never blur.
+                  // The STATE stays the raw server code (a {var}, never
+                  // translated).
                   tx['offline'] == true
-                      ? 'Saved on this phone — queued to sync'
-                      : 'Transaction ${tx['state']}',
+                      ? t.t('wizard.savedQueued')
+                      : t.t('wizard.txState', {'state': tx['state']}),
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
-              Center(child: Text('Net ${tx['net_weight']} kg')),
+              Center(
+                child: Text(t.t('wizard.netLine', {'kg': tx['net_weight']})),
+              ),
               if (tx['rejected_reason'] != null)
-                Center(child: Text('Rejected: ${tx['rejected_reason']}')),
+                Center(
+                  child: Text(
+                    t.t('wizard.rejectedLine', {
+                      'reason': tx['rejected_reason'],
+                    }),
+                  ),
+                ),
               if (tx['rejected_reason'] == null &&
                   tx['pricing_status'] == 'priced')
                 Center(
                   child: Text(
-                    'Payable: ${tx['gross_amount']} ${tx['currency']}',
+                    t.t('wizard.payable', {
+                      'amount': tx['gross_amount'],
+                      'currency': tx['currency'],
+                    }),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
               if (tx['rejected_reason'] == null &&
                   tx['pricing_status'] == 'priced')
-                const Center(
-                  child: Text('Will appear in the next supplier settlement.'),
-                ),
+                Center(child: Text(t.t('wizard.nextSettlement'))),
               const SizedBox(height: 16),
               // --- The parchi (P1-MOBILE-COUNTER-001) -----------------------
               if (tx['offline'] == true)
-                const Card(
+                Card(
                   child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text(
-                      'The parchi is issued when this phone syncs — the slip '
-                      'number comes from the platform, and this device will '
-                      'not invent one.',
-                    ),
+                    padding: const EdgeInsets.all(16),
+                    child: Text(t.t('wizard.parchiQueued')),
                   ),
                 )
               else if (_slip != null) ...[
@@ -490,7 +543,9 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Parchi ${_slip!['slip_number']}',
+                          t.t('wizard.parchi', {
+                            'number': _slip!['slip_number'],
+                          }),
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const SizedBox(height: 8),
@@ -507,27 +562,31 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                 ),
                 TextButton.icon(
                   icon: const Icon(Icons.copy),
-                  label: const Text('Copy parchi text'),
+                  label: Text(t.t('wizard.copyParchi')),
                   onPressed: () async {
                     await Clipboard.setData(
                       ClipboardData(text: '${_slip!['text']}'),
                     );
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Parchi copied')),
+                      SnackBar(content: Text(t.t('wizard.parchiCopied'))),
                     );
                   },
                 ),
               ] else
                 OutlinedButton.icon(
                   icon: const Icon(Icons.receipt_long_outlined),
-                  label: Text(_slipBusy ? 'Fetching parchi…' : 'Get parchi'),
+                  label: Text(
+                    _slipBusy
+                        ? t.t('wizard.fetchingParchi')
+                        : t.t('wizard.getParchi'),
+                  ),
                   onPressed: _slipBusy ? null : _fetchSlip,
                 ),
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Done'),
+                child: Text(t.t('common.done')),
               ),
             ],
           ],

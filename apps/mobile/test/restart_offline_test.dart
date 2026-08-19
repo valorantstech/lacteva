@@ -135,6 +135,13 @@ Future<(Directory, String)> _tempQueue() async {
   return (dir, '${dir.path}/queue.json');
 }
 
+/// Real disk IO under a loaded machine: `flutter test` runs suites
+/// concurrently, and the default 30-second per-test timeout is a machine-speed
+/// assertion, not a correctness one — it made this file fail intermittently
+/// only on slow runs (P1-LOCALE-I18N-001 housekeeping). The timeout is
+/// widened, never the assertions.
+const _ioTimeout = Timeout(Duration(minutes: 2));
+
 void main() {
 
   test('the queue survives restart byte-for-byte, then applies exactly once', () async {
@@ -176,7 +183,7 @@ void main() {
     final again = await after.syncNow();
     expect(again.applied, 0);
     expect(platform.batches, 2);
-  });
+  }, timeout: _ioTimeout);
 
   test('an expired session after restart strands nothing; sign-in replays once', () async {
     final (dir, path) = await _tempQueue();
@@ -203,7 +210,7 @@ void main() {
     final run = await after.syncNow();
     expect(run.applied, 7);
     expect(platform.appliedIds.toSet(), hasLength(7));
-  });
+  }, timeout: _ioTimeout);
 
   test('a business rejection is preserved with the platform’s reason, not retried', () async {
     final (dir, path) = await _tempQueue();
@@ -230,7 +237,7 @@ void main() {
     final run = await client.syncNow();
     expect(run.applied, 0);
     expect(platform.appliedIds, isEmpty);
-  });
+  }, timeout: _ioTimeout);
 
   test('a transport failure stays retryable', () async {
     final (dir, path) = await _tempQueue();
@@ -251,7 +258,7 @@ void main() {
     client.eraseBackoff();
     final run = await client.syncNow();
     expect(run.applied, 7);
-  });
+  }, timeout: _ioTimeout);
 
 
 }

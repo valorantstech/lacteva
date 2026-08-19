@@ -205,7 +205,7 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
       body: Column(
         children: [
           _SyncBanner(pending: _pending, onSync: _sync, t: t),
-          if (_report != null) _DayTotals(report: _report!),
+          if (_report != null) _DayTotals(report: _report!, t: t),
           if (_run != null) _RunBanner(run: _run!),
           if (_error != null)
             Padding(
@@ -387,20 +387,23 @@ class _RunBanner extends StatelessWidget {
 }
 
 class _DayTotals extends StatelessWidget {
-  const _DayTotals({required this.report});
+  const _DayTotals({required this.report, required this.t});
 
   final Map<String, dynamic> report;
+  final L10n t;
 
   @override
   Widget build(BuildContext context) {
+    // P1-LOCALE-I18N-001: these four keys existed in all three catalogs and
+    // the tiles retyped their English — wired now.
     final cells = <(String, String)>[
-      ('Delivered', '${report['deliveries'] ?? 0}'),
-      ('Customers', '${report['customers_served'] ?? 0}'),
+      (t.t('round.delivered'), '${report['deliveries'] ?? 0}'),
+      (t.t('round.customers'), '${report['customers_served'] ?? 0}'),
       (
-        'Quantity',
+        t.t('round.quantity'),
         '${report['total_quantity'] ?? 0} ${report['quantity_unit'] ?? 'L'}',
       ),
-      ('Value', _money(report['total_amount'])),
+      (t.t('round.value'), _money(report['total_amount'])),
     ];
     return Container(
       width: double.infinity,

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'l10n.dart';
+import 'session.dart';
 
 /// Today's operational summary for one center — REP-001. Deliberately
 /// lightweight: the full reporting experience lives in the admin portal.
@@ -9,10 +11,14 @@ class CenterTodayScreen extends StatefulWidget {
     super.key,
     required this.client,
     required this.centerId,
+    this.session,
   });
 
   final ApiClient client;
   final String centerId;
+
+  /// For language only (P1-LOCALE-I18N-001); null renders English.
+  final Session? session;
 
   @override
   State<CenterTodayScreen> createState() => _CenterTodayScreenState();
@@ -42,7 +48,11 @@ class _CenterTodayScreenState extends State<CenterTodayScreen> {
     } catch (_) {
       // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
       // say so instead of leaving the spinner forever.
-      if (mounted) setState(() => _error = 'Could not reach the platform');
+      if (mounted) {
+        setState(
+          () => _error = L10n.of(widget.session).t('common.couldNotReach'),
+        );
+      }
     }
   }
 
@@ -72,8 +82,9 @@ class _CenterTodayScreenState extends State<CenterTodayScreen> {
   @override
   Widget build(BuildContext context) {
     final s = _summary;
+    final t = L10n.of(widget.session);
     return Scaffold(
-      appBar: AppBar(title: const Text("Today's collection")),
+      appBar: AppBar(title: Text(t.t('today.title'))),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
@@ -92,23 +103,29 @@ class _CenterTodayScreenState extends State<CenterTodayScreen> {
             if (s != null) ...[
               Row(
                 children: [
-                  _tile('${s.totalNetWeightKg} kg', 'Milk collected'),
+                  _tile('${s.totalNetWeightKg} kg', t.t('today.milkCollected')),
                   const SizedBox(width: 8),
-                  _tile(s.payable.isEmpty ? '—' : s.payable, 'Payable'),
+                  _tile(
+                    s.payable.isEmpty ? '—' : s.payable,
+                    t.t('today.payable'),
+                  ),
                 ],
               ),
               Row(
                 children: [
-                  _tile('${s.accepted} / ${s.rejected}', 'Accepted / Rejected'),
+                  _tile(
+                    '${s.accepted} / ${s.rejected}',
+                    t.t('today.acceptedRejected'),
+                  ),
                   const SizedBox(width: 8),
-                  _tile('${s.suppliersServed}', 'Suppliers served'),
+                  _tile('${s.suppliersServed}', t.t('today.suppliersServed')),
                 ],
               ),
               Row(
                 children: [
-                  _tile('${s.avgFat ?? "—"}', 'Avg FAT'),
+                  _tile('${s.avgFat ?? "—"}', t.t('today.avgFat')),
                   const SizedBox(width: 8),
-                  _tile('${s.avgSnf ?? "—"}', 'Avg SNF'),
+                  _tile('${s.avgSnf ?? "—"}', t.t('today.avgSnf')),
                 ],
               ),
               if (s.unpricedAccepted > 0)
@@ -119,17 +136,15 @@ class _CenterTodayScreenState extends State<CenterTodayScreen> {
                       color: Theme.of(context).colorScheme.tertiary,
                     ),
                     title: Text(
-                      '${s.unpricedAccepted} accepted without pricing',
+                      t.t('today.unpriced', {'n': s.unpricedAccepted}),
                     ),
-                    subtitle: const Text(
-                      'Check the rate card for this center.',
-                    ),
+                    subtitle: Text(t.t('today.checkRateCard')),
                   ),
                 ),
               const SizedBox(height: 8),
               Center(
                 child: Text(
-                  'Pull to refresh · full reports in the admin portal',
+                  t.t('today.footer'),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),

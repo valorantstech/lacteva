@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useBusinessToday } from "@/components/date-range";
 import { type Column, DataTable } from "@/components/data-table";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
@@ -46,17 +47,26 @@ type FormState =
   | { mode: "create" }
   | { mode: "edit"; supplier: Supplier };
 
-function activityWindow() {
-  const to = new Date();
+/**
+ * The 30-day activity window, anchored on the DAIRY'S today — not UTC's.
+ * `new Date().toISOString()` here was the exact DEMO-019 bug re-introduced:
+ * an IST dairy's "last 30 days" was wrong before 05:30 every morning. The
+ * date arithmetic runs in UTC ON the business-date string, which is safe
+ * because a YYYY-MM-DD has no clock to shift.
+ */
+function activityWindow(businessToday: string) {
+  const to = new Date(`${businessToday}T00:00:00Z`);
   const from = new Date(to);
   from.setUTCDate(from.getUTCDate() - 29);
   return {
     date_from: from.toISOString().slice(0, 10),
-    date_to: to.toISOString().slice(0, 10),
+    date_to: businessToday,
   };
 }
 
 export default function SuppliersPage() {
+  // DERIVED each render (DEMO-019): the timezone arrives after first mount.
+  const businessToday = useBusinessToday();
   const [page, setPage] = useState<{ items: Supplier[]; total: number } | null>(
     null,
   );
@@ -85,7 +95,7 @@ export default function SuppliersPage() {
         offset,
       });
       setPage(result);
-      getSupplierReport({ ...activityWindow(), limit: "100" })
+      getSupplierReport({ ...activityWindow(businessToday), limit: "100" })
         .then((report: ReportPage<SupplierSummaryRow>) =>
           setActivity(
             Object.fromEntries(
@@ -101,7 +111,7 @@ export default function SuppliersPage() {
     } finally {
       setLoading(false);
     }
-  }, [centerId, offset, q, status]);
+  }, [businessToday, centerId, offset, q, status]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);

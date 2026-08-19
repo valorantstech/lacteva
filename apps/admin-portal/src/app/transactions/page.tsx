@@ -92,10 +92,10 @@ const STATES = [
  * absence.
  */
 
-const describe = (e: unknown) => {
+const describe = (e: unknown, fallback: string) => {
   if (e instanceof ApiError)
     return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
-  return e instanceof Error ? e.message : "Could not load collections";
+  return e instanceof Error ? e.message : fallback;
 };
 
 /** `WeightCaptured` → `Weight captured` — sentence case, not Title Case. */
@@ -111,7 +111,7 @@ const stamp = (iso: string | null | undefined) =>
 
 export default function TransactionsPage() {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency } = useLocale();
+  const { currency: orgCurrency, t } = useLocale();
   const [page, setPage] = useState<MilkTransactionPage | null>(null);
   const [summary, setSummary] = useState<DailyCollectionSummary | null>(null);
   const [status, setStatus] = useState<Record<string, OperationalStatus>>({});
@@ -172,11 +172,11 @@ export default function TransactionsPage() {
         .then(setSummary)
         .catch(() => setSummary(null));
     } catch (err) {
-      setError(describe(err));
+      setError(describe(err, t("tx.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [centerId, offset, range.from, range.to, state, supplierId]);
+  }, [centerId, offset, range.from, range.to, state, supplierId, t]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);
@@ -207,7 +207,7 @@ export default function TransactionsPage() {
   const columns: Column<MilkTransaction>[] = [
     {
       key: "when",
-      header: "Collected",
+      header: t("tx.collected"),
       cell: (tx) => (
         <div className="flex flex-col">
           <Link
@@ -224,7 +224,7 @@ export default function TransactionsPage() {
     },
     {
       key: "supplier",
-      header: "Supplier",
+      header: t("entity.supplier"),
       cell: (tx) =>
         tx.supplier_id ? (
           <Link
@@ -235,12 +235,14 @@ export default function TransactionsPage() {
               `${tx.supplier_id.slice(0, 8)}…`}
           </Link>
         ) : (
-          <span className="text-muted-foreground">not identified</span>
+          <span className="text-muted-foreground">
+            {t("tx.notIdentified")}
+          </span>
         ),
     },
     {
       key: "center",
-      header: "Centre",
+      header: t("tx.centre"),
       secondary: true,
       cell: (tx) => (
         <Link className="hover:underline" href={`/centers/${tx.center_id}`}>
@@ -253,14 +255,14 @@ export default function TransactionsPage() {
       // earned the rate it did, and eleven separate columns clipped the last
       // one off a 1440px screen — which is the width the demonstration runs at.
       key: "quantity",
-      header: "Quantity",
+      header: t("field.quantity"),
       align: "end",
       cell: (tx) => (
         <div className="flex flex-col items-end">
           <Quantity value={tx.net_weight} unit={tx.weight_unit ?? "kg"} />
           <span className="text-xs tabular-nums text-muted-foreground">
-            {tx.fat != null ? `${tx.fat}% fat` : "—"}
-            {tx.snf != null ? ` · ${tx.snf}% snf` : ""}
+            {tx.fat != null ? t("tx.fatShort", { fat: tx.fat }) : "—"}
+            {tx.snf != null ? ` · ${t("tx.snfShort", { snf: tx.snf })}` : ""}
           </span>
         </div>
       ),
@@ -269,32 +271,34 @@ export default function TransactionsPage() {
       // Likewise the rate is the operand that produced the value. Both are
       // printed exactly as the platform sent them.
       key: "value",
-      header: "Value",
+      header: t("delivery.value"),
       align: "end",
       cell: (tx) => (
         <div className="flex flex-col items-end">
           <Money amount={tx.gross_amount} currency={tx.currency} />
           <span className="text-xs tabular-nums text-muted-foreground">
             {tx.unit_price != null
-              ? `@ ${String(tx.unit_price)}`
-              : "not priced"}
+              ? t("tx.atRate", { rate: String(tx.unit_price) })
+              : t("tx.notPriced")}
           </span>
         </div>
       ),
     },
     {
       key: "state",
-      header: "Status",
+      header: t("field.status"),
       cell: (tx) => <StatusBadge status={tx.state} />,
     },
     {
       key: "settlement",
-      header: "Settlement",
+      header: t("entity.settlement"),
       cell: (tx) => {
         const s = status[tx.id];
         if (!s?.settlement_id)
           return (
-            <span className="text-xs text-muted-foreground">not settled</span>
+            <span className="text-xs text-muted-foreground">
+              {t("tx.notSettled")}
+            </span>
           );
         return (
           <div className="flex flex-col items-start gap-0.5">
@@ -311,12 +315,14 @@ export default function TransactionsPage() {
     },
     {
       key: "payment",
-      header: "Payment",
+      header: t("entity.payment"),
       cell: (tx) => {
         const s = status[tx.id];
         if (!s?.payment_id)
           return (
-            <span className="text-xs text-muted-foreground">not paid</span>
+            <span className="text-xs text-muted-foreground">
+              {t("tx.notPaid")}
+            </span>
           );
         return (
           <div className="flex flex-col items-start gap-0.5">
@@ -333,7 +339,7 @@ export default function TransactionsPage() {
     },
     {
       key: "activity",
-      header: "Last activity",
+      header: t("tx.lastActivity"),
       secondary: true,
       cell: (tx) => {
         const s = status[tx.id];
@@ -353,14 +359,14 @@ export default function TransactionsPage() {
     },
     {
       key: "actions",
-      header: <span className="sr-only">Actions</span>,
+      header: <span className="sr-only">{t("tx.actions")}</span>,
       align: "end",
       cell: (tx) => (
         <Link
           href={`/transactions/${tx.id}`}
           className="inline-flex h-8 items-center rounded-md border border-input px-3 text-sm hover:bg-muted"
         >
-          Open
+          {t("tx.open")}
         </Link>
       ),
     },
@@ -369,15 +375,15 @@ export default function TransactionsPage() {
   return (
     <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Transactions"
-        description="Every delivery of milk, priced by the rate card in force at the moment it was received — and where its money has got to."
+        title={t("transaction.title")}
+        description={t("tx.description")}
         actions={
           <Link
             href="/transactions/new"
             className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
           >
             <Plus aria-hidden className="me-1.5 size-4" />
-            Record collection
+            {t("tx.recordCollection")}
           </Link>
         }
       />
@@ -385,21 +391,24 @@ export default function TransactionsPage() {
       <DateRangePicker value={range} onChange={setRange} busy={loading} />
 
       <section
-        aria-label="Collection summary"
+        aria-label={t("tx.summaryAria")}
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
         <StatTile
-          label="Collections"
+          label={t("dashboard.collections")}
           value={summary ? summary.transactions : "—"}
           hint={
             summary
-              ? `${summary.accepted} accepted · ${summary.rejected} rejected`
+              ? t("tx.acceptedRejected", {
+                  accepted: summary.accepted,
+                  rejected: summary.rejected,
+                })
               : undefined
           }
           icon={<Activity className="size-4" />}
         />
         <StatTile
-          label="Quantity"
+          label={t("field.quantity")}
           value={
             summary ? (
               <Quantity value={summary.total_net_weight_kg} unit="kg" />
@@ -407,11 +416,15 @@ export default function TransactionsPage() {
               "—"
             )
           }
-          hint={summary ? `${summary.suppliers_served} suppliers` : undefined}
+          hint={
+            summary
+              ? t("tx.suppliersCount", { count: summary.suppliers_served })
+              : undefined
+          }
           icon={<Droplets className="size-4" />}
         />
         <StatTile
-          label="Value"
+          label={t("delivery.value")}
           value={
             primary ? (
               <Money amount={primary[1]} currency={primary[0]} />
@@ -424,13 +437,13 @@ export default function TransactionsPage() {
           icon={<Banknote className="size-4" />}
         />
         <StatTile
-          label="Average fat"
+          label={t("dashboard.averageFat")}
           value={
             summary?.weighted_avg_fat != null
               ? `${summary.weighted_avg_fat}%`
               : "—"
           }
-          hint="weighted by quantity"
+          hint={t("tx.weightedByQuantity")}
           icon={<Percent className="size-4" />}
         />
       </section>
@@ -438,7 +451,7 @@ export default function TransactionsPage() {
       <Card>
         <CardContent className="pt-6">
           <DataTable
-            caption="Milk collections in this organization"
+            caption={t("tx.caption")}
             columns={columns}
             rows={page?.items ?? []}
             rowKey={(tx) => tx.id}
@@ -446,17 +459,15 @@ export default function TransactionsPage() {
             error={error}
             onRetry={() => void load()}
             empty={{
-              title: filtered
-                ? "No collection matches these filters"
-                : "No collections in this period",
+              title: filtered ? t("tx.emptyFiltered") : t("tx.emptyPeriod"),
               description: filtered
-                ? "Try a wider date range, or clear the filters."
-                : "Open a session at a centre and record a delivery to begin.",
+                ? t("tx.emptyFilteredHint")
+                : t("tx.emptyPeriodHint"),
             }}
             toolbar={
               <>
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="tx-state">Status</Label>
+                  <Label htmlFor="tx-state">{t("field.status")}</Label>
                   <select
                     id="tx-state"
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm"
@@ -470,13 +481,13 @@ export default function TransactionsPage() {
                       <option key={s || "all"} value={s}>
                         {s
                           ? s.toLowerCase().replace(/_/g, " ")
-                          : "All statuses"}
+                          : t("tx.allStatuses")}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="tx-center">Centre</Label>
+                  <Label htmlFor="tx-center">{t("tx.centre")}</Label>
                   <select
                     id="tx-center"
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm"
@@ -486,7 +497,7 @@ export default function TransactionsPage() {
                       setOffset(0);
                     }}
                   >
-                    <option value="">All centres</option>
+                    <option value="">{t("tx.allCentres")}</option>
                     {centers.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -496,8 +507,8 @@ export default function TransactionsPage() {
                 </div>
                 <EntityPicker
                   id="tx-supplier"
-                  label="Supplier"
-                  placeholder="All suppliers — search to filter"
+                  label={t("entity.supplier")}
+                  placeholder={t("tx.allSuppliersSearch")}
                   value={supplierId}
                   valueLabel={supplierFilterLabel || undefined}
                   onSelect={(id, label) => {
@@ -532,7 +543,7 @@ export default function TransactionsPage() {
                       setOffset(0);
                     }}
                   >
-                    Clear filters
+                    {t("tx.clearFilters")}
                   </Button>
                 ) : null}
               </>

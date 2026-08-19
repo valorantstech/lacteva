@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useBusinessToday } from "@/components/date-range";
 import { type Column, DataTable } from "@/components/data-table";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader, StatTile } from "@/components/page-header";
@@ -46,18 +47,26 @@ const TIMEZONE = /^[A-Za-z]+\/[A-Za-z_+-]+$/;
 type FormState =
   { mode: "closed" } | { mode: "create" } | { mode: "edit"; center: Center };
 
-/** The window the activity figures cover. Long enough that a demo looks alive. */
-function activityWindow() {
-  const to = new Date();
+/**
+ * The 30-day activity window, anchored on the DAIRY'S today — not UTC's.
+ * `new Date().toISOString()` here was the exact DEMO-019 bug re-introduced:
+ * an IST dairy's "last 30 days" was wrong before 05:30 every morning. The
+ * date arithmetic runs in UTC ON the business-date string, which is safe
+ * because a YYYY-MM-DD has no clock to shift.
+ */
+function activityWindow(businessToday: string) {
+  const to = new Date(`${businessToday}T00:00:00Z`);
   const from = new Date(to);
   from.setUTCDate(from.getUTCDate() - 29);
   return {
     date_from: from.toISOString().slice(0, 10),
-    date_to: to.toISOString().slice(0, 10),
+    date_to: businessToday,
   };
 }
 
 export default function CentersPage() {
+  // DERIVED each render (DEMO-019): the timezone arrives after first mount.
+  const businessToday = useBusinessToday();
   const [page, setPage] = useState<{ items: Center[]; total: number } | null>(
     null,
   );
@@ -85,7 +94,7 @@ export default function CentersPage() {
       setPage(result);
       // Activity is a separate concern and a separate failure: a reporting
       // hiccup must not stop the centre list itself from rendering.
-      getCenterReport({ ...activityWindow(), limit: "100" })
+      getCenterReport({ ...activityWindow(businessToday), limit: "100" })
         .then((report: ReportPage<CenterSummaryRow>) =>
           setActivity(
             Object.fromEntries(
@@ -103,7 +112,7 @@ export default function CentersPage() {
     } finally {
       setLoading(false);
     }
-  }, [offset, q, status]);
+  }, [businessToday, offset, q, status]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);

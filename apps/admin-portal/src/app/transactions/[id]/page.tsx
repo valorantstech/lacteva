@@ -44,7 +44,7 @@ import { Money, Quantity, sameAmount } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
-import { useLocale } from "@/lib/i18n";
+import { useLocale, useT } from "@/lib/i18n";
 
 /**
  * One collection, end to end (DEMO-004).
@@ -70,12 +70,12 @@ type Load<T> =
   | { state: "ready"; data: T };
 
 const LOADING = { state: "loading" } as const;
-const describe = (e: unknown) =>
+const describe = (e: unknown, fallback: string) =>
   e instanceof ApiError
     ? e.detail
     : e instanceof Error
       ? e.message
-      : "the request failed";
+      : fallback;
 
 /** One definition, shared with every other screen. */
 const stamp = formatStamp;
@@ -122,6 +122,7 @@ export default function TransactionDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const t9n = useT();
   const [tx, setTx] = useState<Load<MilkTransaction>>(LOADING);
   const [events, setEvents] = useState<Load<TransactionEvent[]>>(LOADING);
   const [chain, setChain] = useState<Load<CollectionChain>>(LOADING);
@@ -141,7 +142,7 @@ export default function TransactionDetailPage({
     const fail =
       <T,>(set: (v: Load<T>) => void) =>
       (e: unknown) =>
-        set({ state: "error", message: describe(e) });
+        set({ state: "error", message: describe(e, t9n("txDetail.requestFailed")) });
 
     const [loaded] = await Promise.allSettled([
       getMilkTransaction(id).then((data) => {
@@ -169,7 +170,7 @@ export default function TransactionDetailPage({
     listPeople()
       .then(setPeople)
       .catch(() => setPeople([]));
-  }, [id]);
+  }, [id, t9n]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);
@@ -180,11 +181,11 @@ export default function TransactionDetailPage({
     return (
       <div className="mx-auto w-full max-w-3xl p-8">
         <ErrorState
-          message={`This collection could not be loaded — ${tx.message}.`}
+          message={t9n("txDetail.loadFailed", { message: tx.message })}
         />
         <p className="mt-4 text-sm">
           <Link className="underline underline-offset-4" href="/transactions">
-            Back to collections
+            {t9n("txDetail.backToCollections")}
           </Link>
         </p>
       </div>
@@ -209,10 +210,10 @@ export default function TransactionDetailPage({
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
         breadcrumbs={[
-          { label: "Collections", href: "/transactions" },
-          { label: t ? t.id.slice(0, 8) : "Collection" },
+          { label: t9n("dashboard.collections"), href: "/transactions" },
+          { label: t ? t.id.slice(0, 8) : t9n("txDetail.collection") },
         ]}
-        title="Collection"
+        title={t9n("txDetail.collection")}
         description={
           t
             ? [
@@ -223,13 +224,13 @@ export default function TransactionDetailPage({
               ]
                 .filter(Boolean)
                 .join(" · ")
-            : "Loading this collection…"
+            : t9n("txDetail.loadingThis")
         }
         actions={t ? <StatusBadge status={t.state} /> : undefined}
       />
 
       {tx.state === "loading" ? (
-        <LoadingState label="Loading the collection…" />
+        <LoadingState label={t9n("txDetail.loadingCollection")} />
       ) : null}
 
       {t ? (
@@ -237,35 +238,37 @@ export default function TransactionDetailPage({
           <div className="grid gap-6 lg:grid-cols-3">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Collection</CardTitle>
+                <CardTitle className="text-base">
+                  {t9n("txDetail.collection")}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <dl className="flex flex-col gap-2.5 text-sm">
-                  <Row label="Quantity">
+                  <Row label={t9n("field.quantity")}>
                     <Quantity
                       value={t.net_weight}
                       unit={t.weight_unit ?? "kg"}
                     />
                   </Row>
-                  <Row label="Gross / tare">
+                  <Row label={t9n("txDetail.grossTare")}>
                     <span className="tabular-nums text-muted-foreground">
                       {t.gross_weight ?? "—"} / {t.tare_weight ?? "—"}
                     </span>
                   </Row>
-                  <Row label="Weight source">
+                  <Row label={t9n("txDetail.weightSource")}>
                     <SourceTag source={t.weight_source} />
                   </Row>
-                  <Row label="Milk">
+                  <Row label={t9n("txDetail.milk")}>
                     <span className="text-muted-foreground">
                       {t.milk_type ?? "—"}
                     </span>
                   </Row>
-                  <Row label="Container">
+                  <Row label={t9n("txDetail.container")}>
                     <span className="text-muted-foreground">
                       {t.container_type ?? "—"} {t.container_identifier ?? ""}
                     </span>
                   </Row>
-                  <Row label="Supplier">
+                  <Row label={t9n("entity.supplier")}>
                     {t.supplier_id ? (
                       <Link
                         className="hover:underline"
@@ -276,11 +279,11 @@ export default function TransactionDetailPage({
                       </Link>
                     ) : (
                       <span className="text-muted-foreground">
-                        not identified
+                        {t9n("tx.notIdentified")}
                       </span>
                     )}
                   </Row>
-                  <Row label="Centre">
+                  <Row label={t9n("tx.centre")}>
                     <Link
                       className="hover:underline"
                       href={`/centers/${t.center_id}`}
@@ -295,14 +298,14 @@ export default function TransactionDetailPage({
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Quality</CardTitle>
-                <CardDescription>
-                  The readings the price was resolved from.
-                </CardDescription>
+                <CardTitle className="text-base">
+                  {t9n("transaction.quality")}
+                </CardTitle>
+                <CardDescription>{t9n("txDetail.qualityHint")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <dl className="flex flex-col gap-2.5 text-sm">
-                  <Row label="Fat">
+                  <Row label={t9n("txDetail.fat")}>
                     <span className="tabular-nums">{t.fat ?? "—"}%</span>
                   </Row>
                   <Row label="SNF">
@@ -311,21 +314,21 @@ export default function TransactionDetailPage({
                   <Row label="CLR">
                     <span className="tabular-nums">{t.clr ?? "—"}</span>
                   </Row>
-                  <Row label="Quality source">
+                  <Row label={t9n("txDetail.qualitySource")}>
                     <SourceTag source={t.quality_source} />
                   </Row>
                   {t.quality_remarks ? (
-                    <Row label="Remarks">
+                    <Row label={t9n("txDetail.remarks")}>
                       <span className="text-end text-muted-foreground">
                         {t.quality_remarks}
                       </span>
                     </Row>
                   ) : null}
-                  <Row label="Pricing status">
+                  <Row label={t9n("txDetail.pricingStatus")}>
                     <StatusBadge status={t.pricing_status ?? "unpriced"} />
                   </Row>
                   {t.decided_at ? (
-                    <Row label="Decided">
+                    <Row label={t9n("txDetail.decided")}>
                       <span className="text-end text-muted-foreground">
                         {stamp(t.decided_at)}
                         {t.decided_by && actorName[t.decided_by]
@@ -335,14 +338,14 @@ export default function TransactionDetailPage({
                     </Row>
                   ) : null}
                   {t.rejected_reason ? (
-                    <Row label="Rejected">
+                    <Row label={t9n("transaction.rejected")}>
                       <span className="text-destructive">
                         {t.rejected_reason}
                       </span>
                     </Row>
                   ) : null}
                   {t.cancelled_reason ? (
-                    <Row label="Cancelled">
+                    <Row label={t9n("billing.cancelled")}>
                       <span className="text-destructive">
                         {t.cancelled_reason}
                       </span>
@@ -359,7 +362,7 @@ export default function TransactionDetailPage({
 
           <div className="grid gap-6 lg:grid-cols-3">
             <ChainCard
-              title="Settlement"
+              title={t9n("entity.settlement")}
               icon={
                 <Handshake
                   aria-hidden
@@ -367,7 +370,7 @@ export default function TransactionDetailPage({
                 />
               }
               state={chain}
-              empty="This collection has not been settled yet."
+              empty={t9n("txDetail.notSettledYet")}
               href={
                 links?.settlement
                   ? `/settlements/${links.settlement.id}`
@@ -376,20 +379,20 @@ export default function TransactionDetailPage({
               rows={
                 links?.settlement
                   ? [
-                      ["Number", links.settlement.settlement_number],
+                      [t9n("txDetail.number"), links.settlement.settlement_number],
                       [
-                        "Status",
+                        t9n("field.status"),
                         <StatusBadge
                           key="s"
                           status={links.settlement.status}
                         />,
                       ],
                       [
-                        "Period",
+                        t9n("field.period"),
                         `${links.settlement.period_from} → ${links.settlement.period_to}`,
                       ],
                       [
-                        "This collection",
+                        t9n("txDetail.thisCollection"),
                         <Money
                           key="l"
                           amount={links.settlement.line_amount}
@@ -397,7 +400,7 @@ export default function TransactionDetailPage({
                         />,
                       ],
                       [
-                        "Settlement net",
+                        t9n("txDetail.settlementNet"),
                         <Money
                           key="n"
                           amount={links.settlement.net_amount}
@@ -405,14 +408,17 @@ export default function TransactionDetailPage({
                           emphasis
                         />,
                       ],
-                      ["Finalized", stamp(links.settlement.finalized_at)],
+                      [
+                        t9n("settlement.finalized"),
+                        stamp(links.settlement.finalized_at),
+                      ],
                     ]
                   : null
               }
             />
 
             <ChainCard
-              title="Payment"
+              title={t9n("entity.payment")}
               icon={
                 <Banknote
                   aria-hidden
@@ -422,8 +428,8 @@ export default function TransactionDetailPage({
               state={chain}
               empty={
                 links?.settlement
-                  ? "The settlement has not been paid yet."
-                  : "Payment follows settlement."
+                  ? t9n("txDetail.settlementNotPaid")
+                  : t9n("txDetail.paymentFollows")
               }
               href={
                 links?.payment ? `/payments/${links.payment.id}` : undefined
@@ -431,32 +437,32 @@ export default function TransactionDetailPage({
               rows={
                 links?.payment
                   ? [
-                      ["Number", links.payment.payment_number],
+                      [t9n("txDetail.number"), links.payment.payment_number],
                       [
-                        "Status",
+                        t9n("field.status"),
                         <StatusBadge key="s" status={links.payment.status} />,
                       ],
                       [
-                        "Method",
+                        t9n("payment.method"),
                         links.payment.method.replace(/_/g, " ").toLowerCase(),
                       ],
-                      ["Reference", links.payment.reference ?? "—"],
+                      [t9n("payment.reference"), links.payment.reference ?? "—"],
                       [
-                        "Allocated",
+                        t9n("txDetail.allocated"),
                         <Money
                           key="a"
                           amount={links.payment.allocated_amount}
                           currency={links.payment.currency}
                         />,
                       ],
-                      ["Paid", stamp(links.payment.paid_at)],
+                      [t9n("field.paid"), stamp(links.payment.paid_at)],
                     ]
                   : null
               }
             />
 
             <ChainCard
-              title="Receipt"
+              title={t9n("entity.receipt")}
               icon={
                 <ReceiptIcon
                   aria-hidden
@@ -466,25 +472,25 @@ export default function TransactionDetailPage({
               state={chain}
               empty={
                 links?.payment
-                  ? "A receipt is generated once the payment completes."
-                  : "A receipt follows payment."
+                  ? t9n("txDetail.receiptWhenPaid")
+                  : t9n("txDetail.receiptFollows")
               }
               href={
                 links?.receipt && links.payment
                   ? `/payments/${links.payment.id}`
                   : undefined
               }
-              linkLabel="open on payment"
+              linkLabel={t9n("txDetail.openOnPayment")}
               rows={
                 links?.receipt
                   ? [
-                      ["Number", links.receipt.receipt_number],
+                      [t9n("txDetail.number"), links.receipt.receipt_number],
                       [
-                        "Status",
+                        t9n("field.status"),
                         <StatusBadge key="s" status={links.receipt.status} />,
                       ],
                       [
-                        "Amount",
+                        t9n("field.amount"),
                         <Money
                           key="n"
                           amount={links.receipt.net_amount}
@@ -492,7 +498,10 @@ export default function TransactionDetailPage({
                           emphasis
                         />,
                       ],
-                      ["Generated", stamp(links.receipt.generated_at)],
+                      [
+                        t9n("receipt.generated"),
+                        stamp(links.receipt.generated_at),
+                      ],
                     ]
                   : null
               }
@@ -502,11 +511,11 @@ export default function TransactionDetailPage({
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Money trail</CardTitle>
+                <CardTitle className="text-base">
+                  {t9n("txDetail.moneyTrail")}
+                </CardTitle>
                 <CardDescription>
-                  What this collection was worth, and what happened to it. Every
-                  figure is the platform&apos;s; the only thing computed here is
-                  whether two of them agree.
+                  {t9n("txDetail.moneyTrailHint")}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -532,6 +541,7 @@ export default function TransactionDetailPage({
  * the organization's language is Hindi — for WhatsApp or SMS.
  */
 function SlipCard({ txId }: { txId: string }) {
+  const t9n = useT();
   const [slip, setSlip] = useState<Load<CollectionSlip>>(LOADING);
   const [copied, setCopied] = useState(false);
 
@@ -542,26 +552,32 @@ function SlipCard({ txId }: { txId: string }) {
         if (live) setSlip({ state: "ready", data });
       },
       (e: unknown) => {
-        if (live) setSlip({ state: "error", message: describe(e) });
+        if (live)
+          setSlip({
+            state: "error",
+            message: describe(e, t9n("txDetail.requestFailed")),
+          });
       },
     );
     return () => {
       live = false;
     };
-  }, [txId]);
+  }, [txId, t9n]);
 
   if (slip.state === "loading") {
-    return <LoadingState label="Preparing the collection slip…" />;
+    return <LoadingState label={t9n("txDetail.slipPreparing")} />;
   }
   if (slip.state === "error") {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Collection slip</CardTitle>
+          <CardTitle className="text-base">
+            {t9n("txDetail.slipTitle")}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <ErrorState
-            message={`The slip could not be prepared — ${slip.message}.`}
+            message={t9n("txDetail.slipFailed", { message: slip.message })}
           />
         </CardContent>
       </Card>
@@ -587,12 +603,10 @@ function SlipCard({ txId }: { txId: string }) {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          Collection slip · <span className="tabular-nums">{s.slip_number}</span>
+          {t9n("txDetail.slipTitle")} ·{" "}
+          <span className="tabular-nums">{s.slip_number}</span>
         </CardTitle>
-        <CardDescription>
-          The farmer&apos;s copy (parchi). Every figure is the platform&apos;s
-          stored value — printing and sharing change nothing.
-        </CardDescription>
+        <CardDescription>{t9n("txDetail.slipHint")}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div
@@ -605,15 +619,15 @@ function SlipCard({ txId }: { txId: string }) {
             {s.session_label ? ` · ${s.session_label}` : ""}
           </p>
           <dl className="mt-3 flex flex-col gap-1.5">
-            <Row label="Slip">
+            <Row label={t9n("txDetail.slipLabel")}>
               <span className="tabular-nums">{s.slip_number}</span>
             </Row>
-            <Row label="Date">
+            <Row label={t9n("field.date")}>
               <span className="tabular-nums">{stamp(s.collected_at)}</span>
             </Row>
-            <Row label="Farmer">{farmer}</Row>
-            <Row label="Milk">{milk}</Row>
-            <Row label="Quantity">
+            <Row label={t9n("txDetail.farmer")}>{farmer}</Row>
+            <Row label={t9n("txDetail.milk")}>{milk}</Row>
+            <Row label={t9n("field.quantity")}>
               <Quantity value={s.quantity} unit={s.weight_unit ?? "kg"} />
             </Row>
             <Row label="FAT / SNF / CLR">
@@ -622,17 +636,17 @@ function SlipCard({ txId }: { txId: string }) {
               </span>
             </Row>
             {s.decision === "REJECTED" ? (
-              <Row label="Decision">
+              <Row label={t9n("txDetail.decision")}>
                 <span className="text-destructive">
                   REJECTED{s.rejected_reason ? ` — ${s.rejected_reason}` : ""}
                 </span>
               </Row>
             ) : s.unit_price != null && s.gross_amount != null ? (
               <>
-                <Row label="Rate">
+                <Row label={t9n("delivery.rate")}>
                   <Money amount={s.unit_price} currency={s.currency ?? ""} />
                 </Row>
-                <Row label="Amount">
+                <Row label={t9n("field.amount")}>
                   <Money
                     amount={s.gross_amount}
                     currency={s.currency ?? ""}
@@ -641,21 +655,23 @@ function SlipCard({ txId }: { txId: string }) {
                 </Row>
               </>
             ) : (
-              <Row label="Rate">
-                <span className="text-muted-foreground">pending</span>
+              <Row label={t9n("delivery.rate")}>
+                <span className="text-muted-foreground">
+                  {t9n("txDetail.ratePending")}
+                </span>
               </Row>
             )}
-            <Row label="Operator">{s.operator_name || "—"}</Row>
+            <Row label={t9n("txDetail.operator")}>{s.operator_name || "—"}</Row>
           </dl>
         </div>
         <div className="flex flex-wrap justify-center gap-2 print:hidden">
           <Button type="button" variant="outline" onClick={() => window.print()}>
             <Printer aria-hidden className="me-1.5 size-4" />
-            Print
+            {t9n("action.print")}
           </Button>
           <Button type="button" variant="outline" onClick={copyText}>
             <Copy aria-hidden className="me-1.5 size-4" />
-            {copied ? "Copied" : "Copy text"}
+            {copied ? t9n("txDetail.copied") : t9n("txDetail.copyText")}
           </Button>
         </div>
       </CardContent>
@@ -698,6 +714,7 @@ function Row({
  * something to hide.
  */
 function SourceTag({ source }: { source: string | null }) {
+  const t9n = useT();
   if (!source) return <span className="text-muted-foreground">—</span>;
   const manual = source === "manual";
   return (
@@ -707,7 +724,7 @@ function SourceTag({ source }: { source: string | null }) {
       </span>
       {manual ? (
         <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-          entered by an operator
+          {t9n("txDetail.enteredByOperator")}
         </span>
       ) : null}
     </span>
@@ -732,14 +749,14 @@ function MoneyTrail({
   chain: Load<CollectionChain>;
 }) {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency } = useLocale();
+  const { currency: orgCurrency, t: t9n } = useLocale();
 
   if (chain.state === "loading")
-    return <LoadingState label="Following the money…" />;
+    return <LoadingState label={t9n("txDetail.followingMoney")} />;
   if (chain.state === "error")
     return (
       <ErrorState
-        message={`The financial trail is unavailable — ${chain.message}.`}
+        message={t9n("txDetail.trailUnavailable", { message: chain.message })}
       />
     );
 
@@ -764,37 +781,37 @@ function MoneyTrail({
     href?: string;
   }[] = [
     {
-      label: "Collection",
+      label: t9n("txDetail.collection"),
       amount: collected,
       // Deliberately NOT the rate card string: the pricing card above already
       // prints it, and the same identifier twice on one screen reads as two
       // facts.
-      note: "what this delivery was worth when it was priced",
+      note: t9n("txDetail.worthNote"),
     },
     {
-      label: "Settlement contribution",
+      label: t9n("txDetail.settlementContribution"),
       amount: contributed,
       note: links.settlement
         ? `${links.settlement.settlement_number} · ${links.settlement.status}`
-        : "not settled yet",
+        : t9n("txDetail.notSettledShort"),
       href: links.settlement
         ? `/settlements/${links.settlement.id}`
         : undefined,
     },
     {
-      label: "Payment allocation",
+      label: t9n("txDetail.paymentAllocation"),
       amount: links.payment ? String(links.payment.allocated_amount) : null,
       note: links.payment
         ? `${links.payment.payment_number} · ${links.payment.status}`
-        : "not paid yet",
+        : t9n("txDetail.notPaidShort"),
       href: links.payment ? `/payments/${links.payment.id}` : undefined,
     },
     {
-      label: "Receipt",
+      label: t9n("entity.receipt"),
       amount: links.receipt ? String(links.receipt.net_amount) : null,
       note: links.receipt
-        ? `${links.receipt.receipt_number} · covers the whole payment`
-        : "no receipt yet",
+        ? `${links.receipt.receipt_number} · ${t9n("txDetail.coversWholePayment")}`
+        : t9n("txDetail.noReceiptYet"),
       href: links.payment ? `/payments/${links.payment.id}` : undefined,
     },
   ];
@@ -835,8 +852,7 @@ function MoneyTrail({
         agrees ? (
           <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
             <Check aria-hidden className="size-4" />
-            The settlement recorded this collection at exactly its collection
-            value — difference 0.00 {currency}.
+            {t9n("txDetail.moneyAgrees", { currency: currency ?? "" })}
           </p>
         ) : (
           <p
@@ -844,8 +860,11 @@ function MoneyTrail({
             className="inline-flex items-center gap-2 text-sm font-medium text-destructive"
           >
             <AlertTriangle aria-hidden className="size-4" />
-            The settlement recorded {contributed} {currency} for a collection
-            worth {collected} {currency}. These should be identical.
+            {t9n("txDetail.moneyMismatch", {
+              contributed: contributed ?? "",
+              collected: collected ?? "",
+              currency: currency ?? "",
+            })}
           </p>
         )
       ) : null}
@@ -854,33 +873,32 @@ function MoneyTrail({
 }
 
 function PricingBreakdown({ tx }: { tx: MilkTransaction }) {
+  const t9n = useT();
   const priced = tx.unit_price != null && tx.gross_amount != null;
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Pricing</CardTitle>
-        <CardDescription>
-          Resolved by the platform&apos;s pricing engine.
-        </CardDescription>
+        <CardTitle className="text-base">{t9n("report.pricing")}</CardTitle>
+        <CardDescription>{t9n("txDetail.pricingHint")}</CardDescription>
       </CardHeader>
       <CardContent>
         {!priced ? (
           <EmptyState
-            title="Not priced"
-            description="A price is resolved once quality has been captured."
+            title={t9n("txDetail.notPriced")}
+            description={t9n("txDetail.notPricedHint")}
           />
         ) : (
           <div className="flex flex-col gap-4">
             <dl className="flex flex-col gap-2.5 text-sm">
-              <Row label="Rate card">
+              <Row label={t9n("txDetail.rateCard")}>
                 <span className="text-end text-muted-foreground">
                   {tx.pricing_detail ?? "—"}
                 </span>
               </Row>
-              <Row label="Quantity">
+              <Row label={t9n("field.quantity")}>
                 <Quantity value={tx.net_weight} unit={tx.weight_unit ?? "kg"} />
               </Row>
-              <Row label="Rate">
+              <Row label={t9n("delivery.rate")}>
                 <span className="tabular-nums">
                   {String(tx.unit_price)}
                   <span className="ms-1 text-xs text-muted-foreground">
@@ -892,7 +910,7 @@ function PricingBreakdown({ tx }: { tx: MilkTransaction }) {
 
             <div className="rounded-lg border border-border bg-muted/40 p-3">
               <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
-                Calculation
+                {t9n("txDetail.calculation")}
               </p>
               <p className="font-mono text-sm tabular-nums">
                 {String(tx.net_weight)} × {String(tx.unit_price)}
@@ -904,7 +922,7 @@ function PricingBreakdown({ tx }: { tx: MilkTransaction }) {
 
             <div className="flex items-baseline justify-between border-t border-border pt-3">
               <span className="text-sm text-muted-foreground">
-                Collection value
+                {t9n("txDetail.collectionValue")}
               </span>
               <Money amount={tx.gross_amount} currency={tx.currency} emphasis />
             </div>
@@ -922,7 +940,7 @@ function ChainCard({
   rows,
   empty,
   href,
-  linkLabel = "open",
+  linkLabel,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -934,6 +952,7 @@ function ChainCard({
   // existed. They now open the exact record.
   linkLabel?: string;
 }) {
+  const t9n = useT();
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -946,15 +965,21 @@ function ChainCard({
             className="text-xs underline-offset-4 hover:underline"
             href={href}
           >
-            {linkLabel}
+            {linkLabel ?? t9n("txDetail.openLink")}
           </Link>
         ) : null}
       </CardHeader>
       <CardContent>
         {state.state === "loading" ? (
-          <LoadingState label={`Loading ${title.toLowerCase()}…`} />
+          <LoadingState
+            label={t9n("txDetail.loadingThing", {
+              what: title.toLowerCase(),
+            })}
+          />
         ) : state.state === "error" ? (
-          <ErrorState message={`Unavailable — ${state.message}.`} />
+          <ErrorState
+            message={t9n("txDetail.unavailable", { message: state.message })}
+          />
         ) : rows === null ? (
           <p className="py-4 text-sm text-muted-foreground">{empty}</p>
         ) : (
@@ -988,35 +1013,45 @@ function Timeline({
   /** user id → display name, resolved once from the staff roster. */
   actorName: Record<string, string>;
 }) {
+  const t9n = useT();
   const links = chain.state === "ready" ? chain.data : null;
   const recorded = events.state === "ready" ? (events.data ?? []) : [];
 
   const later: { label: string; at: string | null; done: boolean }[] = [
     {
       label: links?.settlement
-        ? `Included in settlement ${links.settlement.settlement_number}`
-        : "Included in a settlement",
+        ? t9n("txDetail.includedInSettlement", {
+            number: links.settlement.settlement_number,
+          })
+        : t9n("txDetail.includedInASettlement"),
       at: null,
       done: Boolean(links?.settlement),
     },
     {
       label: links?.settlement
-        ? `Settlement ${links.settlement.status}`
-        : "Settlement finalized",
+        ? t9n("txDetail.settlementStatus", {
+            status: links.settlement.status,
+          })
+        : t9n("txDetail.settlementFinalized"),
       at: links?.settlement?.finalized_at ?? null,
       done: links?.settlement?.status === "finalized",
     },
     {
       label: links?.payment
-        ? `Payment ${links.payment.payment_number} ${links.payment.status}`
-        : "Payment processed",
+        ? t9n("txDetail.paymentStatus", {
+            number: links.payment.payment_number,
+            status: links.payment.status,
+          })
+        : t9n("txDetail.paymentProcessed"),
       at: links?.payment?.paid_at ?? null,
       done: links?.payment?.status === "completed",
     },
     {
       label: links?.receipt
-        ? `Receipt ${links.receipt.receipt_number}`
-        : "Receipt generated",
+        ? t9n("txDetail.receiptNumber", {
+            number: links.receipt.receipt_number,
+          })
+        : t9n("txDetail.receiptGenerated"),
       at: links?.receipt?.generated_at ?? null,
       done: Boolean(links?.receipt),
     },
@@ -1025,21 +1060,18 @@ function Timeline({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Lifecycle</CardTitle>
-        <CardDescription>
-          The platform&apos;s own event trail. Stages that have not happened are
-          shown as pending.
-        </CardDescription>
+        <CardTitle className="text-base">{t9n("txDetail.lifecycle")}</CardTitle>
+        <CardDescription>{t9n("txDetail.lifecycleHint")}</CardDescription>
       </CardHeader>
       <CardContent>
         {events.state === "loading" ? (
-          <LoadingState label="Loading the trail…" />
+          <LoadingState label={t9n("txDetail.loadingTrail")} />
         ) : events.state === "error" ? (
           <ErrorState
-            message={`The event trail is unavailable — ${events.message}.`}
+            message={t9n("txDetail.trailError", { message: events.message })}
           />
         ) : recorded.length === 0 ? (
-          <EmptyState title="No events recorded for this collection" />
+          <EmptyState title={t9n("txDetail.noEvents")} />
         ) : (
           <ol className="flex flex-col">
             {recorded.map((event) => (
@@ -1067,8 +1099,10 @@ function Timeline({
                   <span className="text-xs text-muted-foreground">
                     {event.actor_id
                       ? (actorName[event.actor_id] ??
-                        `operator ${event.actor_id.slice(0, 8)}…`)
-                      : "the platform"}
+                        t9n("txDetail.operatorId", {
+                          id: event.actor_id.slice(0, 8),
+                        }))
+                      : t9n("txDetail.thePlatform")}
                     {summarise(event.data) ? ` · ${summarise(event.data)}` : ""}
                   </span>
                 </span>
@@ -1102,7 +1136,7 @@ function Timeline({
                     {stage.label}
                   </span>
                   <span className="text-xs tabular-nums text-muted-foreground">
-                    {stage.done ? stamp(stage.at) : "pending"}
+                    {stage.done ? stamp(stage.at) : t9n("txDetail.pending")}
                   </span>
                 </span>
               </li>

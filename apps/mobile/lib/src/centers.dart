@@ -4,7 +4,9 @@ import 'api.dart';
 import 'center_summary.dart';
 import 'collection_wizard.dart';
 import 'home.dart';
+import 'l10n.dart';
 import 'notifications.dart';
+import 'session.dart';
 import 'offline/offline_client.dart';
 import 'offline/sync_screen.dart';
 import 'payments.dart';
@@ -85,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } on ApiException catch (e) {
       setState(() => _error = e.detail);
     } catch (_) {
-      setState(() => _error = 'Could not reach the platform');
+      setState(() => _error = L10n.of(null).t('common.couldNotReach'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -93,6 +95,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Nobody is signed in yet, so there is no session to carry a locale —
+    // English today, translatable the day a pre-auth locale source is chosen
+    // (P1-LOCALE-I18N-001).
+    final t = L10n.of(null);
     return Scaffold(
       appBar: AppBar(title: const Text('Lacteva — Sign in')),
       body: Center(
@@ -112,17 +118,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Padding(
                           padding: const EdgeInsets.all(12),
                           child: Text(
-                            '$_queuedOffline captured '
-                            '${_queuedOffline == 1 ? "record is" : "records are"} '
-                            'safe on this phone and will sync after you sign '
-                            'in.',
+                            t.t('login.queuedSafe', {'count': _queuedOffline}),
                           ),
                         ),
                       ),
                     ),
                   TextFormField(
                     controller: _email,
-                    decoration: const InputDecoration(labelText: 'Email'),
+                    decoration: InputDecoration(labelText: t.t('auth.email')),
                     keyboardType: TextInputType.emailAddress,
                     validator: (v) => (v == null || !v.contains('@'))
                         ? 'Enter your email'
@@ -131,7 +134,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _password,
-                    decoration: const InputDecoration(labelText: 'Password'),
+                    decoration: InputDecoration(
+                      labelText: t.t('auth.password'),
+                    ),
                     obscureText: true,
                     validator: (v) =>
                         (v == null || v.isEmpty) ? 'Enter your password' : null,
@@ -149,7 +154,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   FilledButton(
                     onPressed: _busy ? null : _submit,
-                    child: Text(_busy ? 'Signing in…' : 'Sign in'),
+                    child: Text(
+                      _busy ? t.t('auth.signingIn') : t.t('auth.signIn'),
+                    ),
                   ),
                 ],
               ),
@@ -163,9 +170,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
 /// Paginated, searchable list of collection centers.
 class CentersListScreen extends StatefulWidget {
-  const CentersListScreen({super.key, required this.client});
+  const CentersListScreen({super.key, required this.client, this.session});
 
   final ApiClient client;
+
+  /// The signed-in principal, for language only (P1-LOCALE-I18N-001).
+  /// Null renders English — no test constructor changes needed.
+  final Session? session;
 
   @override
   State<CentersListScreen> createState() => _CentersListScreenState();
@@ -201,14 +212,22 @@ class _CentersListScreenState extends State<CentersListScreen> {
     } catch (_) {
       // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
       // say so instead of leaving the spinner forever.
-      if (mounted) setState(() => _error = 'Could not reach the platform');
+      if (mounted) {
+        setState(
+          () => _error = L10n.of(widget.session).t('common.couldNotReach'),
+        );
+      }
     }
   }
 
   Future<void> _openForm({CenterSummary? center}) async {
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => CenterFormScreen(client: widget.client, center: center),
+        builder: (_) => CenterFormScreen(
+          client: widget.client,
+          center: center,
+          session: widget.session,
+        ),
       ),
     );
     if (changed == true) await _load();
@@ -217,23 +236,27 @@ class _CentersListScreenState extends State<CentersListScreen> {
   @override
   Widget build(BuildContext context) {
     final page = _page;
+    final t = L10n.of(widget.session);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Collection centers'),
+        title: Text(t.t('center.listTitle')),
         actions: [
-          SignOutButton(client: widget.client),
+          SignOutButton(client: widget.client, label: t.t('common.signOut')),
           IconButton(
             icon: const Icon(Icons.people_outline),
-            tooltip: 'Suppliers',
+            tooltip: t.t('supplier.title'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => SuppliersListScreen(client: widget.client),
+                builder: (_) => SuppliersListScreen(
+                  client: widget.client,
+                  session: widget.session,
+                ),
               ),
             ),
           ),
           IconButton(
             icon: const Icon(Icons.price_change_outlined),
-            tooltip: 'Rate cards',
+            tooltip: t.t('center.rateCards'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => RateCardsListScreen(client: widget.client),
@@ -242,7 +265,7 @@ class _CentersListScreenState extends State<CentersListScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.receipt_long_outlined),
-            tooltip: 'Settlements',
+            tooltip: t.t('center.settlements'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => SettlementListScreen(client: widget.client),
@@ -251,7 +274,7 @@ class _CentersListScreenState extends State<CentersListScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.payments_outlined),
-            tooltip: 'Payments',
+            tooltip: t.t('center.payments'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => PaymentHistoryScreen(client: widget.client),
@@ -260,20 +283,23 @@ class _CentersListScreenState extends State<CentersListScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.sync),
-            tooltip: 'Sync',
+            tooltip: t.t('sync.title'),
             onPressed: () {
               final client = widget.client;
               if (client is! OfflineApiClient) return;
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => SyncStatusScreen(client: client),
+                  builder: (_) => SyncStatusScreen(
+                    client: client,
+                    session: widget.session,
+                  ),
                 ),
               );
             },
           ),
           IconButton(
             icon: const Icon(Icons.receipt_long_outlined),
-            tooltip: 'Receipts',
+            tooltip: t.t('center.receipts'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => ReceiptHistoryScreen(client: widget.client),
@@ -282,7 +308,7 @@ class _CentersListScreenState extends State<CentersListScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.notifications_none),
-            tooltip: 'Notifications',
+            tooltip: t.t('center.notifications'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) =>
@@ -294,7 +320,7 @@ class _CentersListScreenState extends State<CentersListScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openForm(),
-        tooltip: 'New center',
+        tooltip: t.t('center.new'),
         child: const Icon(Icons.add),
       ),
       body: Column(
@@ -302,10 +328,12 @@ class _CentersListScreenState extends State<CentersListScreen> {
           if (widget.client is OfflineApiClient)
             OfflineBanner(
               client: widget.client as OfflineApiClient,
+              session: widget.session,
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => SyncStatusScreen(
                     client: widget.client as OfflineApiClient,
+                    session: widget.session,
                   ),
                 ),
               ),
@@ -318,9 +346,9 @@ class _CentersListScreenState extends State<CentersListScreen> {
                 children: [
                   TextField(
                     controller: _search,
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.search),
-                      hintText: 'Search by name or code',
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search),
+                      hintText: t.t('center.searchHint'),
                     ),
                     onSubmitted: (_) {
                       _offset = 0;
@@ -341,9 +369,9 @@ class _CentersListScreenState extends State<CentersListScreen> {
                       child: Center(child: CircularProgressIndicator()),
                     ),
                   if (page != null && page.items.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(child: Text('No centers match.')),
+                    Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Center(child: Text(t.t('center.noneMatch'))),
                     ),
                   if (page != null)
                     ...page.items.map(
@@ -354,7 +382,7 @@ class _CentersListScreenState extends State<CentersListScreen> {
                           leading: StatusChip(status: c.status),
                           trailing: IconButton(
                             icon: const Icon(Icons.edit_outlined),
-                            tooltip: 'Edit',
+                            tooltip: t.t('common.edit'),
                             onPressed: () => _openForm(center: c),
                           ),
                           onTap: () => Navigator.of(context).push(
@@ -362,6 +390,7 @@ class _CentersListScreenState extends State<CentersListScreen> {
                               builder: (_) => CenterDetailScreen(
                                 client: widget.client,
                                 centerId: c.id,
+                                session: widget.session,
                               ),
                             ),
                           ),
@@ -382,7 +411,7 @@ class _CentersListScreenState extends State<CentersListScreen> {
                                   );
                                   _load();
                                 },
-                          child: const Text('Previous'),
+                          child: Text(t.t('common.previous')),
                         ),
                         Text(
                           '${(_offset ~/ pageSize) + 1} / ${(page.total / pageSize).ceil()}',
@@ -394,7 +423,7 @@ class _CentersListScreenState extends State<CentersListScreen> {
                                   _offset += pageSize;
                                   _load();
                                 },
-                          child: const Text('Next'),
+                          child: Text(t.t('common.next')),
                         ),
                       ],
                     ),
@@ -427,10 +456,18 @@ class StatusChip extends StatelessWidget {
 
 /// Create (branch + name + code) or edit (name + timezone) a center.
 class CenterFormScreen extends StatefulWidget {
-  const CenterFormScreen({super.key, required this.client, this.center});
+  const CenterFormScreen({
+    super.key,
+    required this.client,
+    this.center,
+    this.session,
+  });
 
   final ApiClient client;
   final CenterSummary? center;
+
+  /// For language only (P1-LOCALE-I18N-001); null renders English.
+  final Session? session;
 
   bool get isEdit => center != null;
 
@@ -501,12 +538,13 @@ class _CenterFormScreenState extends State<CenterFormScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = L10n.of(widget.session);
     return Scaffold(
       appBar: AppBar(
         title: Text(
           widget.isEdit
-              ? 'Edit ${widget.center!.code}'
-              : 'New collection center',
+              ? t.t('center.editTitle', {'code': widget.center!.code})
+              : t.t('center.newTitle'),
         ),
       ),
       body: SingleChildScrollView(
@@ -519,7 +557,9 @@ class _CenterFormScreenState extends State<CenterFormScreen> {
               if (!widget.isEdit)
                 DropdownButtonFormField<String>(
                   initialValue: _branchId,
-                  decoration: const InputDecoration(labelText: 'Branch'),
+                  decoration: InputDecoration(
+                    labelText: t.t('center.branch'),
+                  ),
                   items: _branches
                       .map(
                         (b) => DropdownMenuItem(
@@ -529,34 +569,38 @@ class _CenterFormScreenState extends State<CenterFormScreen> {
                       )
                       .toList(),
                   onChanged: (v) => setState(() => _branchId = v),
-                  validator: (v) => v == null ? 'Select a branch' : null,
+                  validator: (v) =>
+                      v == null ? t.t('center.selectBranch') : null,
                 ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _name,
-                decoration: const InputDecoration(labelText: 'Name'),
+                decoration: InputDecoration(labelText: t.t('center.name')),
                 validator: (v) => (v == null || v.trim().length < 2)
-                    ? 'Name needs at least 2 characters'
+                    ? t.t('common.nameTooShort')
                     : null,
               ),
               const SizedBox(height: 12),
               if (!widget.isEdit)
                 TextFormField(
                   controller: _code,
-                  decoration: const InputDecoration(
-                    labelText: 'Code',
-                    helperText: 'Unique within your organization, e.g. KH-C1',
+                  decoration: InputDecoration(
+                    labelText: t.t('center.code'),
+                    helperText: t.t('center.codeHelp'),
                   ),
                   validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Code is required'
+                      ? t.t('center.codeRequired')
                       : null,
                 )
               else
                 TextFormField(
                   controller: _timezone,
-                  decoration: const InputDecoration(labelText: 'Timezone'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  decoration: InputDecoration(
+                    labelText: t.t('center.timezone'),
+                  ),
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? t.t('common.required')
+                      : null,
                 ),
               const SizedBox(height: 20),
               if (_error != null)
@@ -571,7 +615,9 @@ class _CenterFormScreenState extends State<CenterFormScreen> {
                 ),
               FilledButton(
                 onPressed: _busy ? null : _submit,
-                child: Text(_busy ? 'Saving…' : 'Save'),
+                child: Text(
+                  _busy ? t.t('common.saving') : t.t('common.save'),
+                ),
               ),
             ],
           ),
@@ -587,16 +633,22 @@ class CenterDetailScreen extends StatefulWidget {
     super.key,
     required this.client,
     required this.centerId,
+    this.session,
   });
 
   final ApiClient client;
   final String centerId;
+
+  /// For language only (P1-LOCALE-I18N-001); null renders English.
+  final Session? session;
 
   @override
   State<CenterDetailScreen> createState() => _CenterDetailScreenState();
 }
 
 class _CenterDetailScreenState extends State<CenterDetailScreen> {
+  L10n get _l => L10n.of(widget.session);
+
   CenterDetail? _detail;
   String? _error;
 
@@ -620,7 +672,7 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
     } catch (_) {
       // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
       // say so instead of leaving the spinner forever.
-      if (mounted) setState(() => _error = 'Could not reach the platform');
+      if (mounted) setState(() => _error = _l.t('common.couldNotReach'));
     }
   }
 
@@ -630,12 +682,13 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
   /// with in-progress transactions, somebody else's session) renders
   /// verbatim.
   Future<void> _closeOpenSession(BuildContext context) async {
+    final t = _l;
     try {
       final sessions = await widget.client.listOpenSessions(widget.centerId);
       if (!context.mounted) return;
       if (sessions.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No open session at this centre')),
+          SnackBar(content: Text(t.t('center.noOpenSession'))),
         );
         return;
       }
@@ -643,20 +696,20 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Close the session?'),
+          title: Text(t.t('center.closeSessionTitle')),
           content: Text(
-            'Closing "${session['label'] ?? session['id']}" ends this shift '
-            'at the centre. Collections already captured are unaffected; a '
-            'new shift opens a new session.',
+            t.t('center.closeSessionBody', {
+              'label': session['label'] ?? session['id'],
+            }),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Keep it open'),
+              child: Text(t.t('center.keepOpen')),
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Close session'),
+              child: Text(t.t('center.closeSession')),
             ),
           ],
         ),
@@ -665,7 +718,7 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
       await widget.client.closeCollectionSession(session['id'] as String);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Session closed')),
+        SnackBar(content: Text(t.t('center.sessionClosed'))),
       );
     } on ApiException catch (e) {
       if (!context.mounted) return;
@@ -677,7 +730,7 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not reach the platform')));
+      ).showSnackBar(SnackBar(content: Text(t.t('common.couldNotReach'))));
     }
   }
 
@@ -695,28 +748,30 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not reach the platform')));
+      ).showSnackBar(SnackBar(content: Text(_l.t('common.couldNotReach'))));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final detail = _detail;
+    final t = _l;
     return Scaffold(
       appBar: AppBar(
-        title: Text(detail?.center.name ?? 'Center'),
+        title: Text(detail?.center.name ?? t.t('center.fallback')),
         actions: [
           // P1-MOBILE-COUNTER-001: the centre's collection history — the
           // phone's answer to a farmer's dispute at the counter.
           IconButton(
             icon: const Icon(Icons.history),
-            tooltip: 'Collections',
+            tooltip: t.t('center.collections'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => TransactionHistoryScreen(
                   client: widget.client,
                   centerId: widget.centerId,
-                  centerName: detail?.center.name ?? 'Center',
+                  centerName: detail?.center.name ?? t.t('center.fallback'),
+                  session: widget.session,
                 ),
               ),
             ),
@@ -725,12 +780,12 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
           // the platform endpoint existed with no caller on any client.
           IconButton(
             icon: const Icon(Icons.event_busy_outlined),
-            tooltip: 'Close session',
+            tooltip: t.t('center.closeSession'),
             onPressed: () => _closeOpenSession(context),
           ),
           IconButton(
             icon: const Icon(Icons.local_drink_outlined),
-            tooltip: 'Collect milk',
+            tooltip: t.t('center.collectMilk'),
             onPressed: () async {
               try {
                 final sessions = await widget.client.listOpenSessions(
@@ -747,6 +802,7 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                     builder: (_) => CollectionWizardScreen(
                       client: widget.client,
                       sessionId: session['id'] as String,
+                      session: widget.session,
                     ),
                   ),
                 );
@@ -758,44 +814,47 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
               } catch (_) {
                 // Transport failure ≠ refusal (P0-PRODUCT-008 D-1).
                 if (!context.mounted) return;
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('Could not reach the platform')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(t.t('common.couldNotReach'))),
+                );
               }
             },
           ),
           IconButton(
             icon: const Icon(Icons.fact_check_outlined),
-            tooltip: 'Operational readiness',
+            tooltip: t.t('readiness.title'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => ReadinessScreen(
                   client: widget.client,
                   centerId: widget.centerId,
+                  session: widget.session,
                 ),
               ),
             ),
           ),
           IconButton(
             icon: const Icon(Icons.insights_outlined),
-            tooltip: "Today's summary",
+            tooltip: t.t('center.todaySummary'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => CenterTodayScreen(
                   client: widget.client,
                   centerId: widget.centerId,
+                  session: widget.session,
                 ),
               ),
             ),
           ),
           IconButton(
             icon: const Icon(Icons.calculate_outlined),
-            tooltip: 'Pricing resolution test',
+            tooltip: t.t('center.pricingTest'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => ResolutionTestScreen(
                   client: widget.client,
                   centerId: widget.centerId,
+                  session: widget.session,
                 ),
               ),
             ),
@@ -816,7 +875,7 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                     leading: StatusChip(status: detail.center.status),
                     title: Text(detail.center.code),
                     subtitle: Text(
-                      '${detail.center.status} · ${detail.center.timezone ?? 'org timezone'}',
+                      '${detail.center.status} · ${detail.center.timezone ?? t.t('center.orgTimezone')}',
                     ),
                   ),
                 ),
@@ -827,32 +886,29 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                       if (detail.center.status != 'active')
                         FilledButton.tonal(
                           onPressed: () => _setStatus('active'),
-                          child: const Text('Activate'),
+                          child: Text(t.t('common.activate')),
                         ),
                       if (detail.center.status == 'active')
                         FilledButton.tonal(
                           onPressed: () => _setStatus('inactive'),
-                          child: const Text('Deactivate'),
+                          child: Text(t.t('center.deactivate')),
                         ),
                       if (detail.center.status != 'maintenance')
                         OutlinedButton(
                           onPressed: () => _setStatus('maintenance'),
-                          child: const Text('Maintenance'),
+                          child: Text(t.t('center.maintenance')),
                         ),
                     ],
                   ),
                 const SizedBox(height: 16),
                 Text(
-                  'Operating hours',
+                  t.t('center.hours'),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 if (detail.windows.isEmpty)
-                  const ListTile(
+                  ListTile(
                     dense: true,
-                    title: Text(
-                      'No operating hours set — '
-                      'the center cannot be activated yet.',
-                    ),
+                    title: Text(t.t('center.noHours')),
                   ),
                 ...detail.windows.map(
                   (w) => ListTile(
@@ -863,11 +919,11 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Business calendar',
+                  t.t('center.calendar'),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 if (detail.calendar.isEmpty)
-                  const ListTile(dense: true, title: Text('No entries.')),
+                  ListTile(dense: true, title: Text(t.t('center.noEntries'))),
                 ...detail.calendar.map(
                   (e) => ListTile(
                     dense: true,
@@ -890,10 +946,14 @@ class ReadinessScreen extends StatefulWidget {
     super.key,
     required this.client,
     required this.centerId,
+    this.session,
   });
 
   final ApiClient client;
   final String centerId;
+
+  /// For language only (P1-LOCALE-I18N-001); null renders English.
+  final Session? session;
 
   @override
   State<ReadinessScreen> createState() => _ReadinessScreenState();
@@ -923,7 +983,11 @@ class _ReadinessScreenState extends State<ReadinessScreen> {
     } catch (_) {
       // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1):
       // say so instead of leaving the spinner forever.
-      if (mounted) setState(() => _error = 'Could not reach the platform');
+      if (mounted) {
+        setState(
+          () => _error = L10n.of(widget.session).t('common.couldNotReach'),
+        );
+      }
     }
   }
 
@@ -936,8 +1000,9 @@ class _ReadinessScreenState extends State<ReadinessScreen> {
   @override
   Widget build(BuildContext context) {
     final result = _result;
+    final t = L10n.of(widget.session);
     return Scaffold(
-      appBar: AppBar(title: const Text('Operational readiness')),
+      appBar: AppBar(title: Text(t.t('readiness.title'))),
       body: RefreshIndicator(
         onRefresh: _load,
         child: result == null
@@ -966,8 +1031,12 @@ class _ReadinessScreenState extends State<ReadinessScreen> {
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       subtitle: Text(
-                        '${result.checks.where((c) => c.passed).length}'
-                        ' of ${result.checks.length} checks passing',
+                        t.t('readiness.checksPassing', {
+                          'passed': result.checks
+                              .where((c) => c.passed)
+                              .length,
+                          'total': result.checks.length,
+                        }),
                       ),
                     ),
                   ),

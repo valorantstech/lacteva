@@ -159,7 +159,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                         child: Text(_error!),
                       ),
                     ),
-                  _TodayCard(deliveries: todays),
+                  _TodayCard(deliveries: todays, t: t),
                   const SizedBox(height: 12),
                   _BalanceCard(balance: _balance, t: t),
                   const SizedBox(height: 12),
@@ -173,6 +173,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                         builder: (_) => CustomerBillScreen(
                           client: widget.client,
                           invoiceId: bill['id'].toString(),
+                          session: widget.session,
                         ),
                       ),
                     ),
@@ -180,7 +181,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                   const SizedBox(height: 12),
                   _ReceiptsCard(receipts: _receipts, t: t),
                   const SizedBox(height: 12),
-                  _HistoryCard(deliveries: _recent),
+                  _HistoryCard(deliveries: _recent, t: t),
                 ],
               ),
             ),
@@ -189,9 +190,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
 }
 
 class _TodayCard extends StatelessWidget {
-  const _TodayCard({required this.deliveries});
+  const _TodayCard({required this.deliveries, required this.t});
 
   final List<Map<String, dynamic>> deliveries;
+  final L10n t;
 
   @override
   Widget build(BuildContext context) {
@@ -204,12 +206,15 @@ class _TodayCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Today', style: Theme.of(context).textTheme.labelLarge),
+            Text(
+              t.t('customer.today'),
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
             const SizedBox(height: 8),
             if (deliveries.isEmpty)
-              const Text(
-                'No delivery recorded yet today.',
-                style: TextStyle(fontSize: 18),
+              Text(
+                t.t('customer.noDeliveryToday'),
+                style: const TextStyle(fontSize: 18),
               )
             else ...[
               for (final d in delivered)
@@ -400,9 +405,10 @@ class _ReceiptsCard extends StatelessWidget {
 }
 
 class _HistoryCard extends StatelessWidget {
-  const _HistoryCard({required this.deliveries});
+  const _HistoryCard({required this.deliveries, required this.t});
 
   final List<Map<String, dynamic>> deliveries;
+  final L10n t;
 
   @override
   Widget build(BuildContext context) {
@@ -413,7 +419,7 @@ class _HistoryCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
             child: Text(
-              'Delivery history',
+              t.t('customer.history'),
               style: Theme.of(context).textTheme.labelLarge,
             ),
           ),
@@ -452,16 +458,22 @@ class CustomerBillScreen extends StatefulWidget {
     super.key,
     required this.client,
     required this.invoiceId,
+    this.session,
   });
 
   final ApiClient client;
   final String invoiceId;
+
+  /// For language only (P1-LOCALE-I18N-001); null renders English.
+  final Session? session;
 
   @override
   State<CustomerBillScreen> createState() => _CustomerBillScreenState();
 }
 
 class _CustomerBillScreenState extends State<CustomerBillScreen> {
+  L10n get _t => L10n.of(widget.session);
+
   Map<String, dynamic>? _detail;
   String? _error;
 
@@ -493,7 +505,7 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
         .cast<Map<String, dynamic>>();
     return Scaffold(
       appBar: AppBar(
-        title: Text(invoice?['invoice_number']?.toString() ?? 'Bill'),
+        title: Text(invoice?['invoice_number']?.toString() ?? _t.t('customer.bill')),
       ),
       body: _error != null
           ? Center(
@@ -519,20 +531,20 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
                         ),
                         const SizedBox(height: 12),
                         _Row('Deliveries', '${invoice?['line_count'] ?? 0}'),
-                        _Row('Subtotal', '${invoice?['subtotal']}'),
-                        _Row('Adjustments', '${invoice?['adjustments']}'),
+                        _Row(_t.t('customer.subtotal'), '${invoice?['subtotal']}'),
+                        _Row(_t.t('customer.adjustments'), '${invoice?['adjustments']}'),
                         _Row(
-                          'Brought forward',
+                          _t.t('customer.broughtForward'),
                           '${invoice?['previous_balance']}',
                         ),
                         const Divider(),
                         _Row(
-                          'Amount due',
+                          _t.t('customer.amountDue'),
                           '${invoice?['amount_due']} ${invoice?['currency'] ?? ''}',
                           bold: true,
                         ),
-                        _Row('Paid', '${d['paid']}'),
-                        _Row('Outstanding', '${d['outstanding']}', bold: true),
+                        _Row(_t.t('customer.paid'), '${d['paid']}'),
+                        _Row(_t.t('customer.outstanding'), '${d['outstanding']}', bold: true),
                         const SizedBox(height: 12),
                         // The PLATFORM's verdict, not a sum performed here.
                         Row(
@@ -550,10 +562,8 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
                             Expanded(
                               child: Text(
                                 d['totals_match_lines'] == true
-                                    ? 'Checked by the dairy: this bill matches '
-                                          'the deliveries below.'
-                                    : 'This bill no longer matches its '
-                                          'deliveries. Contact the dairy.',
+                                    ? _t.t('customer.checked')
+                                    : _t.t('customer.mismatch'),
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ),
@@ -571,7 +581,7 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
                         child: Text(
-                          'Every delivery on this bill',
+                          _t.t('customer.everyDelivery'),
                           style: Theme.of(context).textTheme.labelLarge,
                         ),
                       ),

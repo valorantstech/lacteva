@@ -120,9 +120,7 @@ class _HomeRouterState extends State<HomeRouter>
     } catch (e) {
       if (!mounted) return;
       setState(
-        () => _error =
-            'Signed in, but the platform could not say what you may do. '
-            'Check the connection and try again.',
+        () => _error = L10n.of(_session).t('home.sessionUnclear'),
       );
     }
   }
@@ -141,7 +139,7 @@ class _HomeRouterState extends State<HomeRouter>
                 const SizedBox(height: 16),
                 FilledButton(
                   onPressed: _resolve,
-                  child: const Text('Try again'),
+                  child: Text(L10n.of(_session).t('common.retry')),
                 ),
               ],
             ),
@@ -177,7 +175,10 @@ class _HomeRouterState extends State<HomeRouter>
         client: widget.client,
         session: session,
       ),
-      Experience.collection => CentersListScreen(client: widget.client),
+      Experience.collection => CentersListScreen(
+        client: widget.client,
+        session: session,
+      ),
       Experience.none => _NothingToDo(session: session, client: widget.client),
     };
   }
@@ -195,6 +196,7 @@ class _NothingToDo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = L10n.of(session);
     return Scaffold(
       // The dead end especially needs the way out (D-2): the person this
       // screen greets is on the wrong account by definition.
@@ -215,15 +217,16 @@ class _NothingToDo extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                'Nothing for this account on mobile',
+                // P1-LOCALE-I18N-001: the catalog already held this sentence
+                // and the screen retyped it — the "catalog without callers"
+                // defect, third occurrence.
+                t.t('common.nothingHere'),
                 style: Theme.of(context).textTheme.titleMedium,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               Text(
-                'Signed in as ${session.email}. This app covers milk '
-                'collection, the delivery round, and a customer\'s own '
-                'account. Everything else is in the web portal.',
+                t.t('home.nothingDetail', {'email': session.email}),
                 textAlign: TextAlign.center,
               ),
             ],
