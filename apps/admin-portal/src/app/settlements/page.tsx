@@ -9,13 +9,14 @@ import {
   type Settlement,
   type SettlementPageResult,
   type SettlementReport,
-  type Supplier,
   createSettlement,
   getSettlementReport,
   listCenters,
   listSettlements,
   listSuppliers,
 } from "@/lib/api";
+import { EntityPicker } from "@/components/entity-picker";
+import { useSupplierNames } from "@/lib/names";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -71,7 +72,8 @@ export default function SettlementsPage() {
   const [page, setPage] = useState<SettlementPageResult | null>(null);
   const [report, setReport] = useState<SettlementReport | null>(null);
   const [centers, setCenters] = useState<Center[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  // P1-PORTAL-SCALE-001: server-searched supplier filter, page-resolved names.
+  const [supplierFilterLabel, setSupplierFilterLabel] = useState("");
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("");
@@ -121,17 +123,16 @@ export default function SettlementsPage() {
     listCenters({ limit: 100, offset: 0 })
       .then((c) => setCenters(c.items ?? []))
       .catch(() => setCenters([]));
-    listSuppliers({ limit: 100, offset: 0 })
-      .then((s) => setSuppliers(s.items ?? []))
-      .catch(() => setSuppliers([]));
   }, []);
 
   const names = useMemo(
     () => ({
       centers: Object.fromEntries(centers.map((c) => [c.id, c.name])),
-      suppliers: Object.fromEntries(suppliers.map((s) => [s.id, s.full_name])),
     }),
-    [centers, suppliers],
+    [centers],
+  );
+  const supplierNames = useSupplierNames(
+    (page?.items ?? []).map((s) => s.supplier_id),
   );
 
   const byStatus = (name: string) =>
@@ -160,7 +161,7 @@ export default function SettlementsPage() {
       header: "Supplier",
       cell: (s) => (
         <Link className="hover:underline" href={`/suppliers/${s.supplier_id}`}>
-          {names.suppliers[s.supplier_id] ?? `${s.supplier_id.slice(0, 8)}…`}
+          {supplierNames[s.supplier_id] ?? `${s.supplier_id.slice(0, 8)}…`}
         </Link>
       ),
     },
@@ -279,7 +280,6 @@ export default function SettlementsPage() {
       {showCreate ? (
         <CreateSettlementCard
           centers={centers}
-          suppliers={suppliers}
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false);
@@ -359,25 +359,33 @@ export default function SettlementsPage() {
                     ))}
                   </select>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="st-supplier">Supplier</Label>
-                  <select
-                    id="st-supplier"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                    value={supplierId}
-                    onChange={(e) => {
-                      setSupplierId(e.target.value);
-                      setOffset(0);
-                    }}
-                  >
-                    <option value="">All suppliers</option>
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.full_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <EntityPicker
+                  id="st-supplier"
+                  label="Supplier"
+                  placeholder="All suppliers — search to filter"
+                  value={supplierId}
+                  valueLabel={supplierFilterLabel || undefined}
+                  onSelect={(id, label) => {
+                    setSupplierId(id);
+                    setSupplierFilterLabel(label);
+                    setOffset(0);
+                  }}
+                  search={async (q, off) => {
+                    const p = await listSuppliers({
+                      q: q || undefined,
+                      limit: 20,
+                      offset: off,
+                    });
+                    return {
+                      items: (p.items ?? []).map((x) => ({
+                        id: x.id,
+                        label: x.full_name,
+                        detail: x.code,
+                      })),
+                      total: p.total,
+                    };
+                  }}
+                />
                 {filtered ? (
                   <Button
                     type="button"
@@ -418,16 +426,15 @@ export default function SettlementsPage() {
  */
 function CreateSettlementCard({
   centers,
-  suppliers,
   onClose,
   onCreated,
 }: {
   centers: Center[];
-  suppliers: Supplier[];
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
   const [supplier, setSupplier] = useState("");
+  const [supplierLabel, setSupplierLabel] = useState("");
   const [center, setCenter] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -467,23 +474,32 @@ function CreateSettlementCard({
       <CardContent>
         <form className="flex flex-col gap-4" onSubmit={submit}>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="ns-supplier">Supplier</Label>
-              <select
-                id="ns-supplier"
-                required
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                value={supplier}
-                onChange={(e) => setSupplier(e.target.value)}
-              >
-                <option value="">Select…</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.full_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <EntityPicker
+              id="ns-supplier"
+              label="Supplier"
+              placeholder="Search by name, code or phone…"
+              value={supplier}
+              valueLabel={supplierLabel || undefined}
+              onSelect={(id, label) => {
+                setSupplier(id);
+                setSupplierLabel(label);
+              }}
+              search={async (q, off) => {
+                const p = await listSuppliers({
+                  q: q || undefined,
+                  limit: 20,
+                  offset: off,
+                });
+                return {
+                  items: (p.items ?? []).map((x) => ({
+                    id: x.id,
+                    label: x.full_name,
+                    detail: x.code,
+                  })),
+                  total: p.total,
+                };
+              }}
+            />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="ns-center">Centre</Label>
               <select

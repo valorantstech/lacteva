@@ -1,12 +1,11 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FileText, Lock, Receipt as ReceiptIcon, Wallet } from "lucide-react";
 import {
   ApiError,
-  type Customer,
   type CustomerPayment,
   type CustomerReceipt,
   type Invoice,
@@ -16,6 +15,8 @@ import {
   listCustomers,
   listInvoices,
 } from "@/lib/api";
+import { EntityPicker } from "@/components/entity-picker";
+import { useCustomerNames } from "@/lib/names";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -68,7 +69,7 @@ export default function BillingPage() {
 function BillingView() {
   const searchParams = useSearchParams();
   const [page, setPage] = useState<InvoicePageResult | null>(null);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerFilterLabel, setCustomerFilterLabel] = useState("");
   const [payments, setPayments] = useState<CustomerPayment[]>([]);
   const [receipts, setReceipts] = useState<CustomerReceipt[]>([]);
 
@@ -125,15 +126,13 @@ function BillingView() {
   }, [load]);
 
   useEffect(() => {
-    listCustomers({ limit: 100, offset: 0 })
-      .then((c) => setCustomers(c.items ?? []))
-      .catch(() => setCustomers([]));
   }, []);
 
-  const names = useMemo(
-    () => Object.fromEntries(customers.map((c) => [c.id, c.name])),
-    [customers],
-  );
+  // P1-PORTAL-SCALE-001: resolve exactly the ids on screen (bills + payments).
+  const names = useCustomerNames([
+    ...(page?.items ?? []).map((i) => i.customer_id),
+    ...payments.map((p) => p.customer_id),
+  ]);
 
   const columns: Column<Invoice>[] = [
     {
@@ -284,25 +283,33 @@ function BillingView() {
                     }}
                   />
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="bl-customer">Customer</Label>
-                  <select
-                    id="bl-customer"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                    value={customerId}
-                    onChange={(e) => {
-                      setCustomerId(e.target.value);
-                      setOffset(0);
-                    }}
-                  >
-                    <option value="">All customers</option>
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <EntityPicker
+                  id="bl-customer"
+                  label="Customer"
+                  placeholder="All customers — search to filter"
+                  value={customerId}
+                  valueLabel={customerFilterLabel || undefined}
+                  onSelect={(id, label) => {
+                    setCustomerId(id);
+                    setCustomerFilterLabel(label);
+                    setOffset(0);
+                  }}
+                  search={async (q, off) => {
+                    const p = await listCustomers({
+                      q: q || undefined,
+                      limit: 20,
+                      offset: off,
+                    });
+                    return {
+                      items: (p.items ?? []).map((x) => ({
+                        id: x.id,
+                        label: x.name,
+                        detail: x.code,
+                      })),
+                      total: p.total,
+                    };
+                  }}
+                />
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="bl-status">Status</Label>
                   <select

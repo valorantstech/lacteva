@@ -1551,11 +1551,21 @@ async def search_suppliers(
     status: str | None = None,
     center_id: uuid.UUID | None = None,
     branch_id: uuid.UUID | None = None,
+    # P1-PORTAL-SCALE-001: `?ids=…&ids=…` — batch display-name resolution for
+    # exactly the rows a page shows. Bounded at one page of the cap; a foreign
+    # tenant's id matches nothing (the tenant filter narrows first).
+    ids: Annotated[list[uuid.UUID] | None, Query(max_length=100)] = None,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> SupplierPage:
     return await service.search(
-        q=q, status=status, center_id=center_id, branch_id=branch_id, limit=limit, offset=offset
+        q=q,
+        status=status,
+        center_id=center_id,
+        branch_id=branch_id,
+        ids=ids,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -3782,12 +3792,14 @@ async def search_customers(
     q: str | None = None,
     status: str | None = None,
     customer_type: str | None = None,
+    # P1-PORTAL-SCALE-001: batch display-name resolution (see suppliers).
+    ids: Annotated[list[uuid.UUID] | None, Query(max_length=100)] = None,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> CustomerPage:
     """Customers, filtered by the database — name, code or phone."""
     return await service.search(
-        q=q, status=status, customer_type=customer_type, limit=limit, offset=offset
+        q=q, status=status, customer_type=customer_type, ids=ids, limit=limit, offset=offset
     )
 
 

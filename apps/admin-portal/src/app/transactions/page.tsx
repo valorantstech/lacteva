@@ -10,13 +10,14 @@ import {
   type MilkTransaction,
   type MilkTransactionPage,
   type OperationalStatus,
-  type Supplier,
   getDailyReport,
   getOperationalStatus,
   listCenters,
   listMilkTransactions,
   listSuppliers,
 } from "@/lib/api";
+import { EntityPicker } from "@/components/entity-picker";
+import { useSupplierNames } from "@/lib/names";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -115,7 +116,9 @@ export default function TransactionsPage() {
   const [summary, setSummary] = useState<DailyCollectionSummary | null>(null);
   const [status, setStatus] = useState<Record<string, OperationalStatus>>({});
   const [centers, setCenters] = useState<Center[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  // P1-PORTAL-SCALE-001: the supplier filter searches the platform instead of
+  // prefetching a capped list; the label remembers what was picked.
+  const [supplierFilterLabel, setSupplierFilterLabel] = useState("");
 
   // Derived until the reader chooses, so a timezone that arrives after the
   // first render still corrects the window (DEMO-019).
@@ -184,17 +187,18 @@ export default function TransactionsPage() {
     listCenters({ limit: 100, offset: 0 })
       .then((c) => setCenters(c.items ?? []))
       .catch(() => setCenters([]));
-    listSuppliers({ limit: 100, offset: 0 })
-      .then((s) => setSuppliers(s.items ?? []))
-      .catch(() => setSuppliers([]));
   }, []);
 
   const names = useMemo(
     () => ({
       centers: Object.fromEntries(centers.map((c) => [c.id, c.name])),
-      suppliers: Object.fromEntries(suppliers.map((s) => [s.id, s.full_name])),
     }),
-    [centers, suppliers],
+    [centers],
+  );
+  // Resolve exactly the supplier ids visible on this page — no 100-row
+  // ceiling, no UUID fragments past it (P1-PORTAL-SCALE-001).
+  const supplierNames = useSupplierNames(
+    (page?.items ?? []).map((t) => t.supplier_id),
   );
 
   const currencies = Object.entries(summary?.payable_by_currency ?? {});
@@ -227,7 +231,7 @@ export default function TransactionsPage() {
             className="hover:underline"
             href={`/suppliers/${tx.supplier_id}`}
           >
-            {names.suppliers[tx.supplier_id] ??
+            {supplierNames[tx.supplier_id] ??
               `${tx.supplier_id.slice(0, 8)}…`}
           </Link>
         ) : (
@@ -490,25 +494,33 @@ export default function TransactionsPage() {
                     ))}
                   </select>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="tx-supplier">Supplier</Label>
-                  <select
-                    id="tx-supplier"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                    value={supplierId}
-                    onChange={(e) => {
-                      setSupplierId(e.target.value);
-                      setOffset(0);
-                    }}
-                  >
-                    <option value="">All suppliers</option>
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.full_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <EntityPicker
+                  id="tx-supplier"
+                  label="Supplier"
+                  placeholder="All suppliers — search to filter"
+                  value={supplierId}
+                  valueLabel={supplierFilterLabel || undefined}
+                  onSelect={(id, label) => {
+                    setSupplierId(id);
+                    setSupplierFilterLabel(label);
+                    setOffset(0);
+                  }}
+                  search={async (q, off) => {
+                    const p = await listSuppliers({
+                      q: q || undefined,
+                      limit: 20,
+                      offset: off,
+                    });
+                    return {
+                      items: (p.items ?? []).map((s) => ({
+                        id: s.id,
+                        label: s.full_name,
+                        detail: s.code,
+                      })),
+                      total: p.total,
+                    };
+                  }}
+                />
                 {filtered ? (
                   <Button
                     type="button"

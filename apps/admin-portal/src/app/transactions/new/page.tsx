@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Check, PenLine } from "lucide-react";
 import {
@@ -24,6 +24,7 @@ import {
   openCollectionSession,
 } from "@/lib/api";
 import { Stamp } from "@/components/datetime";
+import { EntityPicker } from "@/components/entity-picker";
 import { todayIn } from "@/components/date-range";
 import { useLocale } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -132,7 +133,13 @@ const reason = (e: unknown) =>
 
 export default function NewCollectionPage() {
   const [centers, setCenters] = useState<Center[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  // P1-PORTAL-SCALE-001: no prefetched supplier list — the audit's dairy with
+  // 500 farmers could not pick farmer #101 from a 100-row <select>. The
+  // picker searches the platform; this holds whichever supplier was picked
+  // (or resolved from an in-flight transaction), and this alone.
+  const [pickedSupplier, setPickedSupplier] = useState<Supplier | null>(null);
+  const [pickedLabel, setPickedLabel] = useState("");
+  const fetchedSuppliers = useRef<Record<string, Supplier>>({});
   const [centerId, setCenterId] = useState("");
   const [readiness, setReadiness] = useState<ReadinessResult | null>(null);
   const [checkingReadiness, setCheckingReadiness] = useState(false);
@@ -185,10 +192,25 @@ export default function NewCollectionPage() {
     listCenters({ limit: 100, offset: 0 })
       .then((c) => setCenters(c.items ?? []))
       .catch(() => setCenters([]));
-    listSuppliers({ status: "active", limit: 100, offset: 0 })
-      .then((s) => setSuppliers(s.items ?? []))
-      .catch(() => setSuppliers([]));
   }, []);
+
+  // Resuming an in-flight transaction: resolve its supplier by id so the
+  // review and done steps can show a name rather than a UUID fragment.
+  useEffect(() => {
+    const id = tx?.supplier_id;
+    if (!id || pickedSupplier?.id === id) return;
+    listSuppliers({ ids: [id], limit: 1, offset: 0 })
+      .then((p) => {
+        const found = (p.items ?? [])[0];
+        if (found) {
+          setPickedSupplier(found);
+          setPickedLabel(`${found.full_name} (${found.code})`);
+        }
+      })
+      .catch(() => {
+        // The honest fallback (truncated id) keeps rendering.
+      });
+  }, [tx?.supplier_id, pickedSupplier?.id]);
 
   useEffect(() => {
     if (!centerId || tx) return;
@@ -274,9 +296,11 @@ export default function NewCollectionPage() {
   };
 
   const centre = centers.find((c) => c.id === (tx?.center_id ?? centerId));
-  const supplier = suppliers.find(
-    (s) => s.id === (tx?.supplier_id ?? supplierId),
-  );
+  const wantedSupplierId = tx?.supplier_id ?? supplierId;
+  const supplier =
+    pickedSupplier && pickedSupplier.id === wantedSupplierId
+      ? pickedSupplier
+      : undefined;
   const ready =
     readiness?.status === "READY" || readiness?.status === "WARNING";
 
@@ -432,22 +456,38 @@ export default function NewCollectionPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="w-supplier">Supplier</Label>
-              <select
-                id="w-supplier"
-                className="h-9 w-full max-w-md rounded-md border border-input bg-background px-2 text-sm"
-                value={supplierId}
-                onChange={(e) => setSupplierId(e.target.value)}
-              >
-                <option value="">Select a supplier…</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.full_name} ({s.code})
-                  </option>
-                ))}
-              </select>
-            </div>
+            <EntityPicker
+              id="w-supplier"
+              label="Supplier"
+              placeholder="Search by name, code or phone…"
+              className="w-full max-w-md"
+              value={supplierId}
+              valueLabel={pickedLabel || undefined}
+              onSelect={(id, label) => {
+                setSupplierId(id);
+                setPickedLabel(label);
+                setPickedSupplier(fetchedSuppliers.current[id] ?? null);
+              }}
+              search={async (q, offset) => {
+                const page = await listSuppliers({
+                  q: q || undefined,
+                  status: "active",
+                  limit: 20,
+                  offset,
+                });
+                for (const s of page.items ?? []) {
+                  fetchedSuppliers.current[s.id] = s;
+                }
+                return {
+                  items: (page.items ?? []).map((s) => ({
+                    id: s.id,
+                    label: `${s.full_name} (${s.code})`,
+                    detail: s.phone || undefined,
+                  })),
+                  total: page.total,
+                };
+              }}
+            />
             <div>
               <Button
                 type="button"

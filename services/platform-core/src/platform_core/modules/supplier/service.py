@@ -664,6 +664,7 @@ class SupplierService:
         status: str | None = None,
         center_id: uuid.UUID | None = None,
         branch_id: uuid.UUID | None = None,
+        ids: list[uuid.UUID] | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> SupplierPage:
@@ -674,6 +675,13 @@ class SupplierService:
             .join(SupplierProfile, SupplierProfile.supplier_id == Supplier.id)
             .where(Supplier.tenant_id == tenant_id)
         )
+        if ids:
+            # P1-PORTAL-SCALE-001: batch display-name resolution — a page of
+            # rows asks for exactly the ids it shows, in one request, instead
+            # of prefetching a capped list that lies past row 100. A further
+            # NARROWING on top of the tenant filter above: an id from another
+            # tenant simply matches nothing.
+            stmt = stmt.where(Supplier.id.in_(ids))
         if q:
             like = f"%{q.lower()}%"
             stmt = stmt.where(

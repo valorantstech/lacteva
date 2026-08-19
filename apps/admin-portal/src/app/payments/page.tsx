@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -17,13 +17,14 @@ import {
   type PaymentPageResult,
   type PaymentReport,
   type SettlementBalance,
-  type Supplier,
   createPayment,
   getPaymentReport,
   listOutstandingBalances,
   listPayments,
   listSuppliers,
 } from "@/lib/api";
+import { EntityPicker } from "@/components/entity-picker";
+import { useSupplierNames } from "@/lib/names";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -80,7 +81,7 @@ export default function PaymentsPage() {
   const [page, setPage] = useState<PaymentPageResult | null>(null);
   const [report, setReport] = useState<PaymentReport | null>(null);
   const [balances, setBalances] = useState<BalancePageResult | null>(null);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierFilterLabel, setSupplierFilterLabel] = useState("");
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("");
@@ -130,15 +131,13 @@ export default function PaymentsPage() {
   }, [load]);
 
   useEffect(() => {
-    listSuppliers({ limit: 100, offset: 0 })
-      .then((s) => setSuppliers(s.items ?? []))
-      .catch(() => setSuppliers([]));
   }, []);
 
-  const supplierName = useMemo(
-    () => Object.fromEntries(suppliers.map((s) => [s.id, s.full_name])),
-    [suppliers],
-  );
+  // P1-PORTAL-SCALE-001: resolve exactly the ids on screen (rows + owed).
+  const supplierName = useSupplierNames([
+    ...(page?.items ?? []).map((p) => p.supplier_id),
+    ...(balances?.items ?? []).map((b) => b.supplier_id),
+  ]);
 
   const columns: Column<Payment>[] = [
     {
@@ -428,25 +427,33 @@ export default function PaymentsPage() {
                     ))}
                   </select>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="pm-supplier">Supplier</Label>
-                  <select
-                    id="pm-supplier"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                    value={supplierId}
-                    onChange={(e) => {
-                      setSupplierId(e.target.value);
-                      setOffset(0);
-                    }}
-                  >
-                    <option value="">All suppliers</option>
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.full_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <EntityPicker
+                  id="pm-supplier"
+                  label="Supplier"
+                  placeholder="All suppliers — search to filter"
+                  value={supplierId}
+                  valueLabel={supplierFilterLabel || undefined}
+                  onSelect={(id, label) => {
+                    setSupplierId(id);
+                    setSupplierFilterLabel(label);
+                    setOffset(0);
+                  }}
+                  search={async (q, off) => {
+                    const p = await listSuppliers({
+                      q: q || undefined,
+                      limit: 20,
+                      offset: off,
+                    });
+                    return {
+                      items: (p.items ?? []).map((x) => ({
+                        id: x.id,
+                        label: x.full_name,
+                        detail: x.code,
+                      })),
+                      total: p.total,
+                    };
+                  }}
+                />
                 {filtered ? (
                   <Button
                     type="button"

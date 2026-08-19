@@ -134,16 +134,39 @@ export default function RateCardsPage() {
     }
   }
 
+  // P1-PORTAL-SCALE-001 (audit D-11): publishing decides what every farmer
+  // on the card is paid, and archiving takes a card out of use — both were a
+  // single click. They now ask, in the same words the settlement finalize
+  // panel uses. The backend stays the authority: this is a pause, not a
+  // security boundary.
+  const [confirmAction, setConfirmAction] = useState<{
+    card: RateCard;
+    action: "publish" | "archive";
+  } | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+
   async function runAction(card: RateCard, action: string) {
+    setActionBusy(true);
     try {
       await rateCardAction(card.id, action);
       setError(null);
+      setConfirmAction(null);
       await refresh();
       if (detail?.card.id === card.id)
         setDetail(await getRateCardDetail(card.id));
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Action failed");
+    } finally {
+      setActionBusy(false);
     }
+  }
+
+  function requestAction(card: RateCard, action: string) {
+    if (action === "publish" || action === "archive") {
+      setConfirmAction({ card, action });
+      return;
+    }
+    void runAction(card, action);
   }
 
   async function assignCenter(cardId: string, centerId: string) {
@@ -219,6 +242,40 @@ export default function RateCardsPage() {
         />
       </div>
 
+      {confirmAction ? (
+        <div className="flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4">
+          <p className="text-sm font-medium">
+            {confirmAction.action === "publish"
+              ? `Publishing ${confirmAction.card.code} v${confirmAction.card.version} is permanent: the card becomes immutable, and from its effective date it decides what every farmer priced by it is paid. A correction after this is a new version, never an edit.`
+              : `Archiving ${confirmAction.card.code} v${confirmAction.card.version} takes it out of use — it prices no new collections afterwards.`}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={actionBusy}
+              onClick={() =>
+                void runAction(confirmAction.card, confirmAction.action)
+              }
+            >
+              {actionBusy
+                ? "Working…"
+                : confirmAction.action === "publish"
+                  ? "Yes, publish permanently"
+                  : "Yes, archive it"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={actionBusy}
+              onClick={() => setConfirmAction(null)}
+            >
+              Keep it as it is
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {form.mode !== "closed" && (
@@ -291,7 +348,7 @@ export default function RateCardsPage() {
                         key={a.action}
                         size="sm"
                         variant={a.action === "archive" ? "ghost" : "outline"}
-                        onClick={() => runAction(c, a.action)}
+                        onClick={() => requestAction(c, a.action)}
                       >
                         {a.label}
                       </Button>

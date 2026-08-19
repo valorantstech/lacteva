@@ -660,6 +660,7 @@ class CustomerService:
         q: str | None = None,
         status: str | None = None,
         customer_type: str | None = None,
+        ids: list[uuid.UUID] | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> CustomerPage:
@@ -670,6 +671,12 @@ class CustomerService:
         conditions = [Customer.tenant_id == tenant_id]
         if scope is not None:
             conditions.append(Customer.id == scope)
+        if ids:
+            # P1-PORTAL-SCALE-001: batch display-name resolution (see the
+            # supplier twin). A narrowing on top of the tenant filter — and on
+            # top of the customer scope: a household login still resolves only
+            # itself.
+            conditions.append(Customer.id.in_(ids))
         if q:
             like = f"%{q.lower()}%"
             conditions.append(

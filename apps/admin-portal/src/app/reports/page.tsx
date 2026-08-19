@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { useBusinessToday } from "@/components/date-range";
+import { Pagination } from "@/components/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,22 +42,10 @@ import {
   listCenters,
 } from "@/lib/api";
 
-type SortKey = "weight" | "payable" | "count";
+const PAGE_SIZE = 50;
 
-const bySort = <
-  T extends { total_net_weight_kg: number; payable_amount: string | number },
->(
-  rows: T[],
-  key: SortKey,
-  count: (row: T) => number,
-) =>
-  [...rows].sort((a, b) =>
-    key === "weight"
-      ? b.total_net_weight_kg - a.total_net_weight_kg
-      : key === "payable"
-        ? Number(b.payable_amount) - Number(a.payable_amount)
-        : count(b) - count(a),
-  );
+/** The platform's SummaryPage: one row type at a time, with its own total. */
+type SummaryPageOf<T> = { items: T[]; total: number; limit: number; offset: number };
 
 export default function ReportsPage() {
   // The DAIRY's today. `new Date().toISOString()` is UTC, so a Kenyan
@@ -78,32 +67,27 @@ export default function ReportsPage() {
   const [centerId, setCenterId] = useState("");
   const [centers, setCenters] = useState<Center[]>([]);
   const [daily, setDaily] = useState<DailyCollectionSummary | null>(null);
-  const [centerRows, setCenterRows] = useState<CenterSummaryRow[]>([]);
-  const [supplierRows, setSupplierRows] = useState<SupplierSummaryRow[]>([]);
+  // P1-PORTAL-SCALE-001: the platform pages these summaries (ordered by milk
+  // supplied, largest first) and its `total` is authoritative — the page no
+  // longer shows the first 50 rows as if they were the whole dairy.
+  const [centerPage, setCenterPage] = useState<SummaryPageOf<CenterSummaryRow> | null>(null);
+  const [supplierPage, setSupplierPage] = useState<SummaryPageOf<SupplierSummaryRow> | null>(null);
+  const [centerOffset, setCenterOffset] = useState(0);
+  const [supplierOffset, setSupplierOffset] = useState(0);
+  const [tableBusy, setTableBusy] = useState(false);
   const [settlements, setSettlements] = useState<SettlementReport | null>(null);
   const [pricing, setPricing] = useState<PricingReport | null>(null);
-  const [centerSort, setCenterSort] = useState<SortKey>("weight");
-  const [supplierSort, setSupplierSort] = useState<SortKey>("weight");
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const range = { date_from: dateFrom, date_to: dateTo };
     try {
-      const [d, c, s, st, p] = await Promise.all([
+      const [d, st, p] = await Promise.all([
         getDailyReport({ ...range, center_id: centerId || undefined }),
-        getCenterReport({ ...range, limit: "50", offset: "0" }),
-        getSupplierReport({
-          ...range,
-          center_id: centerId || undefined,
-          limit: "50",
-          offset: "0",
-        }),
         getSettlementReport({ ...range, center_id: centerId || undefined }),
         getPricingReport({ ...range, center_id: centerId || undefined }),
       ]);
       setDaily(d);
-      setCenterRows(c.items as CenterSummaryRow[]);
-      setSupplierRows(s.items as SupplierSummaryRow[]);
       setSettlements(st);
       setPricing(p);
       setError(null);
@@ -116,6 +100,63 @@ export default function ReportsPage() {
     const t = setTimeout(() => void refresh(), 150);
     return () => clearTimeout(t);
   }, [refresh]);
+
+  // A filter change starts both tables from their first page again —
+  // deferred, as everywhere else, so the effect never renders synchronously.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setCenterOffset(0);
+      setSupplierOffset(0);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [dateFrom, dateTo, centerId]);
+
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      setTableBusy(true);
+      try {
+        const c = await getCenterReport({
+          date_from: dateFrom,
+          date_to: dateTo,
+          limit: String(PAGE_SIZE),
+          offset: String(centerOffset),
+        });
+        setCenterPage(c as SummaryPageOf<CenterSummaryRow>);
+        setError(null);
+      } catch (err) {
+        setError(
+          err instanceof ApiError ? err.detail : "Failed to load reports",
+        );
+      } finally {
+        setTableBusy(false);
+      }
+    }, 150);
+    return () => clearTimeout(t);
+  }, [dateFrom, dateTo, centerOffset]);
+
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      setTableBusy(true);
+      try {
+        const s = await getSupplierReport({
+          date_from: dateFrom,
+          date_to: dateTo,
+          center_id: centerId || undefined,
+          limit: String(PAGE_SIZE),
+          offset: String(supplierOffset),
+        });
+        setSupplierPage(s as SummaryPageOf<SupplierSummaryRow>);
+        setError(null);
+      } catch (err) {
+        setError(
+          err instanceof ApiError ? err.detail : "Failed to load reports",
+        );
+      } finally {
+        setTableBusy(false);
+      }
+    }, 150);
+    return () => clearTimeout(t);
+  }, [dateFrom, dateTo, centerId, supplierOffset]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -227,16 +268,8 @@ export default function ReportsPage() {
         <CardHeader>
           <CardTitle>Collection by center</CardTitle>
           <CardDescription>
-            Sorted by{" "}
-            {(["weight", "payable", "count"] as const).map((key) => (
-              <button
-                key={key}
-                className={`me-2 underline-offset-4 ${centerSort === key ? "font-semibold underline" : "hover:underline"}`}
-                onClick={() => setCenterSort(key)}
-              >
-                {key}
-              </button>
-            ))}
+            Ordered by milk supplied, largest first — the platform&apos;s own
+            order, over the whole range.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -252,7 +285,7 @@ export default function ReportsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {bySort(centerRows, centerSort, (r) => r.transactions).map(
+              {(centerPage?.items ?? []).map(
                 (row) => (
                   <TableRow key={row.center_id}>
                     <TableCell>
@@ -282,7 +315,7 @@ export default function ReportsPage() {
                   </TableRow>
                 ),
               )}
-              {centerRows.length === 0 && (
+              {(centerPage?.items ?? []).length === 0 && (
                 <TableRow>
                   <TableCell
                     colSpan={6}
@@ -294,6 +327,15 @@ export default function ReportsPage() {
               )}
             </TableBody>
           </Table>
+          {centerPage ? (
+            <Pagination
+              offset={centerOffset}
+              limit={PAGE_SIZE}
+              total={centerPage.total}
+              busy={tableBusy}
+              onChange={setCenterOffset}
+            />
+          ) : null}
         </CardContent>
       </Card>
 
@@ -301,16 +343,8 @@ export default function ReportsPage() {
         <CardHeader>
           <CardTitle>Collection by supplier</CardTitle>
           <CardDescription>
-            Sorted by{" "}
-            {(["weight", "payable", "count"] as const).map((key) => (
-              <button
-                key={key}
-                className={`me-2 underline-offset-4 ${supplierSort === key ? "font-semibold underline" : "hover:underline"}`}
-                onClick={() => setSupplierSort(key)}
-              >
-                {key}
-              </button>
-            ))}
+            Ordered by milk supplied, largest first — every supplier in the
+            range is here, page by page.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -326,7 +360,7 @@ export default function ReportsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {bySort(supplierRows, supplierSort, (r) => r.deliveries).map(
+              {(supplierPage?.items ?? []).map(
                 (row) => (
                   <TableRow key={row.supplier_id}>
                     <TableCell>
@@ -354,7 +388,7 @@ export default function ReportsPage() {
                   </TableRow>
                 ),
               )}
-              {supplierRows.length === 0 && (
+              {(supplierPage?.items ?? []).length === 0 && (
                 <TableRow>
                   <TableCell
                     colSpan={6}
@@ -366,6 +400,15 @@ export default function ReportsPage() {
               )}
             </TableBody>
           </Table>
+          {supplierPage ? (
+            <Pagination
+              offset={supplierOffset}
+              limit={PAGE_SIZE}
+              total={supplierPage.total}
+              busy={tableBusy}
+              onChange={setSupplierOffset}
+            />
+          ) : null}
         </CardContent>
       </Card>
 

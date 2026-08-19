@@ -253,6 +253,10 @@ const en: Catalog = {
   "state.empty": "Nothing to show yet",
   "state.error": "Something went wrong",
   "state.loading": "Loading…",
+  "table.nothingHere": "Nothing here yet",
+  "table.showing": "Showing {from}\u2013{to} of {total}",
+  "table.previous": "Previous",
+  "table.next": "Next",
   "state.noPermission": "You do not have permission to see this",
   "state.unreachable": "Could not reach the platform",
 
@@ -678,6 +682,10 @@ const hi: Catalog = {
   "state.empty": "अभी दिखाने के लिए कुछ नहीं",
   "state.error": "कुछ गड़बड़ हो गई",
   "state.loading": "लोड हो रहा है…",
+  "table.nothingHere": "अभी यहाँ कुछ नहीं है",
+  "table.showing": "{total} में से {from}\u2013{to} दिखा रहे हैं",
+  "table.previous": "पिछला",
+  "table.next": "अगला",
   "state.noPermission": "आपको यह देखने की अनुमति नहीं है",
   "state.unreachable": "प्लेटफ़ॉर्म तक नहीं पहुँच सके",
 
@@ -1102,6 +1110,10 @@ const ar: Catalog = {
   "state.empty": "لا يوجد ما يُعرض بعد",
   "state.error": "حدث خطأ ما",
   "state.loading": "جارٍ التحميل…",
+  "table.nothingHere": "لا يوجد شيء هنا بعد",
+  "table.showing": "عرض {from}\u2013{to} من {total}",
+  "table.previous": "السابق",
+  "table.next": "التالي",
   "state.noPermission": "ليست لديك صلاحية لعرض هذا",
   "state.unreachable": "تعذّر الوصول إلى المنصّة",
 

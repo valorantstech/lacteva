@@ -315,7 +315,10 @@ describe("settlement list", () => {
 
     await userEvent.selectOptions(screen.getByLabelText("Status"), "finalized");
     await userEvent.selectOptions(screen.getByLabelText("Centre"), "c1");
-    await userEvent.selectOptions(screen.getByLabelText("Supplier"), "s1");
+    await userEvent.click(screen.getByLabelText("Supplier"));
+    await userEvent.click(
+      await screen.findByRole("option", { name: /Amina Njoroge/ }),
+    );
     await userEvent.type(screen.getByLabelText("Search"), "STL-2026");
 
     await waitFor(() => {

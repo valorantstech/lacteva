@@ -318,7 +318,10 @@ describe("transactions list", () => {
 
     await userEvent.selectOptions(screen.getByLabelText("Status"), "COMPLETED");
     await userEvent.selectOptions(screen.getByLabelText("Centre"), "c1");
-    await userEvent.selectOptions(screen.getByLabelText("Supplier"), "s1");
+    await userEvent.click(screen.getByLabelText("Supplier"));
+    await userEvent.click(
+      await screen.findByRole("option", { name: /Amina Njoroge/ }),
+    );
 
     await waitFor(() => {
       const last = urls(spy)

@@ -26,6 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/states";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export type Column<T> = {
@@ -64,6 +65,10 @@ export function DataTable<T>({
   page?: PaginationProps;
 }) {
   const showSkeleton = loading && rows.length === 0;
+  // Shared chrome goes through the catalog (P1-PORTAL-SCALE-001): these
+  // strings frame every list in the portal, so they must not stay English
+  // when the session is not.
+  const t = useT();
 
   return (
     <div className="flex flex-col gap-4">
@@ -75,7 +80,7 @@ export function DataTable<T>({
           action={
             onRetry ? (
               <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-                Try again
+                {t("error.tryAgain")}
               </Button>
             ) : null
           }
@@ -86,7 +91,7 @@ export function DataTable<T>({
         <TableSkeleton rows={5} columns={columns.length} />
       ) : rows.length === 0 && !error ? (
         <EmptyState
-          title={empty?.title ?? "Nothing here yet"}
+          title={empty?.title ?? t("table.nothingHere")}
           description={empty?.description}
           action={empty?.action}
         />
@@ -148,6 +153,9 @@ export type PaginationProps = {
 };
 
 export function Pagination({ offset, limit, total, onChange, busy }: PaginationProps) {
+  // Hook before the early return — the rules of hooks do not pause for
+  // empty tables.
+  const t = useT();
   if (total === 0) return null;
   const first = offset + 1;
   const last = Math.min(offset + limit, total);
@@ -157,9 +165,7 @@ export function Pagination({ offset, limit, total, onChange, busy }: PaginationP
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="text-sm text-muted-foreground" aria-live="polite">
-        Showing <span className="font-medium text-foreground">{first}</span>–
-        <span className="font-medium text-foreground">{last}</span> of{" "}
-        <span className="font-medium text-foreground">{total}</span>
+        {t("table.showing", { from: first, to: last, total })}
       </p>
       <div className="flex gap-2">
         <Button
@@ -169,7 +175,7 @@ export function Pagination({ offset, limit, total, onChange, busy }: PaginationP
           disabled={!canPrev || busy}
           onClick={() => onChange(Math.max(0, offset - limit))}
         >
-          Previous
+          {t("table.previous")}
         </Button>
         <Button
           type="button"
@@ -178,7 +184,7 @@ export function Pagination({ offset, limit, total, onChange, busy }: PaginationP
           disabled={!canNext || busy}
           onClick={() => onChange(offset + limit)}
         >
-          Next
+          {t("table.next")}
         </Button>
       </div>
     </div>

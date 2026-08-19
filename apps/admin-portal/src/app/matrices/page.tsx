@@ -79,13 +79,22 @@ export default function MatricesPage() {
     }
   }
 
+  const [confirmDelete, setConfirmDelete] = useState<PricingMatrix | null>(
+    null,
+  );
+  const [deleting, setDeleting] = useState(false);
+
   async function removeMatrix(m: PricingMatrix) {
+    setDeleting(true);
     try {
       await deleteMatrix(m.id);
       if (detail?.matrix.id === m.id) setDetail(null);
+      setConfirmDelete(null);
       await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Delete failed");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -185,7 +194,7 @@ export default function MatricesPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => removeMatrix(m)}
+                        onClick={() => setConfirmDelete(m)}
                       >
                         Delete
                       </Button>
@@ -207,6 +216,35 @@ export default function MatricesPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {confirmDelete ? (
+        <div className="flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4">
+          <p className="text-sm font-medium">
+            Delete the draft matrix “{confirmDelete.name}”? Its{" "}
+            {confirmDelete.row_count} price band
+            {confirmDelete.row_count === 1 ? "" : "s"} go with it. This cannot
+            be undone — the bands would have to be entered again.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => void removeMatrix(confirmDelete)}
+            >
+              {deleting ? "Deleting…" : "Yes, delete the matrix"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={deleting}
+              onClick={() => setConfirmDelete(null)}
+            >
+              Keep it
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {detail && (
         <MatrixDetailCard
@@ -279,12 +317,19 @@ function MatrixDetailCard({
     }
   }
 
+  const [confirmRow, setConfirmRow] = useState<MatrixRow | null>(null);
+  const [rowBusy, setRowBusy] = useState(false);
+
   async function removeRow(row: MatrixRow) {
+    setRowBusy(true);
     try {
       await deleteMatrixRow(matrix.id, row.id);
+      setConfirmRow(null);
       await onRefresh();
     } catch (err) {
       onError(err instanceof ApiError ? err.detail : "Row delete failed");
+    } finally {
+      setRowBusy(false);
     }
   }
 
@@ -324,7 +369,7 @@ function MatrixDetailCard({
                   key={r.id}
                   row={r}
                   onSave={saveRow}
-                  onDelete={removeRow}
+                  onDelete={(row) => setConfirmRow(row)}
                 />
               ) : (
                 <TableRow key={r.id} className={r.active ? "" : "opacity-50"}>
@@ -355,6 +400,34 @@ function MatrixDetailCard({
           </p>
         )}
 
+        {confirmRow ? (
+          <div className="flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4">
+            <p className="text-sm font-medium">
+              Delete the band {String(confirmRow.from_value)}–
+              {String(confirmRow.to_value)} at unit price{" "}
+              {String(confirmRow.unit_price)}? Collections falling in this
+              range would no longer price until a replacement band exists.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={rowBusy}
+                onClick={() => void removeRow(confirmRow)}
+              >
+                {rowBusy ? "Deleting…" : "Yes, delete the band"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={rowBusy}
+                onClick={() => setConfirmRow(null)}
+              >
+                Keep it
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {editable ? (
           <NewRowForm
             matrixId={matrix.id}
@@ -384,7 +457,8 @@ function EditableRow({
 }: {
   row: MatrixRow;
   onSave: (row: MatrixRow, patch: Partial<MatrixRow>) => Promise<void>;
-  onDelete: (row: MatrixRow) => Promise<void>;
+  // Deletion only ASKS from here — the confirm panel owns the actual call.
+  onDelete: (row: MatrixRow) => void;
 }) {
   const [from, setFrom] = useState(String(row.from_value));
   const [to, setTo] = useState(String(row.to_value));
@@ -394,6 +468,7 @@ function EditableRow({
     <TableRow className={row.active ? "" : "opacity-50"}>
       <TableCell>
         <Input
+          aria-label="Band from"
           className="h-7 w-24"
           value={from}
           onChange={(e) => setFrom(e.target.value)}
@@ -401,6 +476,7 @@ function EditableRow({
       </TableCell>
       <TableCell>
         <Input
+          aria-label="Band to"
           className="h-7 w-24"
           value={to}
           onChange={(e) => setTo(e.target.value)}
@@ -408,6 +484,7 @@ function EditableRow({
       </TableCell>
       <TableCell>
         <Input
+          aria-label="Band unit price"
           className="h-7 w-28"
           value={price}
           onChange={(e) => setPrice(e.target.value)}
@@ -430,7 +507,11 @@ function EditableRow({
             onSave(row, {
               from_value: Number(from),
               to_value: Number(to),
-              unit_price: Number(price),
+              // The price of milk travels as the operator's own decimal
+              // string — the platform stores NUMERIC and accepts the string
+              // exactly; a float here is the one rounding step the money
+              // pipeline forbids (P1-PORTAL-SCALE-001, audit D-4).
+              unit_price: price.trim(),
             })
           }
         >
@@ -464,7 +545,8 @@ function NewRowForm({
       await createMatrixRow(matrixId, {
         from_value: Number(from),
         to_value: Number(to),
-        unit_price: Number(price),
+        // Decimal string, never a float — see EditableRow (audit D-4).
+        unit_price: price.trim(),
       });
       setFrom("");
       setTo("");
@@ -480,24 +562,27 @@ function NewRowForm({
   return (
     <div className="flex items-end gap-2">
       <div className="flex flex-col gap-1">
-        <Label>From</Label>
+        <Label htmlFor="nb-from">From</Label>
         <Input
+          id="nb-from"
           className="h-8 w-24"
           value={from}
           onChange={(e) => setFrom(e.target.value)}
         />
       </div>
       <div className="flex flex-col gap-1">
-        <Label>To (excl.)</Label>
+        <Label htmlFor="nb-to">To (excl.)</Label>
         <Input
+          id="nb-to"
           className="h-8 w-24"
           value={to}
           onChange={(e) => setTo(e.target.value)}
         />
       </div>
       <div className="flex flex-col gap-1">
-        <Label>Unit price</Label>
+        <Label htmlFor="nb-price">Unit price</Label>
         <Input
+          id="nb-price"
           className="h-8 w-28"
           value={price}
           onChange={(e) => setPrice(e.target.value)}

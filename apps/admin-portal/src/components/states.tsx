@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * The four states every data view has, in one place (DEMO-001).
  *
@@ -14,9 +16,13 @@
 
 import type { ReactNode } from "react";
 import { AlertCircle, Inbox, Loader2 } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-export function LoadingState({ label = "Loading…" }: { label?: string }) {
+export function LoadingState({ label }: { label?: string }) {
+  // P1-PORTAL-SCALE-001: the shared chrome speaks the catalog's language —
+  // a Hindi operator was getting a Hindi sidebar over English scaffolding.
+  const t = useT();
   return (
     <div
       role="status"
@@ -24,7 +30,7 @@ export function LoadingState({ label = "Loading…" }: { label?: string }) {
       className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"
     >
       <Loader2 aria-hidden className="size-4 animate-spin" />
-      <span>{label}</span>
+      <span>{label ?? t("state.loading")}</span>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import {
   ApiError,
-  type Customer,
   type Delivery,
   type DeliveryPageResult,
   type DeliveryReport,
@@ -27,6 +26,8 @@ import {
   listCustomers,
   listDeliveries,
 } from "@/lib/api";
+import { EntityPicker } from "@/components/entity-picker";
+import { useCustomerNames } from "@/lib/names";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -85,7 +86,7 @@ function DeliveriesView() {
   const searchParams = useSearchParams();
   const [page, setPage] = useState<DeliveryPageResult | null>(null);
   const [report, setReport] = useState<DeliveryReport | null>(null);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerFilterLabel, setCustomerFilterLabel] = useState("");
 
   // Derived until the reader chooses, so a timezone that arrives after the
   // first render still corrects the window (DEMO-019).
@@ -153,15 +154,10 @@ function DeliveriesView() {
   }, [load]);
 
   useEffect(() => {
-    listCustomers({ limit: 100, offset: 0 })
-      .then((c) => setCustomers(c.items ?? []))
-      .catch(() => setCustomers([]));
   }, []);
 
-  const names = useMemo(
-    () => Object.fromEntries(customers.map((c) => [c.id, c.name])),
-    [customers],
-  );
+  // P1-PORTAL-SCALE-001: resolve exactly the customer ids on this page.
+  const names = useCustomerNames((page?.items ?? []).map((d) => d.customer_id));
 
   const columns: Column<Delivery>[] = [
     {
@@ -672,25 +668,33 @@ function DeliveriesView() {
             }}
             toolbar={
               <>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="dl-customer">Customer</Label>
-                  <select
-                    id="dl-customer"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                    value={customerId}
-                    onChange={(e) => {
-                      setCustomerId(e.target.value);
-                      setOffset(0);
-                    }}
-                  >
-                    <option value="">All customers</option>
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <EntityPicker
+                  id="dl-customer"
+                  label="Customer"
+                  placeholder="All customers — search to filter"
+                  value={customerId}
+                  valueLabel={customerFilterLabel || undefined}
+                  onSelect={(id, label) => {
+                    setCustomerId(id);
+                    setCustomerFilterLabel(label);
+                    setOffset(0);
+                  }}
+                  search={async (q, off) => {
+                    const p = await listCustomers({
+                      q: q || undefined,
+                      limit: 20,
+                      offset: off,
+                    });
+                    return {
+                      items: (p.items ?? []).map((x) => ({
+                        id: x.id,
+                        label: x.name,
+                        detail: x.code,
+                      })),
+                      total: p.total,
+                    };
+                  }}
+                />
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="dl-status">Status</Label>
                   <select

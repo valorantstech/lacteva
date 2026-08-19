@@ -307,6 +307,9 @@ export function listSuppliers(params: {
   // DEMO-003: the platform already filters by centre server-side; the portal
   // simply had no way to ask.
   center_id?: string;
+  // P1-PORTAL-SCALE-001: batch display-name resolution — exactly the ids a
+  // page shows, one request, never a capped prefetch.
+  ids?: string[];
   limit: number;
   offset: number;
 }): Promise<SupplierPage> {
@@ -314,6 +317,7 @@ export function listSuppliers(params: {
   if (params.q) search.set("q", params.q);
   if (params.center_id) search.set("center_id", params.center_id);
   if (params.status) search.set("status", params.status);
+  for (const id of params.ids ?? []) search.append("ids", id);
   search.set("limit", String(params.limit));
   search.set("offset", String(params.offset));
   return api<SupplierPage>(`/v1/suppliers?${search.toString()}`);
@@ -2394,6 +2398,8 @@ export function listCustomers(params: {
   q?: string;
   status?: string;
   customer_type?: string;
+  // P1-PORTAL-SCALE-001: batch display-name resolution (see listSuppliers).
+  ids?: string[];
   limit: number;
   offset: number;
 }): Promise<CustomerPageResult> {
@@ -2401,6 +2407,7 @@ export function listCustomers(params: {
   if (params.q) search.set("q", params.q);
   if (params.status) search.set("status", params.status);
   if (params.customer_type) search.set("customer_type", params.customer_type);
+  for (const id of params.ids ?? []) search.append("ids", id);
   search.set("limit", String(params.limit));
   search.set("offset", String(params.offset));
   return api<CustomerPageResult>(`/v1/customers?${search.toString()}`);

@@ -208,9 +208,11 @@ describe("guided capture", () => {
     );
 
     // The platform said NEW, so the wizard asks for a supplier.
-    await userEvent.selectOptions(
-      await screen.findByLabelText("Supplier"),
-      "s1",
+    // P1-PORTAL-SCALE-001: the supplier is picked through the searchable
+    // picker — the platform serves the matches, the operator clicks one.
+    await userEvent.click(await screen.findByLabelText("Supplier"));
+    await userEvent.click(
+      await screen.findByRole("option", { name: /Amina Njoroge/ }),
     );
     await userEvent.click(
       screen.getByRole("button", { name: /identify supplier/i }),
@@ -264,9 +266,11 @@ describe("guided capture", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /start collection/i }),
     );
-    await userEvent.selectOptions(
-      await screen.findByLabelText("Supplier"),
-      "s1",
+    // P1-PORTAL-SCALE-001: the supplier is picked through the searchable
+    // picker — the platform serves the matches, the operator clicks one.
+    await userEvent.click(await screen.findByLabelText("Supplier"));
+    await userEvent.click(
+      await screen.findByRole("option", { name: /Amina Njoroge/ }),
     );
     await userEvent.click(
       screen.getByRole("button", { name: /identify supplier/i }),
@@ -307,9 +311,11 @@ describe("guided capture", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /start collection/i }),
     );
-    await userEvent.selectOptions(
-      await screen.findByLabelText("Supplier"),
-      "s1",
+    // P1-PORTAL-SCALE-001: the supplier is picked through the searchable
+    // picker — the platform serves the matches, the operator clicks one.
+    await userEvent.click(await screen.findByLabelText("Supplier"));
+    await userEvent.click(
+      await screen.findByRole("option", { name: /Amina Njoroge/ }),
     );
     await userEvent.click(
       screen.getByRole("button", { name: /identify supplier/i }),
@@ -361,9 +367,11 @@ describe("guided capture", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /start collection/i }),
     );
-    await userEvent.selectOptions(
-      await screen.findByLabelText("Supplier"),
-      "s1",
+    // P1-PORTAL-SCALE-001: the supplier is picked through the searchable
+    // picker — the platform serves the matches, the operator clicks one.
+    await userEvent.click(await screen.findByLabelText("Supplier"));
+    await userEvent.click(
+      await screen.findByRole("option", { name: /Amina Njoroge/ }),
     );
     await userEvent.click(
       screen.getByRole("button", { name: /identify supplier/i }),
