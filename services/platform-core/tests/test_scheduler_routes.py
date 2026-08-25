@@ -18,8 +18,9 @@ Two properties carry the milestone and both are about not lying:
 """
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 
@@ -419,7 +420,17 @@ async def test_run_once_passes_the_provider_through(client):
         return []
 
     org, _admin = await _dairy_with_plans(client)
-    await run_once(generation_hour=HOUR, route_scopes=recording)
+    # An EXPLICIT instant, not the wall clock. `run_once` skips a tenant whose
+    # local hour has not yet reached `generation_hour` (HOUR = 5), so reading
+    # the real clock made this test fail every night between midnight and
+    # 05:00 local — green for nineteen hours a day, which is the worst kind of
+    # test. 06:00 UTC is 11:30 IST, comfortably past the gate, and is the same
+    # instant the sibling tests in `test_delivery_scheduler.py` already use.
+    await run_once(
+        generation_hour=HOUR,
+        now=datetime(2026, 8, 15, 6, 0, tzinfo=ZoneInfo("UTC")),
+        route_scopes=recording,
+    )
 
     assert org["id"] in seen, "run_once did not hand the provider to the tenant pass"
 

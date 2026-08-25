@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 
 import 'src/centers.dart';
+import 'src/theme.dart';
 import 'src/offline/offline_client.dart';
 import 'src/offline/queue.dart';
 import 'src/offline/store.dart';
@@ -100,10 +101,9 @@ class _LactevaAppState extends State<LactevaApp> {
     return MaterialApp(
       title: 'Lacteva',
       navigatorKey: _navigatorKey,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1B5E20)),
-        useMaterial3: true,
-      ),
+      // Design System V1: the shared Lacteva palette and the operator
+      // ergonomics that go with it (48dp targets, larger type, milk-on-cream).
+      theme: lactevaTheme(),
       home: LoginScreen(client: _client),
     );
   }

@@ -7,8 +7,21 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  /*
+   * The UI face. This was `--font-sans: var(--font-sans)` — a self-reference,
+   * therefore undefined, so every surface fell back to the browser default and
+   * the whole product rendered in the platform SERIF. It read as an editorial
+   * website rather than an operational platform, and no amount of palette work
+   * was going to fix it.
+   *
+   * Geist is already loaded by the root layout and is the right face for this:
+   * a modern technical sans with real numerals, which matters on a screen that
+   * is mostly quantities.
+   */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Noto Sans", "Noto Sans Devanagari", "Noto Sans Arabic",
+    Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -46,75 +59,293 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Lacteva brand + semantics (Design System V1). These become utilities:
+     bg-milk, text-dairy, border-fresh, bg-intelligence/10, and so on. */
+  --color-milk: var(--milk);
+  --color-cream: var(--cream);
+  --color-dairy: var(--dairy);
+  --color-dairy-deep: var(--dairy-deep);
+  --color-fresh: var(--fresh);
+  --color-water: var(--water);
+  --color-amber: var(--amber);
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-intelligence: var(--intelligence);
+  --color-intelligence-foreground: var(--intelligence-foreground);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-on-brand: var(--on-brand);
+  --color-on-brand-muted: var(--on-brand-muted);
+  --color-on-brand-positive: var(--on-brand-positive);
+  --color-on-brand-negative: var(--on-brand-negative);
+
+  /* Display type scale (Design System V1.1) */
+  --text-display: var(--type-display);
+  --text-display--line-height: 1.05;
+  --text-page: var(--type-page);
+  --text-page--line-height: 1.15;
+  --text-section: var(--type-section);
+  --text-section--line-height: 1.3;
+  --text-metric: var(--type-metric);
+  --text-metric--line-height: 1;
+  --text-meta: var(--type-meta);
+  --text-meta--line-height: 1.4;
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /*
+   * LACTEVA DESIGN SYSTEM V1 — the light face.
+   *
+   * The product had no palette: every token was `oklch(L 0 0)`, stock shadcn
+   * greyscale, which is why the portal read as an unstyled scaffold while the
+   * mobile app and the marketing site both already carried a green. V1 makes
+   * one palette and gives it to all three.
+   *
+   * The ground is MILK over CREAM, not white over grey: cards are true milk
+   * white and float on a warm cream page, so the surface hierarchy is visible
+   * without a single border. Ink is a deep green-black rather than neutral
+   * black, so even the darkest text belongs to the same family as the brand.
+   *
+   * Chroma is deliberately low on everything an operator stares at all day,
+   * and saved for the things that must be noticed. A dairy platform is read
+   * for eight-hour shifts under bad lighting; a saturated interface is a
+   * tiring one.
+   */
+
+  /* — Foundations — */
+  --milk: oklch(1 0 0);
+  --cream: oklch(0.985 0.007 95);
+  --background: oklch(0.985 0.007 95);
+  --foreground: oklch(0.23 0.025 150);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.23 0.025 150);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --popover-foreground: oklch(0.23 0.025 150);
+
+  /* — Brand — */
+  --dairy: oklch(0.43 0.105 150);
+  --dairy-deep: oklch(0.30 0.07 155);
+  --fresh: oklch(0.68 0.145 145);
+  --water: oklch(0.62 0.085 230);
+  --amber: oklch(0.75 0.135 75);
+
+  --primary: oklch(0.43 0.105 150);
+  --primary-foreground: oklch(0.985 0.008 95);
+  --secondary: oklch(0.955 0.02 120);
+  --secondary-foreground: oklch(0.32 0.06 150);
+  --muted: oklch(0.962 0.012 110);
+  --muted-foreground: oklch(0.445 0.028 148);
+  --accent: oklch(0.955 0.02 120);
+  --accent-foreground: oklch(0.32 0.06 150);
+
+  /* — Semantics. Never the only signal (see foundation.test.tsx) — */
+  --success: oklch(0.50 0.115 150);
+  --success-foreground: oklch(0.985 0.008 95);
+  /* Amber takes INK, not milk. White on amber measured 3.59:1 — below AA —
+     and darkening the amber far enough to carry white text turns it brown.
+     Dark-on-amber is both the accessible answer and the legible one. */
+  --warning: oklch(0.76 0.145 72);
+  --warning-foreground: oklch(0.23 0.025 150);
+  --destructive: oklch(0.52 0.19 27);
+  --destructive-foreground: oklch(0.985 0.008 95);
+  --info: oklch(0.52 0.09 230);
+  --info-foreground: oklch(0.985 0.008 95);
+
+  /*
+   * Intelligence. A deliberately separate hue for AI-assisted signals —
+   * indigo, which appears nowhere else in the system, so "the platform
+   * noticed something" can never be confused with success, warning or
+   * brand. Restrained on purpose: it tints and outlines, it does not fill.
+   * It says a signal was COMPUTED. It never implies a roadmap capability
+   * exists (see the claims guards).
+   */
+  --intelligence: oklch(0.52 0.105 288);
+  --intelligence-foreground: oklch(0.985 0.008 95);
+
+  /* — Structure — */
+  --border: oklch(0.906 0.016 120);
+  --input: oklch(0.906 0.016 120);
+  --ring: oklch(0.55 0.09 150);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+
+  /*
+   * Text on the brand ground.
+   *
+   * `--muted-foreground` and the semantic `--success`/`--destructive` are
+   * tuned for a MILK ground and effectively vanish on deep green — which is
+   * exactly what happened to the hero's metric labels. These are their
+   * on-brand counterparts, and they flip with the face: the brand ground is
+   * dark green in the light theme and light green in the dark one, so "text
+   * on brand" means the opposite thing in each.
+   *
+   * Contrast against `--primary` is asserted for all four in both faces.
+   */
+  --on-brand: oklch(0.985 0.008 95);
+  --on-brand-muted: oklch(0.90 0.022 100);
+  --on-brand-positive: oklch(0.90 0.10 150);
+  --on-brand-negative: oklch(0.86 0.09 32);
+
+  /* Ink: dark bands that still read as this brand. */
+  --ink: oklch(0.22 0.02 160);
+  --ink-foreground: oklch(0.97 0.008 95);
+
+  /* — Charts. Five hues distinguishable by more than lightness. — */
+  --chart-1: oklch(0.48 0.105 150);
+  --chart-2: oklch(0.58 0.085 230);
+  --chart-3: oklch(0.66 0.125 68);
+  --chart-4: oklch(0.58 0.075 195);
+  --chart-5: oklch(0.52 0.105 288);
+
+  /* — Elevation. Green-tinted shadow: neutral black shadow over a warm
+       ground reads as dirt. — */
+  --shadow-color: 150 20% 20%;
+  --elevation-1: 0 1px 2px -1px oklch(0.30 0.03 155 / 0.10), 0 1px 3px oklch(0.30 0.03 155 / 0.06);
+  --elevation-2: 0 2px 4px -2px oklch(0.30 0.03 155 / 0.10), 0 4px 12px -2px oklch(0.30 0.03 155 / 0.08);
+  --elevation-3: 0 8px 24px -8px oklch(0.30 0.03 155 / 0.16), 0 2px 6px -2px oklch(0.30 0.03 155 / 0.08);
+
+  /*
+   * — Motion. Defined ONCE, here, so no component invents its own timing.
+   *
+   * `flow` is the milk timing: slower, and eased so it settles rather than
+   * stops, the way liquid does. Everything an operator waits on uses `fast`
+   * or less — motion may express state, never delay work.
+   */
+  --motion-instant: 90ms;
+  --motion-fast: 160ms;
+  --motion-base: 240ms;
+  --motion-slow: 420ms;
+  --motion-flow: 900ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out-liquid: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-liquid: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /*
+   * — TYPOGRAPHY SCALE (V1.1) —
+   *
+   * The first pass was uniformly small and read like documentation. A dairy
+   * intelligence platform earns its authority partly through type: a metric
+   * that matters should be *large*, and a page should announce itself.
+   *
+   * `clamp()` throughout, so this is a responsive scale rather than a desktop
+   * one that shrinks badly. The floors are the mobile sizes and they are
+   * deliberately generous — this is read in daylight.
+   */
+  --type-display: clamp(2rem, 1.2rem + 2.6vw, 3rem);      /* 32 → 48 */
+  --type-page: clamp(1.625rem, 1.2rem + 1.4vw, 2.25rem);  /* 26 → 36 */
+  --type-section: clamp(1.125rem, 1rem + 0.5vw, 1.5rem);  /* 18 → 24 */
+  --type-metric: clamp(1.75rem, 1.2rem + 1.8vw, 2.5rem);  /* 28 → 40 */
+  --type-meta: 0.8125rem;                                  /* 13 */
+
+  /*
+   * — DAIRY GRADIENTS —
+   *
+   * Restrained and only where they build hierarchy. Each one is two steps of
+   * ONE family — milk into cream, green into deep green — never a rainbow.
+   * The angle is constant (150deg) so surfaces feel lit from one direction,
+   * which is most of what separates "premium" from "decorated".
+   */
+  --gradient-milk: linear-gradient(150deg, oklch(1 0 0) 0%, oklch(0.978 0.012 92) 100%);
+  --gradient-cream-fresh: linear-gradient(150deg, oklch(0.985 0.008 95) 0%, color-mix(in oklch, var(--fresh) 12%, oklch(0.985 0.008 95)) 100%);
+  --gradient-dairy: linear-gradient(150deg, var(--dairy) 0%, var(--dairy-deep) 100%);
+  --gradient-intelligence: linear-gradient(150deg, color-mix(in oklch, var(--intelligence) 14%, transparent) 0%, color-mix(in oklch, var(--intelligence) 4%, transparent) 100%);
+  --gradient-water: linear-gradient(150deg, var(--water) 0%, color-mix(in oklch, var(--water) 70%, var(--fresh)) 100%);
+
+  /* A surface tint for cards that must feel lifted rather than outlined. */
+  --surface-veil: color-mix(in oklch, var(--milk) 92%, var(--fresh));
+  --glow-intelligence: 0 0 0 1px color-mix(in oklch, var(--intelligence) 22%, transparent),
+                       0 4px 18px -6px color-mix(in oklch, var(--intelligence) 35%, transparent);
+
+  --sidebar: oklch(0.975 0.012 100);
+  --sidebar-foreground: oklch(0.23 0.025 150);
+  --sidebar-primary: oklch(0.43 0.105 150);
+  --sidebar-primary-foreground: oklch(0.985 0.008 95);
+  --sidebar-accent: oklch(0.945 0.022 120);
+  --sidebar-accent-foreground: oklch(0.32 0.06 150);
+  --sidebar-border: oklch(0.906 0.016 120);
+  --sidebar-ring: oklch(0.55 0.09 150);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /*
+   * The dark face. Not "the light one inverted": the ground is a deep
+   * green-black so the brand survives the switch, and chroma comes UP
+   * slightly because colour reads weaker on dark grounds.
+   */
+  --milk: oklch(0.22 0.014 158);
+  --cream: oklch(0.185 0.012 158);
+  --background: oklch(0.165 0.012 158);
+  --foreground: oklch(0.965 0.008 95);
+  --card: oklch(0.215 0.014 158);
+  --card-foreground: oklch(0.965 0.008 95);
+  --popover: oklch(0.215 0.014 158);
+  --popover-foreground: oklch(0.965 0.008 95);
+
+  --dairy: oklch(0.72 0.125 148);
+  --dairy-deep: oklch(0.55 0.11 152);
+  --fresh: oklch(0.78 0.15 145);
+  --water: oklch(0.72 0.10 230);
+  --amber: oklch(0.82 0.135 78);
+
+  --primary: oklch(0.72 0.125 148);
+  --primary-foreground: oklch(0.19 0.02 155);
+  --secondary: oklch(0.28 0.022 155);
+  --secondary-foreground: oklch(0.94 0.012 100);
+  --muted: oklch(0.27 0.018 155);
+  --muted-foreground: oklch(0.735 0.022 140);
+  --accent: oklch(0.30 0.028 150);
+  --accent-foreground: oklch(0.95 0.012 100);
+
+  --success: oklch(0.74 0.14 150);
+  --success-foreground: oklch(0.19 0.02 155);
+  --warning: oklch(0.80 0.14 72);
+  --warning-foreground: oklch(0.19 0.02 155);
+  --destructive: oklch(0.70 0.175 25);
+  --destructive-foreground: oklch(0.19 0.02 155);
+  --info: oklch(0.74 0.10 230);
+  --info-foreground: oklch(0.19 0.02 155);
+  --intelligence: oklch(0.74 0.115 288);
+  --intelligence-foreground: oklch(0.19 0.02 155);
+
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.62 0.10 150);
+
+  --on-brand: oklch(0.19 0.02 155);
+  --on-brand-muted: oklch(0.29 0.03 155);
+  --on-brand-positive: oklch(0.26 0.09 152);
+  --on-brand-negative: oklch(0.31 0.13 28);
+
+  --ink: oklch(0.14 0.012 160);
+  --ink-foreground: oklch(0.96 0.008 95);
+
+  --chart-1: oklch(0.72 0.125 148);
+  --chart-2: oklch(0.72 0.10 230);
+  --chart-3: oklch(0.80 0.14 72);
+  --chart-4: oklch(0.72 0.085 195);
+  --chart-5: oklch(0.74 0.115 288);
+
+  --elevation-1: 0 1px 2px -1px oklch(0 0 0 / 0.5), 0 1px 3px oklch(0 0 0 / 0.35);
+  --elevation-2: 0 2px 4px -2px oklch(0 0 0 / 0.5), 0 4px 12px -2px oklch(0 0 0 / 0.4);
+  --elevation-3: 0 8px 24px -8px oklch(0 0 0 / 0.6), 0 2px 6px -2px oklch(0 0 0 / 0.4);
+
+  --gradient-milk: linear-gradient(150deg, oklch(0.235 0.016 158) 0%, oklch(0.20 0.013 158) 100%);
+  --gradient-cream-fresh: linear-gradient(150deg, oklch(0.21 0.014 158) 0%, color-mix(in oklch, var(--fresh) 14%, oklch(0.21 0.014 158)) 100%);
+  --surface-veil: color-mix(in oklch, var(--card) 88%, var(--fresh));
+
+  --sidebar: oklch(0.185 0.014 158);
+  --sidebar-foreground: oklch(0.94 0.012 100);
+  --sidebar-primary: oklch(0.72 0.125 148);
+  --sidebar-primary-foreground: oklch(0.19 0.02 155);
+  --sidebar-accent: oklch(0.28 0.024 152);
+  --sidebar-accent-foreground: oklch(0.95 0.012 100);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.62 0.10 150);
 }
 
 @layer base {
@@ -126,6 +357,174 @@
   }
   html {
     @apply font-sans;
+    /* Lining, tabular figures everywhere: columns of litres and rupees must
+       align, and old-style figures in a data table read as a magazine. */
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+}
+
+/*
+ * ── THE MILK MOTION LANGUAGE ────────────────────────────────────────────────
+ *
+ * Defined in ONE place so no component invents its own timing, and built on
+ * one idea: milk settles, it does not stop. Every Lacteva motion eases out
+ * long and arrives softly (`--ease-out-liquid`), which is what separates this
+ * from the linear snap of a generic dashboard.
+ *
+ * The rule that governs all of it: motion may express STATE, never delay
+ * WORK. An operator at a counter with a queue of farmers must never wait for
+ * an animation, so anything on the critical path runs at `--motion-fast` or
+ * less, and the slow, liquid timings are reserved for things that are
+ * genuinely in progress — a sync draining, a collection completing.
+ */
+@layer components {
+  /* Something arrived: a row, a card, a result. Rises and settles. */
+  @keyframes lacteva-settle {
+    from { opacity: 0; transform: translateY(0.375rem); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Liquid fill — progress as a vessel filling, not a bar sliding. */
+  @keyframes lacteva-fill {
+    from { transform: scaleY(0); }
+    to   { transform: scaleY(1); }
+  }
+
+  /* A milk drop falling into place. The completion beat. */
+  @keyframes lacteva-drop {
+    0%   { opacity: 0; transform: translateY(-0.5rem) scale(0.9); }
+    60%  { opacity: 1; transform: translateY(0) scale(1.04); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  /* Flow — the sync indicator. A band travelling the way milk moves down a
+     line: continuous, unhurried, obviously ongoing. */
+  @keyframes lacteva-flow {
+    from { background-position: 0% 50%; }
+    to   { background-position: 200% 50%; }
+  }
+
+  /* The intelligence signal: a slow breath, never a blink. A blinking badge
+     reads as an alarm; this reads as attention. */
+  @keyframes lacteva-attend {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.72; }
+  }
+
+  /* Surface movement — milk is never perfectly still. Very low amplitude:
+     this reads as "liquid" peripherally and is invisible when looked at. */
+  @keyframes lacteva-surface {
+    0%, 100% { transform: translateX(-2%) scaleY(1); }
+    50%      { transform: translateX(2%) scaleY(1.06); }
+  }
+
+  /* A ripple leaving the point of impact — the completion beat. */
+  @keyframes lacteva-ripple {
+    from { opacity: 0.55; transform: scale(0.4); }
+    to   { opacity: 0;    transform: scale(1.9); }
+  }
+
+  /* A droplet travelling toward its destination. The sync metaphor: work
+     LEAVING the device and ARRIVING somewhere, which is what an operator
+     actually wants to know. */
+  @keyframes lacteva-droplet {
+    0%   { opacity: 0; transform: translateX(0) scale(0.6); }
+    15%  { opacity: 1; }
+    85%  { opacity: 1; }
+    100% { opacity: 0; transform: translateX(var(--droplet-distance, 3rem)) scale(0.6); }
+  }
+
+  /* A number that changed, rather than one that was replaced. */
+  @keyframes lacteva-tick {
+    from { opacity: 0; transform: translateY(0.4em); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .lacteva-surface { animation: lacteva-surface 4.5s var(--ease-in-out-liquid) infinite; }
+  .lacteva-ripple  { animation: lacteva-ripple var(--motion-slow) var(--ease-out-liquid) forwards; }
+  .lacteva-tick    { animation: lacteva-tick var(--motion-base) var(--ease-out-liquid); }
+  .lacteva-droplet { animation: lacteva-droplet 1.8s linear infinite; }
+
+  /*
+   * Hover lift. One rule, so every liftable surface lifts identically — and
+   * it lifts by 2px, not 8: this is a platform an operator uses all day, not
+   * a landing page.
+   */
+  .lacteva-lift {
+    transition: transform var(--motion-fast) var(--ease-out-liquid),
+                box-shadow var(--motion-fast) var(--ease-out-liquid);
+  }
+  .lacteva-lift:hover { transform: translateY(-2px); box-shadow: var(--elevation-3); }
+  .lacteva-lift:active { transform: translateY(0); box-shadow: var(--elevation-1); }
+
+  .lacteva-settle { animation: lacteva-settle var(--motion-base) var(--ease-out-liquid) both; }
+  .lacteva-drop   { animation: lacteva-drop var(--motion-slow) var(--ease-out-liquid) both; }
+  .lacteva-attend { animation: lacteva-attend 2.4s var(--ease-in-out-liquid) infinite; }
+
+  .lacteva-flow {
+    background-image: linear-gradient(
+      100deg,
+      transparent 20%,
+      color-mix(in oklch, var(--fresh) 55%, transparent) 45%,
+      color-mix(in oklch, var(--milk) 80%, transparent) 55%,
+      transparent 80%
+    );
+    background-size: 200% 100%;
+    animation: lacteva-flow var(--motion-flow) linear infinite;
+  }
+
+  /* Skeletons shimmer with the same flow — loading is milk moving, too. */
+  .lacteva-skeleton {
+    background-color: var(--muted);
+    background-image: linear-gradient(
+      100deg,
+      transparent 30%,
+      color-mix(in oklch, var(--milk) 55%, transparent) 50%,
+      transparent 70%
+    );
+    background-size: 200% 100%;
+    animation: lacteva-flow 1.6s linear infinite;
+  }
+}
+
+@layer base {
+  /*
+   * Focus is a first-class state, not a browser leftover. Two rings — the
+   * brand ring over a milk halo — so it stays visible on cream, on white
+   * cards and on the ink bands alike.
+   */
+  :where(a, button, [role="button"], input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: calc(var(--radius) * 0.5);
+  }
+
+  /*
+   * REDUCED MOTION. One global honouring, rather than every component
+   * remembering. Someone who asked for less motion gets the state change
+   * without the journey — the information is never in the movement alone.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+      scroll-behavior: auto !important;
+    }
+    .lacteva-flow,
+    .lacteva-skeleton {
+      background-image: none;
+      animation: none !important;
+    }
+    .lacteva-attend,
+    .lacteva-surface,
+    .lacteva-ripple,
+    .lacteva-droplet,
+    .lacteva-tick { animation: none !important; }
+    /* A lift that cannot animate simply does not move. */
+    .lacteva-lift:hover { transform: none; }
   }
 }
 
