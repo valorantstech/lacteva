@@ -21,7 +21,12 @@
 
 import { useMemo, useState } from "react";
 import { Upload } from "lucide-react";
-import { type ImportRowOutcome, importCustomers, importSuppliers, ApiError } from "@/lib/api";
+import {
+  type ImportProgress,
+  type ImportRowOutcome,
+  IMPORT_CHUNK_ROWS,
+  importInChunks,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -108,8 +113,7 @@ const SPEC: Record<
       "plan_unit",
       "plan_price",
     ],
-    hint:
-      "customer_type e.g. shop/household. The plan_* columns together create the standing order (e.g. RAW-COW-MILK, 20, L, 58.00); leave all four empty for no order.",
+    hint: "customer_type e.g. shop/household. The plan_* columns together create the standing order (e.g. RAW-COW-MILK, 20, L, 58.00); leave all four empty for no order.",
     toRow: (r) => ({
       name: r.name ?? "",
       ...(r.customer_type ? { customer_type: r.customer_type } : {}),
@@ -135,6 +139,7 @@ export function CsvImport({ kind }: { kind: Kind }) {
   const [results, setResults] = useState<ImportRowOutcome[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<ImportProgress | null>(null);
 
   const parsed = useMemo(() => {
     const table = parseCsv(csv);
@@ -154,7 +159,10 @@ export function CsvImport({ kind }: { kind: Kind }) {
     () =>
       parsed
         ? parsed.rows
-            .map((r, i) => ({ line: i + 2, ok: (r[spec.required] ?? "") !== "" }))
+            .map((r, i) => ({
+              line: i + 2,
+              ok: (r[spec.required] ?? "") !== "",
+            }))
             .filter((x) => !x.ok)
         : [],
     [parsed, spec.required],
@@ -165,15 +173,25 @@ export function CsvImport({ kind }: { kind: Kind }) {
     setBusy(true);
     setError(null);
     setResults(null);
-    try {
-      const rows = parsed.rows.map(spec.toRow);
-      const send = kind === "suppliers" ? importSuppliers : importCustomers;
-      setResults(await send(rows));
-    } catch (e) {
-      setError(e instanceof ApiError ? e.detail : "the import request failed");
-    } finally {
-      setBusy(false);
+    setProgress(null);
+
+    const rows = parsed.rows.map(spec.toRow);
+    const outcome = await importInChunks(kind, rows, setProgress);
+
+    // The receipt is kept whatever happened. A run that stopped half way still
+    // created everything it reported, and throwing that away would leave the
+    // operator guessing which farmers now exist.
+    setResults(outcome.results);
+    if (outcome.stoppedAt !== null) {
+      const sent = outcome.results.length;
+      setError(
+        `${outcome.error} — ${sent} row${sent === 1 ? "" : "s"} were imported and are listed below; ` +
+          `nothing from line ${outcome.stoppedAt + 2} onward was sent. ` +
+          `Import those remaining lines separately once the cause is fixed.`,
+      );
     }
+    setBusy(false);
+    setProgress(null);
   };
 
   const created = results?.filter((r) => r.status === "created").length ?? 0;
@@ -222,6 +240,15 @@ export function CsvImport({ kind }: { kind: Kind }) {
               {parsed.rows.length === 1 ? "" : "s"}
             </CardTitle>
             <CardDescription>
+              {parsed.rows.length > IMPORT_CHUNK_ROWS ? (
+                <span className="block">
+                  Larger than one batch — this goes to the platform in{" "}
+                  {Math.ceil(parsed.rows.length / IMPORT_CHUNK_ROWS)} batches of
+                  up to {IMPORT_CHUNK_ROWS}, one after another. If one batch
+                  fails, the batches before it are already imported and the
+                  result below says where it stopped.
+                </span>
+              ) : null}
               {missingRequired.length > 0
                 ? `${missingRequired.length} row(s) are missing “${spec.required}” (line${
                     missingRequired.length === 1 ? "" : "s"
@@ -266,7 +293,11 @@ export function CsvImport({ kind }: { kind: Kind }) {
             <div className="mt-4">
               <Button type="button" onClick={submit} disabled={busy}>
                 <Upload aria-hidden className="me-1.5 size-4" />
-                {busy ? "Importing…" : `Import ${parsed.rows.length} rows`}
+                {busy
+                  ? progress
+                    ? `Importing ${progress.sent.toLocaleString()} of ${progress.total.toLocaleString()}…`
+                    : "Importing…"
+                  : `Import ${parsed.rows.length} rows`}
               </Button>
             </div>
           </CardContent>
@@ -286,8 +317,8 @@ export function CsvImport({ kind }: { kind: Kind }) {
               3 · Result — {created} created, {results.length - created} failed
             </CardTitle>
             <CardDescription>
-              Failed rows were not imported and changed nothing. Fix them in
-              the CSV and import just those lines again.
+              Failed rows were not imported and changed nothing. Fix them in the
+              CSV and import just those lines again.
             </CardDescription>
           </CardHeader>
           <CardContent>

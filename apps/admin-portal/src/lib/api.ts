@@ -1347,7 +1347,6 @@ export type CollectionSlip = {
   text: string;
 };
 
-
 // --- Business-data import (P0-PILOT-003) -------------------------------------
 // Rows are loose objects by design: the SERVER validates each row
 // individually and answers per row, so one bad line in the dairy's
@@ -1373,6 +1372,72 @@ export const importCustomers = (rows: Array<Record<string, unknown>>) =>
     method: "POST",
     body: JSON.stringify({ rows }),
   });
+
+/**
+ * The platform refuses more than this in one request — `MAX_IMPORT_ROWS` in
+ * both `supplier/service.py` and `customer/service.py`. It is a real limit and
+ * a sensible one: an import is a write per row inside one transaction.
+ *
+ * The portal used to send the whole file regardless, so a dairy's actual
+ * 2,000-farmer spreadsheet was refused outright with "import limited to 500
+ * rows" — the exact file the feature exists for (P0-PRODUCT-008 P1).
+ */
+export const IMPORT_CHUNK_ROWS = 500;
+
+export type ImportProgress = { sent: number; total: number };
+
+export type ChunkedImport = {
+  /** Every row the platform answered for, renumbered to the operator's file. */
+  results: ImportRowOutcome[];
+  /** 0-based index of the first row NOT sent, or null if the file completed. */
+  stoppedAt: number | null;
+  /** The platform's own words, when it stopped. */
+  error: string | null;
+};
+
+/**
+ * Send a file the platform's way: in batches it will accept, one at a time.
+ *
+ * Sequential, not parallel. An import is the heaviest write the portal makes,
+ * and four concurrent batches would multiply that load on a dairy's single
+ * server to save an operator a few seconds they are not watching.
+ *
+ * NOTHING IS RETRIED. The portal sends no idempotency key, so a batch that
+ * failed in transit may or may not have been applied, and resending it could
+ * create every farmer in it twice. Duplicated farmers are worse than a stopped
+ * import: one is visible and fixable, the other is silent and becomes a
+ * payment. So a failure stops the run and reports exactly where it stopped —
+ * the rows before it are committed and reported, the rows after it were never
+ * sent, and the operator can act on that with the file in front of them.
+ */
+export async function importInChunks(
+  kind: "suppliers" | "customers",
+  rows: Array<Record<string, unknown>>,
+  onProgress?: (progress: ImportProgress) => void,
+): Promise<ChunkedImport> {
+  const send = kind === "suppliers" ? importSuppliers : importCustomers;
+  const results: ImportRowOutcome[] = [];
+
+  for (let offset = 0; offset < rows.length; offset += IMPORT_CHUNK_ROWS) {
+    const batch = rows.slice(offset, offset + IMPORT_CHUNK_ROWS);
+    try {
+      const answered = await send(batch);
+      // The platform numbers rows within the batch it was handed; the operator
+      // is looking at one file. Without this, row 1 of batch two reads as
+      // "row 1" and collides with the first batch's.
+      results.push(...answered.map((r) => ({ ...r, row: r.row + offset })));
+      onProgress?.({ sent: offset + batch.length, total: rows.length });
+    } catch (e) {
+      return {
+        results,
+        stoppedAt: offset,
+        error: e instanceof ApiError ? e.detail : "the import request failed",
+      };
+    }
+  }
+
+  return { results, stoppedAt: null, error: null };
+}
 
 export const getCollectionSlip = (id: string) =>
   api<CollectionSlip>(`/v1/milk-transactions/${id}/slip`);
@@ -3111,14 +3176,20 @@ export const startSubscriptionCheckout = (planCode: string, centres: number) =>
  * changed, never what.
  */
 export const refreshSubscriptionCheckout = () =>
-  api<SubscriptionPaymentView>("/v1/organization/subscription/checkout/refresh", {
-    method: "POST",
-  });
+  api<SubscriptionPaymentView>(
+    "/v1/organization/subscription/checkout/refresh",
+    {
+      method: "POST",
+    },
+  );
 
 export const cancelSubscriptionCheckout = () =>
-  api<SubscriptionPaymentView>("/v1/organization/subscription/checkout/cancel", {
-    method: "POST",
-  });
+  api<SubscriptionPaymentView>(
+    "/v1/organization/subscription/checkout/cancel",
+    {
+      method: "POST",
+    },
+  );
 
 export const getSubscriptionPayments = () =>
   api<SubscriptionPaymentView[]>("/v1/organization/subscription/payments");
@@ -3218,7 +3289,8 @@ export const createDriver = (body: {
   code: string;
   full_name: string;
   phone?: string;
-}) => api<Driver>("/v1/drivers", { method: "POST", body: JSON.stringify(body) });
+}) =>
+  api<Driver>("/v1/drivers", { method: "POST", body: JSON.stringify(body) });
 
 /**
  * Today's runs — the DAIRY's today. The date is omitted deliberately: a
@@ -3226,17 +3298,24 @@ export const createDriver = (body: {
  */
 export const listDeliveryRuns = (businessDate?: string) =>
   api<DeliveryRun[]>(
-    businessDate ? `/v1/delivery-runs?business_date=${businessDate}` : "/v1/delivery-runs",
+    businessDate
+      ? `/v1/delivery-runs?business_date=${businessDate}`
+      : "/v1/delivery-runs",
   );
 
-export const getDeliveryRun = (id: string) => api<DeliveryRun>(`/v1/delivery-runs/${id}`);
+export const getDeliveryRun = (id: string) =>
+  api<DeliveryRun>(`/v1/delivery-runs/${id}`);
 
 export const createDeliveryRun = (body: {
   route_id: string;
   slot?: string;
   vehicle_id?: string | null;
   driver_id?: string | null;
-}) => api<DeliveryRun>("/v1/delivery-runs", { method: "POST", body: JSON.stringify(body) });
+}) =>
+  api<DeliveryRun>("/v1/delivery-runs", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export const assignDeliveryRun = (
   id: string,
