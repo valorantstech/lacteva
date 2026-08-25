@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import 'api.dart';
+import 'l10n.dart';
 import 'session.dart';
 
 /// Supplier CRUD — SPRINT-005.
@@ -207,6 +208,13 @@ class _SupplierFormScreenState extends State<SupplierFormScreen> {
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       setState(() => _error = e.detail);
+    } catch (_) {
+      // P1-PRODUCT-READINESS-001 R-1: a transport failure is not a platform
+      // refusal. Without this the save silently did nothing — the busy flag
+      // cleared, no message appeared, and the operator could reasonably
+      // conclude the record had been saved. The load paths gained this in
+      // P0-PRODUCT-009; the save paths are a different shape and were missed.
+      setState(() => _error = L10n.of(null).t('common.couldNotReach'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
