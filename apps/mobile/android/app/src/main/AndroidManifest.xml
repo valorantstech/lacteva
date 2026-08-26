@@ -1,4 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      P1-PRODUCT-READINESS-001. This was declared ONLY in the debug and
+      profile manifests, which is Flutter's template default and correct for
+      an app that does not use the network. This app is nothing but a network
+      client: it signs in, reads centres, records collections and drains an
+      offline queue, all over HTTP.
+
+      So debug and profile builds worked and a RELEASE build could not open a
+      socket — the manifests are merged per build type, and `main` is the only
+      one a release APK gets. That is the build a dairy would be handed, and
+      every request in it would have failed at the socket. `manifest_test.dart`
+      is what stops it being dropped again.
+    -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="lacteva_mobile"
         android:name="${applicationName}"
