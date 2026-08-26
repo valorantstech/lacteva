@@ -18,6 +18,7 @@ from decimal import Decimal
 
 from tests.conftest import register_and_login
 from tests.test_org_structure import _tenant_admin
+from tests.test_payments import _second_tenant
 
 TODAY = date(2026, 8, 12)
 
@@ -324,6 +325,106 @@ async def test_an_issued_invoice_is_immutable(client):
         f"/v1/invoices/{invoice['id']}/cancel", json={"reason": "changed my mind"}, headers=admin
     )
     assert r.status_code == 409
+
+
+async def test_an_amended_quantity_keeps_the_rate_that_was_agreed(client):
+    """A correction fixes the QUANTITY. It must not re-rate the delivery.
+
+    The rate on a delivery is the one agreed when it was made, and the plan
+    that carried it may since have been superseded — re-pricing a correction
+    at today's rate would quietly rewrite what the customer owed for milk they
+    took last week. The platform recomputes `amount` from the delivery's OWN
+    stored `unit_price`, and this is what says so.
+    """
+    _org, admin, customer = await _sales_env(client)
+    delivery = (await _deliver(client, admin, customer["id"], TODAY)).json()
+    assert delivery["quantity"] == "2.000"
+    assert delivery["amount"] == "120.00"  # 2 x 60.0000
+
+    # The customer re-agrees at a different rate AFTER the delivery was made.
+    await client.post(
+        f"/v1/customers/{customer['id']}/plan",
+        json={
+            "product": "RAW-COW-MILK",
+            "default_quantity": "2.000",
+            "quantity_unit": "L",
+            "unit_price": "75.0000",
+        },
+        headers=admin,
+    )
+
+    r = await client.post(
+        f"/v1/deliveries/{delivery['id']}/amend", json={"quantity": "1.500"}, headers=admin
+    )
+    assert r.status_code == 200, r.text
+    amended = r.json()
+    assert amended["quantity"] == "1.500"
+    # 1.5 x 60.0000 — the rate of the DAY, not the 75.0000 agreed since.
+    assert amended["amount"] == "90.00"
+    assert amended["unit_price"] == "60.0000"
+
+
+async def test_a_corrected_delivery_bills_at_its_corrected_amount(client):
+    """The correction has to reach the invoice, or it fixed nothing.
+
+    Billing builds from deliveries where `invoice_id IS NULL`, so an amendment
+    made before invoicing is the only chance to get the bill right — and this
+    proves the corrected figure is the one the customer is actually asked for.
+    """
+    _org, admin, customer = await _sales_env(client)
+    delivery = (await _deliver(client, admin, customer["id"], TODAY)).json()
+
+    await client.post(
+        f"/v1/deliveries/{delivery['id']}/amend", json={"quantity": "1.500"}, headers=admin
+    )
+
+    invoice = (
+        await client.post(
+            "/v1/invoices",
+            json={
+                "customer_id": customer["id"],
+                "period_from": str(TODAY),
+                "period_to": str(TODAY),
+            },
+            headers=admin,
+        )
+    ).json()
+    # 90.00, not the 120.00 the delivery was first recorded at.
+    assert invoice["total"] == "90.00"
+
+
+async def test_marking_a_delivery_skipped_takes_it_off_the_bill(client):
+    """`BILLABLE_STATUSES` is ("delivered",) — anything else is worth zero.
+
+    The operational case: milk that never reached the door. The row stays, so
+    the day is still explainable, and the amount goes to zero.
+    """
+    _org, admin, customer = await _sales_env(client)
+    delivery = (await _deliver(client, admin, customer["id"], TODAY)).json()
+
+    r = await client.post(
+        f"/v1/deliveries/{delivery['id']}/amend",
+        json={"status": "skipped", "notes": "nobody home"},
+        headers=admin,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "skipped"
+    assert r.json()["amount"] == "0.00"
+
+
+async def test_another_tenant_cannot_amend_this_dairy_s_delivery(client):
+    """A foreign delivery is NOT FOUND, never forbidden — it must not even
+    confirm that the id exists."""
+    _org, admin, customer = await _sales_env(client)
+    delivery = (await _deliver(client, admin, customer["id"], TODAY)).json()
+
+    other_admin = await _second_tenant(client)
+    r = await client.post(
+        f"/v1/deliveries/{delivery['id']}/amend",
+        json={"quantity": "9.000"},
+        headers=other_admin,
+    )
+    assert r.status_code == 404, r.text
 
 
 async def test_a_billed_delivery_cannot_be_amended(client):

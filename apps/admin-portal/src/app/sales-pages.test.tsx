@@ -466,6 +466,67 @@ describe("customer detail — the whole workflow", () => {
     ).toBeInTheDocument();
   });
 
+  // ── Correcting a live customer ─────────────────────────────────────────
+  //
+  // The platform has always accepted `PUT /v1/customers/{id}` and
+  // `POST /v1/customers/{id}/plan`; nothing in the portal called either, so a
+  // customer record was write-once and a standing order could only be paused,
+  // never re-agreed. Since `generate_deliveries` reads the plan's quantity and
+  // price, a stale plan silently produced wrong deliveries, wrong invoices and
+  // wrong receivables — which is why these are pinned at the request level.
+
+  it("sends a corrected customer to the platform's own update endpoint", async () => {
+    const spy = routeAll();
+    await renderDetail(<CustomerDetailPage params={params()} />);
+    await userEvent.click(await screen.findByRole("button", { name: /edit details/i }));
+
+    const phone = screen.getByLabelText("Phone");
+    await userEvent.clear(phone);
+    await userEvent.type(phone, "+91 90000 11111");
+    await userEvent.click(screen.getByRole("button", { name: /save details/i }));
+
+    await waitFor(() => {
+      const call = spy.mock.calls.find(
+        (c) => String(c[0]).endsWith("/v1/customers/cu-1") && c[1]?.method === "PUT",
+      );
+      expect(call, "no PUT to the customer endpoint").toBeTruthy();
+      expect(JSON.parse(String(call![1]?.body))).toMatchObject({
+        phone: "+91 90000 11111",
+      });
+    });
+  });
+
+  it("re-agrees the standing order through the plan endpoint, price as a STRING", async () => {
+    const spy = routeAll();
+    await renderDetail(<CustomerDetailPage params={params()} />);
+    await userEvent.click(await screen.findByRole("button", { name: /change order/i }));
+
+    const rate = screen.getByLabelText(/agreed rate/i);
+    await userEvent.clear(rate);
+    await userEvent.type(rate, "62.5050");
+    const qty = screen.getByLabelText(/quantity per delivery/i);
+    await userEvent.clear(qty);
+    await userEvent.type(qty, "3.000");
+    await userEvent.click(screen.getByRole("button", { name: /agree new order/i }));
+
+    await waitFor(() => {
+      const call = spy.mock.calls.find((c) => String(c[0]).endsWith("/v1/customers/cu-1/plan"));
+      expect(call, "no POST to the plan endpoint").toBeTruthy();
+      const body = JSON.parse(String(call![1]?.body));
+      // Money crosses as the exact decimal string the operator typed. A
+      // Number() here would have turned 62.5050 into 62.505 before it left.
+      expect(body.unit_price).toBe("62.5050");
+      expect(body.default_quantity).toBe("3.000");
+    });
+  });
+
+  it("says the new order supersedes rather than edits, because that is what the platform does", async () => {
+    routeAll();
+    await renderDetail(<CustomerDetailPage params={params()} />);
+    await userEvent.click(await screen.findByRole("button", { name: /change order/i }));
+    expect(screen.getByText(/supersedes the current agreement/i)).toBeInTheDocument();
+  });
+
   it("records a delivery WITHOUT sending a price", async () => {
     const spy = routeAll();
     await renderDetail(<CustomerDetailPage params={params()} />);
@@ -556,6 +617,70 @@ describe("deliveries and the daily report", () => {
     // day's row, so count rather than assume one.
     expect(screen.getAllByText("6").length).toBeGreaterThan(0);
     expect(screen.getAllByText("10,234.50").length).toBeGreaterThan(0);
+  });
+
+  // ── Correcting a delivery ───────────────────────────────────────────────
+  //
+  // `POST /v1/deliveries/{id}/amend` shipped with the delivery module and had
+  // no caller in the portal, so a quantity written down wrong at the door
+  // could only be fixed with database access — and it flows straight into the
+  // invoice, because billing builds from deliveries where `invoice_id IS NULL`.
+
+  it("sends a correction to the platform's own amend endpoint", async () => {
+    const spy = routeAll();
+    render(<DeliveriesPage />);
+    await userEvent.click((await screen.findAllByRole("button", { name: /^correct$/i }))[0]);
+
+    const qty = screen.getByLabelText(/quantity \(/i);
+    await userEvent.clear(qty);
+    await userEvent.type(qty, "1.500");
+    await userEvent.type(screen.getByLabelText(/reason/i), "measured again at the door");
+    await userEvent.click(screen.getByRole("button", { name: /save correction/i }));
+
+    await waitFor(() => {
+      const call = spy.mock.calls.find((c) => String(c[0]).endsWith("/v1/deliveries/de-1/amend"));
+      expect(call, "no POST to the amend endpoint").toBeTruthy();
+      const body = JSON.parse(String(call![1]?.body));
+      expect(body.quantity).toBe("1.500");
+      expect(body.notes).toBe("measured again at the door");
+      // The price is NOT sent. The platform recomputes the amount from the
+      // delivery's own stored rate, so a quantity fix cannot re-rate history.
+      expect(body).not.toHaveProperty("unit_price");
+      expect(body).not.toHaveProperty("amount");
+    });
+  });
+
+  it("surfaces the platform's refusal rather than inventing its own", async () => {
+    // An invalid amendment — the backend decides, the portal reports.
+    const spy = routeAll({
+      "/amend": () => json({ detail: "quantity must be zero or greater" }, 422),
+    });
+    render(<DeliveriesPage />);
+    await userEvent.click((await screen.findAllByRole("button", { name: /^correct$/i }))[0]);
+    await userEvent.click(screen.getByRole("button", { name: /save correction/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/quantity must be zero or greater/i)).toBeInTheDocument();
+    });
+    expect(spy.mock.calls.some((c) => String(c[0]).includes("/amend"))).toBe(true);
+  });
+
+  it("offers no correction on a delivery that is already billed", async () => {
+    // The backend refuses once a delivery is on a bill — "correct it with an
+    // adjustment, not an edit". A button that could only ever produce that
+    // 409 would be worse than no button, so the row says `billed` instead.
+    routeAll({
+      "/v1/deliveries?": () =>
+        json({
+          items: [{ ...DELIVERY, invoice_id: "in-1" }],
+          total: 1,
+          limit: 20,
+          offset: 0,
+        }),
+    });
+    render(<DeliveriesPage />);
+    expect(await screen.findByText("billed")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^correct$/i })).toBeNull();
   });
 
   it("says when the round was short because the dairy was shut (DEMO-022)", async () => {

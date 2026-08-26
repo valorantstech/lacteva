@@ -20,6 +20,7 @@ import {
   getCustomerBalance,
   getCustomerStatement,
   pauseDeliveryPlan,
+  setDeliveryPlan,
   resumeDeliveryPlan,
   listCustomerPayments,
   listCustomerReceipts,
@@ -28,6 +29,7 @@ import {
   recordCustomerPayment,
   recordDelivery,
   setCustomerStatus,
+  updateCustomer,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -110,6 +112,10 @@ export default function CustomerDetailPage({
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  // Which correction panel is open, if any. A customer record used to be
+  // write-once in this portal; these are the two things an operator needs to
+  // change about a live customer.
+  const [panel, setPanel] = useState<"none" | "details" | "plan">("none");
 
   const load = useCallback(async () => {
     try {
@@ -207,8 +213,26 @@ export default function CustomerDetailPage({
           .filter(Boolean)
           .join(" · ")}
         actions={
-          <span className="inline-flex items-center gap-2">
+          <span className="inline-flex flex-wrap items-center gap-2">
             <StatusBadge status={customer.status} />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy !== null}
+              onClick={() => setPanel(panel === "details" ? "none" : "details")}
+            >
+              Edit details
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy !== null}
+              onClick={() => setPanel(panel === "plan" ? "none" : "plan")}
+            >
+              Change order
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -246,6 +270,36 @@ export default function CustomerDetailPage({
         >
           The platform refused: {failure}
         </p>
+      ) : null}
+
+      {panel === "details" ? (
+        <EditCustomerCard
+          customer={customer}
+          busy={busy !== null}
+          onCancel={() => setPanel("none")}
+          onSaved={(message) => {
+            setPanel("none");
+            setNotice(message);
+            void load();
+          }}
+          onFailed={setFailure}
+        />
+      ) : null}
+
+      {panel === "plan" ? (
+        <ChangePlanCard
+          customerId={customer.id}
+          current={plan}
+          currency={currency}
+          busy={busy !== null}
+          onCancel={() => setPanel("none")}
+          onSaved={(message) => {
+            setPanel("none");
+            setNotice(message);
+            void load();
+          }}
+          onFailed={setFailure}
+        />
       ) : null}
 
       {/* --- the account, at a glance ------------------------------------- */}
@@ -1197,5 +1251,231 @@ function PlanControls({
         {t("action.cancel")}
       </Button>
     </form>
+  );
+}
+
+/**
+ * Correcting a customer's own details.
+ *
+ * The platform has always accepted `PUT /v1/customers/{id}`; nothing in the
+ * portal ever called it, so a customer record was write-once — a phone number
+ * typed wrong at registration stayed wrong. This is the missing caller, not a
+ * new capability, and it sends the command the API already defines.
+ */
+function EditCustomerCard({
+  customer,
+  busy,
+  onCancel,
+  onSaved,
+  onFailed,
+}: {
+  customer: CustomerDetail["customer"];
+  busy: boolean;
+  onCancel: () => void;
+  onSaved: (message: string) => void;
+  onFailed: (message: string) => void;
+}) {
+  const [name, setName] = useState(customer.name ?? "");
+  const [type, setType] = useState(customer.customer_type ?? "household");
+  const [phone, setPhone] = useState(customer.phone ?? "");
+  const [address, setAddress] = useState(customer.address ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await updateCustomer(customer.id, {
+        name: name.trim(),
+        customer_type: type,
+        phone: phone.trim(),
+        address: address.trim(),
+      });
+      onSaved("Customer details updated.");
+    } catch (err) {
+      onFailed(describe(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Edit details</CardTitle>
+        <CardDescription>
+          Name, type, phone and address. The standing order is changed
+          separately, because re-agreeing a rate is a different decision.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="flex flex-col gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input
+                id="edit-name"
+                required
+                minLength={2}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="edit-type">Type</Label>
+              <select
+                id="edit-type"
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+              >
+                <option value="household">household</option>
+                <option value="shop">shop</option>
+                <option value="hotel">hotel</option>
+                <option value="institution">institution</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="edit-phone">Phone</Label>
+              <Input
+                id="edit-phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="edit-address">Address</Label>
+              <Input
+                id="edit-address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={saving || busy}>
+              {saving ? "Saving…" : "Save details"}
+            </Button>
+            <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Re-agreeing the standing order.
+ *
+ * The plan is the single lever on what a customer receives and what they are
+ * charged: `generate_deliveries` reads its quantity, price, weekdays and slot.
+ * The portal could pause and resume one but never change it, so a household
+ * moving from one litre to two, or a rate renegotiated, had nowhere to go —
+ * and every delivery and invoice after that point was generated from the old
+ * agreement.
+ *
+ * `POST /v1/customers/{id}/plan` SUPERSEDES rather than edits, per slot, so a
+ * delivery priced last week still points at the plan that priced it. That is
+ * the platform's rule and this form does not soften it — the copy says so,
+ * because an operator who thinks they are editing history will be surprised
+ * later.
+ */
+function ChangePlanCard({
+  customerId,
+  current,
+  currency,
+  busy,
+  onCancel,
+  onSaved,
+  onFailed,
+}: {
+  customerId: string;
+  current: DeliveryPlan | null;
+  currency: string;
+  busy: boolean;
+  onCancel: () => void;
+  onSaved: (message: string) => void;
+  onFailed: (message: string) => void;
+}) {
+  const [quantity, setQuantity] = useState(
+    current ? String(current.default_quantity) : "2.000",
+  );
+  const [rate, setRate] = useState(current ? String(current.unit_price) : "");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      // The money leaves as the operator typed it. `unit_price` is a decimal
+      // string end to end; putting it through Number() here would lose the
+      // platform's precision before the request was even made.
+      await setDeliveryPlan(customerId, {
+        product: current?.product ?? "RAW-COW-MILK",
+        default_quantity: quantity.trim(),
+        quantity_unit: current?.quantity_unit ?? "L",
+        unit_price: rate.trim(),
+        ...(current?.slot ? { slot: current.slot } : {}),
+        ...(current?.weekdays ? { weekdays: current.weekdays } : {}),
+      });
+      onSaved("Standing order updated. Deliveries from now on use the new agreement.");
+    } catch (err) {
+      onFailed(describe(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Change the standing order</CardTitle>
+        <CardDescription>
+          This supersedes the current agreement rather than editing it, so
+          deliveries already priced keep pointing at the plan that priced them.
+          {current ? null : " This customer has no plan yet."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="flex flex-col gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="plan-quantity">
+                Quantity per delivery ({current?.quantity_unit ?? "L"})
+              </Label>
+              <Input
+                id="plan-quantity"
+                required
+                inputMode="decimal"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="plan-rate">
+                Agreed rate ({currency} per {current?.quantity_unit ?? "L"})
+              </Label>
+              <Input
+                id="plan-rate"
+                required
+                inputMode="decimal"
+                value={rate}
+                onChange={(e) => setRate(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={saving || busy}>
+              {saving ? "Saving…" : "Agree new order"}
+            </Button>
+            <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

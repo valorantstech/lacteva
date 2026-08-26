@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import {
+  amendDelivery,
   ApiError,
   type Delivery,
   type DeliveryPageResult,
@@ -36,6 +37,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
 import { DateRangePicker, useDefaultRange } from "@/components/date-range";
@@ -108,6 +110,11 @@ function DeliveriesView() {
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The delivery being corrected, if any. `amendDelivery` has existed on the
+  // client since the delivery module shipped and nothing ever called it, so a
+  // wrong quantity could only be fixed by someone with database access.
+  const [amending, setAmending] = useState<Delivery | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generated, setGenerated] = useState<GenerationResult | null>(null);
   const [lastRun, setLastRun] = useState<GenerationRun | null>(null);
@@ -224,6 +231,30 @@ function DeliveriesView() {
           </Link>
         ) : (
           <span className="text-xs text-muted-foreground">not yet</span>
+        ),
+    },
+    {
+      key: "correct",
+      header: "",
+      cell: (d) =>
+        d.invoice_id ? (
+          // The backend refuses an amendment once a delivery is on a bill —
+          // "correct it with an adjustment, not an edit". Showing a button
+          // that could only ever produce that 409 would be a worse experience
+          // than not showing one.
+          <span className="text-xs text-muted-foreground">billed</span>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setNotice(null);
+              setAmending(d);
+            }}
+          >
+            Correct
+          </Button>
         ),
     },
   ];
@@ -694,6 +725,25 @@ function DeliveriesView() {
         </Card>
       ) : null}
 
+      {notice ? (
+        <Surface tone="live" role="status" className="px-4 py-3 text-sm">
+          {notice}
+        </Surface>
+      ) : null}
+
+      {amending ? (
+        <AmendDeliveryCard
+          delivery={amending}
+          onCancel={() => setAmending(null)}
+          onSaved={(message) => {
+            setAmending(null);
+            setNotice(message);
+            void load();
+          }}
+          onFailed={setError}
+        />
+      ) : null}
+
       <Card>
         <CardContent className="pt-6">
           <DataTable
@@ -812,5 +862,121 @@ function DeliveriesView() {
         </CardContent>
       </Card>
     </PageContainer>
+  );
+}
+
+
+/**
+ * Correcting a delivery the platform will still accept a correction for.
+ *
+ * `POST /v1/deliveries/{id}/amend` has existed since the delivery module
+ * shipped; nothing in the portal called it, so a quantity written down wrong
+ * at the door could only be fixed with database access.
+ *
+ * Two things this form deliberately does NOT do, because the backend already
+ * decides them and a second opinion here would be a bug waiting to disagree:
+ *
+ *  * it does not re-price. The platform recomputes `amount` from the
+ *    delivery's OWN stored `unit_price`, so the rate agreed on the day
+ *    survives the correction — a quantity fix must never silently re-rate a
+ *    historical delivery at today's plan price.
+ *  * it does not decide billability. Amount becomes zero for any status
+ *    outside `BILLABLE_STATUSES`, which is how marking a delivery skipped
+ *    takes it off the bill.
+ */
+function AmendDeliveryCard({
+  delivery,
+  onCancel,
+  onSaved,
+  onFailed,
+}: {
+  delivery: Delivery;
+  onCancel: () => void;
+  onSaved: (message: string) => void;
+  onFailed: (message: string) => void;
+}) {
+  const [quantity, setQuantity] = useState(String(delivery.quantity));
+  const [status, setStatus] = useState(delivery.status);
+  const [notes, setNotes] = useState(delivery.notes ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await amendDelivery(delivery.id, {
+        quantity: quantity.trim(),
+        status,
+        notes: notes.trim(),
+      });
+      onSaved("Delivery corrected. The platform recalculated the amount from the agreed rate.");
+    } catch (err) {
+      onFailed(describe(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Correct this delivery</CardTitle>
+        <CardDescription>
+          {delivery.delivery_date} · {delivery.product} · agreed rate{" "}
+          {String(delivery.unit_price)} {delivery.currency} per{" "}
+          {delivery.quantity_unit}. The amount is recomputed by the platform
+          from that rate — it is never typed here, and correcting a quantity
+          does not re-rate the delivery.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="flex flex-col gap-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="amend-quantity">
+                Quantity ({delivery.quantity_unit})
+              </Label>
+              <Input
+                id="amend-quantity"
+                required
+                inputMode="decimal"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="amend-status">Status</Label>
+              <select
+                id="amend-status"
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                <option value="delivered">delivered</option>
+                <option value="skipped">skipped</option>
+                <option value="cancelled">cancelled</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="amend-notes">Reason</Label>
+              <Input
+                id="amend-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="what was corrected, and why"
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Save correction"}
+            </Button>
+            <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
