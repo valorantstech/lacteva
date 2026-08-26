@@ -30,6 +30,9 @@ from tests.test_procurement_e2e import _accept_complete, _procurement_env, _run_
 # organization's business date, so a test whose `TODAY` came from `utcnow()`
 # disagreed with the platform for the hours when a Nairobi dairy is already on
 # tomorrow — three of every twenty-four, and green the rest of the time.
+# Every REMAINING use below only offsets this by ten days or more to build
+# period boundaries, so a midnight straddle cannot move a collection across
+# one. The single place that needed the platform's exact day now asks for it.
 TODAY = business_today("Africa/Nairobi")
 # The period that contains today, closed prematurely — the PILOT-001 shape.
 THIS_PERIOD = {
@@ -108,7 +111,15 @@ async def test_a_late_collection_is_carried_forward_into_the_next_period(client)
     line = detail["lines"][0]
     assert line["transaction_id"] == late["id"]
     # The line keeps the day the milk arrived, not the period that paid for it.
-    assert line["transaction_date"] == TODAY.isoformat()
+    #
+    # Asked of the PLATFORM rather than recomputed here. `TODAY` is snapshotted
+    # at module import and this suite runs for minutes, so when import and the
+    # collection fall on opposite sides of Nairobi midnight the equality failed
+    # for a reason that has nothing to do with carry-forward — observed at
+    # 00:53 EAT. The organization's calendar is the same authority that dated
+    # the line, so this compares the platform against itself.
+    calendar = (await client.get("/v1/organization/calendar", headers=headers)).json()
+    assert line["transaction_date"] == calendar["business_date"]
     assert line["transaction_date"] < nxt["period_from"]
     assert Decimal(str(line["gross_amount"])) == Decimal("1800.00")
     assert closed["status"] == "finalized"
