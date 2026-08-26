@@ -25,6 +25,7 @@ import {
   listPayments,
   listReceipts,
   receiptDownloadUrl,
+  removeSettlementLine,
   settlementAction,
 } from "@/lib/api";
 import { formatStamp } from "@/components/datetime";
@@ -682,6 +683,7 @@ export default function SettlementDetailPage({
                     <th className="py-2 pe-4 text-end font-medium">Rate</th>
                     <th className="py-2 pe-4 text-end font-medium">Gross</th>
                     <th className="py-2 font-medium">Trace</th>
+                    {can.collect ? <th className="py-2 font-medium sr-only">Remove</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -722,6 +724,38 @@ export default function SettlementDetailPage({
                       <td className="py-2 font-mono text-xs text-muted-foreground">
                         {line.trace_reference}
                       </td>
+                      {/*
+                        A line can be taken off a settlement only while it is
+                        still open. `can.collect` carries exactly the
+                        draft-or-calculated guard the platform enforces
+                        (BR-0010) — the same one that governs collecting — so a
+                        finalized settlement shows no control at all rather
+                        than one that would answer 409.
+
+                        Removing a line resets the settlement to `draft` on
+                        the platform side, which is deliberate: the stored
+                        totals no longer describe the lines, and this page
+                        already says so and asks for a recalculation.
+                      */}
+                      {can.collect ? (
+                        <td className="py-2 text-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy !== null}
+                            onClick={() =>
+                              void run(
+                                `remove-${line.id}`,
+                                () => removeSettlementLine(s.id, line.id),
+                                "Line removed. Recalculate the totals before finalizing.",
+                              )
+                            }
+                          >
+                            Remove
+                          </Button>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>

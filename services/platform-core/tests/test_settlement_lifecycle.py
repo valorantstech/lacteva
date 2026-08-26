@@ -89,6 +89,47 @@ async def test_remove_line_reverts_to_draft(client):
     assert detail["settlement"]["status"] == "draft"
 
 
+async def test_removing_a_line_takes_its_money_off_the_settlement(client):
+    """The point of removing a line is that the farmer is paid less.
+
+    `test_remove_line_reverts_to_draft` proves the STATUS goes stale. Nothing
+    proved the MONEY moves — and a removal that reverts the status but leaves
+    the stored gross untouched would look corrected on screen while paying the
+    old amount, which is the failure that matters here.
+    """
+    headers, _, _, settlement = await _with_lines(client)
+    await _post(client, headers, settlement["id"], "calculate")
+
+    before = (await client.get(f"/v1/settlements/{settlement['id']}", headers=headers)).json()
+    assert before["totals_match_lines"] is True
+    gross_before = Decimal(before["settlement"]["gross_amount"])
+    assert len(before["lines"]) == 2
+    doomed = before["lines"][0]
+    removed_amount = Decimal(doomed["gross_amount"])
+    assert removed_amount > 0
+
+    r = await client.delete(
+        f"/v1/settlements/{settlement['id']}/lines/{doomed['id']}", headers=headers
+    )
+    assert r.status_code == 204
+
+    # Stale on purpose: the stored totals still describe the old line set, and
+    # the platform says so rather than silently re-deriving them.
+    stale = (await client.get(f"/v1/settlements/{settlement['id']}", headers=headers)).json()
+    assert stale["settlement"]["status"] == "draft"
+    assert stale["totals_match_lines"] is False
+    assert Decimal(stale["settlement"]["gross_amount"]) == gross_before
+
+    assert (await _post(client, headers, settlement["id"], "calculate")).status_code == 200
+    after = (await client.get(f"/v1/settlements/{settlement['id']}", headers=headers)).json()
+    assert after["totals_match_lines"] is True
+    assert len(after["lines"]) == 1
+    # Exactly the removed line's worth, to the cent.
+    assert Decimal(after["settlement"]["gross_amount"]) == gross_before - removed_amount
+    # BR-0011: adjustments are zero by rule, so net follows gross exactly.
+    assert Decimal(after["settlement"]["net_amount"]) == gross_before - removed_amount
+
+
 async def test_detail_reports_totals_match(client):
     headers, _, _, settlement = await _with_lines(client)
     await _post(client, headers, settlement["id"], "calculate")

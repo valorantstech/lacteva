@@ -334,6 +334,84 @@ describe("settlement list", () => {
 });
 
 describe("settlement detail", () => {
+  // ── Taking a wrong line off a settlement ────────────────────────────────
+  //
+  // `DELETE /v1/settlements/{id}/lines/{lineId}` shipped with the settlement
+  // module and had no caller in the portal, so a collection swept into the
+  // wrong period could only be dealt with by cancelling the whole settlement
+  // and starting again — losing its number and any work already done on it.
+
+  it("removes a line through the platform's own endpoint", async () => {
+    const spy = routeAll();
+    await renderDetail(
+      <SettlementDetailPage params={Promise.resolve({ id: "st-1" })} />,
+    );
+    await screen.findByText("STL-2026-000004");
+
+    await userEvent.click(
+      (await screen.findAllByRole("button", { name: /^remove$/i }))[0],
+    );
+
+    await waitFor(() => {
+      const call = spy.mock.calls.find(
+        (c) =>
+          String(c[0]).endsWith("/v1/settlements/st-1/lines/sl-1") &&
+          (c[1] as RequestInit)?.method === "DELETE",
+      );
+      expect(call, "no DELETE to the settlement line endpoint").toBeTruthy();
+    });
+  });
+
+  it("tells the operator the totals must be recalculated before finalizing", async () => {
+    // Removal reverts the settlement to `draft` on the platform side, so the
+    // stored totals no longer describe the lines. Saying so is the difference
+    // between a corrected settlement and one that pays the old amount.
+    //
+    // The endpoint answers 204 No Content; the shared mock falls through to a
+    // 404 for anything it does not recognise, so the success is stated here.
+    routeAll({}, { "/lines/": () => new Response(null, { status: 204 }) });
+    await renderDetail(
+      <SettlementDetailPage params={Promise.resolve({ id: "st-1" })} />,
+    );
+    await screen.findByText("STL-2026-000004");
+    await userEvent.click(
+      (await screen.findAllByRole("button", { name: /^remove$/i }))[0],
+    );
+    expect(
+      await screen.findByText(/recalculate the totals before finalizing/i),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no removal on a finalized settlement, because the platform forbids it", async () => {
+    // BR-0010: finalized settlements are immutable. A control that could only
+    // ever produce a 409 is worse than no control.
+    routeAll({ settlement: { status: "finalized", finalized_at: "2026-08-12T09:00:00+00:00" } });
+    await renderDetail(
+      <SettlementDetailPage params={Promise.resolve({ id: "st-1" })} />,
+    );
+    await screen.findByText("STL-2026-000004");
+    expect(screen.queryByRole("button", { name: /^remove$/i })).toBeNull();
+  });
+
+  it("surfaces the platform's refusal rather than inventing its own", async () => {
+    const spy = routeAll({}, {
+      "/lines/": () => json({ detail: "finalized settlements are immutable" }, 409),
+    });
+    await renderDetail(
+      <SettlementDetailPage params={Promise.resolve({ id: "st-1" })} />,
+    );
+    await screen.findByText("STL-2026-000004");
+    await userEvent.click(
+      (await screen.findAllByRole("button", { name: /^remove$/i }))[0],
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByText(/finalized settlements are immutable/i),
+      ).toBeInTheDocument();
+    });
+    expect(spy.mock.calls.some((c) => String(c[0]).includes("/lines/"))).toBe(true);
+  });
+
   it("prints the stored totals and links every collection to its delivery", async () => {
     routeAll();
     await renderDetail(
