@@ -16,12 +16,17 @@ import {
   ApiError,
   type Center,
   type Member,
+  type Role,
   type User,
+  inviteMember,
   listCenters,
   listPeople,
+  listRoles,
   setMemberStatus,
   setUserActive,
 } from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 type Person = Member & { user: User | null };
 
@@ -34,6 +39,12 @@ export default function UsersPage() {
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [centers, setCenters] = useState<Center[]>([]);
+  // LACTEVA-ADMIN-002. Onboarding a dairy's staff needed raw API calls until
+  // now: the endpoint was implemented and SMTP-proven with no client caller.
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("tenant-viewer");
+  const [inviting, setInviting] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -48,6 +59,11 @@ export default function UsersPage() {
     listCenters({ limit: 100, offset: 0 })
       .then((c) => setCenters(c.items ?? []))
       .catch(() => setCenters([]));
+    // The roles the PLATFORM has, never a list compiled into the bundle —
+    // the defect DEMO-008 found on the Roles page, not repeated here.
+    listRoles()
+      .then(setRoles)
+      .catch(() => setRoles([]));
   }, []);
 
   useEffect(() => {
@@ -111,6 +127,36 @@ export default function UsersPage() {
     }
   }
 
+  /**
+   * Invite someone (LACTEVA-ADMIN-002).
+   *
+   * The response carries no token by design (SEC-003): the code goes to the
+   * invitee's inbox and nowhere else, so there is nothing here to show, copy
+   * or accidentally log. What the administrator gets back is the fact of it
+   * and the date it stops working.
+   */
+  async function invite(e: React.FormEvent) {
+    e.preventDefault();
+    setInviting(true);
+    setNote(null);
+    setError(null);
+    try {
+      const sent = await inviteMember(inviteEmail.trim(), inviteRole);
+      setNote(
+        `Invitation sent to ${sent.email} — expires ${stamp(sent.expires_at)}.`,
+      );
+      setInviteEmail("");
+    } catch (err) {
+      // A viewer without `organization.member.manage` lands here, and must
+      // read the platform's sentence rather than watch nothing happen.
+      setError(
+        err instanceof ApiError ? err.detail : "Failed to send the invitation",
+      );
+    } finally {
+      setInviting(false);
+    }
+  }
+
   // Design System V1 (batch C pilot): the same quiet-label treatment
   // `DataTable` now gives its column headers, applied here because this page
   // uses the raw `Table` primitive. Deliberately NOT pushed into `TableHead`
@@ -126,6 +172,43 @@ export default function UsersPage() {
       error={error}
       note={note}
     >
+      <form onSubmit={invite} className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="invite-email">Invite by email</Label>
+          <Input
+            id="invite-email"
+            type="email"
+            required
+            className="min-w-72"
+            placeholder="colleague@dairy.example"
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="invite-role">Role</Label>
+          <select
+            id="invite-role"
+            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+            value={inviteRole}
+            onChange={(e) => setInviteRole(e.target.value)}
+          >
+            {roles.map((role) => (
+              <option key={role.id} value={role.name}>
+                {role.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button type="submit" disabled={inviting || !inviteEmail}>
+          {inviting ? "Sending…" : "Send invitation"}
+        </Button>
+        <p className="w-full text-xs text-muted-foreground">
+          The invitation carries a one-time code to that address. Centre-scoped
+          assignment happens on the Roles page once the person has joined.
+        </p>
+      </form>
+
       <Table>
         <TableHeader>
           <TableRow>

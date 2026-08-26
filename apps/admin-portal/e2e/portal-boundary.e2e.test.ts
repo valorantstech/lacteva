@@ -17,7 +17,8 @@
  * Driven by `./infra/e2e/run-e2e.sh portal`. Without that harness there is no
  * server, and the suite says so rather than failing.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 type Fixture = {
@@ -47,6 +48,9 @@ vi.mock("next/headers", () => ({
 
 const { POST: login } = await import("@/app/api/auth/login/route");
 const { GET: proxyGet } = await import("@/app/api/proxy/[...path]/route");
+const { POST: acceptInvitation } = await import(
+  "@/app/api/auth/invitation/route"
+);
 
 const params = (path: string[]) => ({ params: Promise.resolve({ path }) });
 
@@ -216,6 +220,93 @@ describe("portal → platform, over the real boundary", () => {
 
     expect(missing).toEqual([]);
     expect(created).toHaveLength(25);
+  });
+
+  // LACTEVA-ADMIN-002. Onboarding a dairy's staff needed raw API calls: the
+  // invitation endpoints were implemented and SMTP-proven with no client
+  // caller at all. This is the whole journey through the PORTAL's own server
+  // code — invite as an administrator, read the code the platform actually
+  // emailed, accept through the pre-auth route, then sign in as the person who
+  // did not exist when the test started.
+  //
+  // It has to live out here because the token exists in exactly one place: the
+  // delivered message. The API will not return it (SEC-003 / F-04 — whoever
+  // issued an invitation could otherwise accept it themselves under the
+  // invitee's address), so an in-process test could only assert against a
+  // token it had invented.
+  it("invites a colleague, who accepts and signs in", async () => {
+    if (!harnessed) return;
+    const maildir = process.env.LACTEVA_E2E_MAIL;
+    if (!maildir) return; // the sink is the harness's, not this test's to build
+
+    const count = () =>
+      readdirSync(maildir).filter((f) => f.startsWith("msg-")).length;
+    const before = count();
+
+    await signIn(fx.users.admin.email, fx.org.id);
+    const { POST: proxyPost } = await import("@/app/api/proxy/[...path]/route");
+
+    const invitee = `invited+${Date.now().toString().slice(-8)}@e2e.example`;
+    const invited = await proxyPost(
+      new Request("http://portal.test/api/proxy/v1/invitations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: invitee, role_name: "tenant-viewer" }),
+      }),
+      params(["v1", "invitations"]),
+    );
+    expect(invited.status).toBe(201);
+    const meta = (await invited.json()) as Record<string, unknown>;
+    // The platform hands back metadata and no secret; the portal must have
+    // nothing to leak.
+    expect(meta.email).toBe(invitee);
+    expect(meta.status).toBe("pending");
+    expect(JSON.stringify(meta)).not.toMatch(/token/i);
+
+    // Read the code out of the message that was really delivered — the same
+    // expression `seed.py` uses, because that is the only place it exists.
+    const token = await (async () => {
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline) {
+        const files = readdirSync(maildir)
+          .filter((f) => f.startsWith("msg-"))
+          .sort()
+          .slice(before)
+          .reverse();
+        for (const file of files) {
+          const body = readFileSync(join(maildir, file), "utf8")
+            .replace(/=\r?\n/g, "");
+          const m = body.match(/registration:\s*(\S+?)\.(?:\s|$)/) ??
+            body.match(/registration:\s*(\S+)/);
+          if (m) return m[1].replace(/\.$/, "");
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      throw new Error("the platform delivered no invitation message");
+    })();
+
+    // Accept through the PORTAL's pre-auth route — the one that exists because
+    // /api/proxy would refuse a request carrying no session.
+    jar.clear();
+    const accepted = await acceptInvitation(
+      new Request("http://portal.test/api/auth/invitation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          full_name: "E2E Invited Colleague",
+          password: fx.password,
+        }),
+      }),
+    );
+    expect(accepted.status).toBe(201);
+    // Joining is not signing in: no session was minted by accepting.
+    expect(jar.size).toBe(0);
+
+    // And now the person can sign in, which is the only proof that matters.
+    const signedIn = await signIn(invitee, fx.org.id);
+    expect(signedIn.status).toBe(204);
+    expect(jar.size).toBeGreaterThan(0);
   });
 
   it("keeps those new rows inside their own tenant", async () => {

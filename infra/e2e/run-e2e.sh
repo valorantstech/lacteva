@@ -153,8 +153,13 @@ fi
 
 if [ "$WHAT" = "all" ] || [ "$WHAT" = "portal" ]; then
   echo "── portal client → real API ──"
+  # LACTEVA_E2E_MAIL: the invite->accept journey has to read the token out of
+  # the message the platform really delivered, exactly as `seed.py` does — the
+  # API will not hand it back (SEC-003). Same sink, now visible to the portal
+  # suite too (LACTEVA-ADMIN-002).
   (cd "$ROOT/apps/admin-portal" && LACTEVA_E2E_API="$API" \
     LACTEVA_E2E_FIXTURE="$WORK/fixture.json" \
+    LACTEVA_E2E_MAIL="$WORK/mail" \
     npx vitest run --config vitest.e2e.config.ts) || FAILED=1
 fi
 

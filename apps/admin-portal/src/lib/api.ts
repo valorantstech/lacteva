@@ -2271,6 +2271,67 @@ export type Role = {
  *  names, one of which the backend had never had. */
 export const listRoles = () => api<Role[]>("/v1/authz/roles");
 
+/**
+ * A staff invitation (LACTEVA-ADMIN-002).
+ *
+ * Note what is NOT here: the token. The platform deliberately withholds it
+ * (SEC-003 / F-04) — it used to be returned, which meant whoever issued an
+ * invitation could accept it themselves and create an account under the
+ * invitee's email with the role they were being offered. It now reaches the
+ * invitee by email and nowhere else, so this type has no field for it and the
+ * portal has nothing to leak.
+ */
+export type Invitation = {
+  id: string;
+  email: string;
+  role_name: string;
+  status: string;
+  expires_at: string;
+};
+
+/** Invite a staff member. Guarded by `organization.member.manage`. */
+export const inviteMember = (email: string, roleName: string) =>
+  api<Invitation>("/v1/invitations", {
+    method: "POST",
+    body: JSON.stringify({ email, role_name: roleName }),
+  });
+
+/**
+ * Join an organization with the code from the invitation email.
+ *
+ * PRE-AUTH, so it cannot go through `/api/proxy` — that pipe requires the very
+ * session this call is creating. It goes to the portal's own pre-auth route,
+ * exactly as `login()` does.
+ *
+ * The token is passed and forgotten: never stored, never put in a URL (a query
+ * string reaches server logs and browser history), never returned.
+ */
+export async function acceptInvitation(
+  token: string,
+  fullName: string,
+  password: string,
+) {
+  const res = await fetch("/api/auth/invitation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, full_name: fullName, password }),
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    let title: string | undefined;
+    try {
+      const problem = (await res.json()) as { detail?: string; title?: string };
+      detail = problem.detail ?? problem.title ?? detail;
+      title = problem.title;
+    } catch {
+      // non-JSON error body — keep statusText
+    }
+    throw new ApiError(res.status, detail, undefined, title);
+  }
+}
+
 export const assignRole = (
   userId: string,
   roleName: string,
