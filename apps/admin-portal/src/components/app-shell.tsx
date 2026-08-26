@@ -398,16 +398,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Every screen therefore issued every one of its requests TWICE, about
   // 200ms apart, on every single load. The structure below keeps `<main>` in
   // one place and varies only the chrome around it, so the page mounts once.
-  // Design System V1: the wordmark's companion. A single milk drop, 14px, in
-  // the brand green — small enough to be a mark rather than an illustration.
+  // The wordmark's companion (LACTEVA-BRAND-002). The drop alone, in the
+  // brand green — small enough to be a mark rather than an illustration.
+  //
+  // This USED to be its own drawing: a different viewBox, a different curve
+  // and a translucent ellipse "highlight" that no other surface had. It is now
+  // the one generated geometry, cropped to the drop by its viewBox alone, and
+  // `tools/brand/check_inline.py` fails if this copy drifts from the master.
   const brand = (
     <span className="flex items-center gap-2">
-      <svg aria-hidden="true" viewBox="0 0 16 20" className="size-4 text-primary">
+      <svg aria-hidden="true" viewBox="19 11.63 26 37.27" className="size-4 text-primary">
         <path
-          d="M8 1 C 8 1, 14 9, 14 13 A 6 6 0 0 1 2 13 C 2 9, 8 1, 8 1 Z"
+          d="M30.69 13.229C32 11.1 32 11.1 33.31 13.229C35.613 19.1 38.866 24.386 43.071 29.085C46.426 34.537 45.314 41.619 40.449 45.78C35.585 49.94 28.415 49.94 23.551 45.78C18.686 41.619 17.574 34.537 20.929 29.085C25.134 24.386 28.387 19.1 30.69 13.229Z"
           fill="currentColor"
         />
-        <ellipse cx="6" cy="12.5" rx="1.6" ry="2.2" fill="var(--milk)" fillOpacity="0.35" />
       </svg>
       <span className="font-semibold tracking-tight">Lacteva</span>
     </span>
