@@ -34,7 +34,9 @@ import {
 } from "@/components/date-range";
 import { TrendChart } from "@/components/trend-chart";
 import { Money, Quantity } from "@/components/money";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 import {
   EmptyState,
   ErrorState,
@@ -163,7 +165,7 @@ export default function SupplierDetailPage({
 
   if (detail.state === "error") {
     return (
-      <div className="mx-auto w-full max-w-3xl p-8">
+      <PageContainer width="narrow">
         <ErrorState
           message={`This supplier could not be loaded — ${detail.message}.`}
         />
@@ -172,12 +174,12 @@ export default function SupplierDetailPage({
             Back to suppliers
           </Link>
         </p>
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         breadcrumbs={[
           { label: "Suppliers", href: "/suppliers" },
@@ -240,51 +242,54 @@ export default function SupplierDetailPage({
 
       <DateRangePicker value={range} onChange={setRange} />
 
+      {/*
+        The four figures this page exists to show, on the metric scale. The
+        VALUES are unchanged: <Money> and <Quantity> still render the
+        platform's exact decimal strings — only their size and surface moved.
+      */}
       <section
         aria-label="Supplier statistics"
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
-        <StatTile
-          label="Collections"
-          value={stats ? stats.transactions : "—"}
-          hint={
-            stats
-              ? `${stats.accepted} accepted · ${stats.rejected} rejected`
-              : undefined
-          }
-        />
-        <StatTile
-          label="Quantity"
-          value={
-            stats ? (
-              <Quantity value={stats.total_net_weight_kg} unit="kg" />
-            ) : (
-              "—"
-            )
-          }
-          icon={<Droplets className="size-4" />}
-        />
-        <StatTile
-          label="Collection value"
-          value={
-            primary ? (
-              <Money amount={primary[1]} currency={primary[0]} />
-            ) : stats ? (
-              <Money amount="0.00" currency={orgCurrency} />
-            ) : (
-              "—"
-            )
-          }
-          icon={<Banknote className="size-4" />}
-        />
-        <StatTile
-          label="Average fat"
-          value={
-            stats?.weighted_avg_fat != null ? `${stats.weighted_avg_fat}%` : "—"
-          }
-          hint="weighted by quantity"
-          icon={<Percent className="size-4" />}
-        />
+        <Surface tone="metric">
+          <Metric
+            label="Collections"
+            value={stats ? String(stats.transactions) : "—"}
+            caption={
+              stats ? `${stats.accepted} accepted · ${stats.rejected} rejected` : undefined
+            }
+          />
+        </Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3">
+          <Metric
+            label="Quantity"
+            value={stats ? <Quantity value={stats.total_net_weight_kg} unit="kg" /> : "—"}
+          />
+          <Droplets aria-hidden className="size-4 text-muted-foreground" />
+        </Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3">
+          <Metric
+            label="Collection value"
+            value={
+              primary ? (
+                <Money amount={primary[1]} currency={primary[0]} />
+              ) : stats ? (
+                <Money amount="0.00" currency={orgCurrency} />
+              ) : (
+                "—"
+              )
+            }
+          />
+          <Banknote aria-hidden className="size-4 text-muted-foreground" />
+        </Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3">
+          <Metric
+            label="Average fat"
+            value={stats?.weighted_avg_fat != null ? `${stats.weighted_avg_fat}%` : "—"}
+            caption="weighted by quantity"
+          />
+          <Percent aria-hidden className="size-4 text-muted-foreground" />
+        </Surface>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -571,6 +576,6 @@ export default function SupplierDetailPage({
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }

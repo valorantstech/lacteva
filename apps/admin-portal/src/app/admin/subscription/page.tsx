@@ -20,7 +20,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 
 /**
  * The organization's commercial standing (DEMO-026).
@@ -144,7 +146,7 @@ export default function SubscriptionPage() {
   const onTrial = subscription?.plan_code === "LACTEVA_TRIAL";
 
   return (
-    <div className="space-y-6">
+    <PageContainer width="default">
       <PageHeader
         title="Subscription"
         description="What this organization is entitled to use, and until when."
@@ -161,51 +163,79 @@ export default function SubscriptionPage() {
       {subscription && entitlement ? (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatTile
-              label="Status"
-              value={<StatusBadge status={entitlement.status} />}
-              hint={subscription.plan_name}
-              icon={<BadgeCheck className="size-4" />}
-            />
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label="Status"
+                value={<StatusBadge status={entitlement.status} />}
+                caption={subscription.plan_name}
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <BadgeCheck className="size-4" />
+              </span>
+            </Surface>
             {/* An ended trial must still say WHEN it ended. Gating this on
                 `status === "trialing"` hid the date at exactly the moment an
                 administrator needs it most. */}
-            <StatTile
-              label={onTrial ? "Trial ends" : "Plan"}
-              value={
-                onTrial
-                  ? (subscription.trial_ends_on ?? "—")
-                  : subscription.plan_code
-              }
-              hint={
-                onTrial && remaining !== null
-                  ? remaining >= 0
-                    ? `${remaining} day(s) remaining`
-                    : `ended ${Math.abs(remaining)} day(s) ago`
-                  : (subscription.current_period_end ?? undefined)
-              }
-              icon={<CalendarClock className="size-4" />}
-            />
-            <StatTile
-              label="Collection centres"
-              value={`${entitlement.active_centres} active`}
-              hint={
-                entitlement.centre_allowance === null
-                  ? "unlimited during the trial"
-                  : `${entitlement.subscribed_centres} subscribed`
-              }
-              icon={<Building2 className="size-4" />}
-            />
-            <StatTile
-              label="Price"
-              value={subscription.price ?? "—"}
-              hint={
-                subscription.price
-                  ? `${subscription.currency_code} per ${subscription.billing_period}`
-                  : "not yet published"
-              }
-              icon={<CreditCard className="size-4" />}
-            />
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={onTrial ? "Trial ends" : "Plan"}
+                value={
+                  onTrial
+                    ? (subscription.trial_ends_on ?? "—")
+                    : subscription.plan_code
+                }
+                caption={
+                  onTrial && remaining !== null
+                    ? remaining >= 0
+                      ? `${remaining} day(s) remaining`
+                      : `ended ${Math.abs(remaining)} day(s) ago`
+                    : (subscription.current_period_end ?? undefined)
+                }
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <CalendarClock className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label="Collection centres"
+                value={`${entitlement.active_centres} active`}
+                caption={
+                  entitlement.centre_allowance === null
+                    ? "unlimited during the trial"
+                    : `${entitlement.subscribed_centres} subscribed`
+                }
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <Building2 className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label="Price"
+                value={subscription.price ?? "—"}
+                caption={
+                  subscription.price
+                    ? `${subscription.currency_code} per ${subscription.billing_period}`
+                    : "not yet published"
+                }
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <CreditCard className="size-4" />
+              </span>
+            </Surface>
           </div>
 
           <Card>
@@ -395,6 +425,6 @@ export default function SubscriptionPage() {
           ) : null}
         </>
       ) : null}
-    </div>
+    </PageContainer>
   );
 }

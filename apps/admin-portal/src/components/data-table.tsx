@@ -108,6 +108,10 @@ export function DataTable<T>({
                     key={c.key}
                     scope="col"
                     className={cn(
+                      // Design System V1: a header is a LABEL, not another row
+                      // of data. Smaller, uppercase and quiet, so the eye goes
+                      // to the figures rather than to the column names.
+                      "text-meta font-semibold uppercase tracking-wide text-muted-foreground",
                       c.align === "end" && "text-end",
                       c.secondary && "hidden md:table-cell",
                     )}
@@ -119,7 +123,12 @@ export function DataTable<T>({
             </TableHeader>
             <TableBody className={cn(loading && "opacity-60 transition-opacity")}>
               {rows.map((row) => (
-                <TableRow key={rowKey(row)}>
+                <TableRow
+                  key={rowKey(row)}
+                  // Reading a wide row is the commonest thing anyone does in
+                  // this product; the tint follows the eye across it.
+                  className="transition-colors duration-[var(--motion-instant)] hover:bg-muted/40"
+                >
                   {columns.map((c) => (
                     <TableCell
                       key={c.key}
@@ -164,7 +173,7 @@ export function Pagination({ offset, limit, total, onChange, busy }: PaginationP
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm text-muted-foreground" aria-live="polite">
+      <p className="text-meta text-muted-foreground" aria-live="polite">
         {t("table.showing", { from: first, to: last, total })}
       </p>
       <div className="flex gap-2">

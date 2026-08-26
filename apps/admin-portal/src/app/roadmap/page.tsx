@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { PageHeader, SectionHeading } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
+import { PageContainer } from "@/components/page-container";
 
 /**
  * The roadmap visibility page (P0-PRODUCT-VISIBILITY-001).
@@ -37,42 +38,50 @@ const AVAILABLE: { name: string; href: string; detail: string }[] = [
   {
     name: "Collection & quality capture",
     href: "/transactions",
-    detail: "Weigh milk and record FAT / SNF / CLR at the centre — on the web and the phone, online or offline.",
+    detail:
+      "Weigh milk and record FAT / SNF / CLR at the centre — on the web and the phone, online or offline.",
   },
   {
     name: "Rate cards",
     href: "/rate-cards",
-    detail: "The dairy's own FAT-banded rate chart, per product and centre, priced automatically once published.",
+    detail:
+      "The dairy's own FAT-banded rate chart, per product and centre, priced automatically once published.",
   },
   {
     name: "Parchi (collection slip)",
     href: "/transactions",
-    detail: "A numbered receipt for every completed collection, ready to print or share as text.",
+    detail:
+      "A numbered receipt for every completed collection, ready to print or share as text.",
   },
   {
     name: "Settlement",
     href: "/settlements",
-    detail: "Farmer payments reconciled line-by-line to the collections behind them, on the dairy's own cycle.",
+    detail:
+      "Farmer payments reconciled line-by-line to the collections behind them, on the dairy's own cycle.",
   },
   {
     name: "Customers & delivery",
     href: "/customers",
-    detail: "Outlets, standing orders, routes and delivery runs — the distribution side, not just procurement.",
+    detail:
+      "Outlets, standing orders, routes and delivery runs — the distribution side, not just procurement.",
   },
   {
     name: "Billing & receivables",
     href: "/billing",
-    detail: "Invoices drafted from real deliveries; a person reviews and issues them; receivables tracked.",
+    detail:
+      "Invoices drafted from real deliveries; a person reviews and issues them; receivables tracked.",
   },
   {
     name: "Reports & dashboard",
     href: "/reports",
-    detail: "Operational reports and a live owner dashboard across every collection centre.",
+    detail:
+      "Operational reports and a live owner dashboard across every collection centre.",
   },
   {
     name: "Subscription & trial",
     href: "/admin/subscription",
-    detail: "Per-centre plan and 30-day trial. The platform shows what the dairy is entitled to; taking payment is not yet wired (see below).",
+    detail:
+      "Per-centre plan and 30-day trial. The platform shows what the dairy is entitled to; taking payment is not yet wired (see below).",
   },
 ];
 
@@ -81,47 +90,56 @@ const AVAILABLE: { name: string; href: string; detail: string }[] = [
 const COMING_SOON: Item[] = [
   {
     name: "Messaging (WhatsApp / SMS)",
-    detail: "Sending the parchi and reminders by WhatsApp or SMS. The adapter exists; a messaging provider (DLT/BSP paperwork) is not yet contracted, so nothing is sent today. Email templating is present.",
+    detail:
+      "Sending the parchi and reminders by WhatsApp or SMS. The adapter exists; a messaging provider (DLT/BSP paperwork) is not yet contracted, so nothing is sent today. Email templating is present.",
     phase: "V1",
   },
   {
     name: "Automated scale & analyzer capture",
-    detail: "Reading weight and quality directly from a centre's scale/analyzer instead of typing them. Discovery-gated on a device visit; capture is manual-first today, and mock readings are refused in production.",
+    detail:
+      "Reading weight and quality directly from a centre's scale/analyzer instead of typing them. Discovery-gated on a device visit; capture is manual-first today, and mock readings are refused in production.",
     phase: "V1",
   },
   {
     name: "QR / barcode supplier scanning",
-    detail: "Scanning a farmer's code at the wizard instead of typing it. The supplier code is entered by hand today.",
+    detail:
+      "Scanning a farmer's code at the wizard instead of typing it. The supplier code is entered by hand today.",
     phase: "V1",
   },
   {
     name: "Receipt & invoice PDF download",
-    detail: "A downloadable PDF document. Receipts render on screen and copy to clipboard today; there is no PDF engine yet.",
+    detail:
+      "A downloadable PDF document. Receipts render on screen and copy to clipboard today; there is no PDF engine yet.",
     phase: "V1",
   },
   {
     name: "GST / FSSAI fields on documents",
-    detail: "Statutory identifiers printed on invoices and slips. Not built; the dairy remains responsible for its own regulatory obligations.",
+    detail:
+      "Statutory identifiers printed on invoices and slips. Not built; the dairy remains responsible for its own regulatory obligations.",
     phase: "V1",
   },
   {
     name: "Quality & settlement anomaly detection",
-    detail: "Beyond today's non-blocking FAT/SNF deviation flag (which is statistics, not ML) — broader anomaly detection across quality, settlement and operator patterns.",
+    detail:
+      "Beyond today's non-blocking FAT/SNF deviation flag (which is statistics, not ML) — broader anomaly detection across quality, settlement and operator patterns.",
     phase: "V1",
   },
   {
     name: "Collection & demand forecasting",
-    detail: "Forecasting supply and demand from history. Needs a real data history first; not built.",
+    detail:
+      "Forecasting supply and demand from history. Needs a real data history first; not built.",
     phase: "V2",
   },
   {
     name: "Chilling centre / BMC",
-    detail: "Modelling a bulk-milk cooler as an asset at a location, and chilling centres as a location type. Not built.",
+    detail:
+      "Modelling a bulk-milk cooler as an asset at a location, and chilling centres as a location type. Not built.",
     phase: "V2",
   },
   {
     name: "Procurement transport",
-    detail: "The centre → chilling → plant movement of milk, kept distinct from customer delivery. Not built.",
+    detail:
+      "The centre → chilling → plant movement of milk, kept distinct from customer delivery. Not built.",
     phase: "V2",
   },
   {
@@ -134,22 +152,26 @@ const COMING_SOON: Item[] = [
 const ENTERPRISE: Item[] = [
   {
     name: "SAP / ERP integration",
-    detail: "Connecting Lacteva to an enterprise ERP. No vendor, module names or protocol are chosen or assumed. Reserved for a signed enterprise engagement.",
+    detail:
+      "Connecting Lacteva to an enterprise ERP. No vendor, module names or protocol are chosen or assumed. Reserved for a signed enterprise engagement.",
     phase: "Enterprise",
   },
   {
     name: "Enterprise SSO",
-    detail: "Single sign-on against a corporate identity provider. No provider chosen; not built.",
+    detail:
+      "Single sign-on against a corporate identity provider. No provider chosen; not built.",
     phase: "Enterprise",
   },
   {
     name: "Global identity (one person, many organizations)",
-    detail: "One login spanning multiple dairies, without ever widening tenant isolation. Reserved for enterprise scale.",
+    detail:
+      "One login spanning multiple dairies, without ever widening tenant isolation. Reserved for enterprise scale.",
     phase: "Enterprise",
   },
   {
     name: "Organization-to-organization / federation",
-    detail: "Parent groups and consented cross-organization visibility, always through projections and never a relaxed database boundary. Not built.",
+    detail:
+      "Parent groups and consented cross-organization visibility, always through projections and never a relaxed database boundary. Not built.",
     phase: "Enterprise",
   },
 ];
@@ -157,17 +179,20 @@ const ENTERPRISE: Item[] = [
 const FUTURE: Item[] = [
   {
     name: "Farmer self-service app",
-    detail: "A milk producer's own app. Today a farmer is served by an operator at the centre and receives a parchi — there is no farmer login.",
+    detail:
+      "A milk producer's own app. Today a farmer is served by an operator at the centre and receives a parchi — there is no farmer login.",
     phase: "Future",
   },
   {
     name: "Web customer / outlet portal",
-    detail: "A browser portal for outlets. (A household customer already has a screen in the mobile app; a separate web outlet portal is a future option.)",
+    detail:
+      "A browser portal for outlets. (A household customer already has a screen in the mobile app; a separate web outlet portal is a future option.)",
     phase: "Future",
   },
   {
     name: "Advanced AI",
-    detail: "Machine-learning capabilities beyond the current statistical deviation flag. No AI vendor and no ML model exist in the product today.",
+    detail:
+      "Machine-learning capabilities beyond the current statistical deviation flag. No AI vendor and no ML model exist in the product today.",
     phase: "Future",
   },
 ];
@@ -181,7 +206,11 @@ function PhaseBadge({ phase }: { phase: Phase }) {
     return <Badge variant="outline">Enterprise</Badge>;
   }
   const label =
-    phase === "V2" ? "Coming soon · Later" : phase === "Future" ? "Coming soon · Future option" : "Coming soon";
+    phase === "V2"
+      ? "Coming soon · Later"
+      : phase === "Future"
+        ? "Coming soon · Future option"
+        : "Coming soon";
   return <Badge variant="secondary">{label}</Badge>;
 }
 
@@ -199,7 +228,7 @@ function RoadmapItem({ item }: { item: Item }) {
 
 export default function RoadmapPage() {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 p-8">
+    <PageContainer width="default">
       <PageHeader
         title="What you can use today, and what's on the roadmap"
         description="Lacteva shows only real capabilities in the product. This page keeps the two categories separate: everything you can use today has its own page in this portal; everything below is on the roadmap and is NOT available yet. Nothing here is a commitment or a date."
@@ -268,6 +297,6 @@ export default function RoadmapPage() {
         NOW / V1 / V2 / Enterprise / Future option; this page never turns a
         roadmap item into a working control.
       </p>
-    </main>
+    </PageContainer>
   );
 }

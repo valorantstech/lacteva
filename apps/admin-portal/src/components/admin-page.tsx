@@ -24,11 +24,14 @@ export function AdminPage({
   note?: string | null;
   children: ReactNode;
 }) {
+  // Design System V1: the same container rhythm the rest of the product uses.
+  // This was `p-8` flat while most pages step 4→6→8 with the viewport, so the
+  // seven admin pages had visibly different margins on a tablet.
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 p-8">
+    <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6 lg:p-8">
       <Card>
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
+          <CardTitle className="text-section">{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

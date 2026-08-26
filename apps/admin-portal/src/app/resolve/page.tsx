@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageContainer } from "@/components/page-container";
 import {
   ApiError,
   CalculationResult,
@@ -87,7 +88,7 @@ export default function ResolutionPlaygroundPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 p-8">
+    <PageContainer width="default" className="max-w-4xl">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">
           Resolution playground
@@ -390,6 +391,6 @@ export default function ResolutionPlaygroundPage() {
           </CardContent>
         </Card>
       )}
-    </main>
+    </PageContainer>
   );
 }

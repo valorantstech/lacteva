@@ -15,6 +15,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PageContainer } from "@/components/page-container";
+import { PageHeader } from "@/components/page-header";
 import { Input } from "@/components/ui/input";
 import { Money, formatAmount } from "@/components/money";
 import { Label } from "@/components/ui/label";
@@ -45,7 +47,12 @@ import {
 const PAGE_SIZE = 50;
 
 /** The platform's SummaryPage: one row type at a time, with its own total. */
-type SummaryPageOf<T> = { items: T[]; total: number; limit: number; offset: number };
+type SummaryPageOf<T> = {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+};
 
 export default function ReportsPage() {
   // The DAIRY's today. `new Date().toISOString()` is UTC, so a Kenyan
@@ -70,8 +77,10 @@ export default function ReportsPage() {
   // P1-PORTAL-SCALE-001: the platform pages these summaries (ordered by milk
   // supplied, largest first) and its `total` is authoritative — the page no
   // longer shows the first 50 rows as if they were the whole dairy.
-  const [centerPage, setCenterPage] = useState<SummaryPageOf<CenterSummaryRow> | null>(null);
-  const [supplierPage, setSupplierPage] = useState<SummaryPageOf<SupplierSummaryRow> | null>(null);
+  const [centerPage, setCenterPage] =
+    useState<SummaryPageOf<CenterSummaryRow> | null>(null);
+  const [supplierPage, setSupplierPage] =
+    useState<SummaryPageOf<SupplierSummaryRow> | null>(null);
   const [centerOffset, setCenterOffset] = useState(0);
   const [supplierOffset, setSupplierOffset] = useState(0);
   const [tableBusy, setTableBusy] = useState(false);
@@ -178,13 +187,11 @@ export default function ReportsPage() {
     : "…";
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 p-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
-        <p className="text-sm text-muted-foreground">
-          Operational insights from live procurement data
-        </p>
-      </header>
+    <PageContainer width="default">
+      <PageHeader
+        title="Reports"
+        description="Operational insights from live procurement data"
+      />
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">
@@ -285,36 +292,32 @@ export default function ReportsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(centerPage?.items ?? []).map(
-                (row) => (
-                  <TableRow key={row.center_id}>
-                    <TableCell>
-                      <Link
-                        className="text-primary hover:underline"
-                        href={`/centers/${row.center_id}`}
-                      >
-                        {row.center_code} — {row.center_name}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-end">
-                      {row.transactions}
-                    </TableCell>
-                    <TableCell className="text-end">{row.accepted}</TableCell>
-                    <TableCell className="text-end">
-                      {row.total_net_weight_kg}
-                    </TableCell>
-                    <TableCell className="text-end whitespace-nowrap">
-                      <Money
-                        amount={row.payable_amount}
-                        currency={row.currency}
-                      />
-                    </TableCell>
-                    <TableCell className="text-end">
-                      {row.weighted_avg_fat ?? "—"}
-                    </TableCell>
-                  </TableRow>
-                ),
-              )}
+              {(centerPage?.items ?? []).map((row) => (
+                <TableRow key={row.center_id}>
+                  <TableCell>
+                    <Link
+                      className="text-primary hover:underline"
+                      href={`/centers/${row.center_id}`}
+                    >
+                      {row.center_code} — {row.center_name}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-end">{row.transactions}</TableCell>
+                  <TableCell className="text-end">{row.accepted}</TableCell>
+                  <TableCell className="text-end">
+                    {row.total_net_weight_kg}
+                  </TableCell>
+                  <TableCell className="text-end whitespace-nowrap">
+                    <Money
+                      amount={row.payable_amount}
+                      currency={row.currency}
+                    />
+                  </TableCell>
+                  <TableCell className="text-end">
+                    {row.weighted_avg_fat ?? "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
               {(centerPage?.items ?? []).length === 0 && (
                 <TableRow>
                   <TableCell
@@ -360,34 +363,32 @@ export default function ReportsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(supplierPage?.items ?? []).map(
-                (row) => (
-                  <TableRow key={row.supplier_id}>
-                    <TableCell>
-                      <Link
-                        className="text-primary hover:underline"
-                        href={`/suppliers/${row.supplier_id}`}
-                      >
-                        {row.supplier_code} — {row.supplier_name}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-end">{row.deliveries}</TableCell>
-                    <TableCell className="text-end">{row.accepted}</TableCell>
-                    <TableCell className="text-end">
-                      {row.total_net_weight_kg}
-                    </TableCell>
-                    <TableCell className="text-end whitespace-nowrap">
-                      <Money
-                        amount={row.payable_amount}
-                        currency={row.currency}
-                      />
-                    </TableCell>
-                    <TableCell className="text-end">
-                      {row.weighted_avg_fat ?? "—"}
-                    </TableCell>
-                  </TableRow>
-                ),
-              )}
+              {(supplierPage?.items ?? []).map((row) => (
+                <TableRow key={row.supplier_id}>
+                  <TableCell>
+                    <Link
+                      className="text-primary hover:underline"
+                      href={`/suppliers/${row.supplier_id}`}
+                    >
+                      {row.supplier_code} — {row.supplier_name}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-end">{row.deliveries}</TableCell>
+                  <TableCell className="text-end">{row.accepted}</TableCell>
+                  <TableCell className="text-end">
+                    {row.total_net_weight_kg}
+                  </TableCell>
+                  <TableCell className="text-end whitespace-nowrap">
+                    <Money
+                      amount={row.payable_amount}
+                      currency={row.currency}
+                    />
+                  </TableCell>
+                  <TableCell className="text-end">
+                    {row.weighted_avg_fat ?? "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
               {(supplierPage?.items ?? []).length === 0 && (
                 <TableRow>
                   <TableCell
@@ -505,6 +506,6 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
       </div>
-    </main>
+    </PageContainer>
   );
 }

@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/card";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
 import { ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 
@@ -110,7 +111,7 @@ export default function InvoiceDetailPage({
     return <LoadingState label="Loading the bill…" />;
   if (detail.state === "error")
     return (
-      <div className="mx-auto w-full max-w-5xl p-4 sm:p-6 lg:p-8">
+      <PageContainer width="default" className="max-w-5xl">
         <ErrorState
           message={`This bill could not be loaded — ${detail.message}.`}
           action={
@@ -122,14 +123,14 @@ export default function InvoiceDetailPage({
             </Link>
           }
         />
-      </div>
+      </PageContainer>
     );
 
   const { invoice, lines, paid, outstanding, totals_match_lines } = detail.data;
   const isDraft = invoice.status === "draft";
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="default" className="max-w-5xl">
       <PageHeader
         breadcrumbs={[
           { label: "Customers", href: "/customers" },
@@ -412,6 +413,6 @@ export default function InvoiceDetailPage({
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }

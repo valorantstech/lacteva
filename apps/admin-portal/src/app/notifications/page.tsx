@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PageContainer } from "@/components/page-container";
 import {
   ApiError,
   Notification,
@@ -162,7 +163,7 @@ export default function NotificationsPage() {
   const templateKeys = [...new Set(templates.map((t) => t.key))].sort();
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 p-8">
+    <PageContainer width="default">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -376,7 +377,7 @@ export default function NotificationsPage() {
       </footer>
 
       <TemplateCatalog templates={templates} />
-    </main>
+    </PageContainer>
   );
 }
 
@@ -1061,7 +1062,9 @@ function TemplateRegistryPanel() {
               {registry.unmapped_whatsapp} WhatsApp not mapped to a provider
             </Badge>
           )}
-          <Badge variant={registry.ready_whatsapp > 0 ? "outline" : "secondary"}>
+          <Badge
+            variant={registry.ready_whatsapp > 0 ? "outline" : "secondary"}
+          >
             {registry.ready_whatsapp} WhatsApp ready to send
           </Badge>
           <Button

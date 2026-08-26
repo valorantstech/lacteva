@@ -67,8 +67,16 @@ export default function LoginPage() {
     }
   }
 
+  // Design System V1 (batch H): a plain div, and the classes are untouched.
+  //  * `<main>` → `<div>` because the shell already renders the page's `main`
+  //    landmark, so this was a second one — an accessibility fault, not a
+  //    style preference.
+  //  * `min-h-screen` STAYS. Everywhere else in this batch it was inherited
+  //    padding doing nothing; here it is load-bearing, because it gives
+  //    `items-center` a height to centre the sign-in card within. Removing it
+  //    would push the card to the top of the page.
   return (
-    <main className="flex min-h-screen items-center justify-center p-8">
+    <div className="flex min-h-screen items-center justify-center p-8">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>{t("login.title")}</CardTitle>
@@ -117,6 +125,6 @@ export default function LoginPage() {
           </form>
         </CardContent>
       </Card>
-    </main>
+    </div>
   );
 }

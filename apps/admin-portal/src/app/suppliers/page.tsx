@@ -24,9 +24,11 @@ import { Label } from "@/components/ui/label";
 import { useBusinessToday } from "@/components/date-range";
 import { type Column, DataTable } from "@/components/data-table";
 import { Money, Quantity } from "@/components/money";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { ErrorState } from "@/components/states";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 
 /**
  * Suppliers (DEMO-003).
@@ -253,7 +255,7 @@ export default function SuppliersPage() {
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         title="Suppliers"
         description="The producers who deliver milk. Activity figures cover the last 30 days and are computed by the platform."
@@ -270,36 +272,38 @@ export default function SuppliersPage() {
         }
       />
 
-      <section
-        aria-label="Supplier summary"
-        className="grid gap-4 sm:grid-cols-3"
-      >
-        <StatTile
-          label="Suppliers"
-          value={page?.total ?? 0}
-          icon={<Truck className="size-4" />}
-        />
-        <StatTile
-          label="Active on this page"
-          value={
-            (page?.items ?? []).filter((s) => s.status === "active").length
-          }
-          hint="of the rows shown"
-        />
-        <StatTile
-          label="Delivered recently"
-          value={Object.keys(activity).length}
-          hint="last 30 days"
-        />
+      {/*
+        Design System V1: the same three figures, at the size a figure that
+        matters deserves. `StatTile` rendered them at body scale, which is why
+        a page whose whole point is "how many farmers, how many delivering"
+        read as a paragraph. Left untouched elsewhere — the other pages that
+        use it migrate in their own batch.
+      */}
+      <section aria-label="Supplier summary" className="grid gap-4 sm:grid-cols-3">
+        <Surface tone="metric" className="flex items-start justify-between gap-3">
+          <Metric label="Suppliers" value={String(page?.total ?? 0)} />
+          <Truck aria-hidden className="size-4 text-muted-foreground" />
+        </Surface>
+        <Surface tone="metric">
+          <Metric
+            label="Active on this page"
+            value={String((page?.items ?? []).filter((s) => s.status === "active").length)}
+            caption="of the rows shown"
+          />
+        </Surface>
+        <Surface tone="metric">
+          <Metric
+            label="Delivered recently"
+            value={String(Object.keys(activity).length)}
+            caption="last 30 days"
+          />
+        </Surface>
       </section>
 
       {notice ? (
-        <div
-          role="status"
-          className="rounded-md border border-border bg-card px-4 py-2 text-sm"
-        >
+        <Surface tone="live" role="status" className="px-4 py-3 text-sm">
           {notice}
-        </div>
+        </Surface>
       ) : null}
 
       {form.mode !== "closed" ? (
@@ -405,7 +409,7 @@ export default function SuppliersPage() {
           />
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }
 

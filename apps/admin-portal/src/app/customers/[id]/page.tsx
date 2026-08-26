@@ -40,7 +40,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Money, Quantity } from "@/components/money";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { useBusinessToday } from "@/components/date-range";
@@ -169,7 +171,7 @@ export default function CustomerDetailPage({
     return <LoadingState label="Loading customer…" />;
   if (detail.state === "error")
     return (
-      <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">
+      <PageContainer width="default">
         <ErrorState
           message={`This customer could not be loaded — ${detail.message}.`}
           action={
@@ -181,7 +183,7 @@ export default function CustomerDetailPage({
             </Link>
           }
         />
-      </div>
+      </PageContainer>
     );
 
   const { customer, plans } = detail.data;
@@ -189,7 +191,7 @@ export default function CustomerDetailPage({
   const currency = customer.currency;
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         breadcrumbs={[
           { label: "Customers", href: "/customers" },
@@ -251,52 +253,74 @@ export default function CustomerDetailPage({
         aria-label="Account"
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
-        <StatTile
-          label="Outstanding"
-          value={
-            balance ? (
-              <Money amount={balance.outstanding} currency={currency} />
-            ) : (
-              "—"
-            )
-          }
-          hint={
-            balance ? `${balance.open_invoices} open invoice(s)` : undefined
-          }
-          icon={<Wallet className="size-4" />}
-        />
-        <StatTile
-          label="Invoiced"
-          value={
-            balance ? (
-              <Money amount={balance.invoiced} currency={currency} />
-            ) : (
-              "—"
-            )
-          }
-        />
-        <StatTile
-          label="Paid"
-          value={
-            balance ? <Money amount={balance.paid} currency={currency} /> : "—"
-          }
-        />
-        <StatTile
-          label="Not yet billed"
-          value={
-            balance ? (
-              <Money amount={balance.unbilled_amount} currency={currency} />
-            ) : (
-              "—"
-            )
-          }
-          hint={
-            balance
-              ? `${balance.unbilled_deliveries} delivered, awaiting a bill`
-              : undefined
-          }
-          icon={<Truck className="size-4" />}
-        />
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label="Outstanding"
+            value={
+              balance ? (
+                <Money amount={balance.outstanding} currency={currency} />
+              ) : (
+                "—"
+              )
+            }
+            caption={
+              balance ? `${balance.open_invoices} open invoice(s)` : undefined
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Wallet className="size-4" />
+          </span>
+        </Surface>
+        <Surface tone="metric">
+          <Metric
+            label="Invoiced"
+            value={
+              balance ? (
+                <Money amount={balance.invoiced} currency={currency} />
+              ) : (
+                "—"
+              )
+            }
+          />
+        </Surface>
+        <Surface tone="metric">
+          <Metric
+            label="Paid"
+            value={
+              balance ? (
+                <Money amount={balance.paid} currency={currency} />
+              ) : (
+                "—"
+              )
+            }
+          />
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label="Not yet billed"
+            value={
+              balance ? (
+                <Money amount={balance.unbilled_amount} currency={currency} />
+              ) : (
+                "—"
+              )
+            }
+            caption={
+              balance
+                ? `${balance.unbilled_deliveries} delivered, awaiting a bill`
+                : undefined
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Truck className="size-4" />
+          </span>
+        </Surface>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -534,53 +558,63 @@ export default function CustomerDetailPage({
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="grid gap-4 sm:grid-cols-5">
-              <StatTile
-                label={t("statement.opening")}
-                value={
-                  <Money
-                    amount={statement.opening_balance}
-                    currency={statement.currency}
-                  />
-                }
-              />
-              {statement.delivered_quantity !== undefined ? (
-                <StatTile
-                  label={t("statement.milk")}
+              <Surface tone="metric">
+                <Metric
+                  label={t("statement.opening")}
                   value={
-                    <Quantity
-                      value={statement.delivered_quantity}
-                      unit={statement.quantity_unit ?? "L"}
+                    <Money
+                      amount={statement.opening_balance}
+                      currency={statement.currency}
                     />
                   }
                 />
+              </Surface>
+              {statement.delivered_quantity !== undefined ? (
+                <Surface tone="metric">
+                  <Metric
+                    label={t("statement.milk")}
+                    value={
+                      <Quantity
+                        value={statement.delivered_quantity}
+                        unit={statement.quantity_unit ?? "L"}
+                      />
+                    }
+                  />
+                </Surface>
               ) : null}
-              <StatTile
-                label={t("statement.billed")}
-                value={
-                  <Money
-                    amount={statement.billed}
-                    currency={statement.currency}
-                  />
-                }
-              />
-              <StatTile
-                label={t("statement.paid")}
-                value={
-                  <Money
-                    amount={statement.paid}
-                    currency={statement.currency}
-                  />
-                }
-              />
-              <StatTile
-                label={t("statement.closing")}
-                value={
-                  <Money
-                    amount={statement.closing_balance}
-                    currency={statement.currency}
-                  />
-                }
-              />
+              <Surface tone="metric">
+                <Metric
+                  label={t("statement.billed")}
+                  value={
+                    <Money
+                      amount={statement.billed}
+                      currency={statement.currency}
+                    />
+                  }
+                />
+              </Surface>
+              <Surface tone="metric">
+                <Metric
+                  label={t("statement.paid")}
+                  value={
+                    <Money
+                      amount={statement.paid}
+                      currency={statement.currency}
+                    />
+                  }
+                />
+              </Surface>
+              <Surface tone="metric">
+                <Metric
+                  label={t("statement.closing")}
+                  value={
+                    <Money
+                      amount={statement.closing_balance}
+                      currency={statement.currency}
+                    />
+                  }
+                />
+              </Surface>
             </div>
 
             {statement.entries.length === 0 ? (
@@ -819,7 +853,7 @@ export default function CustomerDetailPage({
           </CardContent>
         </Card>
       </div>
-    </div>
+    </PageContainer>
   );
 }
 

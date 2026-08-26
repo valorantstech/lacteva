@@ -111,6 +111,11 @@ export default function UsersPage() {
     }
   }
 
+  // Design System V1 (batch C pilot): the same quiet-label treatment
+  // `DataTable` now gives its column headers, applied here because this page
+  // uses the raw `Table` primitive. Deliberately NOT pushed into `TableHead`
+  // itself — `DataTable` already styles its own heads, and doing both would
+  // double the treatment on ten other pages.
   return (
     <AdminPage
       title="Users"
@@ -124,13 +129,13 @@ export default function UsersPage() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead>Role</TableHead>
-            <TableHead>Membership</TableHead>
-            <TableHead>Account</TableHead>
-            <TableHead>Last signed in</TableHead>
-            <TableHead className="text-end">Action</TableHead>
+            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">Name</TableHead>
+            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">Email</TableHead>
+            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">Role</TableHead>
+            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">Membership</TableHead>
+            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">Account</TableHead>
+            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">Last signed in</TableHead>
+            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground text-end">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

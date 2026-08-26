@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
 import {
   EmptyState,
   ErrorState,
@@ -106,7 +107,7 @@ export default function RateCardDetailPage({
 
   if (detail.state === "error") {
     return (
-      <div className="mx-auto w-full max-w-3xl p-8">
+      <PageContainer width="narrow">
         <ErrorState
           message={`This rate card could not be loaded — ${detail.message}.`}
         />
@@ -115,7 +116,7 @@ export default function RateCardDetailPage({
             Back to rate cards
           </Link>
         </p>
-      </div>
+      </PageContainer>
     );
   }
 
@@ -124,7 +125,7 @@ export default function RateCardDetailPage({
   const card = ready?.card ?? null;
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         breadcrumbs={[
           { label: "Rate cards", href: "/rate-cards" },
@@ -348,7 +349,7 @@ export default function RateCardDetailPage({
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }
 

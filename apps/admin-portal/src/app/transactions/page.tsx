@@ -24,7 +24,9 @@ import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
 import { DateRangePicker, useDefaultRange } from "@/components/date-range";
 import { Money, Quantity } from "@/components/money";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
 import { useLocale } from "@/lib/i18n";
 
@@ -231,13 +233,10 @@ export default function TransactionsPage() {
             className="hover:underline"
             href={`/suppliers/${tx.supplier_id}`}
           >
-            {supplierNames[tx.supplier_id] ??
-              `${tx.supplier_id.slice(0, 8)}…`}
+            {supplierNames[tx.supplier_id] ?? `${tx.supplier_id.slice(0, 8)}…`}
           </Link>
         ) : (
-          <span className="text-muted-foreground">
-            {t("tx.notIdentified")}
-          </span>
+          <span className="text-muted-foreground">{t("tx.notIdentified")}</span>
         ),
     },
     {
@@ -373,7 +372,7 @@ export default function TransactionsPage() {
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide" className="max-w-[100rem]">
       <PageHeader
         title={t("transaction.title")}
         description={t("tx.description")}
@@ -394,58 +393,86 @@ export default function TransactionsPage() {
         aria-label={t("tx.summaryAria")}
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
-        <StatTile
-          label={t("dashboard.collections")}
-          value={summary ? summary.transactions : "—"}
-          hint={
-            summary
-              ? t("tx.acceptedRejected", {
-                  accepted: summary.accepted,
-                  rejected: summary.rejected,
-                })
-              : undefined
-          }
-          icon={<Activity className="size-4" />}
-        />
-        <StatTile
-          label={t("field.quantity")}
-          value={
-            summary ? (
-              <Quantity value={summary.total_net_weight_kg} unit="kg" />
-            ) : (
-              "—"
-            )
-          }
-          hint={
-            summary
-              ? t("tx.suppliersCount", { count: summary.suppliers_served })
-              : undefined
-          }
-          icon={<Droplets className="size-4" />}
-        />
-        <StatTile
-          label={t("delivery.value")}
-          value={
-            primary ? (
-              <Money amount={primary[1]} currency={primary[0]} />
-            ) : summary ? (
-              <Money amount="0.00" currency={orgCurrency} />
-            ) : (
-              "—"
-            )
-          }
-          icon={<Banknote className="size-4" />}
-        />
-        <StatTile
-          label={t("dashboard.averageFat")}
-          value={
-            summary?.weighted_avg_fat != null
-              ? `${summary.weighted_avg_fat}%`
-              : "—"
-          }
-          hint={t("tx.weightedByQuantity")}
-          icon={<Percent className="size-4" />}
-        />
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label={t("dashboard.collections")}
+            value={summary ? summary.transactions : "—"}
+            caption={
+              summary
+                ? t("tx.acceptedRejected", {
+                    accepted: summary.accepted,
+                    rejected: summary.rejected,
+                  })
+                : undefined
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Activity className="size-4" />
+          </span>
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label={t("field.quantity")}
+            value={
+              summary ? (
+                <Quantity value={summary.total_net_weight_kg} unit="kg" />
+              ) : (
+                "—"
+              )
+            }
+            caption={
+              summary
+                ? t("tx.suppliersCount", { count: summary.suppliers_served })
+                : undefined
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Droplets className="size-4" />
+          </span>
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label={t("delivery.value")}
+            value={
+              primary ? (
+                <Money amount={primary[1]} currency={primary[0]} />
+              ) : summary ? (
+                <Money amount="0.00" currency={orgCurrency} />
+              ) : (
+                "—"
+              )
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Banknote className="size-4" />
+          </span>
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label={t("dashboard.averageFat")}
+            value={
+              summary?.weighted_avg_fat != null
+                ? `${summary.weighted_avg_fat}%`
+                : "—"
+            }
+            caption={t("tx.weightedByQuantity")}
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Percent className="size-4" />
+          </span>
+        </Surface>
       </section>
 
       <Card>
@@ -558,6 +585,6 @@ export default function TransactionsPage() {
           />
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }

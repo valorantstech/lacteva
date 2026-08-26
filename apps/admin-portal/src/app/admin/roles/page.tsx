@@ -117,6 +117,11 @@ export default function RolesPage() {
     [permissions],
   );
 
+  // Design System V1 (batch F): the quiet-label treatment `DataTable` gives
+  // its column headers, applied here because this page uses the raw `Table`
+  // primitive. Kept page-local for the same reason as the /admin/users pilot —
+  // `DataTable` already styles its own heads, so pushing this into `TableHead`
+  // would double the treatment everywhere else.
   return (
     <AdminPage
       title="Roles and permissions"
@@ -134,11 +139,21 @@ export default function RolesPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Role</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Scope</TableHead>
-              <TableHead className="text-end">Permissions</TableHead>
-              <TableHead className="text-end">Held by</TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Role
+              </TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Description
+              </TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Scope
+              </TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground text-end">
+                Permissions
+              </TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground text-end">
+                Held by
+              </TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>

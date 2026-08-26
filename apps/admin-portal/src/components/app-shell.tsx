@@ -398,11 +398,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Every screen therefore issued every one of its requests TWICE, about
   // 200ms apart, on every single load. The structure below keeps `<main>` in
   // one place and varies only the chrome around it, so the page mounts once.
+  // Design System V1: the wordmark's companion. A single milk drop, 14px, in
+  // the brand green — small enough to be a mark rather than an illustration.
+  const brand = (
+    <span className="flex items-center gap-2">
+      <svg aria-hidden="true" viewBox="0 0 16 20" className="size-4 text-primary">
+        <path
+          d="M8 1 C 8 1, 14 9, 14 13 A 6 6 0 0 1 2 13 C 2 9, 8 1, 8 1 Z"
+          fill="currentColor"
+        />
+        <ellipse cx="6" cy="12.5" rx="1.6" ry="2.2" fill="var(--milk)" fillOpacity="0.35" />
+      </svg>
+      <span className="font-semibold tracking-tight">Lacteva</span>
+    </span>
+  );
+
   const signedOutHeader = (
-    <header className="flex h-14 shrink-0 items-center border-b border-border px-6">
-      <Link href="/" className="font-semibold tracking-tight">
-        Lacteva
-      </Link>
+    <header className="flex h-14 shrink-0 items-center border-b border-border bg-card/80 px-6 backdrop-blur">
+      <Link href="/">{brand}</Link>
       {checked ? (
         <a
           className="ml-auto text-sm text-muted-foreground hover:text-foreground"
@@ -418,7 +431,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <nav aria-label="Main" className="flex flex-col gap-6 px-3 py-4">
       {groups.map((group) => (
         <div key={group.titleKey} className="flex flex-col gap-1">
-          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <p className="px-3 pb-1 text-meta font-semibold uppercase tracking-wider text-muted-foreground">
             {t(group.titleKey)}
           </p>
           {group.entries.map((entry) => {
@@ -438,14 +451,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 // render for something the event already knows.
                 onClick={() => setMobileOpen(false)}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  // `relative` carries the active indicator below.
+                  "relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm",
+                  "transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out-liquid)]",
                   active
                     ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
                     : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
                 )}
               >
-                <Icon aria-hidden className="size-4 shrink-0" />
+                {/*
+                  Where you are, readable at a glance rather than by comparing
+                  two tints. `inset-inline-start` so it stays on the leading
+                  edge in Arabic — a physical `left` would put it on the wrong
+                  side of the word.
+                */}
+                {active ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-primary"
+                  />
+                ) : null}
+                <Icon
+                  aria-hidden
+                  className={cn("size-4 shrink-0", active && "text-primary")}
+                />
                 {t(entry.labelKey)}
               </Link>
             );
@@ -461,9 +490,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {signedIn ? (
         <aside className="hidden w-60 shrink-0 border-e border-sidebar-border bg-sidebar lg:block">
           <div className="flex h-14 items-center border-b border-sidebar-border px-6">
-            <Link href="/" className="font-semibold tracking-tight">
-              Lacteva
-            </Link>
+            <Link href="/">{brand}</Link>
           </div>
           <div className="sticky top-0 max-h-[calc(100vh-3.5rem)] overflow-y-auto">
             {nav}
@@ -482,7 +509,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           />
           <div className="absolute left-0 top-0 h-full w-64 overflow-y-auto border-e border-sidebar-border bg-sidebar">
             <div className="flex h-14 items-center justify-between border-b border-sidebar-border px-4">
-              <span className="font-semibold tracking-tight">Lacteva</span>
+              {brand}
               <Button
                 type="button"
                 variant="ghost"
@@ -500,7 +527,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {signedIn ? (
-          <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 lg:px-6">
+          <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur lg:px-6">
             <Button
               type="button"
               variant="ghost"
@@ -594,7 +621,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* One position, both states — see the note above `signedOutHeader`. */}
         <main
-          className={signedIn ? "min-w-0 flex-1 bg-muted/20" : "min-w-0 flex-1"}
+          className="min-w-0 flex-1 bg-background"
         >
           {/*
             DEMO-013: every page below renders in this person's language and

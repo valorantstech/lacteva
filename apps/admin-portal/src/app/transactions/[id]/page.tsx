@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/card";
 import { Money, Quantity, sameAmount } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { useLocale, useT } from "@/lib/i18n";
@@ -71,11 +72,7 @@ type Load<T> =
 
 const LOADING = { state: "loading" } as const;
 const describe = (e: unknown, fallback: string) =>
-  e instanceof ApiError
-    ? e.detail
-    : e instanceof Error
-      ? e.message
-      : fallback;
+  e instanceof ApiError ? e.detail : e instanceof Error ? e.message : fallback;
 
 /** One definition, shared with every other screen. */
 const stamp = formatStamp;
@@ -142,7 +139,10 @@ export default function TransactionDetailPage({
     const fail =
       <T,>(set: (v: Load<T>) => void) =>
       (e: unknown) =>
-        set({ state: "error", message: describe(e, t9n("txDetail.requestFailed")) });
+        set({
+          state: "error",
+          message: describe(e, t9n("txDetail.requestFailed")),
+        });
 
     const [loaded] = await Promise.allSettled([
       getMilkTransaction(id).then((data) => {
@@ -179,7 +179,7 @@ export default function TransactionDetailPage({
 
   if (tx.state === "error") {
     return (
-      <div className="mx-auto w-full max-w-3xl p-8">
+      <PageContainer width="narrow">
         <ErrorState
           message={t9n("txDetail.loadFailed", { message: tx.message })}
         />
@@ -188,7 +188,7 @@ export default function TransactionDetailPage({
             {t9n("txDetail.backToCollections")}
           </Link>
         </p>
-      </div>
+      </PageContainer>
     );
   }
 
@@ -207,7 +207,7 @@ export default function TransactionDetailPage({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         breadcrumbs={[
           { label: t9n("dashboard.collections"), href: "/transactions" },
@@ -379,7 +379,10 @@ export default function TransactionDetailPage({
               rows={
                 links?.settlement
                   ? [
-                      [t9n("txDetail.number"), links.settlement.settlement_number],
+                      [
+                        t9n("txDetail.number"),
+                        links.settlement.settlement_number,
+                      ],
                       [
                         t9n("field.status"),
                         <StatusBadge
@@ -446,7 +449,10 @@ export default function TransactionDetailPage({
                         t9n("payment.method"),
                         links.payment.method.replace(/_/g, " ").toLowerCase(),
                       ],
-                      [t9n("payment.reference"), links.payment.reference ?? "—"],
+                      [
+                        t9n("payment.reference"),
+                        links.payment.reference ?? "—",
+                      ],
                       [
                         t9n("txDetail.allocated"),
                         <Money
@@ -527,7 +533,7 @@ export default function TransactionDetailPage({
           </div>
         </>
       ) : null}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -665,7 +671,11 @@ function SlipCard({ txId }: { txId: string }) {
           </dl>
         </div>
         <div className="flex flex-wrap justify-center gap-2 print:hidden">
-          <Button type="button" variant="outline" onClick={() => window.print()}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => window.print()}
+          >
             <Printer aria-hidden className="me-1.5 size-4" />
             {t9n("action.print")}
           </Button>

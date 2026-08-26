@@ -23,7 +23,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
 
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
 
 /**
@@ -181,19 +183,23 @@ function CustomersView() {
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         title="Customers"
         description="The households and businesses this dairy delivers to — and what each of them owes."
         actions={
           <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={() => (window.location.href = "/customers/import")}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => (window.location.href = "/customers/import")}
+            >
               Import CSV
             </Button>
-          <Button type="button" onClick={() => setShowCreate((v) => !v)}>
-            <Plus aria-hidden className="me-1.5 size-4" />
-            New customer
-          </Button>
+            <Button type="button" onClick={() => setShowCreate((v) => !v)}>
+              <Plus aria-hidden className="me-1.5 size-4" />
+              New customer
+            </Button>
           </div>
         }
       />
@@ -202,18 +208,32 @@ function CustomersView() {
         aria-label="Customer summary"
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
       >
-        <StatTile
-          label="Customers"
-          value={page ? page.total : "—"}
-          hint={filtered ? "matching these filters" : "on the round"}
-          icon={<Users className="size-4" />}
-        />
-        <StatTile
-          label="Shown"
-          value={page ? (page.items ?? []).length : "—"}
-          hint={`page size ${PAGE_SIZE}`}
-          icon={<Store className="size-4" />}
-        />
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label="Customers"
+            value={page ? page.total : "—"}
+            caption={filtered ? "matching these filters" : "on the round"}
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Users className="size-4" />
+          </span>
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label="Shown"
+            value={page ? (page.items ?? []).length : "—"}
+            caption={`page size ${PAGE_SIZE}`}
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Store className="size-4" />
+          </span>
+        </Surface>
       </section>
 
       {showCreate ? (
@@ -322,7 +342,7 @@ function CustomersView() {
           />
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }
 

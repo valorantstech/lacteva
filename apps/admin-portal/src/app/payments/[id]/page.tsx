@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Money } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
 import { ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 
@@ -160,7 +161,7 @@ export default function PaymentDetailPage({
     return <LoadingState label="Loading payment…" />;
   if (detail.state === "error")
     return (
-      <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">
+      <PageContainer width="default">
         <ErrorState
           message={`This payment could not be loaded — ${detail.message}.`}
           action={
@@ -172,7 +173,7 @@ export default function PaymentDetailPage({
             </Link>
           }
         />
-      </div>
+      </PageContainer>
     );
 
   const { payment: p, lines, attempts, totals_match_lines } = detail.data;
@@ -180,7 +181,7 @@ export default function PaymentDetailPage({
   const terminal = p.status === "completed" || p.status === "cancelled";
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="default">
       <PageHeader
         title={p.payment_number}
         description={`${p.method}${p.reference ? ` · ${p.reference}` : ""} · created ${stamp(p.created_at)}`}
@@ -690,6 +691,6 @@ export default function PaymentDetailPage({
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }

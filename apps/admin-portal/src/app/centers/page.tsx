@@ -23,7 +23,9 @@ import { Label } from "@/components/ui/label";
 import { useBusinessToday } from "@/components/date-range";
 import { type Column, DataTable } from "@/components/data-table";
 import { Money, Quantity } from "@/components/money";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
 import { ErrorState } from "@/components/states";
 
@@ -238,7 +240,7 @@ export default function CentersPage() {
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         title="Collection centres"
         description="Where milk is received. Activity figures cover the last 30 days and are computed by the platform."
@@ -254,21 +256,9 @@ export default function CentersPage() {
         aria-label="Centre summary"
         className="grid gap-4 sm:grid-cols-3"
       >
-        <StatTile
-          label="Centres"
-          value={totals.centers}
-          icon={<Building2 className="size-4" />}
-        />
-        <StatTile
-          label="Active on this page"
-          value={totals.active}
-          hint="of the rows shown"
-        />
-        <StatTile
-          label="Reporting activity"
-          value={totals.reporting}
-          hint="last 30 days"
-        />
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label="Centres" value={totals.centers} /><span aria-hidden className="text-muted-foreground"><Building2 className="size-4" /></span></Surface>
+        <Surface tone="metric"><Metric label="Active on this page" value={totals.active} caption="of the rows shown" /></Surface>
+        <Surface tone="metric"><Metric label="Reporting activity" value={totals.reporting} caption="last 30 days" /></Surface>
       </section>
 
       {form.mode !== "closed" ? (
@@ -354,7 +344,7 @@ export default function CentersPage() {
           />
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }
 

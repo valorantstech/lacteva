@@ -17,7 +17,9 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 
 /**
  * The organization's calendar and its financial periods (DEMO-020).
@@ -161,7 +163,7 @@ export default function OrganizationCalendarPage() {
     : null;
 
   return (
-    <div className="space-y-6">
+    <PageContainer width="default">
       <PageHeader
         title="Business calendar"
         description="The organization's own clock, and the periods its books are kept in."
@@ -186,30 +188,58 @@ export default function OrganizationCalendarPage() {
       {calendar ? (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatTile
-              label="Business date"
-              value={calendar.business_date}
-              hint={calendar.timezone}
-              icon={<CalendarDays className="size-4" />}
-            />
-            <StatTile
-              label="Today"
-              value={calendar.is_working_day ? "Working day" : "Non-working"}
-              hint="from the organization calendar"
-              icon={<Clock className="size-4" />}
-            />
-            <StatTile
-              label="Current month"
-              value={`${calendar.month_start} — ${calendar.month_end}`}
-              hint="the dairy's month, not UTC's"
-              icon={<CalendarDays className="size-4" />}
-            />
-            <StatTile
-              label="Previous month"
-              value={`${calendar.previous_month_start} — ${calendar.previous_month_end}`}
-              hint="what month-end billing drafts"
-              icon={<CalendarDays className="size-4" />}
-            />
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label="Business date"
+                value={calendar.business_date}
+                caption={calendar.timezone}
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <CalendarDays className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label="Today"
+                value={calendar.is_working_day ? "Working day" : "Non-working"}
+                caption="from the organization calendar"
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <Clock className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label="Current month"
+                value={`${calendar.month_start} — ${calendar.month_end}`}
+                caption="the dairy's month, not UTC's"
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <CalendarDays className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label="Previous month"
+                value={`${calendar.previous_month_start} — ${calendar.previous_month_end}`}
+                caption="what month-end billing drafts"
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <CalendarDays className="size-4" />
+              </span>
+            </Surface>
           </div>
 
           <Card>
@@ -348,6 +378,6 @@ export default function OrganizationCalendarPage() {
           </Card>
         </>
       ) : null}
-    </div>
+    </PageContainer>
   );
 }

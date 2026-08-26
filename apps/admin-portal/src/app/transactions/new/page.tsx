@@ -41,6 +41,7 @@ import { Money, Quantity } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
+import { PageContainer } from "@/components/page-container";
 import { cn } from "@/lib/utils";
 
 /**
@@ -313,7 +314,7 @@ export default function NewCollectionPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="default" className="max-w-5xl">
       <PageHeader
         breadcrumbs={[
           { label: "Collections", href: "/transactions" },
@@ -773,7 +774,7 @@ export default function NewCollectionPage() {
       {step === "done" && tx ? (
         <DoneStep tx={tx} centre={centre} supplier={supplier} />
       ) : null}
-    </div>
+    </PageContainer>
   );
 }
 

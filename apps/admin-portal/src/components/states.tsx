@@ -47,7 +47,7 @@ export function TableSkeleton({ rows = 5, columns = 4 }: { rows?: number; column
           {Array.from({ length: columns }).map((_, c) => (
             <div
               key={c}
-              className="h-4 flex-1 animate-pulse rounded bg-muted"
+              className="lacteva-skeleton h-4 flex-1 rounded"
               style={{ animationDelay: `${(r * columns + c) * 40}ms` }}
             />
           ))}
@@ -69,7 +69,7 @@ export function EmptyState({
   icon?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border px-6 py-12 text-center">
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-6 py-14 text-center">
       <div className="text-muted-foreground" aria-hidden>
         {icon ?? <Inbox className="size-6" />}
       </div>

@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PageContainer } from "@/components/page-container";
 import {
   ApiError,
   Branch,
@@ -192,7 +193,7 @@ export default function RateCardsPage() {
   const totalPages = page ? Math.max(1, Math.ceil(page.total / PAGE_SIZE)) : 1;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 p-8">
+    <PageContainer width="default">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Rate cards</h1>
@@ -496,7 +497,7 @@ export default function RateCardsPage() {
           </Button>
         </div>
       </footer>
-    </main>
+    </PageContainer>
   );
 }
 

@@ -50,7 +50,9 @@ import {
 } from "@/components/date-range";
 import { BarBreakdown, TrendChart } from "@/components/trend-chart";
 import { Money, Quantity } from "@/components/money";
-import { PageHeader, SectionHeading, StatTile } from "@/components/page-header";
+import { PageHeader, SectionHeading } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 import {
   EmptyState,
   ErrorState,
@@ -190,7 +192,7 @@ export default function Home() {
 
   if (!signedIn) {
     return (
-      <div className="mx-auto w-full max-w-3xl p-8">
+      <PageContainer width="narrow">
         <EmptyState
           title="Sign in to see today's collection"
           description="The dashboard reports on the organization you are signed in to."
@@ -203,7 +205,7 @@ export default function Home() {
             </a>
           }
         />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -215,7 +217,7 @@ export default function Home() {
   const primary = currencies[0];
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         title={t("dashboard.title")}
         description={t("dashboard.description")}
@@ -275,35 +277,23 @@ export default function Home() {
         aria-label="Collection summary"
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
       >
-        <StatTile
-          label={t("dashboard.collections")}
-          value={collection ? collection.transactions : "—"}
-          hint={
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.collections")} value={collection ? collection.transactions : "—"} caption={
             collection
               ? `${collection.accepted} accepted · ${collection.rejected} rejected`
               : undefined
-          }
-          icon={<Activity className="size-4" />}
-        />
-        <StatTile
-          label={t("dashboard.quantity")}
-          value={
+          } /><span aria-hidden className="text-muted-foreground"><Activity className="size-4" /></span></Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.quantity")} value={
             collection ? (
               <Quantity value={collection.total_net_weight_kg} unit="kg" />
             ) : (
               "—"
             )
-          }
-          hint={
+          } caption={
             collection
               ? `${collection.suppliers_served} suppliers served`
               : undefined
-          }
-          icon={<Droplets className="size-4" />}
-        />
-        <StatTile
-          label={t("dashboard.collectionValue")}
-          value={
+          } /><span aria-hidden className="text-muted-foreground"><Droplets className="size-4" /></span></Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.collectionValue")} value={
             primary ? (
               <Money amount={primary[1]} currency={primary[0]} />
             ) : collection ? (
@@ -311,40 +301,22 @@ export default function Home() {
             ) : (
               "—"
             )
-          }
-          hint={
+          } caption={
             currencies.length > 1
               ? `+${currencies.length - 1} more currency`
               : "payable"
-          }
-          icon={<Banknote className="size-4" />}
-        />
-        <StatTile
-          label={t("dashboard.averageFat")}
-          value={
+          } /><span aria-hidden className="text-muted-foreground"><Banknote className="size-4" /></span></Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.averageFat")} value={
             collection?.weighted_avg_fat != null
               ? `${collection.weighted_avg_fat}%`
               : "—"
-          }
-          hint="weighted by quantity"
-          icon={<Percent className="size-4" />}
-        />
-        <StatTile
-          label={t("dashboard.activeSuppliers")}
-          value={report ? report.active_suppliers : "—"}
-          hint="registered and active"
-          icon={<Truck className="size-4" />}
-        />
-        <StatTile
-          label={t("dashboard.activeCentres")}
-          value={report ? report.active_centers : "—"}
-          hint={
+          } caption="weighted by quantity" /><span aria-hidden className="text-muted-foreground"><Percent className="size-4" /></span></Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.activeSuppliers")} value={report ? report.active_suppliers : "—"} caption="registered and active" /><span aria-hidden className="text-muted-foreground"><Truck className="size-4" /></span></Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.activeCentres")} value={report ? report.active_centers : "—"} caption={
             report?.inactive_centers
               ? `${report.inactive_centers} not active`
               : "all active"
-          }
-          icon={<Building2 className="size-4" />}
-        />
+          } /><span aria-hidden className="text-muted-foreground"><Building2 className="size-4" /></span></Surface>
       </section>
 
       <SectionHeading
@@ -358,19 +330,12 @@ export default function Home() {
         aria-label="Sales summary"
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
       >
-        <StatTile
-          label={t("dashboard.deliveries")}
-          value={sales ? sales.deliveries_in_period : "—"}
-          hint={
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.deliveries")} value={sales ? sales.deliveries_in_period : "—"} caption={
             sales
               ? `${sales.customers_served_in_period} customers served`
               : undefined
-          }
-          icon={<PackageCheck className="size-4" />}
-        />
-        <StatTile
-          label={t("dashboard.milkDelivered")}
-          value={
+          } /><span aria-hidden className="text-muted-foreground"><PackageCheck className="size-4" /></span></Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.milkDelivered")} value={
             sales ? (
               <Quantity
                 value={sales.delivered_quantity_in_period}
@@ -379,13 +344,8 @@ export default function Home() {
             ) : (
               "—"
             )
-          }
-          hint="over the selected range"
-          icon={<Droplets className="size-4" />}
-        />
-        <StatTile
-          label={t("dashboard.salesValue")}
-          value={
+          } caption="over the selected range" /><span aria-hidden className="text-muted-foreground"><Droplets className="size-4" /></span></Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.salesValue")} value={
             sales ? (
               <Money
                 amount={sales.sales_value_in_period}
@@ -394,13 +354,8 @@ export default function Home() {
             ) : (
               "—"
             )
-          }
-          hint="milk delivered in this range"
-          icon={<Banknote className="size-4" />}
-        />
-        <StatTile
-          label={t("dashboard.customerReceivable")}
-          value={
+          } caption="milk delivered in this range" /><span aria-hidden className="text-muted-foreground"><Banknote className="size-4" /></span></Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.customerReceivable")} value={
             sales ? (
               <Money
                 amount={sales.receivable}
@@ -409,28 +364,13 @@ export default function Home() {
             ) : (
               "—"
             )
-          }
-          // Said plainly, because it is the one tile on this page that is NOT
-          // narrowed by the date range — a debt is a debt whatever window you
-          // are looking through, and a manager who thinks otherwise will
-          // under-collect.
-          hint={
+          } caption={
             sales
               ? `${sales.customers_owing} customers owing · all time`
               : undefined
-          }
-          icon={<Wallet className="size-4" />}
-        />
-        <StatTile
-          label={t("dashboard.billsOutstanding")}
-          value={sales ? sales.open_invoices : "—"}
-          hint={sales ? `${sales.receipts_issued} receipts issued` : undefined}
-          icon={<FileText className="size-4" />}
-        />
-        <StatTile
-          label={t("dashboard.deliveredNotBilled")}
-          value={sales ? sales.unbilled_deliveries : "—"}
-          hint={
+          } /><span aria-hidden className="text-muted-foreground"><Wallet className="size-4" /></span></Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.billsOutstanding")} value={sales ? sales.open_invoices : "—"} caption={sales ? `${sales.receipts_issued} receipts issued` : undefined} /><span aria-hidden className="text-muted-foreground"><FileText className="size-4" /></span></Surface>
+        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.deliveredNotBilled")} value={sales ? sales.unbilled_deliveries : "—"} caption={
             sales ? (
               <>
                 worth{" "}
@@ -440,9 +380,7 @@ export default function Home() {
                 />
               </>
             ) : undefined
-          }
-          icon={<UserRound className="size-4" />}
-        />
+          } /><span aria-hidden className="text-muted-foreground"><UserRound className="size-4" /></span></Surface>
       </section>
 
       <Card>
@@ -909,6 +847,6 @@ export default function Home() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }

@@ -40,7 +40,9 @@ import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
 import { DateRangePicker, useDefaultRange } from "@/components/date-range";
 import { Money, Quantity } from "@/components/money";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
 import { useLocale } from "@/lib/i18n";
 
@@ -153,8 +155,7 @@ function DeliveriesView() {
     return () => clearTimeout(t);
   }, [load]);
 
-  useEffect(() => {
-  }, []);
+  useEffect(() => {}, []);
 
   // P1-PORTAL-SCALE-001: resolve exactly the customer ids on this page.
   const names = useCustomerNames((page?.items ?? []).map((d) => d.customer_id));
@@ -228,7 +229,7 @@ function DeliveriesView() {
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         title={t("delivery.title")}
         description={t("delivery.subtitle")}
@@ -356,82 +357,127 @@ function DeliveriesView() {
         aria-label={t("delivery.summary")}
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
-        <StatTile
-          label={t("delivery.title")}
-          value={report ? report.deliveries : "—"}
-          hint={
-            report
-              ? t("delivery.skippedCount", { count: report.skipped })
-              : undefined
-          }
-          icon={<Truck className="size-4" />}
-        />
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label={t("delivery.title")}
+            value={report ? report.deliveries : "—"}
+            caption={
+              report
+                ? t("delivery.skippedCount", { count: report.skipped })
+                : undefined
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Truck className="size-4" />
+          </span>
+        </Surface>
         {/* DEMO-019 §5: what the round intended, beside what it achieved.
             Only when they differ — a day that went to plan does not need a
             tile telling a manager it went to plan. */}
         {report &&
         report.planned_quantity !== undefined &&
         String(report.planned_quantity) !== String(report.total_quantity) ? (
-          <StatTile
-            label={t("delivery.plannedQuantity")}
-            value={
-              <Quantity
-                value={report.planned_quantity}
-                unit={report.quantity_unit}
-              />
-            }
-            hint={
-              report.returned
-                ? `${t("delivery.returned")}: ${report.returned}`
-                : undefined
-            }
-            icon={<Droplets className="size-4" />}
-          />
+          <Surface
+            tone="metric"
+            className="flex items-start justify-between gap-3"
+          >
+            <Metric
+              label={t("delivery.plannedQuantity")}
+              value={
+                <Quantity
+                  value={report.planned_quantity}
+                  unit={report.quantity_unit}
+                />
+              }
+              caption={
+                report.returned
+                  ? `${t("delivery.returned")}: ${report.returned}`
+                  : undefined
+              }
+            />
+            <span aria-hidden className="text-muted-foreground">
+              <Droplets className="size-4" />
+            </span>
+          </Surface>
         ) : null}
-        <StatTile
-          label={t("field.quantity")}
-          value={
-            report ? (
-              <Quantity
-                value={report.total_quantity}
-                unit={report.quantity_unit}
-              />
-            ) : (
-              "—"
-            )
-          }
-          icon={<Droplets className="size-4" />}
-        />
-        <StatTile
-          label={t("delivery.value")}
-          value={
-            report ? (
-              <Money amount={report.total_amount} currency={report.currency} />
-            ) : (
-              "—"
-            )
-          }
-          icon={<Banknote className="size-4" />}
-        />
-        <StatTile
-          label={t("delivery.customersServed")}
-          value={report ? report.customers_served : "—"}
-          icon={<Users className="size-4" />}
-        />
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label={t("field.quantity")}
+            value={
+              report ? (
+                <Quantity
+                  value={report.total_quantity}
+                  unit={report.quantity_unit}
+                />
+              ) : (
+                "—"
+              )
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Droplets className="size-4" />
+          </span>
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label={t("delivery.value")}
+            value={
+              report ? (
+                <Money
+                  amount={report.total_amount}
+                  currency={report.currency}
+                />
+              ) : (
+                "—"
+              )
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Banknote className="size-4" />
+          </span>
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label={t("delivery.customersServed")}
+            value={report ? report.customers_served : "—"}
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Users className="size-4" />
+          </span>
+        </Surface>
         {/* DEMO-016 §13: the operator's "how many are left?". Only shown when
             there is a generated round to be left of — a dairy that types its
             deliveries has no pending count and does not need a zero. */}
         {report && (report.scheduled ?? 0) > 0 ? (
-          <StatTile
-            label={t("delivery.pending")}
-            value={report.scheduled ?? 0}
-            hint={
-              report.planned
-                ? `${t("delivery.planned")}: ${report.planned}`
-                : undefined
-            }
-            icon={<CalendarClock className="size-4" />}
-          />
+          <Surface
+            tone="metric"
+            className="flex items-start justify-between gap-3"
+          >
+            <Metric
+              label={t("delivery.pending")}
+              value={report.scheduled ?? 0}
+              caption={
+                report.planned
+                  ? `${t("delivery.planned")}: ${report.planned}`
+                  : undefined
+              }
+            />
+            <span aria-hidden className="text-muted-foreground">
+              <CalendarClock className="size-4" />
+            </span>
+          </Surface>
         ) : null}
       </section>
 
@@ -765,6 +811,6 @@ function DeliveriesView() {
           ) : null}
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }

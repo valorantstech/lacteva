@@ -31,7 +31,9 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
 
 /**
@@ -106,7 +108,7 @@ export default function RoutesPage() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         description="Which customers a round visits, in what order, and who took it out today."
         title="Routes and runs"
@@ -116,18 +118,36 @@ export default function RoutesPage() {
         aria-label="Route summary"
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
-        <StatTile
-          icon={<RouteIcon className="size-4" />}
-          label="Routes"
-          value={routes.length}
-        />
-        <StatTile icon={<Truck className="size-4" />} label="Vehicles" value={vehicles.length} />
-        <StatTile
-          icon={<UserRound className="size-4" />}
-          label="Drivers"
-          value={drivers.length}
-        />
-        <StatTile label="Runs today" value={runs.length} />
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric label="Routes" value={routes.length} />
+          <span aria-hidden className="text-muted-foreground">
+            <RouteIcon className="size-4" />
+          </span>
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric label="Vehicles" value={vehicles.length} />
+          <span aria-hidden className="text-muted-foreground">
+            <Truck className="size-4" />
+          </span>
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric label="Drivers" value={drivers.length} />
+          <span aria-hidden className="text-muted-foreground">
+            <UserRound className="size-4" />
+          </span>
+        </Surface>
+        <Surface tone="metric">
+          <Metric label="Runs today" value={runs.length} />
+        </Surface>
       </section>
 
       {error && (
@@ -141,7 +161,8 @@ export default function RoutesPage() {
           {/* `created: 0` is idempotency holding, not a failure — so the
               sentence says which it is rather than leaving a bare zero. */}
           <strong>{generated.route_code}</strong> · {generated.business_date} ·{" "}
-          {generated.slot}: {generated.created} of {generated.stops} stops generated
+          {generated.slot}: {generated.created} of {generated.stops} stops
+          generated
           {generated.already_present > 0 &&
             `, ${generated.already_present} already there`}
           {generated.not_due > 0 && `, ${generated.not_due} not due today`}
@@ -154,7 +175,9 @@ export default function RoutesPage() {
       <TodaysRuns
         drivers={drivers}
         onAssign={(id, body) => act(() => assignDeliveryRun(id, body))}
-        onCreate={(routeId) => act(() => createDeliveryRun({ route_id: routeId }))}
+        onCreate={(routeId) =>
+          act(() => createDeliveryRun({ route_id: routeId }))
+        }
         onGenerate={(id) =>
           act(async () => setGenerated(await generateDeliveryRun(id)))
         }
@@ -172,18 +195,26 @@ export default function RoutesPage() {
             { key: "name", label: "Name", placeholder: "Kilima morning round" },
           ]}
           icon={RouteIcon}
-          onSubmit={(v) => act(() => createRoute({ code: v.code, name: v.name }))}
+          onSubmit={(v) =>
+            act(() => createRoute({ code: v.code, name: v.name }))
+          }
           title="Add a route"
         />
         <RegisterCard
           description="A vehicle this dairy uses, in either direction."
           fields={[
-            { key: "registration", label: "Registration", placeholder: "KDA 123X" },
+            {
+              key: "registration",
+              label: "Registration",
+              placeholder: "KDA 123X",
+            },
             { key: "label", label: "Label", placeholder: "Blue van" },
           ]}
           icon={Truck}
           onSubmit={(v) =>
-            act(() => createVehicle({ registration: v.registration, label: v.label }))
+            act(() =>
+              createVehicle({ registration: v.registration, label: v.label }),
+            )
           }
           title="Add a vehicle"
         />
@@ -194,7 +225,9 @@ export default function RoutesPage() {
             { key: "full_name", label: "Name", placeholder: "Joseph Mwangi" },
           ]}
           icon={UserRound}
-          onSubmit={(v) => act(() => createDriver({ code: v.code, full_name: v.full_name }))}
+          onSubmit={(v) =>
+            act(() => createDriver({ code: v.code, full_name: v.full_name }))
+          }
           title="Add a driver"
         />
       </div>
@@ -203,8 +236,8 @@ export default function RoutesPage() {
         <CardHeader>
           <CardTitle>Routes</CardTitle>
           <CardDescription>
-            A route is retired rather than deleted, because yesterday&apos;s runs still
-            point at it.
+            A route is retired rather than deleted, because yesterday&apos;s
+            runs still point at it.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -223,11 +256,15 @@ export default function RoutesPage() {
               <tbody>
                 {routes.map((route) => (
                   <tr className="border-t border-border" key={route.id}>
-                    <td className="py-2 pr-4 font-mono text-xs">{route.code}</td>
+                    <td className="py-2 pr-4 font-mono text-xs">
+                      {route.code}
+                    </td>
                     <td className="py-2 pr-4">{route.name}</td>
                     <td className="py-2 pr-4">{route.stop_count}</td>
                     <td className="py-2">
-                      <StatusBadge status={route.active ? "active" : "inactive"} />
+                      <StatusBadge
+                        status={route.active ? "active" : "inactive"}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -236,7 +273,7 @@ export default function RoutesPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }
 
@@ -256,7 +293,10 @@ function TodaysRuns({
   drivers: Driver[];
   onCreate: (routeId: string) => void;
   onGenerate: (id: string) => void;
-  onAssign: (id: string, body: { vehicle_id?: string; driver_id?: string }) => void;
+  onAssign: (
+    id: string,
+    body: { vehicle_id?: string; driver_id?: string },
+  ) => void;
   onStatus: (id: string, status: string) => void;
 }) {
   const [routeId, setRouteId] = useState("");
@@ -266,8 +306,8 @@ function TodaysRuns({
       <CardHeader>
         <CardTitle>Today&apos;s runs</CardTitle>
         <CardDescription>
-          The dairy&apos;s today, not this browser&apos;s — the date is resolved from the
-          organization&apos;s timezone.
+          The dairy&apos;s today, not this browser&apos;s — the date is resolved
+          from the organization&apos;s timezone.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -290,7 +330,11 @@ function TodaysRuns({
                 ))}
             </select>
           </div>
-          <Button disabled={!routeId} onClick={() => onCreate(routeId)} size="sm">
+          <Button
+            disabled={!routeId}
+            onClick={() => onCreate(routeId)}
+            size="sm"
+          >
             Plan today&apos;s run
           </Button>
         </div>
@@ -337,7 +381,9 @@ function TodaysRuns({
 
                 <div className="mt-2 flex flex-wrap items-end gap-3 text-sm">
                   <Assign
-                    disabled={run.status === "completed" || run.status === "cancelled"}
+                    disabled={
+                      run.status === "completed" || run.status === "cancelled"
+                    }
                     label="Vehicle"
                     onChange={(id) => onAssign(run.id, { vehicle_id: id })}
                     options={vehicles
@@ -346,7 +392,9 @@ function TodaysRuns({
                     value={run.vehicle_id}
                   />
                   <Assign
-                    disabled={run.status === "completed" || run.status === "cancelled"}
+                    disabled={
+                      run.status === "completed" || run.status === "cancelled"
+                    }
                     label="Driver"
                     onChange={(id) => onAssign(run.id, { driver_id: id })}
                     options={drivers

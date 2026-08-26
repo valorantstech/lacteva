@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PageContainer } from "@/components/page-container";
 import {
   ApiError,
   MatrixDetail,
@@ -101,7 +102,7 @@ export default function MatricesPage() {
   const totalPages = page ? Math.max(1, Math.ceil(page.total / PAGE_SIZE)) : 1;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 p-8">
+    <PageContainer width="default">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -286,7 +287,7 @@ export default function MatricesPage() {
           </Button>
         </div>
       </footer>
-    </main>
+    </PageContainer>
   );
 }
 
@@ -405,8 +406,8 @@ function MatrixDetailCard({
             <p className="text-sm font-medium">
               Delete the band {String(confirmRow.from_value)}–
               {String(confirmRow.to_value)} at unit price{" "}
-              {String(confirmRow.unit_price)}? Collections falling in this
-              range would no longer price until a replacement band exists.
+              {String(confirmRow.unit_price)}? Collections falling in this range
+              would no longer price until a replacement band exists.
             </p>
             <div className="flex gap-2">
               <Button

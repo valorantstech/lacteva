@@ -37,7 +37,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
 import { Money } from "@/components/money";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
 import { useLocale } from "@/lib/i18n";
 
@@ -130,8 +132,7 @@ export default function PaymentsPage() {
     return () => clearTimeout(t);
   }, [load]);
 
-  useEffect(() => {
-  }, []);
+  useEffect(() => {}, []);
 
   // P1-PORTAL-SCALE-001: resolve exactly the ids on screen (rows + owed).
   const supplierName = useSupplierNames([
@@ -217,7 +218,7 @@ export default function PaymentsPage() {
   const owed = (balances?.items ?? []).filter((b) => !b.fully_paid);
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         title="Payments"
         description="Money paid against finalized settlements. This platform records movement; it does not perform it."
@@ -227,60 +228,90 @@ export default function PaymentsPage() {
         aria-label="Payment summary"
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
-        <StatTile
-          label="Completed"
-          value={report ? report.completed_count : "—"}
-          hint={
-            report ? (
-              <>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label="Completed"
+            value={report ? report.completed_count : "—"}
+            caption={
+              report ? (
+                <>
+                  <Money
+                    amount={report.completed_amount}
+                    currency={orgCurrency}
+                  />{" "}
+                  paid
+                </>
+              ) : undefined
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <CheckCircle2 className="size-4" />
+          </span>
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label="In flight"
+            value={
+              report ? report.pending_count + report.processing_count : "—"
+            }
+            caption={
+              report
+                ? `${report.pending_count} pending · ${report.processing_count} processing`
+                : undefined
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Clock className="size-4" />
+          </span>
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label="Failed"
+            value={report ? report.failed_count : "—"}
+            caption={
+              report ? (
+                <>
+                  <Money amount={report.failed_amount} currency={orgCurrency} />{" "}
+                  to retry
+                </>
+              ) : undefined
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <XCircle className="size-4" />
+          </span>
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label="Outstanding"
+            value={
+              report ? (
                 <Money
-                  amount={report.completed_amount}
+                  amount={report.outstanding_amount}
                   currency={orgCurrency}
-                />{" "}
-                paid
-              </>
-            ) : undefined
-          }
-          icon={<CheckCircle2 className="size-4" />}
-        />
-        <StatTile
-          label="In flight"
-          value={report ? report.pending_count + report.processing_count : "—"}
-          hint={
-            report
-              ? `${report.pending_count} pending · ${report.processing_count} processing`
-              : undefined
-          }
-          icon={<Clock className="size-4" />}
-        />
-        <StatTile
-          label="Failed"
-          value={report ? report.failed_count : "—"}
-          hint={
-            report ? (
-              <>
-                <Money amount={report.failed_amount} currency={orgCurrency} />{" "}
-                to retry
-              </>
-            ) : undefined
-          }
-          icon={<XCircle className="size-4" />}
-        />
-        <StatTile
-          label="Outstanding"
-          value={
-            report ? (
-              <Money
-                amount={report.outstanding_amount}
-                currency={orgCurrency}
-              />
-            ) : (
-              "—"
-            )
-          }
-          hint="finalized but unpaid"
-          icon={<Banknote className="size-4" />}
-        />
+                />
+              ) : (
+                "—"
+              )
+            }
+            caption="finalized but unpaid"
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Banknote className="size-4" />
+          </span>
+        </Surface>
       </section>
 
       {/* --- Raise a payment ---------------------------------------------- */}
@@ -481,7 +512,7 @@ export default function PaymentsPage() {
           />
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }
 

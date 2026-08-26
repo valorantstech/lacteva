@@ -55,6 +55,11 @@ export default function OrganizationsPage() {
     return () => clearTimeout(t);
   }, [refresh]);
 
+  // Design System V1 (batch F): the quiet-label treatment `DataTable` gives
+  // its column headers, applied here because this page uses the raw `Table`
+  // primitive. Kept page-local for the same reason as the /admin/users pilot —
+  // `DataTable` already styles its own heads, so pushing this into `TableHead`
+  // would double the treatment everywhere else.
   return (
     <AdminPage
       title="Organization"
@@ -73,29 +78,41 @@ export default function OrganizationsPage() {
         <Table>
           <TableBody>
             <TableRow>
-              <TableHead>Name</TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Name
+              </TableHead>
               <TableCell>{org?.name ?? "—"}</TableCell>
             </TableRow>
             <TableRow>
-              <TableHead>Slug</TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Slug
+              </TableHead>
               <TableCell>{org?.slug ?? "—"}</TableCell>
             </TableRow>
             <TableRow>
-              <TableHead>Country</TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Country
+              </TableHead>
               <TableCell>{org?.country_code?.toUpperCase() ?? "—"}</TableCell>
             </TableRow>
             <TableRow>
-              <TableHead>Tenant id</TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Tenant id
+              </TableHead>
               <TableCell className="font-mono text-xs">
                 {me.tenant_id}
               </TableCell>
             </TableRow>
             <TableRow>
-              <TableHead>Signed in as</TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Signed in as
+              </TableHead>
               <TableCell>{me.user.email}</TableCell>
             </TableRow>
             <TableRow>
-              <TableHead>Permissions</TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Permissions
+              </TableHead>
               <TableCell className="flex flex-wrap gap-1">
                 {me.permissions.length === 0 ? (
                   <span className="text-muted-foreground">none</span>

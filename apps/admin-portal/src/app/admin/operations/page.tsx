@@ -56,6 +56,11 @@ export default function OperationsPage() {
     return () => clearTimeout(t);
   }, [refresh]);
 
+  // Design System V1 (batch F): the quiet-label treatment `DataTable` gives
+  // its column headers, applied here because this page uses the raw `Table`
+  // primitive. Kept page-local for the same reason as the /admin/users pilot —
+  // `DataTable` already styles its own heads, so pushing this into `TableHead`
+  // would double the treatment everywhere else.
   return (
     <AdminPage
       title="Operations"
@@ -87,11 +92,21 @@ export default function OperationsPage() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Started</TableHead>
-            <TableHead>Kind</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Finished</TableHead>
-            <TableHead>Error</TableHead>
+            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+              Started
+            </TableHead>
+            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+              Kind
+            </TableHead>
+            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+              Status
+            </TableHead>
+            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+              Finished
+            </TableHead>
+            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+              Error
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

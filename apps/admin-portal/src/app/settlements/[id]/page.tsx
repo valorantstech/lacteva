@@ -40,6 +40,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
 import { ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 
@@ -189,7 +190,7 @@ export default function SettlementDetailPage({
     return <LoadingState label="Loading settlement…" />;
   if (detail.state === "error")
     return (
-      <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">
+      <PageContainer width="default">
         <ErrorState
           message={`This settlement could not be loaded — ${detail.message}.`}
           action={
@@ -201,7 +202,7 @@ export default function SettlementDetailPage({
             </Link>
           }
         />
-      </div>
+      </PageContainer>
     );
 
   const { settlement: s, lines, totals_match_lines } = detail.data;
@@ -209,7 +210,7 @@ export default function SettlementDetailPage({
   const anyAction = can.collect || can.calculate || can.finalize || can.cancel;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="default">
       <PageHeader
         title={s.settlement_number}
         description={`Settlement period ${s.period_from} → ${s.period_to}`}
@@ -729,6 +730,6 @@ export default function SettlementDetailPage({
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }

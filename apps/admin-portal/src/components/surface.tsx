@@ -83,11 +83,22 @@ export function Metric({
   className,
 }: {
   label: string;
-  /** Pre-formatted. Money must arrive as the platform's exact string. */
-  value: string;
+  /**
+   * Pre-formatted, or a component that formats itself.
+   *
+   * Money and quantities arrive as `<Money>` / `<Quantity>`, which render the
+   * platform's exact decimal string — this must never become a number here,
+   * and `foundation.test.tsx` is what says so.
+   */
+  value: React.ReactNode;
   unit?: string;
   delta?: { direction: "up" | "down" | "flat"; text: string };
-  caption?: string;
+  /**
+   * Metadata under the figure. ReactNode, not string, for the same reason
+   * `value` is: a caption is often an exact money figure, and it must be
+   * rendered by <Money> rather than interpolated into a template.
+   */
+  caption?: React.ReactNode;
   /**
    * Rendered on the brand ground (the hero) rather than on milk.
    *

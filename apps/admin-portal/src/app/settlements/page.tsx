@@ -29,7 +29,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
 import { Money } from "@/components/money";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
 import { useLocale } from "@/lib/i18n";
 
@@ -222,7 +224,7 @@ export default function SettlementsPage() {
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         title="Settlements"
         description="What each supplier is owed for a period — the collections of that window, summed by the platform."
@@ -238,43 +240,66 @@ export default function SettlementsPage() {
         aria-label="Settlement summary"
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
-        <StatTile
-          label="Settlements"
-          value={report ? report.total_settlements : "—"}
-          hint={
-            report ? `${report.total_lines} collections settled` : undefined
-          }
-          icon={<FileText className="size-4" />}
-        />
-        <StatTile
-          label="Open"
-          value={report ? byStatus("draft") + byStatus("calculated") : "—"}
-          hint={
-            report
-              ? `${byStatus("draft")} draft · ${byStatus("calculated")} calculated`
-              : undefined
-          }
-        />
-        <StatTile
-          label="Finalized"
-          value={report ? byStatus("finalized") : "—"}
-          hint="immutable once finalized"
-          icon={<Lock className="size-4" />}
-        />
-        <StatTile
-          label="Finalized value"
-          value={
-            report ? (
-              <Money
-                amount={report.finalized_net_total}
-                currency={orgCurrency}
-              />
-            ) : (
-              "—"
-            )
-          }
-          icon={<Banknote className="size-4" />}
-        />
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label="Settlements"
+            value={report ? report.total_settlements : "—"}
+            caption={
+              report ? `${report.total_lines} collections settled` : undefined
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <FileText className="size-4" />
+          </span>
+        </Surface>
+        <Surface tone="metric">
+          <Metric
+            label="Open"
+            value={report ? byStatus("draft") + byStatus("calculated") : "—"}
+            caption={
+              report
+                ? `${byStatus("draft")} draft · ${byStatus("calculated")} calculated`
+                : undefined
+            }
+          />
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label="Finalized"
+            value={report ? byStatus("finalized") : "—"}
+            caption="immutable once finalized"
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Lock className="size-4" />
+          </span>
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label="Finalized value"
+            value={
+              report ? (
+                <Money
+                  amount={report.finalized_net_total}
+                  currency={orgCurrency}
+                />
+              ) : (
+                "—"
+              )
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            <Banknote className="size-4" />
+          </span>
+        </Surface>
       </section>
 
       {showCreate ? (
@@ -413,7 +438,7 @@ export default function SettlementsPage() {
           />
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }
 

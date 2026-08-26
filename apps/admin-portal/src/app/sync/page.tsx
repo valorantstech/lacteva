@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PageContainer } from "@/components/page-container";
 import {
   ApiError,
   SyncOperation,
@@ -128,7 +129,7 @@ export default function SyncMonitorPage() {
   const totalPages = page ? Math.max(1, Math.ceil(page.total / PAGE_SIZE)) : 1;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 p-8">
+    <PageContainer width="default">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Sync monitor</h1>
         <p className="text-sm text-muted-foreground">
@@ -342,7 +343,7 @@ export default function SyncMonitorPage() {
           </Button>
         </div>
       </footer>
-    </main>
+    </PageContainer>
   );
 }
 
