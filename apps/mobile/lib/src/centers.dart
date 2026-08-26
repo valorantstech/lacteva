@@ -6,6 +6,7 @@ import 'collection_wizard.dart';
 import 'home.dart';
 import 'l10n.dart';
 import 'notifications.dart';
+import 'password_reset.dart';
 import 'session.dart';
 import 'offline/offline_client.dart';
 import 'offline/sync_screen.dart';
@@ -157,6 +158,27 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Text(
                       _busy ? t.t('auth.signingIn') : t.t('auth.signIn'),
                     ),
+                  ),
+                  // LACTEVA-ADMIN-003: quiet, under the form. A locked-out
+                  // operator needs a way through that does not compete with
+                  // what everybody else came here to do.
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () async {
+                            final reason = await Navigator.of(context).push<String>(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    PasswordResetScreen(client: widget.client),
+                              ),
+                            );
+                            // The screen hands back WHY it returned, which is
+                            // the `notice` slot this form already renders.
+                            if (reason != null && mounted) {
+                              setState(() => _error = reason);
+                            }
+                          },
+                    child: Text(t.t('auth.forgotPassword')),
                   ),
                 ],
               ),

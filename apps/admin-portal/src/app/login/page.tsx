@@ -28,8 +28,27 @@ import { useT } from "@/lib/i18n";
  * `ambiguous_tenant` — and only after the password has verified. So the field
  * appears when it is needed and not before.
  */
+/**
+ * The notices this page is willing to show (LACTEVA-ADMIN-003).
+ *
+ * An ALLOWLIST, mapping a key to a catalog string — never the query string
+ * itself. `?notice=` is attacker-controlled text on an unauthenticated page:
+ * rendering it verbatim would let any link put arbitrary words above a
+ * password box ("Your session expired — confirm your card details"), which is
+ * a phishing surface handed out for free. An unknown key renders nothing.
+ */
+const NOTICES: Record<string, string> = { reset: "auth.notice.reset" };
+
 export default function LoginPage() {
   const t = useT();
+  // Read on the client, deliberately: this page is already a client component
+  // and the value is cosmetic. `useSearchParams` would put the whole route
+  // behind a Suspense boundary for one line of text.
+  const noticeKey =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("notice")
+      : null;
+  const notice = noticeKey && NOTICES[noticeKey] ? t(NOTICES[noticeKey]) : null;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [tenantId, setTenantId] = useState("");
@@ -83,6 +102,11 @@ export default function LoginPage() {
           <CardDescription>{t("login.subtitle")}</CardDescription>
         </CardHeader>
         <CardContent>
+          {notice && (
+            <p className="mb-4 text-sm text-muted-foreground" role="status">
+              {notice}
+            </p>
+          )}
           <form onSubmit={submit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="email">{t("auth.email")}</Label>
@@ -122,6 +146,14 @@ export default function LoginPage() {
             <Button type="submit" disabled={busy}>
               {busy ? t("auth.signingIn") : t("auth.signIn")}
             </Button>
+            {/* Quiet, under the form: a way out for somebody locked out,
+                without competing with the thing everybody else came to do. */}
+            <a
+              href="/reset-password"
+              className="text-center text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+            >
+              {t("auth.forgotPassword")}
+            </a>
           </form>
         </CardContent>
       </Card>

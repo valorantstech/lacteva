@@ -311,6 +311,30 @@ class ApiClient {
     );
   }
 
+  /// Ask for a password reset code (LACTEVA-ADMIN-003).
+  ///
+  /// The platform answers 202 whether or not the account exists, and this
+  /// client must not learn which — an app that behaved differently for the two
+  /// would turn a login screen into a way of asking "does this dairy use
+  /// Lacteva?". So there is nothing to return: success is success.
+  Future<void> requestPasswordReset(String email) async {
+    await _send('POST', '/v1/auth/password-reset/request', body: {
+      'email': email,
+    });
+  }
+
+  /// Spend the code and set the new password (LACTEVA-ADMIN-003).
+  ///
+  /// The platform answers 204. The code is held for one request and never
+  /// stored — a reset code is a credential that takes over an account, and the
+  /// phone is the last place it should linger.
+  Future<void> confirmPasswordReset(String token, String newPassword) async {
+    await _send('POST', '/v1/auth/password-reset/confirm', body: {
+      'token': token,
+      'new_password': newPassword,
+    });
+  }
+
   Future<Map<String, dynamic>> openCollectionSession(String centerId) async {
     return await _send(
           'POST',

@@ -99,6 +99,20 @@ const Catalog _en = {
   'auth.email': 'Email',
   'auth.password': 'Password',
   'auth.signingIn': 'Signing in…',
+  // LACTEVA-ADMIN-003. A locked-out operator during a pilot is a support
+  // call; step 1 says the same words whatever happened, because any other
+  // pair of answers reveals whether an account exists.
+  'auth.forgotPassword': 'Forgot password?',
+  'auth.resetTitle': 'Reset your password',
+  'auth.resetSendCode': 'Send reset code',
+  'auth.resetSent':
+      'If an account exists for {email}, a reset code has been sent.',
+  'auth.resetCode': 'Reset code',
+  'auth.resetNewPassword': 'New password',
+  'auth.resetMinLength': 'At least 10 characters.',
+  'auth.resetSubmit': 'Set new password',
+  'auth.resetTooMany': 'Too many attempts — try again later.',
+  'auth.resetDone': 'Your password was updated — sign in to continue.',
 
   'common.retry': 'Try again',
   'common.loading': 'Loading…',
@@ -406,6 +420,17 @@ const Catalog _hi = {
   'auth.email': 'ईमेल',
   'auth.password': 'पासवर्ड',
   'auth.signingIn': 'साइन इन हो रहा है…',
+  'auth.forgotPassword': 'पासवर्ड भूल गए?',
+  'auth.resetTitle': 'अपना पासवर्ड रीसेट करें',
+  'auth.resetSendCode': 'रीसेट कोड भेजें',
+  'auth.resetSent':
+      'यदि {email} के लिए खाता मौजूद है, तो रीसेट कोड भेज दिया गया है।',
+  'auth.resetCode': 'रीसेट कोड',
+  'auth.resetNewPassword': 'नया पासवर्ड',
+  'auth.resetMinLength': 'कम से कम 10 अक्षर।',
+  'auth.resetSubmit': 'नया पासवर्ड सेट करें',
+  'auth.resetTooMany': 'बहुत अधिक प्रयास — बाद में पुनः प्रयास करें।',
+  'auth.resetDone': 'आपका पासवर्ड बदल दिया गया — जारी रखने के लिए साइन इन करें।',
 
   'common.retry': 'पुनः प्रयास करें',
   'common.loading': 'लोड हो रहा है…',
@@ -708,6 +733,17 @@ const Catalog _ar = {
   'auth.email': 'البريد الإلكتروني',
   'auth.password': 'كلمة المرور',
   'auth.signingIn': 'جارٍ تسجيل الدخول…',
+  'auth.forgotPassword': 'هل نسيت كلمة المرور؟',
+  'auth.resetTitle': 'إعادة تعيين كلمة المرور',
+  'auth.resetSendCode': 'إرسال رمز إعادة التعيين',
+  'auth.resetSent':
+      'إذا كان هناك حساب لـ {email}، فقد تم إرسال رمز إعادة التعيين.',
+  'auth.resetCode': 'رمز إعادة التعيين',
+  'auth.resetNewPassword': 'كلمة المرور الجديدة',
+  'auth.resetMinLength': 'عشرة أحرف على الأقل.',
+  'auth.resetSubmit': 'تعيين كلمة المرور الجديدة',
+  'auth.resetTooMany': 'محاولات كثيرة — حاول لاحقًا.',
+  'auth.resetDone': 'تم تحديث كلمة المرور — سجّل الدخول للمتابعة.',
 
   'common.retry': 'إعادة المحاولة',
   'common.loading': 'جارٍ التحميل…',

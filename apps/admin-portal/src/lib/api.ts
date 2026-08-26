@@ -167,6 +167,68 @@ export async function login(
   }
 }
 
+/**
+ * Ask for a password reset code (LACTEVA-ADMIN-003).
+ *
+ * PRE-AUTH — a locked-out person has no session for `/api/proxy` to attach,
+ * so this goes to the portal's own route, exactly as `login()` does.
+ *
+ * The platform answers 202 whether or not the account exists, and the caller
+ * must not learn which. A rate limit (429) is the one refusal worth surfacing,
+ * because "try again later" is actionable and silence is not.
+ */
+export async function requestPasswordReset(email: string) {
+  const res = await fetch("/api/auth/password-reset/request", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    let title: string | undefined;
+    try {
+      const problem = (await res.json()) as { detail?: string; title?: string };
+      detail = problem.detail ?? problem.title ?? detail;
+      title = problem.title;
+    } catch {
+      // non-JSON error body — keep statusText
+    }
+    throw new ApiError(res.status, detail, undefined, title);
+  }
+}
+
+/**
+ * Spend the code and set the new password (LACTEVA-ADMIN-003).
+ *
+ * The code travels in the BODY, never a query string — a reset code in a URL
+ * reaches browser history, referrer headers and every access log in between,
+ * for a credential that takes over an account. It is held for one request and
+ * never stored.
+ */
+export async function confirmPasswordReset(token: string, newPassword: string) {
+  const res = await fetch("/api/auth/password-reset/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, new_password: newPassword }),
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    let title: string | undefined;
+    try {
+      const problem = (await res.json()) as { detail?: string; title?: string };
+      detail = problem.detail ?? problem.title ?? detail;
+      title = problem.title;
+    } catch {
+      // non-JSON error body — keep statusText
+    }
+    throw new ApiError(res.status, detail, undefined, title);
+  }
+}
+
 /** Sign out here AND on the platform, so a captured refresh token dies too. */
 export async function logout() {
   await fetch("/api/auth/logout", {

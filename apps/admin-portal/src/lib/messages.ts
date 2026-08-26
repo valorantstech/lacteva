@@ -142,6 +142,12 @@ const en: Catalog = {
   // --- authentication ------------------------------------------------
   "auth.chooseOrganization": "Choose an organization",
   "auth.email": "Email",
+  "auth.forgotPassword": "Forgot password?",
+  // LACTEVA-ADMIN-003. The login page renders a notice ONLY from this
+  // allowlisted set, never from the query string itself — a page that
+  // printed `?notice=` verbatim would happily show whatever a link sent it.
+  "auth.notice.reset":
+    "Your password was updated — sign in to continue.",
   "auth.failed": "Email or password is incorrect.",
   "auth.organization": "Organization",
   "auth.password": "Password",
@@ -784,6 +790,9 @@ const hi: Catalog = {
   // --- authentication ------------------------------------------------
   "auth.chooseOrganization": "संगठन चुनें",
   "auth.email": "ईमेल",
+  "auth.forgotPassword": "पासवर्ड भूल गए?",
+  "auth.notice.reset":
+    "आपका पासवर्ड बदल दिया गया — जारी रखने के लिए साइन इन करें।",
   "auth.failed": "ईमेल या पासवर्ड गलत है।",
   "auth.organization": "संगठन",
   "auth.password": "पासवर्ड",
@@ -1423,6 +1432,9 @@ const ar: Catalog = {
   // --- authentication ------------------------------------------------
   "auth.chooseOrganization": "اختر مؤسسة",
   "auth.email": "البريد الإلكتروني",
+  "auth.forgotPassword": "هل نسيت كلمة المرور؟",
+  "auth.notice.reset":
+    "تم تحديث كلمة المرور — سجّل الدخول للمتابعة.",
   "auth.failed": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
   "auth.organization": "المؤسسة",
   "auth.password": "كلمة المرور",
