@@ -1871,6 +1871,26 @@ async def complete_transaction(tx_id: uuid.UUID, service: MilkSvc, p: TxRecord) 
     return await service.complete(tx_id, actor_id=p.id)
 
 
+@milk_router.post("/milk-transactions/{tx_id}/reprice", response_model=TransactionView)
+async def reprice_milk_transaction(
+    tx_id: uuid.UUID,
+    service: MilkSvc,
+    # LACTEVA-BACKEND-001: guarded by a PRICING permission on a collection
+    # route, deliberately. Whoever publishes the rate card that was missing is
+    # the person who resolves the collections it stranded — recording milk and
+    # deciding what it is worth stay different authorities, which is the whole
+    # reason capture cannot invent a price in the first place.
+    p: Annotated[Principal, Depends(require_permission("pricing.ratecard.manage"))],
+) -> Any:
+    """Price a rate-pending collection, once a rate card covers it.
+
+    Prices against the rate effective for the TRANSACTION's own date — never
+    today's — and refuses anything already priced, so this can never become a
+    quiet recalculation of settled money.
+    """
+    return await service.reprice(tx_id, actor_id=p.id)
+
+
 class CancelTransactionRequest(BaseModel):
     reason: str = ""
 

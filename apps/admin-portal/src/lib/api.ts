@@ -229,6 +229,20 @@ export async function confirmPasswordReset(token: string, newPassword: string) {
   }
 }
 
+/**
+ * Price a rate-pending collection, once a rate card covers it
+ * (LACTEVA-BACKEND-001).
+ *
+ * The platform resolves against the rate effective for the TRANSACTION's own
+ * date, not today's, and refuses anything already priced — so this can never
+ * become a quiet recalculation. Guarded by `pricing.ratecard.manage`: whoever
+ * publishes the missing card resolves what it stranded.
+ */
+export const repriceTransaction = (txId: string) =>
+  api<MilkTransaction>(`/v1/milk-transactions/${txId}/reprice`, {
+    method: "POST",
+  });
+
 /** Sign out here AND on the platform, so a captured refresh token dies too. */
 export async function logout() {
   await fetch("/api/auth/logout", {

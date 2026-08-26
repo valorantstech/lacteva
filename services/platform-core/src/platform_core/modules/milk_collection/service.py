@@ -97,6 +97,10 @@ BUS_EVENTS = {
     "TransactionRejected": "collection.transaction-rejected.v1",
     "TransactionCompleted": "collection.transaction-completed.v1",
     "TransactionCancelled": "collection.transaction-cancelled.v1",
+    # LACTEVA-BACKEND-001. A rate-pending collection priced after the fact,
+    # once the rate card that was missing exists. Named for what happened,
+    # like every other wire name here.
+    "Repriced": "collection.transaction-repriced.v1",
 }
 
 # MVP-001: milk is priced on FAT until the multi-dimension combination policy
@@ -698,6 +702,43 @@ class MilkCollectionService:
         collection flow — milk is perishable; the transaction proceeds with
         pricing_status='pricing_unavailable' and can be settled later once
         pricing data exists."""
+        tx.state = "PRICING_PENDING"
+        await self._record(tx, "PricingRequested", {"dimension": PRICING_DIMENSION}, actor_id)
+        failure = await self._price(tx, actor_id)
+        if failure is None:
+            await self._record(tx, "PricingCompleted", self._pricing_facts(tx), actor_id)
+        else:
+            await self._record(tx, "PricingUnavailable", failure, actor_id)
+        tx.state = "PRICED"
+
+    def _pricing_facts(self, tx: MilkCollectionTransaction) -> dict[str, Any]:
+        """What a priced transaction now says about itself, for the log."""
+        return {
+            "unit_price": str(tx.unit_price),
+            "gross_amount": str(tx.gross_amount),
+            "currency": tx.currency,
+            "calculation_id": str(tx.calculation_id),
+        }
+
+    async def _price(
+        self, tx: MilkCollectionTransaction, actor_id: uuid.UUID
+    ) -> dict[str, Any] | None:
+        """Resolve a rate and calculate, writing the money columns.
+
+        The pricing step itself, with NOTHING around it: no state transition
+        and no event. Extracted from `_apply_pricing` so that the reprice path
+        (LACTEVA-BACKEND-001) runs the identical arithmetic against the
+        identical inputs rather than growing a second implementation that
+        would drift — and so that neither caller has to adopt the other's
+        state machine. Capture still moves PRICING_PENDING -> PRICED around
+        it; reprice must not move a COMPLETED transaction at all.
+
+        Returns `None` when the transaction is priced, or the failure facts
+        when the platform has no applicable rate. It never raises for a
+        pricing failure: what the caller does about one differs — capture
+        carries on because milk is perishable, reprice refuses because
+        nothing has changed.
+        """
         from platform_core.modules.pricing.calculator import (
             CalculationRequest,
             PricingCalculationError,
@@ -708,8 +749,6 @@ class MilkCollectionService:
             ResolutionQuery,
         )
 
-        tx.state = "PRICING_PENDING"
-        await self._record(tx, "PricingRequested", {"dimension": PRICING_DIMENSION}, actor_id)
         product_code = product_code_for(tx.milk_type)
         # DEMO-013: which DAY this collection happened on decides which rate
         # card prices it, and a day belongs to the dairy's calendar rather
@@ -752,28 +791,63 @@ class MilkCollectionService:
                 f"v{calculation.resolution.rate_card_version} band "
                 f"[{calculation.resolution.range_from}, {calculation.resolution.range_to})"
             )
-            await self._record(
-                tx,
-                "PricingCompleted",
-                {
-                    "unit_price": str(tx.unit_price),
-                    "gross_amount": str(tx.gross_amount),
-                    "currency": tx.currency,
-                    "calculation_id": str(tx.calculation_id),
-                },
-                actor_id,
-            )
+            return None
         except (PricingResolutionError, PricingIntegrityError, PricingCalculationError) as exc:
             detail = exc.detail if isinstance(exc.detail, dict) else {"reason": str(exc.detail)}
             tx.pricing_status = "pricing_unavailable"
             tx.pricing_detail = str(detail.get("reason", ""))[:300]
-            await self._record(
-                tx,
-                "PricingUnavailable",
-                {"stage": detail.get("stage"), "reason": tx.pricing_detail},
-                actor_id,
+            return {"stage": detail.get("stage"), "reason": tx.pricing_detail}
+
+    async def reprice(self, tx_id: uuid.UUID, *, actor_id: uuid.UUID) -> MilkCollectionTransaction:
+        """Price a collection the platform could not price at the time
+        (LACTEVA-BACKEND-001; D-3).
+
+        Capture refuses to invent a price, and settlement refuses a
+        transaction with no calculation. Both are right, and together they
+        stranded the collection permanently: the milk was taken, the parchi
+        said "Rate pending", and no route existed to finish the sentence once
+        the missing rate card was published. The first handset run met this on
+        day one. A farmer could not be paid for milk the dairy already had.
+
+        What this is NOT is a correction. The rate is resolved for the
+        TRANSACTION's own business date and context — the same inputs capture
+        used, through the same step — so publishing a card today cannot
+        retro-price yesterday's milk at today's rate. And a transaction that
+        already carries a price is refused outright: completed pricing is
+        corrected by an adjustment, never by quietly recalculating, which is
+        the immutability rule this module is built on.
+
+        The eligibility list is deliberate, and reads like
+        `settlement._eligible_transaction` because it answers the same kind of
+        question: every reason is collected so an operator is told all of them
+        at once rather than discovering them one refusal at a time.
+        """
+        tx = await self._get_tx(tx_id)  # tenant-checked; a foreign id is a 404
+        problems = []
+        if tx.state != "COMPLETED":
+            problems.append(f"transaction is {tx.state}, not COMPLETED")
+        if tx.rejected_reason is not None:
+            problems.append("rejected milk is not payable")
+        if tx.pricing_status != "pricing_unavailable":
+            # Covers the already-priced case, and with it the settled one: a
+            # settlement line requires a calculation_id, and a transaction
+            # without a price has none — so nothing that is settled can reach
+            # here. Stated rather than queried, because milk_collection does
+            # not read settlement's tables.
+            problems.append(
+                f"pricing is {tx.pricing_status or 'not recorded'}, not pricing_unavailable"
             )
-        tx.state = "PRICED"
+        if problems:
+            raise ConflictError("; ".join(problems))
+
+        failure = await self._price(tx, actor_id)
+        if failure is not None:
+            # Still nothing to price it with. Refusing leaves the transaction
+            # exactly as it was — rate-pending, and honest about it.
+            raise ConflictError(str(failure.get("reason")) or "no rate card covers this collection")
+
+        await self._record(tx, "Repriced", self._pricing_facts(tx), actor_id)
+        return tx
 
     async def accept(self, tx_id: uuid.UUID, *, actor_id: uuid.UUID) -> MilkCollectionTransaction:
         tx = await self._decide(tx_id, "ACCEPTED", actor_id=actor_id)

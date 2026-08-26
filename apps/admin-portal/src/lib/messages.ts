@@ -143,6 +143,15 @@ const en: Catalog = {
   "auth.chooseOrganization": "Choose an organization",
   "auth.email": "Email",
   "auth.forgotPassword": "Forgot password?",
+  // LACTEVA-BACKEND-001. The badge reads a `status.*` key when one exists,
+  // so a word the platform stores as `pricing_unavailable` reaches an
+  // operator as the thing the parchi already says.
+  "status.pricing_unavailable": "Rate pending",
+  "txDetail.resolvePrice": "Resolve price",
+  "txDetail.resolving": "Resolving…",
+  "txDetail.resolvedTo": "Priced at {amount}.",
+  "txDetail.ratePendingHelp":
+    "No published rate card covered this collection when it was recorded. Publish one that covers its date, then resolve the price here.",
   // LACTEVA-ADMIN-003. The login page renders a notice ONLY from this
   // allowlisted set, never from the query string itself — a page that
   // printed `?notice=` verbatim would happily show whatever a link sent it.
@@ -791,6 +800,12 @@ const hi: Catalog = {
   "auth.chooseOrganization": "संगठन चुनें",
   "auth.email": "ईमेल",
   "auth.forgotPassword": "पासवर्ड भूल गए?",
+  "status.pricing_unavailable": "दर लंबित",
+  "txDetail.resolvePrice": "दर तय करें",
+  "txDetail.resolving": "तय किया जा रहा है…",
+  "txDetail.resolvedTo": "{amount} पर मूल्य निर्धारित।",
+  "txDetail.ratePendingHelp":
+    "इस संग्रह के समय कोई प्रकाशित दर कार्ड लागू नहीं था। उसकी तिथि को कवर करने वाला कार्ड प्रकाशित करें, फिर यहाँ दर तय करें।",
   "auth.notice.reset":
     "आपका पासवर्ड बदल दिया गया — जारी रखने के लिए साइन इन करें।",
   "auth.failed": "ईमेल या पासवर्ड गलत है।",
@@ -1433,6 +1448,12 @@ const ar: Catalog = {
   "auth.chooseOrganization": "اختر مؤسسة",
   "auth.email": "البريد الإلكتروني",
   "auth.forgotPassword": "هل نسيت كلمة المرور؟",
+  "status.pricing_unavailable": "السعر معلّق",
+  "txDetail.resolvePrice": "تحديد السعر",
+  "txDetail.resolving": "جارٍ التحديد…",
+  "txDetail.resolvedTo": "تم التسعير بمبلغ {amount}.",
+  "txDetail.ratePendingHelp":
+    "لم تكن هناك بطاقة أسعار منشورة تغطي هذا التجميع وقت تسجيله. انشر بطاقة تغطي تاريخه، ثم حدّد السعر هنا.",
   "auth.notice.reset":
     "تم تحديث كلمة المرور — سجّل الدخول للمتابعة.",
   "auth.failed": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",

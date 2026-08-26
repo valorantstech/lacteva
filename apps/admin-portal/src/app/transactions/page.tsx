@@ -275,11 +275,21 @@ export default function TransactionsPage() {
       cell: (tx) => (
         <div className="flex flex-col items-end">
           <Money amount={tx.gross_amount} currency={tx.currency} />
-          <span className="text-xs tabular-nums text-muted-foreground">
-            {tx.unit_price != null
-              ? t("tx.atRate", { rate: String(tx.unit_price) })
-              : t("tx.notPriced")}
-          </span>
+          {/* LACTEVA-BACKEND-001: an amount is missing here for one of two
+              very different reasons, and "not priced" covered both. A
+              collection the platform COULD not price is rate-pending — it is
+              waiting on a rate card somebody has to publish, and it cannot be
+              settled until they do. That is a status, so it is said with the
+              status vocabulary rather than a grey aside. */}
+          {tx.pricing_status === "pricing_unavailable" ? (
+            <StatusBadge status={tx.pricing_status} />
+          ) : (
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {tx.unit_price != null
+                ? t("tx.atRate", { rate: String(tx.unit_price) })
+                : t("tx.notPriced")}
+            </span>
+          )}
         </div>
       ),
     },
