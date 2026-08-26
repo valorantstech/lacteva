@@ -33,6 +33,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
+import { LoadingState } from "@/components/states";
+import { Skeleton } from "@/components/skeleton";
 import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
 
@@ -70,6 +72,11 @@ export default function RoutesPage() {
   const [runs, setRuns] = useState<DeliveryRun[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<RunGeneration | null>(null);
+  // LACTEVA-ADMIN-001: every list here starts `[]`, so on first paint the
+  // summary read a confident "0" routes, "0" vehicles, "0" drivers and "0"
+  // runs — four figures the page had not yet asked for. A count nobody has
+  // established is worse than no count.
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
@@ -86,6 +93,8 @@ export default function RoutesPage() {
       setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "could not load routes");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -122,7 +131,10 @@ export default function RoutesPage() {
           tone="metric"
           className="flex items-start justify-between gap-3"
         >
-          <Metric label="Routes" value={routes.length} />
+          <Metric
+            label="Routes"
+            value={loading ? <Skeleton className="h-9 w-10" /> : routes.length}
+          />
           <span aria-hidden className="text-muted-foreground">
             <RouteIcon className="size-4" />
           </span>
@@ -131,7 +143,12 @@ export default function RoutesPage() {
           tone="metric"
           className="flex items-start justify-between gap-3"
         >
-          <Metric label="Vehicles" value={vehicles.length} />
+          <Metric
+            label="Vehicles"
+            value={
+              loading ? <Skeleton className="h-9 w-10" /> : vehicles.length
+            }
+          />
           <span aria-hidden className="text-muted-foreground">
             <Truck className="size-4" />
           </span>
@@ -140,13 +157,19 @@ export default function RoutesPage() {
           tone="metric"
           className="flex items-start justify-between gap-3"
         >
-          <Metric label="Drivers" value={drivers.length} />
+          <Metric
+            label="Drivers"
+            value={loading ? <Skeleton className="h-9 w-10" /> : drivers.length}
+          />
           <span aria-hidden className="text-muted-foreground">
             <UserRound className="size-4" />
           </span>
         </Surface>
         <Surface tone="metric">
-          <Metric label="Runs today" value={runs.length} />
+          <Metric
+            label="Runs today"
+            value={loading ? <Skeleton className="h-9 w-10" /> : runs.length}
+          />
         </Surface>
       </section>
 
@@ -174,6 +197,7 @@ export default function RoutesPage() {
 
       <TodaysRuns
         drivers={drivers}
+        loading={loading}
         onAssign={(id, body) => act(() => assignDeliveryRun(id, body))}
         onCreate={(routeId) =>
           act(() => createDeliveryRun({ route_id: routeId }))
@@ -241,7 +265,9 @@ export default function RoutesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {routes.length === 0 ? (
+          {loading && routes.length === 0 ? (
+            <LoadingState label="Loading routes…" />
+          ) : routes.length === 0 ? (
             <p className="text-sm text-muted-foreground">No routes yet.</p>
           ) : (
             <table className="w-full text-sm">
@@ -282,6 +308,7 @@ function TodaysRuns({
   runs,
   vehicles,
   drivers,
+  loading,
   onCreate,
   onGenerate,
   onAssign,
@@ -291,6 +318,8 @@ function TodaysRuns({
   runs: DeliveryRun[];
   vehicles: Vehicle[];
   drivers: Driver[];
+  /** The page's first fetch is still in flight (LACTEVA-ADMIN-001). */
+  loading: boolean;
   onCreate: (routeId: string) => void;
   onGenerate: (id: string) => void;
   onAssign: (
@@ -339,7 +368,9 @@ function TodaysRuns({
           </Button>
         </div>
 
-        {runs.length === 0 ? (
+        {loading && runs.length === 0 ? (
+          <LoadingState label="Loading today's runs…" />
+        ) : runs.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No run planned for today yet.
           </p>

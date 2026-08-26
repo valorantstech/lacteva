@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { formatStamp } from "@/components/datetime";
 import { AdminPage } from "@/components/admin-page";
 import { Badge } from "@/components/ui/badge";
+import { TableSkeleton } from "@/components/states";
 import {
   Table,
   TableBody,
@@ -32,6 +33,10 @@ export default function OperationsPage() {
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [runs, setRuns] = useState<BackupRun[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // LACTEVA-ADMIN-001: until the first fetch settles this page does not know
+  // whether there are no runs or simply no answer yet, and it was saying the
+  // former. `runs` starts `[]`, so emptiness alone cannot tell them apart.
+  const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     try {
@@ -46,6 +51,8 @@ export default function OperationsPage() {
       setError(
         err instanceof ApiError ? err.detail : "Failed to load backup status",
       );
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -89,58 +96,62 @@ export default function OperationsPage() {
         </span>
       </section>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
-              Started
-            </TableHead>
-            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
-              Kind
-            </TableHead>
-            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
-              Status
-            </TableHead>
-            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
-              Finished
-            </TableHead>
-            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
-              Error
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {runs.length === 0 ? (
+      {loading && runs.length === 0 ? (
+        <TableSkeleton columns={5} rows={5} />
+      ) : (
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={5}>No backup runs recorded.</TableCell>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Started
+              </TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Kind
+              </TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Status
+              </TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Finished
+              </TableHead>
+              <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                Error
+              </TableHead>
             </TableRow>
-          ) : (
-            runs.map((run) => (
-              <TableRow key={run.id}>
-                <TableCell className="whitespace-nowrap text-xs">
-                  {formatStamp(run.started_at)}
-                </TableCell>
-                <TableCell>{run.kind}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={
-                      run.status === "succeeded" ? "default" : "destructive"
-                    }
-                  >
-                    {run.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="whitespace-nowrap text-xs">
-                  {formatStamp(run.finished_at)}
-                </TableCell>
-                <TableCell className="max-w-xs truncate text-xs text-destructive">
-                  {run.error ?? "—"}
-                </TableCell>
+          </TableHeader>
+          <TableBody>
+            {runs.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5}>No backup runs recorded.</TableCell>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+            ) : (
+              runs.map((run) => (
+                <TableRow key={run.id}>
+                  <TableCell className="whitespace-nowrap text-xs">
+                    {formatStamp(run.started_at)}
+                  </TableCell>
+                  <TableCell>{run.kind}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        run.status === "succeeded" ? "default" : "destructive"
+                      }
+                    >
+                      {run.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">
+                    {formatStamp(run.finished_at)}
+                  </TableCell>
+                  <TableCell className="max-w-xs truncate text-xs text-destructive">
+                    {run.error ?? "—"}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      )}
     </AdminPage>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminPage } from "@/components/admin-page";
+import { TableSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,6 +71,10 @@ export default function RolesPage() {
   const [newRole, setNewRole] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // LACTEVA-ADMIN-001: `roles` starts `[]`, so before the first fetch settles
+  // the table could not tell "none readable" from "not asked yet" — and it
+  // was asserting the first, which reads as a permission failure.
+  const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     try {
@@ -85,6 +90,8 @@ export default function RolesPage() {
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load roles");
+    } finally {
+      setLoading(false);
     }
     // Centres are only needed to scope a grant; their absence must not blank
     // the page.
@@ -158,7 +165,13 @@ export default function RolesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {roles.length === 0 ? (
+            {loading && roles.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6}>
+                  <TableSkeleton columns={6} rows={5} />
+                </TableCell>
+              </TableRow>
+            ) : roles.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-muted-foreground">
                   No roles are readable with this session.
