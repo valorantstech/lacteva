@@ -16,6 +16,12 @@ class ApiException implements Exception {
   String toString() => detail;
 }
 
+/// The shape of a permission-registry key: `<module>.<entity>.<action>`, as
+/// declared in the platform's `modules/authz/permissions.py`. Used to tell a
+/// machine identifier apart from a sentence — see the `rawExtra` block in
+/// [ApiClient._send] (LACTEVA-MOBILE-001).
+final RegExp _permissionKeyShape = RegExp(r'^[a-z]+(\.[a-z_]+)+$');
+
 /// An AUTHENTICATED request answered 401: the session expired or was revoked
 /// (P0-PRODUCT-008 D-2). Distinct from a plain 401 on the login call itself,
 /// which stays an ordinary [ApiException] — wrong credentials are not an
@@ -107,7 +113,24 @@ class ApiClient {
           // cannot act on "The resource already exists." Found on the first
           // physical handset (P0-PILOT-004), where the generic sentence was
           // all the capture wizard could show.
-          detail = rawExtra;
+          //
+          // ONE FIELD, TWO MEANINGS (LACTEVA-MOBILE-001). The platform also
+          // puts a machine identifier here: `ForbiddenError(permission)` in
+          // `api/deps.py` sends the raw permission-registry key. Of the twelve
+          // `ForbiddenError` sites, ELEVEN carry an actionable sentence
+          // ("this centre is outside your assigned scope") and exactly ONE
+          // carries a key — so the status code is the wrong tell, and gating
+          // on 403 would suppress the eleven to fix the one. The KEY SHAPE is
+          // the tell: `<module>.<entity>.<action>`.
+          //
+          // The second full handset run showed an operator a bare
+          // `pricing.ratecard.read`, which they can do nothing whatever with;
+          // the platform's own "You do not have permission to perform this
+          // action." is strictly better. Everything sentence-shaped still
+          // wins, on every status, exactly as P0-PILOT-004 established.
+          if (!_permissionKeyShape.hasMatch(rawExtra)) {
+            detail = rawExtra;
+          }
         }
       } catch (_) {}
       if (response.statusCode == 401 && hadToken) {

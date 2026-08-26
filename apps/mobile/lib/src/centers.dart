@@ -646,7 +646,10 @@ class CenterDetailScreen extends StatefulWidget {
   final ApiClient client;
   final String centerId;
 
-  /// For language only (P1-LOCALE-I18N-001); null renders English.
+  /// Language (P1-LOCALE-I18N-001; null renders English) AND the principal's
+  /// capabilities, which decide whether the summary and pricing-test
+  /// actions appear at all (LACTEVA-MOBILE-002). Null is treated as
+  /// "cannot".
   final Session? session;
 
   @override
@@ -763,6 +766,16 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
   Widget build(BuildContext context) {
     final detail = _detail;
     final t = _l;
+    // LACTEVA-MOBILE-002: an icon whose screen always refuses is worse than
+    // no icon. A COLLECTION_OPERATOR holds neither of these grants, so the
+    // second handset run offered them two doors that could only slam. The
+    // platform's refusal was correct both times; the toolbar was the defect.
+    // Capability, never role name — the house rule.
+    // `session` is nullable here, so an unknown principal is treated as one
+    // who cannot: a screen that would refuse anyway is not worth a door.
+    final canSeeSummary = widget.session?.can('reporting.read') ?? false;
+    final canTestPricing =
+        widget.session?.can('pricing.ratecard.read') ?? false;
     return Scaffold(
       appBar: AppBar(
         title: Text(detail?.center.name ?? t.t('center.fallback')),
@@ -840,32 +853,34 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.insights_outlined),
-            tooltip: t.t('center.todaySummary'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => CenterTodayScreen(
-                  client: widget.client,
-                  centerId: widget.centerId,
-                  session: widget.session,
+          if (canSeeSummary)
+            IconButton(
+              icon: const Icon(Icons.insights_outlined),
+              tooltip: t.t('center.todaySummary'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => CenterTodayScreen(
+                    client: widget.client,
+                    centerId: widget.centerId,
+                    session: widget.session,
+                  ),
                 ),
               ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.calculate_outlined),
-            tooltip: t.t('center.pricingTest'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ResolutionTestScreen(
-                  client: widget.client,
-                  centerId: widget.centerId,
-                  session: widget.session,
+          if (canTestPricing)
+            IconButton(
+              icon: const Icon(Icons.calculate_outlined),
+              tooltip: t.t('center.pricingTest'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ResolutionTestScreen(
+                    client: widget.client,
+                    centerId: widget.centerId,
+                    session: widget.session,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
       body: detail == null

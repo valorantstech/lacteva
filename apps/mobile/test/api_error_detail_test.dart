@@ -73,4 +73,77 @@ void main() {
       expect(e.extra, {'stage': 'product'});
     }
   });
+
+  // LACTEVA-MOBILE-001. `extra` carries two different kinds of thing, and the
+  // status code cannot tell them apart: eleven of the platform's twelve
+  // `ForbiddenError` sites send a sentence, one sends a registry key. These
+  // three cases pin the shape discriminator from both sides.
+
+  test('a 403 permission KEY never overrides the sentence', () async {
+    final client = ApiClient(
+      inner: MockClient(
+        (_) async => http.Response(
+          '{"type":"https://docs.lacteva.example/errors/forbidden",'
+          '"title":"forbidden","status":403,'
+          '"detail":"You do not have permission to perform this action.",'
+          '"extra":"pricing.ratecard.read"}',
+          403,
+          headers: {'content-type': 'application/json'},
+        ),
+      ),
+    );
+    try {
+      await client.txStep('/v1/x', body: {});
+      fail('expected ApiException');
+    } on ApiException catch (e) {
+      expect(e.status, 403);
+      // What the operator reads on the glass — a sentence, not an identifier.
+      expect(e.detail, 'You do not have permission to perform this action.');
+      expect(e.detail, isNot(contains('pricing.ratecard.read')));
+    }
+  });
+
+  test('a 403 SENTENCE extra still wins — the eleven sites keep their words',
+      () async {
+    final client = ApiClient(
+      inner: MockClient(
+        (_) async => http.Response(
+          '{"title":"forbidden","status":403,'
+          '"detail":"You do not have permission to perform this action.",'
+          '"extra":"this centre is outside your assigned scope"}',
+          403,
+          headers: {'content-type': 'application/json'},
+        ),
+      ),
+    );
+    try {
+      await client.txStep('/v1/x', body: {});
+      fail('expected ApiException');
+    } on ApiException catch (e) {
+      // An operator standing at the wrong centre must be told WHICH thing is
+      // wrong; the generic sentence would strictly lose information.
+      expect(e.detail, 'this centre is outside your assigned scope');
+    }
+  });
+
+  test('a 409 string extra is untouched by the key-shape rule', () async {
+    final client = ApiClient(
+      inner: MockClient(
+        (_) async => http.Response(
+          '{"title":"conflict","status":409,'
+          '"detail":"The resource already exists.",'
+          '"extra":"a session is already open at this centre"}',
+          409,
+          headers: {'content-type': 'application/json'},
+        ),
+      ),
+    );
+    try {
+      await client.txStep('/v1/x', body: {});
+      fail('expected ApiException');
+    } on ApiException catch (e) {
+      expect(e.status, 409);
+      expect(e.detail, 'a session is already open at this centre');
+    }
+  });
 }
