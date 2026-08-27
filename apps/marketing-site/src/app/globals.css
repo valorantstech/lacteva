@@ -142,22 +142,40 @@
     animation-delay: var(--enter-delay, 0ms);
   }
 
-  /* The static pour stream (the approved board's own keyframes) — shown
-     whenever the canvas fluid is not running. */
-  @keyframes hero-pour {
+  /* The static drips — milk drops falling into the body whenever the
+     canvas fluid is not running. Compositor-only transforms, eased in the
+     way gravity accelerates. Under reduced motion they are hidden rather
+     than frozen: calm milk reads as design, drops stopped mid-air read as
+     a glitch. */
+  @keyframes hero-drip {
     0% {
-      transform: translateX(-50%) translateY(-4px) scaleY(0.98);
+      transform: translateY(0) scaleY(0.92);
+      opacity: 0;
     }
-    50% {
-      transform: translateX(-50%) translateY(3px) scaleY(1.02);
+    10% {
+      opacity: 1;
+    }
+    76% {
+      transform: translateY(420%) scaleY(1.08);
+      opacity: 1;
+    }
+    84% {
+      transform: translateY(465%) scaleY(1);
+      opacity: 0;
     }
     100% {
-      transform: translateX(-50%) translateY(-4px) scaleY(0.98);
+      transform: translateY(465%);
+      opacity: 0;
     }
   }
-  .hero-pour {
-    animation: hero-pour 5s ease-in-out infinite;
-    transform-origin: top;
+  .hero-drip {
+    animation: hero-drip 2.7s cubic-bezier(0.45, 0, 0.8, 0.55) infinite;
+    animation-delay: var(--drip-delay, 0s);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-drip {
+      display: none;
+    }
   }
 
   /* The nav logo reveal — the LogoReveal board's three beats, 1.4s total:

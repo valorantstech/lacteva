@@ -4,18 +4,22 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * The living milk body (LACTEVA-MARKETING-002).
+ * The living milk body (LACTEVA-MARKETING-002; drops-not-stream per owner
+ * direction, 2026-08-27).
  *
- * The approved MarketingHero board is the composition; this makes it move:
- * a real-time 2D-canvas fluid — a spring-damped surface heightfield under
- * the board's blob, gradients and highlight — with a continuous pour stream
- * feeding it and cursor-reactive ripples on top. Everything is drawn from
- * this file; no library, no CDN, no shader.
+ * A real-time 2D-canvas fluid — a spring-damped surface heightfield under
+ * the board's pillow of milk, its gradients and highlight — fed by discrete
+ * milk DROPS: each one falls under gravity, stretches as it accelerates,
+ * and lands with a plop, a ripple ring and a small crown of micro-droplets.
+ * The cursor stirs the surface; a tap plops. Everything is drawn from this
+ * file; no library, no CDN, no shader.
  *
- * The static composition (the board, verbatim) is the server render, so it
- * is also the no-JS page, the reduced-motion page, and the weak-device
- * page: the canvas only fades in after the simulation has proven it can
- * hold a frame rate. If the first seconds jank, it bows out again.
+ * The static composition is the server render, so it is also the no-JS
+ * page, the reduced-motion page, and the weak-device page: the canvas only
+ * fades in after the simulation has proven it can hold a frame rate. If
+ * the first seconds jank, it bows out again. The static drips animate in
+ * cheap compositor-only CSS and hide entirely under reduced motion —
+ * frozen mid-air drops read as a glitch, calm milk does not.
  *
  * Purely decorative — the whole figure is aria-hidden; every fact it could
  * express is stated in the hero's text.
@@ -32,8 +36,12 @@ const DOME = 30; // the crown: the surface rises toward the middle, so the
 // The live surface spans less than the belly: the shoulders bulge out
 // below the rim, which is what makes the silhouette a pillow, not a bowl.
 const BLOB = { cx: 210, surfHalf: 146, bodyHalf: 170, bottom: 430 };
-const STREAM_W = 46;
 const MAX_DEFLECT = 16;
+
+// The falling milk. Gravity and cadence are tuned calm: a drop roughly
+// every second, arriving with weight but never with hurry.
+const GRAVITY = 620; // design px/s²
+const DROP_START_VY = 60;
 
 // Watchdog: during the first ~2s of simulation, if most frames miss even a
 // 30fps budget the device has told us everything — fall back to the board.
@@ -42,6 +50,8 @@ const SLOW_FRAME_MS = 34;
 const SLOW_LIMIT = 45;
 
 type Ring = { x: number; r: number; life: number };
+type Drop = { x: number; y: number; vy: number; size: number };
+type Splash = { x: number; y: number; vx: number; vy: number; r: number; life: number };
 
 function colX(i: number): number {
   return BLOB.cx - BLOB.surfHalf + (i / (COLS - 1)) * BLOB.surfHalf * 2;
@@ -85,6 +95,8 @@ export function HeroMilk({ className }: { className?: string }) {
     const heights = new Float32Array(COLS);
     const vels = new Float32Array(COLS);
     const rings: Ring[] = [];
+    const drops: Drop[] = [];
+    const splashes: Splash[] = [];
     let t = 0;
     let raf = 0;
     let running = true;
@@ -96,7 +108,8 @@ export function HeroMilk({ className }: { className?: string }) {
     let pointerX = -1;
     let lastPointerX = -1;
     let ringCooldown = 0;
-    let stepCount = 0;
+    let dropCount = 0;
+    let nextDropIn = 0.4; // the first drop arrives quickly, with the entrance
 
     const die = () => {
       if (dead) return;
@@ -115,17 +128,71 @@ export function HeroMilk({ className }: { className?: string }) {
       scale = (w / W) * dpr;
     };
 
+    const surfaceAt = (x: number) => {
+      const i = colAt(x);
+      return baseY(i) + heights[i];
+    };
+
+    const plop = (x: number, strength: number) => {
+      const c = colAt(x);
+      vels[c] += strength;
+      vels[c - 1] += strength * 0.55;
+      vels[c + 1] += strength * 0.55;
+      if (rings.length < 7) rings.push({ x, r: 7, life: 1 });
+    };
+
     const step = () => {
-      // The pour lands just left of centre and sways gently, the way a
-      // stream from a can does; it feeds the surface a steady push plus a
-      // slow pulse so the milk is never still.
-      const impactX = BLOB.cx + Math.sin(t * 0.9) * 6;
-      const imp = colAt(impactX);
-      // A pour presses the surface down; the milk answers around it.
-      const push = 0.3 + 0.16 * Math.sin(t * 2.1);
-      vels[imp] += push;
-      vels[imp - 1] += push * 0.5;
-      vels[imp + 1] += push * 0.5;
+      const dt = 1 / 60;
+
+      // The next drop, when its moment comes: from a gently wandering spout,
+      // sized with a little deterministic variety (no Math.random — the
+      // pattern needs no state and never repeats visibly).
+      nextDropIn -= dt;
+      if (nextDropIn <= 0) {
+        dropCount += 1;
+        drops.push({
+          x: BLOB.cx + Math.sin(dropCount * 2.4) * 22 + Math.sin(t * 0.7) * 8,
+          y: -24,
+          vy: DROP_START_VY,
+          size: 9.5 + 2.5 * Math.sin(dropCount * 1.7),
+        });
+        // A drop takes ~0.8s to reach the milk; this cadence keeps one in
+        // the air almost always without ever reading as rain.
+        nextDropIn = 0.72 + 0.26 * Math.sin(dropCount * 2.9);
+      }
+
+      // Falling milk: gravity, then the landing — a plop scaled by how hard
+      // it arrives, a ring, and a small crown of micro-droplets.
+      for (let i = drops.length - 1; i >= 0; i--) {
+        const d = drops[i];
+        d.vy += GRAVITY * dt;
+        d.y += d.vy * dt;
+        const surface = surfaceAt(d.x);
+        if (d.y + d.size * 0.5 >= surface) {
+          plop(d.x, Math.min(2.4, d.vy * 0.0035 * (d.size / 10)));
+          for (let s = 0; s < 3; s++) {
+            splashes.push({
+              x: d.x + (s - 1) * d.size * 0.5,
+              y: surface - 2,
+              vx: (s - 1) * (34 + d.size * 2),
+              vy: -(70 + d.vy * 0.16) - s * 8,
+              r: 1.6 + (s === 1 ? 1.2 : 0.6),
+              life: 1,
+            });
+          }
+          drops.splice(i, 1);
+        }
+      }
+
+      // Splash crown: tiny milk beads arcing up and falling home.
+      for (let i = splashes.length - 1; i >= 0; i--) {
+        const s = splashes[i];
+        s.vy += GRAVITY * dt;
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        s.life -= dt * 1.6;
+        if (s.life <= 0 || s.y > surfaceAt(s.x) + 6) splashes.splice(i, 1);
+      }
 
       // Cursor: the surface answers sideways motion under the pointer.
       if (pointerX >= 0 && lastPointerX >= 0) {
@@ -144,6 +211,12 @@ export function HeroMilk({ className }: { className?: string }) {
       }
       lastPointerX = pointerX;
       ringCooldown -= 1;
+
+      // Milk is never perfectly still: the faintest ambient swell, so the
+      // surface breathes between drops.
+      for (let i = 1; i < COLS - 1; i++) {
+        vels[i] += Math.sin(t * 0.7 + i * 0.55) * 0.002;
+      }
 
       // Spring toward rest + neighbour tension, twice-damped: milk, not water.
       for (let i = 1; i < COLS - 1; i++) {
@@ -170,56 +243,40 @@ export function HeroMilk({ className }: { className?: string }) {
         vels[i] *= 0.82;
       }
 
-      // The pour's own quiet ripple, every few seconds.
-      stepCount += 1;
-      if (stepCount % 160 === 0 && rings.length < 6) {
-        rings.push({ x: impactX + 26, r: 8, life: 1 });
-      }
       for (let i = rings.length - 1; i >= 0; i--) {
         rings[i].r += 0.85;
         rings[i].life -= 0.012;
         if (rings[i].life <= 0) rings.splice(i, 1);
       }
-      t += 1 / 60;
+      t += dt;
     };
 
-    const surfaceAt = (x: number) => {
-      const i = colAt(x);
-      return baseY(i) + heights[i];
+    const drawDrop = (d: Drop) => {
+      // A falling drop: round belly, tapering tail — and it stretches as it
+      // accelerates, the way liquid actually falls.
+      const r = d.size;
+      const e = 1 + Math.min(d.vy / 900, 0.55);
+      g.beginPath();
+      g.moveTo(d.x, d.y - r * 1.9 * e);
+      g.bezierCurveTo(d.x - r * 0.95, d.y - r * 0.55, d.x - r, d.y + r * 0.4, d.x, d.y + r);
+      g.bezierCurveTo(d.x + r, d.y + r * 0.4, d.x + r * 0.95, d.y - r * 0.55, d.x, d.y - r * 1.9 * e);
+      g.closePath();
+      g.fillStyle = "#FDFBF4";
+      g.fill();
+      // One small catch of light on the belly.
+      g.beginPath();
+      g.ellipse(d.x - r * 0.32, d.y - r * 0.1, r * 0.24, r * 0.38, -0.4, 0, Math.PI * 2);
+      g.fillStyle = "rgba(255,255,255,0.85)";
+      g.fill();
     };
 
     const draw = () => {
       g.setTransform(scale, 0, 0, scale, 0, 0);
       g.clearRect(0, 0, W, H);
 
-      // 1 — the pour stream, top of frame into the surface.
-      const impactX = BLOB.cx + Math.sin(t * 0.9) * 6;
-      const streamBottom = surfaceAt(impactX) + 6;
-      const sg = g.createLinearGradient(0, 0, 0, streamBottom);
-      sg.addColorStop(0, "rgba(253,251,244,0.95)");
-      sg.addColorStop(1, "#F1EDDD");
-      g.fillStyle = sg;
-      g.beginPath();
-      g.moveTo(BLOB.cx - STREAM_W / 2, 0);
-      g.bezierCurveTo(
-        BLOB.cx - STREAM_W / 2,
-        streamBottom * 0.55,
-        impactX - STREAM_W * 0.34,
-        streamBottom * 0.75,
-        impactX - STREAM_W * 0.3,
-        streamBottom,
-      );
-      g.lineTo(impactX + STREAM_W * 0.3, streamBottom);
-      g.bezierCurveTo(
-        impactX + STREAM_W * 0.34,
-        streamBottom * 0.75,
-        BLOB.cx + STREAM_W / 2,
-        streamBottom * 0.55,
-        BLOB.cx + STREAM_W / 2,
-        0,
-      );
-      g.closePath();
-      g.fill();
+      // 1 — the falling drops, behind the body so a landing drop sinks
+      // under the surface instead of popping out of existence.
+      for (const d of drops) drawDrop(d);
 
       // 2 — the milk body: live surface on top, the board's soft blob below.
       const left = BLOB.cx - BLOB.surfHalf;
@@ -294,13 +351,15 @@ export function HeroMilk({ className }: { className?: string }) {
         g.lineWidth = 1.6;
         g.stroke();
       }
-
-      // 6 — a soft splash sheen where the pour lands.
-      g.beginPath();
-      g.ellipse(impactX, surfaceAt(impactX) + 3, 27, 5, 0, 0, Math.PI * 2);
-      g.fillStyle = "rgba(255,255,255,0.35)";
-      g.fill();
       g.restore();
+
+      // 6 — the splash crown, in front of the body: milk answering milk.
+      for (const s of splashes) {
+        g.beginPath();
+        g.arc(s.x, s.y, s.r * (0.6 + 0.4 * s.life), 0, Math.PI * 2);
+        g.fillStyle = `rgba(253,251,244,${(0.9 * s.life).toFixed(3)})`;
+        g.fill();
+      }
     };
 
     const loop = (now: number) => {
@@ -323,7 +382,7 @@ export function HeroMilk({ className }: { className?: string }) {
     };
 
     const start = () => {
-      if (dead || running === true && raf !== 0) return;
+      if (dead || (running === true && raf !== 0)) return;
       running = true;
       last = performance.now();
       raf = requestAnimationFrame(loop);
@@ -345,11 +404,7 @@ export function HeroMilk({ className }: { className?: string }) {
     const onPointerDown = (e: PointerEvent) => {
       const rect = wrap.getBoundingClientRect();
       const x = ((e.clientX - rect.left) / rect.width) * W;
-      const c = colAt(x);
-      vels[c] += 3;
-      vels[c - 1] += 1.6;
-      vels[c + 1] += 1.6;
-      rings.push({ x, r: 12, life: 1 });
+      plop(x, 3);
     };
     const onReduce = () => {
       if (reduced?.matches) die();
@@ -406,13 +461,37 @@ export function HeroMilk({ className }: { className?: string }) {
       {/* Ground shadow — under both renderings. */}
       <div className="absolute bottom-[3.5%] left-1/2 h-[4.7%] w-[71%] -translate-x-1/2 rounded-full bg-black/30 blur-lg" />
 
-      {/* The approved board's static composition: the server render, the
-          no-JS page, and the fallback the canvas hands back to. */}
+      {/* The static composition: the server render, the no-JS page, and the
+          fallback the canvas hands back to. Three CSS drips fall where the
+          canvas drops would — compositor-only, and hidden entirely under
+          reduced motion, where calm milk reads better than frozen rain. */}
       <div
         data-hero-static
         className="absolute inset-0 transition-opacity duration-[var(--motion-slow)] group-data-[motion=live]:opacity-0"
       >
-        <div className="hero-pour absolute top-0 left-1/2 h-[45%] w-[11%] -translate-x-1/2 rounded-b-3xl bg-[linear-gradient(180deg,rgba(253,251,244,0.95),#F1EDDD)]" />
+        <svg
+          data-hero-drip
+          viewBox="0 0 24 34"
+          className="hero-drip absolute top-[2%] left-[46%] w-[6%]"
+        >
+          <path d="M12 2C15 11 20 15 20 23a8 8 0 1 1-16 0C4 15 9 11 12 2Z" fill="#FDFBF4" />
+        </svg>
+        <svg
+          data-hero-drip
+          viewBox="0 0 24 34"
+          className="hero-drip absolute top-[0%] left-[52%] w-[5%]"
+          style={{ "--drip-delay": "-0.9s" } as React.CSSProperties}
+        >
+          <path d="M12 2C15 11 20 15 20 23a8 8 0 1 1-16 0C4 15 9 11 12 2Z" fill="#FDFBF4" />
+        </svg>
+        <svg
+          data-hero-drip
+          viewBox="0 0 24 34"
+          className="hero-drip absolute top-[3%] left-[42%] w-[4.5%]"
+          style={{ "--drip-delay": "-1.8s" } as React.CSSProperties}
+        >
+          <path d="M12 2C15 11 20 15 20 23a8 8 0 1 1-16 0C4 15 9 11 12 2Z" fill="#FDFBF4" />
+        </svg>
         <div className="absolute bottom-[8.5%] left-1/2 h-[53%] w-[81%] -translate-x-1/2">
           <div className="absolute inset-0 rounded-[46%_54%_52%_48%/60%_58%_42%_40%] bg-[linear-gradient(160deg,#FFFFFF_0%,#FDFBF4_45%,#E4DEC9_100%)] shadow-[inset_0_-18px_34px_rgba(27,94,32,0.10),0_30px_60px_rgba(0,0,0,0.35)]" />
           <div className="absolute top-[15%] left-[18%] h-[26%] w-[32%] rounded-full bg-[radial-gradient(circle_at_40%_35%,rgba(255,255,255,0.95),rgba(255,255,255,0)_70%)]" />

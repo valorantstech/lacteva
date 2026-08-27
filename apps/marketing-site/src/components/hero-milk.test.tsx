@@ -16,9 +16,10 @@ describe("HeroMilk", () => {
     const figure = container.firstElementChild;
     // data-motion never reaches "live" — the crossfade CSS keys off it.
     expect(figure).toHaveAttribute("data-motion", "static");
-    // The board's composition: pour stream + milk body are in the render.
+    // The static composition: milk body plus the three CSS drips that
+    // stand in for the canvas drops.
     expect(container.querySelector("[data-hero-static]")).toBeInTheDocument();
-    expect(container.querySelector(".hero-pour")).toBeInTheDocument();
+    expect(container.querySelectorAll("[data-hero-drip]")).toHaveLength(3);
   });
 
   it("is decorative — hidden from assistive tech entirely", () => {
