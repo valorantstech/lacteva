@@ -178,6 +178,101 @@
     }
   }
 
+  /* The farmer's entrance: he walks in from the right (legs swinging, a
+     small bob in the stride), arrives beside the can, tips the pot, and
+     only then does milk fall. All transforms, so it costs the compositor
+     only; under reduced motion the global rule collapses every animation
+     to its end state — the farmer simply stands there, pouring. */
+  @keyframes farmer-walk {
+    0% {
+      transform: translate(150px, 0);
+    }
+    12% {
+      transform: translate(131px, -3px);
+    }
+    25% {
+      transform: translate(113px, 0);
+    }
+    37% {
+      transform: translate(94px, -3px);
+    }
+    50% {
+      transform: translate(75px, 0);
+    }
+    62% {
+      transform: translate(56px, -3px);
+    }
+    75% {
+      transform: translate(38px, 0);
+    }
+    87% {
+      transform: translate(19px, -3px);
+    }
+    100% {
+      transform: translate(0, 0);
+    }
+  }
+  .farmer-walk {
+    animation: farmer-walk 2.4s linear both;
+  }
+  @keyframes farmer-leg-a {
+    0%, 100% {
+      transform: rotate(0deg);
+    }
+    12.5%, 62.5% {
+      transform: rotate(10deg);
+    }
+    37.5%, 87.5% {
+      transform: rotate(-10deg);
+    }
+  }
+  @keyframes farmer-leg-b {
+    0%, 100% {
+      transform: rotate(0deg);
+    }
+    12.5%, 62.5% {
+      transform: rotate(-10deg);
+    }
+    37.5%, 87.5% {
+      transform: rotate(10deg);
+    }
+  }
+  .farmer-leg-a,
+  .farmer-leg-b {
+    transform-box: fill-box;
+    transform-origin: 50% 6%;
+  }
+  .farmer-leg-a {
+    animation: farmer-leg-a 2.4s linear both;
+  }
+  .farmer-leg-b {
+    animation: farmer-leg-b 2.4s linear both;
+  }
+  /* Arms + pot carried level on the way in, then the pour: the whole
+     group rotates down from the shoulder once he arrives. */
+  @keyframes farmer-pour {
+    from {
+      transform: rotate(20deg);
+    }
+    to {
+      transform: rotate(0deg);
+    }
+  }
+  .farmer-pour {
+    animation: farmer-pour 700ms var(--ease-out-liquid) 2.4s both;
+  }
+  @keyframes pour-lip-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .pour-lip {
+    animation: pour-lip-in 300ms var(--ease-out-liquid) 2.9s both;
+  }
+
   /* The nav logo reveal — the LogoReveal board's three beats, 1.4s total:
      the drop falls (420ms) → the milk ripples (600ms, two rings) → the
      wordmark settles in (380ms, fade + 4px rise). The animations only

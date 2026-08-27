@@ -52,8 +52,11 @@ const CAN = { cx: 140, surfHalf: 54, bottom: 436 };
 const SURFACE_Y = 340; // resting milk line inside the can
 const MAX_DEFLECT = 10;
 
-// Where the farmer's pot pours from, and how the milk falls.
-const POUR = { x: 150, y: 204 };
+// Where the farmer's pot pours from, and how the milk falls. Drops only
+// start once he has walked in and tipped the pot (the CSS choreography
+// runs 2.4s walk + 0.7s tip on the same clock).
+const POUR = { x: 154, y: 186 };
+const POUR_STARTS_AT = 3.0; // seconds into the simulation
 const GRAVITY = 620; // design px/s²
 const DROP_START_VY = 50;
 
@@ -121,7 +124,7 @@ export function HeroMilk({ className }: { className?: string }) {
     let lastPointerX = -1;
     let ringCooldown = 0;
     let dropCount = 0;
-    let nextDropIn = 0.3; // the first drop arrives with the entrance
+    let nextDropIn = 0.1;
 
     const die = () => {
       if (dead) return;
@@ -156,14 +159,15 @@ export function HeroMilk({ className }: { className?: string }) {
     const step = () => {
       const dt = 1 / 60;
 
-      // The next drop, from the pot's lip — sized and timed with a little
+      // The next drop, from the pot's lip — but not before the farmer has
+      // walked in and tipped it. Sized and timed with a little
       // deterministic variety (no Math.random: the pattern needs no state
       // and never repeats visibly).
       nextDropIn -= dt;
-      if (nextDropIn <= 0) {
+      if (nextDropIn <= 0 && t >= POUR_STARTS_AT) {
         dropCount += 1;
         drops.push({
-          x: POUR.x + Math.sin(dropCount * 2.4) * 5,
+          x: POUR.x + Math.sin(dropCount * 2.4) * 4,
           y: POUR.y,
           vy: DROP_START_VY,
           size: 6.5 + 1.8 * Math.sin(dropCount * 1.7),
@@ -467,26 +471,29 @@ export function HeroMilk({ className }: { className?: string }) {
         data-hero-static
         className="absolute inset-0 transition-opacity duration-[var(--motion-slow)] group-data-[motion=live]:opacity-0"
       >
+        {/* Positive delays: even the fallback drips wait for the farmer's
+            walk (2.4s) and tip (0.7s) before the first milk falls. */}
         <svg
           data-hero-drip
           viewBox="0 0 24 34"
-          className="hero-drip absolute top-[42%] left-[33.5%] w-[4.5%]"
+          className="hero-drip absolute top-[38.5%] left-[34.5%] w-[4.5%]"
+          style={{ "--drip-delay": "3.1s" } as React.CSSProperties}
         >
           <path d="M12 2C15 11 20 15 20 23a8 8 0 1 1-16 0C4 15 9 11 12 2Z" fill="#FDFBF4" />
         </svg>
         <svg
           data-hero-drip
           viewBox="0 0 24 34"
-          className="hero-drip absolute top-[41%] left-[36%] w-[4%]"
-          style={{ "--drip-delay": "-0.9s" } as React.CSSProperties}
+          className="hero-drip absolute top-[38%] left-[36.5%] w-[4%]"
+          style={{ "--drip-delay": "4s" } as React.CSSProperties}
         >
           <path d="M12 2C15 11 20 15 20 23a8 8 0 1 1-16 0C4 15 9 11 12 2Z" fill="#FDFBF4" />
         </svg>
         <svg
           data-hero-drip
           viewBox="0 0 24 34"
-          className="hero-drip absolute top-[42.5%] left-[31.5%] w-[3.5%]"
-          style={{ "--drip-delay": "-1.8s" } as React.CSSProperties}
+          className="hero-drip absolute top-[39%] left-[32.5%] w-[3.5%]"
+          style={{ "--drip-delay": "4.9s" } as React.CSSProperties}
         >
           <path d="M12 2C15 11 20 15 20 23a8 8 0 1 1-16 0C4 15 9 11 12 2Z" fill="#FDFBF4" />
         </svg>
@@ -559,24 +566,27 @@ export function HeroMilk({ className }: { className?: string }) {
           fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2"
         />
 
-        {/* — The farmer. Flat but true: wrapped turban with its tail,
-              mustache, kurta with placket and a green gamchha over the
-              shoulder, dhoti, sandals. He stands the way a person does
-              beside a knee-high can, tipping a steel pot; POUR is his
-              pot's lip. — */}
-        <g>
-          {/* dhoti + legs */}
-          <path
-            d="M252 278L258 340 252 424H276L282 348H288L292 424H316L314 340 318 278Z"
-            fill="#FAF7EA"
-          />
-          <path d="M282 282Q279 320 283 346" fill="none" stroke="#E3DCC4" strokeWidth="1.5" />
-          <path d="M264 300Q262 340 266 380" fill="none" stroke="#E3DCC4" strokeWidth="1.5" />
-          {/* feet + sandals */}
-          <ellipse cx="264" cy="427" rx="12" ry="5" fill="#C98A5B" />
-          <ellipse cx="304" cy="427" rx="12" ry="5" fill="#C98A5B" />
-          <path d="M252 432H278" stroke="#6B4A2F" strokeWidth="3.5" strokeLinecap="round" />
-          <path d="M292 432H318" stroke="#6B4A2F" strokeWidth="3.5" strokeLinecap="round" />
+        {/* — The farmer. He WALKS in from the right (CSS: farmer-walk +
+              the two leg groups swinging), arrives beside the can, and
+              tips the pot (the farmer-pour group rotates down from the
+              shoulder). Wrapped turban with its tail, a real face,
+              kurta with placket, green gamchha, dhoti, sandals; the pot
+              is a doodhwala's small steel can with its over-top handle.
+              POUR is its lip. — */}
+        <g className="farmer-walk">
+          {/* legs, split so they can swing while he walks */}
+          <g className="farmer-leg-a">
+            <path d="M258 284L254 424H277L281 300Q270 288 258 284Z" fill="#FAF7EA" />
+            <path d="M264 305Q262 350 266 395" fill="none" stroke="#E3DCC4" strokeWidth="1.5" />
+            <ellipse cx="264" cy="427" rx="12" ry="5" fill="#C98A5B" />
+            <path d="M252 432H278" stroke="#6B4A2F" strokeWidth="3.5" strokeLinecap="round" />
+          </g>
+          <g className="farmer-leg-b">
+            <path d="M312 284L316 340 314 424H291L288 300Q300 288 312 284Z" fill="#FAF7EA" />
+            <path d="M305 305Q307 350 303 395" fill="none" stroke="#E3DCC4" strokeWidth="1.5" />
+            <ellipse cx="303" cy="427" rx="12" ry="5" fill="#C98A5B" />
+            <path d="M291 432H317" stroke="#6B4A2F" strokeWidth="3.5" strokeLinecap="round" />
+          </g>
 
           {/* kurta */}
           <path
@@ -591,47 +601,67 @@ export function HeroMilk({ className }: { className?: string }) {
           <path d="M296 137L312 140L326 226L313 230Z" fill="#7FD495" />
           <path d="M316 219L325 217M317 224L326 222" stroke="#5CB877" strokeWidth="1.5" />
 
-          {/* neck + head */}
+          {/* neck, and a face with real features: jaw, ears, hairline,
+              eyes down on the pour, brows, nose, a full mustache */}
           <rect x="279" y="122" width="12" height="12" fill="#C98A5B" />
-          <ellipse cx="285" cy="112" rx="14" ry="15" fill="#C98A5B" />
-          <circle cx="300" cy="112" r="4" fill="#C98A5B" />
-          {/* eyes down toward the pour, brows, nose, mustache */}
-          <path d="M276 108Q279 111 282 108" fill="none" stroke="#3E2C1E" strokeWidth="2" strokeLinecap="round" />
-          <path d="M288 108Q291 111 294 108" fill="none" stroke="#3E2C1E" strokeWidth="2" strokeLinecap="round" />
-          <path d="M275 103L283 101" stroke="#3E2C1E" strokeWidth="1.5" strokeLinecap="round" />
-          <path d="M287 101L295 103" stroke="#3E2C1E" strokeWidth="1.5" strokeLinecap="round" />
-          <path d="M285 108L284 114Q284 116 287 116" fill="none" stroke="#A9714A" strokeWidth="1.5" strokeLinecap="round" />
-          <path d="M274 120Q285 126 296 120Q291 126 285 126Q279 126 274 120Z" fill="#3E2C1E" />
+          <path
+            d="M271 104Q271 96 279 94L291 94Q299 96 299 104L298 116Q297 127 285 128Q273 127 272 116Z"
+            fill="#C98A5B"
+          />
+          <circle cx="269" cy="111" r="4" fill="#C98A5B" />
+          <circle cx="301" cy="111" r="4" fill="#C98A5B" />
+          <path d="M272 100Q285 94 298 100L298 104Q285 98 272 104Z" fill="#3E2C1E" />
+          <ellipse cx="278.5" cy="107.5" rx="3" ry="2.4" fill="#FDFBF4" />
+          <circle cx="277.8" cy="108.4" r="1.5" fill="#2A1D12" />
+          <ellipse cx="291.5" cy="107.5" rx="3" ry="2.4" fill="#FDFBF4" />
+          <circle cx="290.8" cy="108.4" r="1.5" fill="#2A1D12" />
+          <path d="M274.5 103L283 101" stroke="#3E2C1E" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M287 101L295.5 103" stroke="#3E2C1E" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M286 105L284.5 113Q284.5 115.5 288 115.5" fill="none" stroke="#A9714A" strokeWidth="1.8" strokeLinecap="round" />
+          <path
+            d="M275 118Q285 123 295 118Q296 122 290 124.5Q285 126 280 124.5Q274 122 275 118Z"
+            fill="#3E2C1E"
+          />
+          <path d="M282 128Q285 129.5 288 128" fill="none" stroke="#A9714A" strokeWidth="1.2" strokeLinecap="round" />
           {/* turban: wrapped, with a top fold and its tail */}
-          <ellipse cx="285" cy="92" rx="27" ry="15" fill="#F1EDDD" transform="rotate(-8 285 92)" />
-          <ellipse cx="280" cy="80" rx="13" ry="8" fill="#F1EDDD" />
-          <path d="M262 92Q285 79 308 91" fill="none" stroke="#D9D2BA" strokeWidth="1.5" />
-          <path d="M264 98Q285 87 306 97" fill="none" stroke="#D9D2BA" strokeWidth="1.5" />
-          <path d="M305 96L312 122L305 124L300 100Z" fill="#E4DEC9" />
+          <ellipse cx="285" cy="91" rx="27" ry="15" fill="#F1EDDD" transform="rotate(-8 285 91)" />
+          <ellipse cx="280" cy="79" rx="13" ry="8" fill="#F1EDDD" />
+          <path d="M262 91Q285 78 308 90" fill="none" stroke="#D9D2BA" strokeWidth="1.5" />
+          <path d="M264 97Q285 86 306 96" fill="none" stroke="#D9D2BA" strokeWidth="1.5" />
+          <path d="M305 95L312 121L305 123L300 99Z" fill="#E4DEC9" />
 
-          {/* arms, reaching down to the pot over the can */}
-          <path
-            d="M256 150C230 160 205 176 186 188L194 204C212 192 236 178 260 168Z"
-            fill="#F5F1E3"
-          />
-          <path
-            d="M300 152C270 168 240 186 212 200L218 214C244 200 274 186 304 168Z"
-            fill="#EFEAD8"
-          />
-          <circle cx="182" cy="198" r="7.5" fill="#C98A5B" />
-          <circle cx="201" cy="203" r="7.5" fill="#B87C4F" />
-
-          {/* the steel pot, tipped toward the can's mouth */}
-          <g transform="rotate(-30 178 186)">
+          {/* arms + hands + pot: one group, carried level on the walk in,
+              rotated down from the shoulder to pour (CSS farmer-pour) */}
+          <g className="farmer-pour" style={{ transformOrigin: "262px 158px" }}>
+            {/* near arm to the handle, far arm under the base */}
             <path
-              d="M160 172Q156 190 164 200Q178 208 192 200Q200 190 196 172Q178 164 160 172Z"
-              fill="#DDDDD5" stroke="#C4C4BA" strokeWidth="1"
+              d="M256 148C226 150 196 152 172 156L174 168C200 162 228 158 258 162Z"
+              fill="#F5F1E3"
             />
-            <ellipse cx="178" cy="172" rx="18" ry="5" fill="#EDEDE6" stroke="#C4C4BA" strokeWidth="1" />
-            <path d="M166 178Q163 190 168 197" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" />
+            <path
+              d="M300 152C270 168 236 186 200 198L206 212C240 198 272 184 304 168Z"
+              fill="#EFEAD8"
+            />
+            {/* the doodhwala's pot: tapered steel can, rim, collar band,
+                over-top handle — drawn upright, tipped as one */}
+            <g transform="rotate(-30 178 186)">
+              <path
+                d="M163 170L166 202Q178 208 190 202L193 170Z"
+                fill="#D9D9D1" stroke="#BFBFB5" strokeWidth="1"
+              />
+              <path d="M166 197Q178 202 190 197" fill="none" stroke="#BFBFB5" strokeWidth="1" />
+              <path d="M164 176Q178 181 192 176" fill="none" stroke="#BFBFB5" strokeWidth="1" />
+              <ellipse cx="178" cy="170" rx="15" ry="4.5" fill="#EDEDE6" stroke="#BFBFB5" strokeWidth="1" />
+              <path d="M164 168Q178 148 192 168" fill="none" stroke="#8F8F86" strokeWidth="2.5" />
+              <path d="M168 176Q166 189 170 198" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="2.5" />
+            </g>
+            {/* one hand on the handle, one under the base */}
+            <circle cx="161" cy="157" r="7" fill="#C98A5B" />
+            <circle cx="189" cy="203" r="7.5" fill="#B87C4F" />
+            {/* milk at the pot's lip — where every drop is born; it only
+                appears once the pour begins */}
+            <ellipse className="pour-lip" cx="156" cy="182" rx="6" ry="3.2" fill="#FDFBF4" />
           </g>
-          {/* milk at the pot's lip — where every drop is born */}
-          <ellipse cx="152" cy="201" rx="6" ry="3.2" fill="#FDFBF4" />
         </g>
       </svg>
     </div>
