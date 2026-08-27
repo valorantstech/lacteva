@@ -6,6 +6,7 @@ import 'package:lacteva_mobile/src/offline/store.dart';
 import 'package:lacteva_mobile/src/offline/queue.dart';
 import 'package:lacteva_mobile/src/offline/offline_client.dart';
 import 'package:lacteva_mobile/src/center_summary.dart';
+import 'package:lacteva_mobile/src/brand/mark.dart';
 import 'package:lacteva_mobile/src/centers.dart';
 import 'package:lacteva_mobile/src/collection_wizard.dart';
 import 'package:lacteva_mobile/src/notifications.dart';
@@ -28,7 +29,13 @@ class _FakeClient extends ApiClient {
 void main() {
   testWidgets('app starts on the login screen', (tester) async {
     await tester.pumpWidget(const LactevaApp());
-    expect(find.text('Lacteva — Sign in'), findsOneWidget);
+    // LACTEVA-BRAND-003 moved the identity off the app bar and into the page:
+    // the mark and the wordmark stand above the card, static, always — which
+    // is what lets the reveal be removed for reduced motion without the
+    // screen losing its name. The claim is unchanged: the app opens on
+    // sign-in.
+    expect(find.byType(LactevaMark), findsOneWidget);
+    expect(find.text('Lacteva'), findsOneWidget);
     expect(find.text('Sign in'), findsWidgets);
   });
 

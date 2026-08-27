@@ -253,6 +253,138 @@ def field_path() -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# The RICH mark (LACTEVA-BRAND-003)
+# ---------------------------------------------------------------------------
+#
+# Same drop, lit. The flat mark keeps the 16px jobs — favicon, launcher,
+# anywhere the silhouette is the only thing that survives — and this rendering
+# owns the surfaces where the mark is large and the ground is dark: the mobile
+# and portal sign-in reveals.
+#
+# Depth comes from LIGHT, not effects. Three elements and no more:
+#
+#   * a body gradient running top-left to bottom-right, milk into a cream
+#     shadow, so the drop has a lit side and a shaded belly;
+#   * one warm specular highlight, high and left, where the light source is;
+#   * one meniscus stroke — a low-opacity green arc inside the lower left of
+#     the bulb, which is what the inside surface of liquid actually looks like.
+#
+# The interim mark's highlight was drawn in the FIELD colour ON TOP of the drop
+# and died below 48px. This one is a soft radial that fades to nothing, and it
+# is never used at a size where it could smudge, because the flat mark exists.
+#
+# The stops and the highlight/meniscus placement are the approved board's
+# (`LogoReveal.dc.html`), mapped from ITS geometry onto OURS rather than
+# copied as literals — the board draws a bulb of radius 31.5 in a 120 box, we
+# draw radius 13 in a 64 one, and a pasted coordinate would put the highlight
+# somewhere else entirely.
+
+#: The cream shadow at the foot of the body gradient.
+MILK_SHADOW = "#E4DEC9"
+#: The lit edge — pure white, the only place the product uses it.
+MILK_LIT = "#FFFFFF"
+
+#: The board's own bulb, the frame its highlight and meniscus were drawn in.
+_BOARD_BULB_R = 31.5
+_BOARD_BULB = (60.0, 68.5)
+#: Highlight: centre offset from the board's bulb centre, then its radii.
+_BOARD_HIGHLIGHT = ((-13.0, -16.5), (15.0, 21.0))
+#: Meniscus: start offset, arc radius, end offset, stroke width.
+_BOARD_MENISCUS = ((-18.0, 23.5), 19.0, (-3.0, 40.5), 4.0)
+
+
+def _board_scale() -> float:
+    """How much of the board's drawing one of our units is worth."""
+    return BULB_R / _BOARD_BULB_R
+
+
+def rich_details():
+    """The highlight and meniscus, placed on OUR 64 grid.
+
+    Returned as plain numbers so every client — Python, TypeScript, Dart — can
+    draw the same thing without re-deriving it, and so `mark.json` can carry
+    the contract the inline copies are checked against.
+    """
+    k = _board_scale()
+    bx, by = FIELD / 2, BULB_CY - OPTICAL_LIFT
+
+    (hdx, hdy), (hrx, hry) = _BOARD_HIGHLIGHT
+    (sdx, sdy), arc_r, (edx, edy), width = _BOARD_MENISCUS
+
+    return {
+        "highlight": {
+            "cx": round(bx + hdx * k, 3),
+            "cy": round(by + hdy * k, 3),
+            "rx": round(hrx * k, 3),
+            "ry": round(hry * k, 3),
+        },
+        "meniscus": {
+            "x1": round(bx + sdx * k, 3),
+            "y1": round(by + sdy * k, 3),
+            "r": round(arc_r * k, 3),
+            "x2": round(bx + edx * k, 3),
+            "y2": round(by + edy * k, 3),
+            "width": round(width * k, 3),
+            #: The board's `stroke-opacity`. Low on purpose: a meniscus is a
+            #: change in how the light bends, not a drawn line.
+            "opacity": 0.18,
+        },
+        "body": [
+            {"offset": 0.0, "color": MILK_LIT},
+            {"offset": 0.55, "color": MILK},
+            {"offset": 1.0, "color": MILK_SHADOW},
+        ],
+        #: The body gradient's axis, as SVG objectBoundingBox fractions.
+        "bodyAxis": {"x1": 0.2, "y1": 0.0, "x2": 0.8, "y2": 1.0},
+        #: The specular glow: white at the centre, gone at the rim.
+        "glow": {"cx": 0.35, "cy": 0.28, "r": 0.55},
+    }
+
+
+def rich_mark_svg() -> str:
+    """The enriched drop, alone, cropped to itself.
+
+    No field: this rendering is used large and on a dark ground, where a green
+    rounded square around a milk drop would be a second shape competing with
+    the first. The flat mark keeps the field, and keeps the small sizes.
+    """
+    d = rich_details()
+    h, m = d["highlight"], d["meniscus"]
+    a, g = d["bodyAxis"], d["glow"]
+    stops = "".join(
+        f'\n      <stop offset="{_n(s["offset"])}" stop-color="{s["color"]}"/>'
+        for s in d["body"]
+    )
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{drop_view_box()}">\n'
+        "  <defs>\n"
+        f'    <linearGradient id="lacteva-milkbody" x1="{_n(a["x1"])}" y1="{_n(a["y1"])}"'
+        f' x2="{_n(a["x2"])}" y2="{_n(a["y2"])}">{stops}\n'
+        "    </linearGradient>\n"
+        f'    <radialGradient id="lacteva-milkglow" cx="{_n(g["cx"])}" cy="{_n(g["cy"])}" r="{_n(g["r"])}">\n'
+        f'      <stop offset="0" stop-color="{MILK_LIT}"/>\n'
+        f'      <stop offset="1" stop-color="{MILK_LIT}" stop-opacity="0"/>\n'
+        "    </radialGradient>\n"
+        # The meniscus is CLIPPED to the drop. Mapped faithfully, the board's
+        # arc runs a little past the bottom of the bulb — on the board's own
+        # dark ground that tail is invisible, but drawn honestly it would be a
+        # green whisker hanging off the mark. A meniscus is the inside surface
+        # of the liquid, so the inside of the drop is exactly where it is
+        # allowed to be.
+        f'    <clipPath id="lacteva-drop"><path d="{drop_path()}"/></clipPath>\n'
+        "  </defs>\n"
+        f'  <path d="{drop_path()}" fill="url(#lacteva-milkbody)"/>\n'
+        f'  <ellipse cx="{_n(h["cx"])}" cy="{_n(h["cy"])}" rx="{_n(h["rx"])}" ry="{_n(h["ry"])}"'
+        ' fill="url(#lacteva-milkglow)" opacity="0.9"/>\n'
+        f'  <path d="M{_n(m["x1"])} {_n(m["y1"])}A{_n(m["r"])} {_n(m["r"])} 0 0 0 {_n(m["x2"])} {_n(m["y2"])}"'
+        f' fill="none" stroke="{DAIRY}" stroke-opacity="{_n(m["opacity"])}"'
+        f' stroke-width="{_n(m["width"])}" stroke-linecap="round"'
+        ' clip-path="url(#lacteva-drop)"/>\n'
+        "</svg>\n"
+    )
+
+
 def mark_svg(size: int = FIELD, *, dark_ground: bool = False) -> str:
     """The complete mark: drop in field. `dark_ground` flips the two."""
     field, drop = (MILK, DAIRY) if dark_ground else (DAIRY, MILK)

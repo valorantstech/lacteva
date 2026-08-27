@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'brand/mark.dart';
+import 'brand/reveal.dart';
 import 'center_summary.dart';
 import 'collection_wizard.dart';
 import 'home.dart';
@@ -23,7 +25,21 @@ import 'theme.dart';
 
 /// Login screen — SPRINT-003: first real auth flow in the mobile app.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.client, this.notice});
+  const LoginScreen({
+    super.key,
+    required this.client,
+    this.notice,
+    this.gate = const AlwaysReveal(),
+    this.today,
+  });
+
+  /// LACTEVA-BRAND-003: whether the reveal has already played today. The
+  /// default remembers nothing, which is right for a screen constructed
+  /// mid-session — `main.dart` supplies the persisted one at launch.
+  final RevealGate gate;
+
+  /// Injected by the tests so the gate is deterministic.
+  final String? today;
 
   /// DEMO-012: the OFFLINE client specifically. Sign-in leads to the delivery
   /// round, which captures into the durable queue — so the type that carries
@@ -102,87 +118,124 @@ class _LoginScreenState extends State<LoginScreen> {
     // English today, translatable the day a pre-auth locale source is chosen
     // (P1-LOCALE-I18N-001).
     final t = L10n.of(null);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Lacteva — Sign in')),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_queuedOffline > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
+    // The reveal wraps the WHOLE screen, and the screen is built first: its
+    // controllers are live and its fields focusable from frame one. The
+    // overlay captures no pointer, so a tap on the email field dismisses the
+    // reveal and opens the keyboard in the same gesture.
+    return LactevaReveal(
+      gate: widget.gate,
+      today: widget.today,
+      child: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // The mark is here, static, always — which is what makes
+                      // the reveal removable. Reduced motion, or a second launch
+                      // today, and this is simply the screen.
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Center(child: LactevaMark(size: 54)),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        child: Center(
                           child: Text(
-                            t.t('login.queuedSafe', {'count': _queuedOffline}),
+                            'Lacteva',
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.48,
+                              color: LactevaColors.ink,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  TextFormField(
-                    controller: _email,
-                    decoration: InputDecoration(labelText: t.t('auth.email')),
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (v) => (v == null || !v.contains('@'))
-                        ? 'Enter your email'
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _password,
-                    decoration: InputDecoration(
-                      labelText: t.t('auth.password'),
-                    ),
-                    obscureText: true,
-                    validator: (v) =>
-                        (v == null || v.isEmpty) ? 'Enter your password' : null,
-                  ),
-                  const SizedBox(height: 20),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Text(
-                        _error!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+                      if (_queuedOffline > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Text(
+                                t.t('login.queuedSafe', {
+                                  'count': _queuedOffline,
+                                }),
+                              ),
+                            ),
+                          ),
+                        ),
+                      TextFormField(
+                        controller: _email,
+                        decoration: InputDecoration(
+                          labelText: t.t('auth.email'),
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                        validator: (v) => (v == null || !v.contains('@'))
+                            ? 'Enter your email'
+                            : null,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _password,
+                        decoration: InputDecoration(
+                          labelText: t.t('auth.password'),
+                        ),
+                        obscureText: true,
+                        validator: (v) => (v == null || v.isEmpty)
+                            ? 'Enter your password'
+                            : null,
+                      ),
+                      const SizedBox(height: 20),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            _error!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ),
+                      FilledButton(
+                        onPressed: _busy ? null : _submit,
+                        child: Text(
+                          _busy ? t.t('auth.signingIn') : t.t('auth.signIn'),
                         ),
                       ),
-                    ),
-                  FilledButton(
-                    onPressed: _busy ? null : _submit,
-                    child: Text(
-                      _busy ? t.t('auth.signingIn') : t.t('auth.signIn'),
-                    ),
+                      // LACTEVA-ADMIN-003: quiet, under the form. A locked-out
+                      // operator needs a way through that does not compete with
+                      // what everybody else came here to do.
+                      TextButton(
+                        onPressed: _busy
+                            ? null
+                            : () async {
+                                final reason = await Navigator.of(context)
+                                    .push<String>(
+                                      MaterialPageRoute(
+                                        builder: (_) => PasswordResetScreen(
+                                          client: widget.client,
+                                        ),
+                                      ),
+                                    );
+                                // The screen hands back WHY it returned, which is
+                                // the `notice` slot this form already renders.
+                                if (reason != null && mounted) {
+                                  setState(() => _error = reason);
+                                }
+                              },
+                        child: Text(t.t('auth.forgotPassword')),
+                      ),
+                    ],
                   ),
-                  // LACTEVA-ADMIN-003: quiet, under the form. A locked-out
-                  // operator needs a way through that does not compete with
-                  // what everybody else came here to do.
-                  TextButton(
-                    onPressed: _busy
-                        ? null
-                        : () async {
-                            final reason = await Navigator.of(context).push<String>(
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    PasswordResetScreen(client: widget.client),
-                              ),
-                            );
-                            // The screen hands back WHY it returned, which is
-                            // the `notice` slot this form already renders.
-                            if (reason != null && mounted) {
-                              setState(() => _error = reason);
-                            }
-                          },
-                    child: Text(t.t('auth.forgotPassword')),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -313,10 +366,8 @@ class _CentersListScreenState extends State<CentersListScreen> {
               if (client is! OfflineApiClient) return;
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => SyncStatusScreen(
-                    client: client,
-                    session: widget.session,
-                  ),
+                  builder: (_) =>
+                      SyncStatusScreen(client: client, session: widget.session),
                 ),
               );
             },
@@ -571,9 +622,7 @@ class _CenterFormScreenState extends State<CenterFormScreen> {
               if (!widget.isEdit)
                 DropdownButtonFormField<String>(
                   initialValue: _branchId,
-                  decoration: InputDecoration(
-                    labelText: t.t('center.branch'),
-                  ),
+                  decoration: InputDecoration(labelText: t.t('center.branch')),
                   items: _branches
                       .map(
                         (b) => DropdownMenuItem(
@@ -629,9 +678,7 @@ class _CenterFormScreenState extends State<CenterFormScreen> {
                 ),
               FilledButton(
                 onPressed: _busy ? null : _submit,
-                child: Text(
-                  _busy ? t.t('common.saving') : t.t('common.save'),
-                ),
+                child: Text(_busy ? t.t('common.saving') : t.t('common.save')),
               ),
             ],
           ),
@@ -704,9 +751,9 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
       final sessions = await widget.client.listOpenSessions(widget.centerId);
       if (!context.mounted) return;
       if (sessions.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.t('center.noOpenSession'))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(t.t('center.noOpenSession'))));
         return;
       }
       final session = sessions.first;
@@ -734,9 +781,9 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
       if (confirmed != true || !context.mounted) return;
       await widget.client.closeCollectionSession(session['id'] as String);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.t('center.sessionClosed'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t.t('center.sessionClosed'))));
     } on ApiException catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(
@@ -935,10 +982,7 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 if (detail.windows.isEmpty)
-                  ListTile(
-                    dense: true,
-                    title: Text(t.t('center.noHours')),
-                  ),
+                  ListTile(dense: true, title: Text(t.t('center.noHours'))),
                 ...detail.windows.map(
                   (w) => ListTile(
                     dense: true,
@@ -1061,9 +1105,7 @@ class _ReadinessScreenState extends State<ReadinessScreen> {
                       ),
                       subtitle: Text(
                         t.t('readiness.checksPassing', {
-                          'passed': result.checks
-                              .where((c) => c.passed)
-                              .length,
+                          'passed': result.checks.where((c) => c.passed).length,
                           'total': result.checks.length,
                         }),
                       ),

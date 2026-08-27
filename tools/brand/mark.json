@@ -6,5 +6,47 @@
     "corner": 17.0
   },
   "dairy": "#1B5E20",
-  "milk": "#FDFBF4"
+  "milk": "#FDFBF4",
+  "rich": {
+    "highlight": {
+      "cx": 26.635,
+      "cy": 29.09,
+      "rx": 6.19,
+      "ry": 8.667
+    },
+    "meniscus": {
+      "x1": 24.571,
+      "y1": 45.598,
+      "r": 7.841,
+      "x2": 30.762,
+      "y2": 52.614,
+      "width": 1.651,
+      "opacity": 0.18
+    },
+    "body": [
+      {
+        "offset": 0.0,
+        "color": "#FFFFFF"
+      },
+      {
+        "offset": 0.55,
+        "color": "#FDFBF4"
+      },
+      {
+        "offset": 1.0,
+        "color": "#E4DEC9"
+      }
+    ],
+    "bodyAxis": {
+      "x1": 0.2,
+      "y1": 0.0,
+      "x2": 0.8,
+      "y2": 1.0
+    },
+    "glow": {
+      "cx": 0.35,
+      "cy": 0.28,
+      "r": 0.55
+    }
+  }
 }

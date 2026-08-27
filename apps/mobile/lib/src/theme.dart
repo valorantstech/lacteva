@@ -91,6 +91,11 @@ abstract final class LactevaColors {
   /// is its lit surface.
   static const milkFill = Color(0xFFF1EDDD);
 
+  /// The lit edge of the enriched mark (LACTEVA-BRAND-003) — the one place
+  /// this product uses pure white, and only where a highlight has to be
+  /// brighter than milk to read as light rather than as paint.
+  static const milkLit = Color(0xFFFFFFFF);
+
   // ---------------------------------------------------------------------
   // Structure on cream.
   // ---------------------------------------------------------------------

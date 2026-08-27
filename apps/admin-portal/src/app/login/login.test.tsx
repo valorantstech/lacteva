@@ -113,8 +113,27 @@ describe("login page", () => {
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => expect(assign).toHaveBeenCalled());
-    expect(window.localStorage.length).toBe(0);
-    expect(window.sessionStorage.length).toBe(0);
+
+    // The claim is that no CREDENTIAL is written, and it is asserted directly
+    // rather than through an empty-storage proxy: LACTEVA-BRAND-003 gave this
+    // page one legitimate session key (the reveal's once-a-session gate), and
+    // a count would have called that a security regression. Naming the secrets
+    // is also the stronger test — a store holding one unrelated key still
+    // fails if the password is in it.
+    const written = [window.localStorage, window.sessionStorage].flatMap(
+      (store) =>
+        Array.from({ length: store.length }, (_, i) => {
+          const key = store.key(i)!;
+          return `${key}=${store.getItem(key)}`;
+        }),
+    );
+    for (const secret of ["manager@kilima.example", "correct-horse-battery"]) {
+      expect(written.join("\n")).not.toContain(secret);
+    }
+    // And nothing that even claims to be one.
+    for (const entry of written) {
+      expect(entry).not.toMatch(/password|token|secret|credential/i);
+    }
   });
 });
 

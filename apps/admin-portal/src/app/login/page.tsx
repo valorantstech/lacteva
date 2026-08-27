@@ -15,6 +15,8 @@ import { ApiError, login,
   describeError,
 } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { BrandMark } from "@/components/brand-mark";
+import { LoginReveal } from "@/components/login-reveal";
 
 /**
  * Sign in (DEMO-010).
@@ -97,7 +99,18 @@ export default function LoginPage() {
   //    `items-center` a height to centre the sign-in card within. Removing it
   //    would push the card to the top of the page.
   return (
-    <div className="flex min-h-screen items-center justify-center p-8">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
+      {/*
+        LACTEVA-BRAND-003. The mark stands ABOVE the card, static, always —
+        which is what makes the reveal removable: a person who asked for
+        reduced motion, or who has already seen it this session, gets the
+        same page with the same mark on it and nothing to dismiss.
+      */}
+      <div className="flex flex-col items-center gap-2">
+        <BrandMark size={54} />
+        <span className="text-xl font-semibold tracking-tight">Lacteva</span>
+      </div>
+      <LoginReveal />
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>{t("login.title")}</CardTitle>
