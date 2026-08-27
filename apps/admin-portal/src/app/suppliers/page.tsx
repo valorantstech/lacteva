@@ -276,10 +276,10 @@ export default function SuppliersPage() {
 
       {/*
         Design System V1: the same three figures, at the size a figure that
-        matters deserves. `StatTile` rendered them at body scale, which is why
-        a page whose whole point is "how many farmers, how many delivering"
-        read as a paragraph. Left untouched elsewhere — the other pages that
-        use it migrate in their own batch.
+        matters deserves. The old `StatTile` rendered them at body scale, which
+        is why a page whose whole point is "how many farmers, how many
+        delivering" read as a paragraph. That component no longer exists —
+        LACTEVA-ADMIN-006 migrated its last user and deleted it.
       */}
       <section aria-label="Supplier summary" className="grid gap-4 sm:grid-cols-3">
         <Surface tone="metric" className="flex items-start justify-between gap-3">

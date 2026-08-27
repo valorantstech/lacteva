@@ -204,3 +204,29 @@ describe("money is formatted in exactly one place", () => {
     expect(formatAmount("40.000")).toBe("40.000");
   });
 });
+
+/**
+ * The last of the two ways to show a number (LACTEVA-ADMIN-006).
+ *
+ * `StatTile` and `Metric` did the same job at different sizes, and which one a
+ * page got depended on when it was written. The design-system migration turned
+ * 51 instances into `Surface` + `Metric` and left `/centers/[id]` alone on
+ * purpose, as the comparison page; StatTile survived for that one caller. Now
+ * that page has migrated too, so the component is deleted rather than left
+ * lying around — this codebase has been bitten three times by surface with no
+ * callers, and unused surface is untested surface.
+ */
+describe("a figure is shown exactly one way", () => {
+  it("has no StatTile left to define, import or render", () => {
+    // Deliberately narrow: a prose mention of the old name is history worth
+    // keeping, and `/suppliers/page.tsx` still explains why its figures grew.
+    // Code that could bring it back is what must not exist.
+    // Anchored at the start of a line: `"/suppliers/import"` is a URL, not an
+    // import statement, and an unanchored \bimport\b happily swallowed it.
+    const USES = /(^import\b[^;]*\bStatTile\b|<StatTile[\s/>]|function StatTile\b)/m;
+    const offenders = [...sourceFiles("src/app"), ...sourceFiles("src/components")]
+      .filter((path) => USES.test(readFileSync(path, "utf8")))
+      .map((path) => path.replace("src/", ""));
+    expect(offenders).toEqual([]);
+  });
+});

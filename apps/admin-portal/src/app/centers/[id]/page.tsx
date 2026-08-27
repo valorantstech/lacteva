@@ -35,7 +35,9 @@ import {
 } from "@/components/date-range";
 import { BarBreakdown, TrendChart } from "@/components/trend-chart";
 import { Money, Quantity } from "@/components/money";
-import { PageHeader, StatTile } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { PageContainer } from "@/components/page-container";
+import { Metric, Surface } from "@/components/surface";
 import {
   EmptyState,
   ErrorState,
@@ -44,6 +46,7 @@ import {
 } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { useLocale } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 /**
  * One collection centre (DEMO-003).
@@ -70,6 +73,26 @@ const describe = (e: unknown) =>
     : e instanceof Error
       ? e.message
       : "the request failed";
+
+/**
+ * The recent-collections header, declared once (LACTEVA-ADMIN-006).
+ *
+ * Five `<th>`s repeated two class strings between them. The markup and the
+ * semantics are unchanged — still a hand-rolled table, still `scope="col"` on
+ * every header — but the typography is now the one the design system gives
+ * every other column label: a quiet uppercase label, so the eye goes to the
+ * figures rather than to the column names.
+ *
+ * `text-start` moved onto the header itself because it has to. A `<th>`
+ * centres by default, and it was the ROW that used to say otherwise.
+ */
+const RECENT_COLUMNS: { label: string; end?: boolean }[] = [
+  { label: "State" },
+  { label: "Milk" },
+  { label: "Net", end: true },
+  { label: "Rate", end: true },
+  { label: "Amount", end: true },
+];
 
 const DAYS = [
   "Sunday",
@@ -153,21 +176,21 @@ export default function CenterDetailPage({
 
   if (detail.state === "error") {
     return (
-      <div className="mx-auto w-full max-w-3xl p-8">
+      <PageContainer width="narrow">
         <ErrorState
           message={`This centre could not be loaded — ${detail.message}.`}
         />
-        <p className="mt-4 text-sm">
+        <p className="text-sm">
           <Link className="underline underline-offset-4" href="/centers">
             Back to collection centres
           </Link>
         </p>
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <PageContainer width="wide">
       <PageHeader
         breadcrumbs={[
           { label: "Centres", href: "/centers" },
@@ -188,49 +211,62 @@ export default function CenterDetailPage({
         aria-label="Centre statistics"
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
-        <StatTile
-          label="Collections"
-          value={stats ? stats.transactions : "—"}
-          hint={
-            stats
-              ? `${stats.accepted} accepted · ${stats.rejected} rejected`
-              : undefined
-          }
-        />
-        <StatTile
-          label="Quantity"
-          value={
-            stats ? (
-              <Quantity value={stats.total_net_weight_kg} unit="kg" />
-            ) : (
-              "—"
-            )
-          }
-          hint={
-            stats ? `${stats.suppliers_served} suppliers served` : undefined
-          }
-          icon={<Droplets className="size-4" />}
-        />
-        <StatTile
-          label="Collection value"
-          value={
-            primary ? (
-              <Money amount={primary[1]} currency={primary[0]} />
-            ) : stats ? (
-              <Money amount="0.00" currency={orgCurrency} />
-            ) : (
-              "—"
-            )
-          }
-          hint="payable in this period"
-        />
-        <StatTile
-          label="Average fat"
-          value={
-            stats?.weighted_avg_fat != null ? `${stats.weighted_avg_fat}%` : "—"
-          }
-          hint="weighted by quantity"
-        />
+        <Surface tone="metric">
+          <Metric
+            label="Collections"
+            value={stats ? String(stats.transactions) : "—"}
+            caption={
+              stats
+                ? `${stats.accepted} accepted · ${stats.rejected} rejected`
+                : undefined
+            }
+          />
+        </Surface>
+        <Surface
+          tone="metric"
+          className="flex items-start justify-between gap-3"
+        >
+          <Metric
+            label="Quantity"
+            value={
+              stats ? (
+                <Quantity value={stats.total_net_weight_kg} unit="kg" />
+              ) : (
+                "—"
+              )
+            }
+            caption={
+              stats ? `${stats.suppliers_served} suppliers served` : undefined
+            }
+          />
+          <Droplets aria-hidden className="size-4 text-muted-foreground" />
+        </Surface>
+        <Surface tone="metric">
+          <Metric
+            label="Collection value"
+            value={
+              primary ? (
+                <Money amount={primary[1]} currency={primary[0]} />
+              ) : stats ? (
+                <Money amount="0.00" currency={orgCurrency} />
+              ) : (
+                "—"
+              )
+            }
+            caption="payable in this period"
+          />
+        </Surface>
+        <Surface tone="metric">
+          <Metric
+            label="Average fat"
+            value={
+              stats?.weighted_avg_fat != null
+                ? `${stats.weighted_avg_fat}%`
+                : "—"
+            }
+            caption="weighted by quantity"
+          />
+        </Surface>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -494,22 +530,19 @@ export default function CenterDetailPage({
                   Recent collections at this centre
                 </caption>
                 <thead>
-                  <tr className="border-b border-border text-start text-muted-foreground">
-                    <th scope="col" className="py-2 font-medium">
-                      State
-                    </th>
-                    <th scope="col" className="py-2 font-medium">
-                      Milk
-                    </th>
-                    <th scope="col" className="py-2 text-end font-medium">
-                      Net
-                    </th>
-                    <th scope="col" className="py-2 text-end font-medium">
-                      Rate
-                    </th>
-                    <th scope="col" className="py-2 text-end font-medium">
-                      Amount
-                    </th>
+                  <tr className="border-b border-border">
+                    {RECENT_COLUMNS.map((c) => (
+                      <th
+                        key={c.label}
+                        scope="col"
+                        className={cn(
+                          "py-2 text-start text-meta font-semibold uppercase tracking-wide text-muted-foreground",
+                          c.end && "text-end",
+                        )}
+                      >
+                        {c.label}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -544,6 +577,6 @@ export default function CenterDetailPage({
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }
