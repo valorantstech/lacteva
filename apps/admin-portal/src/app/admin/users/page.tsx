@@ -13,7 +13,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  ApiError,
   type Center,
   type Member,
   type Role,
@@ -24,6 +23,7 @@ import {
   listRoles,
   setMemberStatus,
   setUserActive,
+  describeError,
 } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,7 +51,7 @@ export default function UsersPage() {
       setPeople(await listPeople());
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load users");
+      setError(describeError(err, "Failed to load users"));
     }
     // DEMO-008 §9: who holds what, and where. Roles carry their assignments;
     // the centre names turn a scope id into something readable. Neither may
@@ -96,9 +96,7 @@ export default function UsersPage() {
       await refresh();
     } catch (err) {
       setError(
-        err instanceof ApiError
-          ? err.detail
-          : "Failed to change the membership",
+        describeError(err, "Failed to change the membership"),
       );
     } finally {
       setBusy(null);
@@ -120,7 +118,7 @@ export default function UsersPage() {
       await refresh();
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.detail : "Failed to change the account",
+        describeError(err, "Failed to change the account"),
       );
     } finally {
       setBusy(null);
@@ -150,7 +148,7 @@ export default function UsersPage() {
       // A viewer without `organization.member.manage` lands here, and must
       // read the platform's sentence rather than watch nothing happen.
       setError(
-        err instanceof ApiError ? err.detail : "Failed to send the invitation",
+        describeError(err, "Failed to send the invitation"),
       );
     } finally {
       setInviting(false);

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Check, PenLine } from "lucide-react";
 import {
-  ApiError,
   type Center,
   type MilkTransaction,
   type ReadinessResult,
@@ -22,6 +21,7 @@ import {
   listCollectionSessions,
   listSuppliers,
   openCollectionSession,
+  describeError,
 } from "@/lib/api";
 import { Stamp } from "@/components/datetime";
 import { EntityPicker } from "@/components/entity-picker";
@@ -123,14 +123,10 @@ function stepFor(tx: MilkTransaction | null): StepKey {
   }
 }
 
-const reason = (e: unknown, fallback: string) =>
-  e instanceof ApiError
-    ? // The platform's `extra` carries the business reason; `detail` is the
-      // generic RFC-9457 sentence. Prefer the specific one.
-      (e.extra as string) || e.detail
-    : e instanceof Error
-      ? e.message
-      : fallback;
+// The platform's `extra` carries the business reason; `detail` is the generic
+// RFC-9457 sentence. The shared rule prefers the specific one — unless it is a
+// permission key, which this cast used to hand straight to an operator.
+const reason = (e: unknown, fallback: string) => describeError(e, fallback);
 
 export default function NewCollectionPage() {
   const [centers, setCenters] = useState<Center[]>([]);

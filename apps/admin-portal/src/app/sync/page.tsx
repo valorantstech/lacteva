@@ -21,13 +21,13 @@ import {
 } from "@/components/ui/table";
 import { PageContainer } from "@/components/page-container";
 import {
-  ApiError,
   SyncOperation,
   SyncOperationPage,
   SyncStats,
   getSyncStats,
   listSyncOperations,
   retrySyncOperation,
+  describeError,
 } from "@/lib/api";
 
 const PAGE_SIZE = 15;
@@ -103,7 +103,7 @@ export default function SyncMonitorPage() {
       setError(null);
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.detail : "Failed to load sync activity",
+        describeError(err, "Failed to load sync activity"),
       );
     }
   }, [status, device, offset]);
@@ -122,7 +122,7 @@ export default function SyncMonitorPage() {
       setError(null);
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Retry failed");
+      setError(describeError(err, "Retry failed"));
     }
   }
 

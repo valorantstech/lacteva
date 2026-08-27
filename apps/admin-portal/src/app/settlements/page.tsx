@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Banknote, FileText, Lock, Plus } from "lucide-react";
 import {
-  ApiError,
   type Center,
   type Settlement,
   type SettlementPageResult,
@@ -14,6 +13,7 @@ import {
   listCenters,
   listSettlements,
   listSuppliers,
+  describeError,
 } from "@/lib/api";
 import { EntityPicker } from "@/components/entity-picker";
 import { useSupplierNames } from "@/lib/names";
@@ -62,11 +62,7 @@ const PAGE_SIZE = 15;
 const STATUSES = ["", "draft", "calculated", "finalized", "cancelled"] as const;
 
 /** The business reason when the platform gave one, the HTTP detail otherwise. */
-const describe = (e: unknown) => {
-  if (e instanceof ApiError)
-    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
-  return e instanceof Error ? e.message : "Request failed";
-};
+const describe = (e: unknown) => describeError(e);
 
 export default function SettlementsPage() {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.

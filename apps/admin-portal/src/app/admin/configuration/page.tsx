@@ -5,7 +5,9 @@ import { AdminPage } from "@/components/admin-page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiError, getConfig, setConfig } from "@/lib/api";
+import {getConfig, setConfig,
+  describeError,
+} from "@/lib/api";
 
 /**
  * Tenant configuration (PORTAL-001 / F-10).
@@ -32,7 +34,7 @@ export default function ConfigurationPage() {
       setNote(`Loaded ${key}.`);
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.detail : "Failed to read the setting",
+        describeError(err, "Failed to read the setting"),
       );
     }
   }
@@ -54,9 +56,7 @@ export default function ConfigurationPage() {
       setNote(`Saved ${key} at ${scope} scope.`);
     } catch (err) {
       setError(
-        err instanceof ApiError
-          ? err.detail
-          : "The platform refused the change",
+        describeError(err, "The platform refused the change"),
       );
     }
   }

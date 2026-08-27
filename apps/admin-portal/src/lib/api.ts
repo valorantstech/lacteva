@@ -39,6 +39,41 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The permission-registry key shape, `<module>.<entity>.<action>`, exactly as
+ * `modules/authz/permissions.py` declares it.
+ */
+const PERMISSION_KEY = /^[a-z]+(\.[a-z_]+)+$/;
+
+/**
+ * Why the platform refused, in words a person can act on (LACTEVA-ADMIN-013).
+ *
+ * `extra` carries two different kinds of thing and the status code cannot tell
+ * them apart. On a validation refusal it holds the actionable specific — "no
+ * published rate card covers this center, product, and date" — while `detail`
+ * is the generic translated sentence, "The request conflicts with the current
+ * state.", which is true and useless. On a 403 it holds the raw permission
+ * KEY, and `organization.member.manage` tells an administrator nothing at all.
+ *
+ * So the tell is the SHAPE, not the status: a key-shaped `extra` never wins;
+ * anything else sentence-shaped does. That is the rule LACTEVA-MOBILE-001
+ * settled on the handset after a real operator was shown
+ * `pricing.ratecard.read`, and it is the rule the whole portal now uses
+ * instead of forty-three private opinions.
+ *
+ * A map/dict `extra` is left alone entirely: callers that read structured
+ * extra — the import summary, the pricing-resolution stage — keep doing so,
+ * and this returns their `detail` untouched.
+ */
+export function describeError(error: unknown, fallback = "Request failed"): string {
+  if (error instanceof ApiError) {
+    const extra = typeof error.extra === "string" ? error.extra : "";
+    if (extra && !PERMISSION_KEY.test(extra)) return extra;
+    return error.detail;
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
 /** Options that change how a call BEHAVES, as opposed to what it sends. */
 export type ApiOptions = {
   /**

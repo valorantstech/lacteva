@@ -14,11 +14,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  ApiError,
   type BackupRun,
   type BackupStatus,
   getBackupStatus,
   listBackupRuns,
+  describeError,
 } from "@/lib/api";
 
 /**
@@ -49,7 +49,7 @@ export default function OperationsPage() {
       setError(null);
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.detail : "Failed to load backup status",
+        describeError(err, "Failed to load backup status"),
       );
     } finally {
       setLoading(false);

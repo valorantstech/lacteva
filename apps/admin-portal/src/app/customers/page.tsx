@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Plus, Store, Users } from "lucide-react";
 import {
-  ApiError,
   type Customer,
   type CustomerPageResult,
   createCustomer,
   listCustomers,
+  describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,11 +53,7 @@ const TYPES = [
 ] as const;
 const STATUSES = ["", "active", "inactive", "suspended"] as const;
 
-const describe = (e: unknown) => {
-  if (e instanceof ApiError)
-    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
-  return e instanceof Error ? e.message : "Request failed";
-};
+const describe = (e: unknown) => describeError(e);
 
 /**
  * The page reads its filters from the URL on first load, so `/customers?q=Mama`

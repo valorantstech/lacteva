@@ -29,7 +29,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  ApiError,
   Center,
   CenterSummaryRow,
   DailyCollectionSummary,
@@ -42,6 +41,7 @@ import {
   getSettlementReport,
   getSupplierReport,
   listCenters,
+  describeError,
 } from "@/lib/api";
 
 const PAGE_SIZE = 50;
@@ -101,7 +101,7 @@ export default function ReportsPage() {
       setPricing(p);
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load reports");
+      setError(describeError(err, "Failed to load reports"));
     }
   }, [dateFrom, dateTo, centerId]);
 
@@ -134,7 +134,7 @@ export default function ReportsPage() {
         setError(null);
       } catch (err) {
         setError(
-          err instanceof ApiError ? err.detail : "Failed to load reports",
+          describeError(err, "Failed to load reports"),
         );
       } finally {
         setTableBusy(false);
@@ -158,7 +158,7 @@ export default function ReportsPage() {
         setError(null);
       } catch (err) {
         setError(
-          err instanceof ApiError ? err.detail : "Failed to load reports",
+          describeError(err, "Failed to load reports"),
         );
       } finally {
         setTableBusy(false);

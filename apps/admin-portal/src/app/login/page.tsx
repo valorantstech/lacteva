@@ -11,7 +11,9 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiError, login } from "@/lib/api";
+import { ApiError, login,
+  describeError,
+} from "@/lib/api";
 import { useT } from "@/lib/i18n";
 
 /**
@@ -79,7 +81,7 @@ export default function LoginPage() {
         setNeedsTenant(true);
         setError(err.detail);
       } else {
-        setError(err instanceof ApiError ? err.detail : t("login.failed"));
+        setError(describeError(err, t("login.failed")));
       }
     } finally {
       setBusy(false);

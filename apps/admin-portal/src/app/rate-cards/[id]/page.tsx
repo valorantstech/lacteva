@@ -4,13 +4,13 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Building2, Tags } from "lucide-react";
 import {
-  ApiError,
   type MatrixDetail,
   type PricingMatrix,
   type RateCardDetail,
   getMatrixDetail,
   getRateCardDetail,
   listMatrices,
+  describeError,
 } from "@/lib/api";
 import {
   Card,
@@ -49,11 +49,9 @@ type Load<T> =
 
 const LOADING = { state: "loading" } as const;
 const describe = (e: unknown) =>
-  e instanceof ApiError
-    ? e.detail
-    : e instanceof Error
+  describeError(e, e instanceof Error
       ? e.message
-      : "the request failed";
+      : "the request failed");
 
 export default function RateCardDetailPage({
   params,

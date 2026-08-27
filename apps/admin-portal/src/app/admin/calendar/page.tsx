@@ -14,6 +14,7 @@ import {
   getOrganizationCalendar,
   openFinancialPeriod,
   reopenFinancialPeriod,
+  describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -42,7 +43,7 @@ import { Metric, Surface } from "@/components/surface";
 
 const describe = (e: unknown) => {
   if (e instanceof ApiError)
-    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+    return describeError(e);
   return e instanceof Error ? e.message : "Could not load the calendar";
 };
 

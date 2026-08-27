@@ -22,6 +22,7 @@ import {
   listOutstandingBalances,
   listPayments,
   listSuppliers,
+  describeError,
 } from "@/lib/api";
 import { EntityPicker } from "@/components/entity-picker";
 import { useSupplierNames } from "@/lib/names";
@@ -70,7 +71,7 @@ const STATUSES = [
 
 const describe = (e: unknown) => {
   if (e instanceof ApiError)
-    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+    return describeError(e);
   return e instanceof Error ? e.message : "Request failed";
 };
 

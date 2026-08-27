@@ -11,6 +11,7 @@ import {
   getCustomer,
   getInvoice,
   issueInvoice,
+  describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,7 +52,7 @@ const LOADING = { state: "loading" } as const;
 
 const describe = (e: unknown) => {
   if (e instanceof ApiError)
-    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+    return describeError(e);
   return e instanceof Error ? e.message : "Request failed";
 };
 

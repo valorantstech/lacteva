@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/table";
 import { PageContainer } from "@/components/page-container";
 import {
-  ApiError,
   MatrixDetail,
   MatrixPage,
   MatrixRow,
@@ -38,6 +37,7 @@ import {
   listQualityDimensions,
   listRateCards,
   updateMatrixRow,
+  describeError,
 } from "@/lib/api";
 
 const PAGE_SIZE = 10;
@@ -61,7 +61,7 @@ export default function MatricesPage() {
       setError(null);
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.detail : "Failed to load matrices",
+        describeError(err, "Failed to load matrices"),
       );
     }
   }, [q, status, offset]);
@@ -76,7 +76,7 @@ export default function MatricesPage() {
       setDetail(await getMatrixDetail(id));
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load matrix");
+      setError(describeError(err, "Failed to load matrix"));
     }
   }
 
@@ -93,7 +93,7 @@ export default function MatricesPage() {
       setConfirmDelete(null);
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Delete failed");
+      setError(describeError(err, "Delete failed"));
     } finally {
       setDeleting(false);
     }
@@ -314,7 +314,7 @@ function MatrixDetailCard({
       });
       await onRefresh();
     } catch (err) {
-      onError(err instanceof ApiError ? err.detail : "Row update failed");
+      onError(describeError(err, "Row update failed"));
     }
   }
 
@@ -328,7 +328,7 @@ function MatrixDetailCard({
       setConfirmRow(null);
       await onRefresh();
     } catch (err) {
-      onError(err instanceof ApiError ? err.detail : "Row delete failed");
+      onError(describeError(err, "Row delete failed"));
     } finally {
       setRowBusy(false);
     }
@@ -554,7 +554,7 @@ function NewRowForm({
       setPrice("");
       await onDone();
     } catch (err) {
-      onError(err instanceof ApiError ? err.detail : "Row create failed");
+      onError(describeError(err, "Row create failed"));
     } finally {
       setBusy(false);
     }
@@ -639,7 +639,7 @@ function MatrixCreateForm({
       });
       await onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Create failed");
+      setError(describeError(err, "Create failed"));
     } finally {
       setBusy(false);
     }

@@ -26,6 +26,7 @@ import {
   getDeliveryReport,
   listCustomers,
   listDeliveries,
+  describeError,
 } from "@/lib/api";
 import { EntityPicker } from "@/components/entity-picker";
 import { useCustomerNames } from "@/lib/names";
@@ -66,7 +67,7 @@ const STATUSES = ["", "delivered", "skipped", "returned", "cancelled"] as const;
 
 const describe = (e: unknown) => {
   if (e instanceof ApiError)
-    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+    return describeError(e);
   return e instanceof Error ? e.message : "Could not load deliveries";
 };
 
@@ -292,7 +293,7 @@ function DeliveriesView() {
                 await load();
               } catch (err) {
                 setError(
-                  err instanceof ApiError ? err.detail : t("generation.failed"),
+                  describeError(err, t("generation.failed")),
                 );
               } finally {
                 setGenerating(false);

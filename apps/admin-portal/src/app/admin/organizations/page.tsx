@@ -11,11 +11,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  ApiError,
   type Me,
   type Organization,
   getMe,
   getOrganization,
+  describeError,
 } from "@/lib/api";
 
 /**
@@ -41,9 +41,7 @@ export default function OrganizationsPage() {
       setError(null);
     } catch (err) {
       setError(
-        err instanceof ApiError
-          ? err.detail
-          : "Failed to load the organization",
+        describeError(err, "Failed to load the organization"),
       );
     }
   }, []);

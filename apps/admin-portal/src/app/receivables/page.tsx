@@ -8,6 +8,7 @@ import {
   type ReceivableRow,
   type ReceivablesPage,
   getReceivables,
+  describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,7 +41,7 @@ const PAGE_SIZE = 25;
 
 const describe = (e: unknown) => {
   if (e instanceof ApiError)
-    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+    return describeError(e);
   return e instanceof Error ? e.message : "Could not load receivables";
 };
 

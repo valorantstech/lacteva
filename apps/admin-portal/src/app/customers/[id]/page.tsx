@@ -4,7 +4,6 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Receipt as ReceiptIcon, Truck, Wallet } from "lucide-react";
 import {
-  ApiError,
   CUSTOMER_PAYMENT_METHODS,
   type CustomerBalance,
   type CustomerDetail,
@@ -30,6 +29,7 @@ import {
   recordDelivery,
   setCustomerStatus,
   updateCustomer,
+  describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -73,11 +73,7 @@ type Load<T> =
 
 const LOADING = { state: "loading" } as const;
 
-const describe = (e: unknown) => {
-  if (e instanceof ApiError)
-    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
-  return e instanceof Error ? e.message : "Request failed";
-};
+const describe = (e: unknown) => describeError(e);
 
 const stamp = (iso: string | null | undefined) =>
   iso ? String(iso).slice(0, 16).replace("T", " ") : "—";

@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/table";
 import { PageContainer } from "@/components/page-container";
 import {
-  ApiError,
   Receipt,
   ReceiptDetail,
   ReceiptPageResult,
@@ -32,6 +31,7 @@ import {
   listReceipts,
   receiptAction,
   renderReceipt,
+  describeError,
 } from "@/lib/api";
 
 const PAGE_SIZE = 10;
@@ -61,7 +61,7 @@ export default function ReceiptsPage() {
       setError(null);
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.detail : "Failed to load receipts",
+        describeError(err, "Failed to load receipts"),
       );
     }
   }, [q, status, offset]);
@@ -76,7 +76,7 @@ export default function ReceiptsPage() {
       setDetail(await getReceiptDetail(id));
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load receipt");
+      setError(describeError(err, "Failed to load receipt"));
     }
   }
 
@@ -88,7 +88,7 @@ export default function ReceiptsPage() {
       await refresh();
       if (detail?.receipt.id === receipt.id) await openDetail(receipt.id);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Action failed");
+      setError(describeError(err, "Action failed"));
     }
   }
 
@@ -279,7 +279,7 @@ function ReceiptDetailCard({
     } catch (err) {
       setPreview(null);
       setError(
-        err instanceof ApiError ? err.detail : "Could not render this format",
+        describeError(err, "Could not render this format"),
       );
     } finally {
       setBusy(false);
@@ -301,7 +301,7 @@ function ReceiptDetailCard({
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Download failed");
+      setError(describeError(err, "Download failed"));
     } finally {
       setBusy(false);
     }

@@ -16,6 +16,7 @@ import {
   listSuppliers,
   setSupplierStatus,
   updateSupplier,
+  describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -108,7 +109,7 @@ export default function SuppliersPage() {
         .catch(() => setActivity({}));
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.detail : "Could not load suppliers",
+        describeError(err, "Could not load suppliers"),
       );
     } finally {
       setLoading(false);
@@ -471,9 +472,7 @@ function SupplierForm({
       }
     } catch (err) {
       setError(
-        err instanceof ApiError
-          ? err.detail
-          : "The supplier could not be saved",
+        describeError(err, "The supplier could not be saved"),
       );
     } finally {
       setBusy(false);

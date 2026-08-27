@@ -15,6 +15,7 @@ import {
   listCenters,
   listMilkTransactions,
   listSuppliers,
+  describeError,
 } from "@/lib/api";
 import { EntityPicker } from "@/components/entity-picker";
 import { useSupplierNames } from "@/lib/names";
@@ -96,7 +97,7 @@ const STATES = [
 
 const describe = (e: unknown, fallback: string) => {
   if (e instanceof ApiError)
-    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+    return describeError(e);
   return e instanceof Error ? e.message : fallback;
 };
 

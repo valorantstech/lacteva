@@ -25,7 +25,6 @@ import { AdminPage } from "@/components/admin-page";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
-  ApiError,
   type LocaleSettings,
   can,
   getLocaleSettings,
@@ -34,6 +33,7 @@ import {
   setMyLanguage,
   setMyTimezone,
   updateLocaleSettings,
+  describeError,
 } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 
@@ -55,7 +55,7 @@ export default function OrganizationSettingsPage() {
       setSettings(locale);
       setSession(who);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : t("state.unreachable"));
+      setError(describeError(err, t("state.unreachable")));
     }
   }, [t]);
 
@@ -85,7 +85,7 @@ export default function OrganizationSettingsPage() {
       // language until something else happened to remount it.
       window.location.reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : t("state.error"));
+      setError(describeError(err, t("state.error")));
       setSaving(false);
     }
   }
@@ -99,7 +99,7 @@ export default function OrganizationSettingsPage() {
       setNote(t("settings.saved"));
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : t("state.error"));
+      setError(describeError(err, t("state.error")));
     } finally {
       setSaving(false);
     }
@@ -126,7 +126,7 @@ export default function OrganizationSettingsPage() {
       setSettings(updated);
       setNote(t("settings.saved"));
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : t("state.error"));
+      setError(describeError(err, t("state.error")));
     } finally {
       setSaving(false);
     }

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Building2, Plus, Search } from "lucide-react";
 import {
-  ApiError,
   type Branch,
   type Center,
   type CenterSummaryRow,
@@ -15,6 +14,7 @@ import {
   listCenters,
   setCenterStatus,
   updateCenter,
+  describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -107,9 +107,7 @@ export default function CentersPage() {
         .catch(() => setActivity({}));
     } catch (err) {
       setError(
-        err instanceof ApiError
-          ? err.detail
-          : "Could not load collection centres",
+        describeError(err, "Could not load collection centres"),
       );
     } finally {
       setLoading(false);
@@ -420,7 +418,7 @@ function CenterForm({
     } catch (err) {
       // The platform's own words. It knows rules this form does not.
       setError(
-        err instanceof ApiError ? err.detail : "The centre could not be saved",
+        describeError(err, "The centre could not be saved"),
       );
     } finally {
       setBusy(false);

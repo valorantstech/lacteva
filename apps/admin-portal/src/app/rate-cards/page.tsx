@@ -25,7 +25,6 @@ import {
 } from "@/components/ui/table";
 import { PageContainer } from "@/components/page-container";
 import {
-  ApiError,
   Branch,
   Center,
   RateCard,
@@ -40,6 +39,7 @@ import {
   listRateCards,
   rateCardAction,
   updateRateCard,
+  describeError,
 } from "@/lib/api";
 
 const PAGE_SIZE = 10;
@@ -102,7 +102,7 @@ export default function RateCardsPage() {
       setError(null);
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.detail : "Failed to load rate cards",
+        describeError(err, "Failed to load rate cards"),
       );
     }
   }, [q, status, currency, offset]);
@@ -130,7 +130,7 @@ export default function RateCardsPage() {
       setError(null);
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.detail : "Failed to load rate card",
+        describeError(err, "Failed to load rate card"),
       );
     }
   }
@@ -156,7 +156,7 @@ export default function RateCardsPage() {
       if (detail?.card.id === card.id)
         setDetail(await getRateCardDetail(card.id));
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Action failed");
+      setError(describeError(err, "Action failed"));
     } finally {
       setActionBusy(false);
     }
@@ -176,7 +176,7 @@ export default function RateCardsPage() {
       setDetail(await getRateCardDetail(cardId));
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Assignment failed");
+      setError(describeError(err, "Assignment failed"));
     }
   }
 
@@ -186,7 +186,7 @@ export default function RateCardsPage() {
       setDetail(await getRateCardDetail(cardId));
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Assignment failed");
+      setError(describeError(err, "Assignment failed"));
     }
   }
 
@@ -545,7 +545,7 @@ function RateCardForm({
       else await createRateCard(code ? { ...body, code } : body);
       await onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Save failed");
+      setError(describeError(err, "Save failed"));
     } finally {
       setBusy(false);
     }

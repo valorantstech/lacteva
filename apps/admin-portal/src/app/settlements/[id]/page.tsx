@@ -27,6 +27,7 @@ import {
   receiptDownloadUrl,
   removeSettlementLine,
   settlementAction,
+  describeError,
 } from "@/lib/api";
 import { formatStamp } from "@/components/datetime";
 import { Button } from "@/components/ui/button";
@@ -78,7 +79,7 @@ const LOADING = { state: "loading" } as const;
 /** The business reason when the platform gave one, the HTTP detail otherwise. */
 const describe = (e: unknown) => {
   if (e instanceof ApiError)
-    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+    return describeError(e);
   return e instanceof Error ? e.message : "Request failed";
 };
 

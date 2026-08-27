@@ -14,7 +14,6 @@ import {
   Truck,
 } from "lucide-react";
 import {
-  ApiError,
   type CenterDetail,
   type CollectionChain,
   type CollectionSlip,
@@ -31,6 +30,7 @@ import {
   getMilkTransactionEvents,
   getSupplierDetail,
   listPeople,
+  describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { formatStamp } from "@/components/datetime";
@@ -73,34 +73,7 @@ type Load<T> =
 
 const LOADING = { state: "loading" } as const;
 const describe = (e: unknown, fallback: string) =>
-  e instanceof ApiError ? e.detail : e instanceof Error ? e.message : fallback;
-
-/** The permission-registry key shape, `<module>.<entity>.<action>`. */
-const PERMISSION_KEY = /^[a-z]+(\.[a-z_]+)+$/;
-
-/**
- * Why the platform refused, in words an administrator can act on
- * (LACTEVA-BACKEND-001).
- *
- * `detail` on an `AppError` is the GENERIC translated sentence — "The request
- * conflicts with the current state." — and the specific reason travels in
- * `extra`: "no published rate card covers this center, product, and date".
- * That sentence is the entire remedy, so this refusal is the one place worth
- * preferring it.
- *
- * Except when `extra` is a registry key. On a 403 the platform puts the
- * PERMISSION there, and `pricing.ratecard.manage` tells an administrator
- * nothing — the same one-field-two-meanings trap LACTEVA-MOBILE-001 found on
- * the handset, and the same shape test that settles it.
- */
-const reprice_reason = (e: unknown, fallback: string) => {
-  if (e instanceof ApiError) {
-    const extra = typeof e.extra === "string" ? e.extra : "";
-    if (extra && !PERMISSION_KEY.test(extra)) return extra;
-    return e.detail;
-  }
-  return describe(e, fallback);
-};
+  describeError(e, e instanceof Error ? e.message : fallback);
 
 /** One definition, shared with every other screen. */
 const stamp = formatStamp;
@@ -174,7 +147,7 @@ export default function TransactionDetailPage({
       // The platform's own reason — "no published rate card covers this
       // center, product, and date" is the sentence that tells an
       // administrator what to go and do. The badge stays Rate pending.
-      setRepriceError(reprice_reason(e, t9n("txDetail.requestFailed")));
+      setRepriceError(describeError(e, t9n("txDetail.requestFailed")));
     } finally {
       setRepricing(false);
     }

@@ -16,6 +16,7 @@ import {
   listAudit,
   listAuditActions,
   listPeople,
+  describeError,
 } from "@/lib/api";
 
 /**
@@ -43,7 +44,7 @@ const PAGE_SIZE = 25;
 
 const describe = (e: unknown) => {
   if (e instanceof ApiError)
-    return typeof e.extra === "string" && e.extra ? e.extra : e.detail;
+    return describeError(e);
   return e instanceof Error ? e.message : "Failed to load the audit trail";
 };
 

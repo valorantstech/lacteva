@@ -11,7 +11,9 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiError, acceptInvitation } from "@/lib/api";
+import {acceptInvitation,
+  describeError,
+} from "@/lib/api";
 
 /**
  * Join the organization you were invited to (LACTEVA-ADMIN-002).
@@ -60,9 +62,7 @@ export default function AcceptInvitationPage() {
       // one to their inbox, one to their administrator — so neither is
       // flattened into "invalid code" here.
       setError(
-        err instanceof ApiError
-          ? err.detail
-          : "Could not reach the platform. Check your connection and try again.",
+        describeError(err, "Could not reach the platform. Check your connection and try again."),
       );
       // The form KEEPS what was typed. Retyping a long code because the name
       // field was wrong is the kind of small cruelty software does casually.

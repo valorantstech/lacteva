@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/table";
 import { PageContainer } from "@/components/page-container";
 import {
-  ApiError,
   Notification,
   NotificationPage,
   NotificationStats,
@@ -43,6 +42,7 @@ import {
   retryNotification,
   repairSupplierContact,
   retryPendingNotifications,
+  describeError,
 } from "@/lib/api";
 
 const PAGE_SIZE = 15;
@@ -118,7 +118,7 @@ export default function NotificationsPage() {
       setError(null);
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.detail : "Failed to load notifications",
+        describeError(err, "Failed to load notifications"),
       );
     }
   }, [q, status, channel, templateKey, offset]);
@@ -142,7 +142,7 @@ export default function NotificationsPage() {
       if (selected?.id === id) setSelected(updated);
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Retry failed");
+      setError(describeError(err, "Retry failed"));
     }
   }
 
@@ -155,7 +155,7 @@ export default function NotificationsPage() {
       setError(null);
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Sweep failed");
+      setError(describeError(err, "Sweep failed"));
     }
   }
 
@@ -542,7 +542,7 @@ function TemplateCatalog({ templates }: { templates: NotificationTemplate[] }) {
       );
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Preview failed");
+      setError(describeError(err, "Preview failed"));
     }
   }
 
@@ -868,15 +868,7 @@ function RepairContactForm({
       await repairSupplierContact(entry.subject_id, { phone, reason });
       onClose();
     } catch (e) {
-      setError(
-        e instanceof ApiError
-          ? typeof e.extra === "string" && e.extra
-            ? e.extra
-            : e.detail
-          : e instanceof Error
-            ? e.message
-            : "Could not save",
-      );
+      setError(describeError(e, "Could not save"));
     } finally {
       setBusy(false);
     }

@@ -18,6 +18,7 @@ import {
   getSupplierDetail,
   listMilkTransactions,
   setSupplierStatus,
+  describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -66,11 +67,9 @@ type Load<T> =
 
 const LOADING = { state: "loading" } as const;
 const describe = (e: unknown) =>
-  e instanceof ApiError
-    ? e.detail
-    : e instanceof Error
+  describeError(e, e instanceof Error
       ? e.message
-      : "the request failed";
+      : "the request failed");
 
 export default function SupplierDetailPage({
   params,

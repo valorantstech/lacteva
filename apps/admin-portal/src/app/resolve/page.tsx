@@ -14,7 +14,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageContainer } from "@/components/page-container";
 import {
-  ApiError,
   CalculationResult,
   Center,
   QualityDimension,
@@ -23,6 +22,7 @@ import {
   listCenters,
   listQualityDimensions,
   resolvePricing,
+  describeError,
 } from "@/lib/api";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -80,7 +80,7 @@ export default function ResolutionPlaygroundPage() {
       );
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.detail : "Resolution request failed",
+        describeError(err, "Resolution request failed"),
       );
     } finally {
       setBusy(false);
@@ -275,9 +275,7 @@ export default function ResolutionPlaygroundPage() {
                     );
                   } catch (err) {
                     setCalcError(
-                      err instanceof ApiError
-                        ? err.detail
-                        : "Calculation failed",
+                      describeError(err, "Calculation failed"),
                     );
                   } finally {
                     setCalcBusy(false);

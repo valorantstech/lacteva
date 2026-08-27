@@ -16,7 +16,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  ApiError,
   type Center,
   type Member,
   type Role,
@@ -28,6 +27,7 @@ import {
   listPermissions,
   listRoles,
   revokeRole,
+  describeError,
 } from "@/lib/api";
 
 /**
@@ -89,7 +89,7 @@ export default function RolesPage() {
       setRoleName((current) => current || (defined[0]?.name ?? ""));
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load roles");
+      setError(describeError(err, "Failed to load roles"));
     } finally {
       setLoading(false);
     }
@@ -115,7 +115,7 @@ export default function RolesPage() {
       setNote(what);
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "The change was refused");
+      setError(describeError(err, "The change was refused"));
     }
   }
 
