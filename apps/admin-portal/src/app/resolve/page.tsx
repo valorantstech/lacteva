@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CappedNotice } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +35,8 @@ const STAGE_LABELS: Record<string, string> = {
 
 export default function ResolutionPlaygroundPage() {
   const [centers, setCenters] = useState<Center[]>([]);
+  // LACTEVA-ADMIN-007: the platform's own count, so a capped list can say so.
+  const [centreTotal, setCentreTotal] = useState(0);
   const [dimensions, setDimensions] = useState<QualityDimension[]>([]);
   const [centerId, setCenterId] = useState("");
   const [productCode, setProductCode] = useState("");
@@ -52,7 +55,10 @@ export default function ResolutionPlaygroundPage() {
   useEffect(() => {
     const t = setTimeout(() => {
       listCenters({ limit: 100, offset: 0 })
-        .then((p) => setCenters(p.items))
+        .then((p) => {
+          setCenters(p.items);
+          setCentreTotal(p.total ?? 0);
+        })
         .catch(() => setCenters([]));
       listQualityDimensions()
         .then(setDimensions)
@@ -125,6 +131,12 @@ export default function ResolutionPlaygroundPage() {
                   </option>
                 ))}
               </select>
+              <CappedNotice
+                shown={centers.length}
+                total={centreTotal}
+                noun="centres"
+                hint="Search on the Centres page to find one that is not listed."
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="r-product">Product code</Label>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CappedNotice, EmptyState,} from "@/components/states";
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -73,6 +74,8 @@ export default function ReportsPage() {
   const setDateTo = (to: string) => setChosen({ from: dateFrom, to });
   const [centerId, setCenterId] = useState("");
   const [centers, setCenters] = useState<Center[]>([]);
+  // LACTEVA-ADMIN-007: the platform's own count, so a capped list can say so.
+  const [centreTotal, setCentreTotal] = useState(0);
   const [daily, setDaily] = useState<DailyCollectionSummary | null>(null);
   // P1-PORTAL-SCALE-001: the platform pages these summaries (ordered by milk
   // supplied, largest first) and its `total` is authoritative — the page no
@@ -170,7 +173,10 @@ export default function ReportsPage() {
   useEffect(() => {
     const t = setTimeout(() => {
       listCenters({ limit: 100, offset: 0 })
-        .then((p) => setCenters(p.items))
+        .then((p) => {
+          setCenters(p.items);
+          setCentreTotal(p.total ?? 0);
+        })
         .catch(() => setCenters([]));
     }, 0);
     return () => clearTimeout(t);
@@ -229,6 +235,12 @@ export default function ReportsPage() {
               </option>
             ))}
           </select>
+          <CappedNotice
+                shown={centers.length}
+                total={centreTotal}
+                noun="centres"
+                hint="Search on the Centres page to find one that is not listed."
+              />
         </div>
         <Button size="sm" variant="outline" onClick={() => void refresh()}>
           Refresh
@@ -324,7 +336,10 @@ export default function ReportsPage() {
                     colSpan={6}
                     className="text-center text-muted-foreground"
                   >
-                    No collection recorded in this range.
+                    <EmptyState
+                      title="No collections in this range"
+                      description="Nothing was recorded at these centres between these dates. Widen the range, or clear the centre filter to see the whole dairy."
+                    />
                   </TableCell>
                 </TableRow>
               )}

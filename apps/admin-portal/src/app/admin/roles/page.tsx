@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminPage } from "@/components/admin-page";
-import { TableSkeleton } from "@/components/states";
+import { TableSkeleton, CappedNotice,} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +62,8 @@ export default function RolesPage() {
     [],
   );
   const [centers, setCenters] = useState<Center[]>([]);
+  // LACTEVA-ADMIN-007: the platform's own count, so a capped list can say so.
+  const [centreTotal, setCentreTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
@@ -96,7 +98,10 @@ export default function RolesPage() {
     // Centres are only needed to scope a grant; their absence must not blank
     // the page.
     listCenters({ limit: 100, offset: 0 })
-      .then((c) => setCenters(c.items ?? []))
+      .then((c) => {
+        setCenters(c.items ?? []);
+        setCentreTotal(c.total ?? 0);
+      })
       .catch(() => setCenters([]));
   }, []);
 
@@ -284,6 +289,12 @@ export default function RolesPage() {
                 </option>
               ))}
             </select>
+            <CappedNotice
+              shown={centers.length}
+              total={centreTotal}
+              noun="centres"
+              hint="Search on the Centres page to find one that is not listed."
+            />
           </div>
           <Button
             disabled={!userId || !roleName}

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { EmptyState } from "@/components/states";
 
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -363,7 +364,10 @@ export default function RateCardsPage() {
                     colSpan={7}
                     className="text-center text-muted-foreground"
                   >
-                    No rate cards match.
+                    <EmptyState
+                      title="No rate cards"
+                      description="A rate card is what turns fat and quantity into money. Create one, then publish it — until a published card covers a centre, collections there stay rate-pending."
+                    />
                   </TableCell>
                 </TableRow>
               )}

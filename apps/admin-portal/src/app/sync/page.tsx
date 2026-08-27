@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { EmptyState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -297,7 +298,10 @@ export default function SyncMonitorPage() {
                     colSpan={6}
                     className="text-center text-muted-foreground"
                   >
-                    No device has synchronised yet.
+                    <EmptyState
+                      title="No device has synchronised yet"
+                      description="A handset appears here the first time it sends captured work. Register a device and assign it to a centre to get started."
+                    />
                   </TableCell>
                 </TableRow>
               )}

@@ -57,6 +57,42 @@ export function TableSkeleton({ rows = 5, columns = 4 }: { rows?: number; column
   );
 }
 
+/**
+ * A list that is not the whole list, saying so (LACTEVA-ADMIN-007).
+ *
+ * Several screens fetch a fixed first page — a hundred centres, fifty
+ * payments, ten receipts — and then render exactly what came back. For most
+ * dairies that is everything, so the cap is invisible; for the one dairy it is
+ * not, the list simply ends, and nothing on the screen says the rest exists.
+ * A centre that cannot be selected looks like a centre that was never created.
+ *
+ * The platform returns an authoritative `total` on every one of those calls,
+ * so the honest thing was always available and merely unread. Nothing here
+ * counts anything: `total` is the platform's number, `shown` is what the page
+ * actually rendered, and the notice appears only when they disagree.
+ */
+export function CappedNotice({
+  shown,
+  total,
+  noun,
+  hint,
+}: {
+  shown: number;
+  total: number;
+  /** Plural, lower case — "centres", "payments", "receipts". */
+  noun: string;
+  /** What to do about the ones that are not here. */
+  hint?: string;
+}) {
+  if (total <= shown) return null;
+  return (
+    <p className="text-meta text-muted-foreground" role="status" aria-live="polite">
+      {`Showing ${shown} of ${total} ${noun}.`}
+      {hint ? ` ${hint}` : ""}
+    </p>
+  );
+}
+
 export function EmptyState({
   title,
   description,

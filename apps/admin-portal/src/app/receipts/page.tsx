@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { EmptyState } from "@/components/states";
 import Link from "next/link";
 import { formatAmount } from "@/components/money";
 import { Badge } from "@/components/ui/badge";
@@ -212,7 +213,10 @@ export default function ReceiptsPage() {
                     colSpan={7}
                     className="text-center text-muted-foreground"
                   >
-                    No receipts yet — they appear when a payment completes.
+                    <EmptyState
+                      title="No receipts yet"
+                      description="A receipt is generated when a payment completes — it is never created by hand. Complete a payment and its receipt appears here."
+                    />
                   </TableCell>
                 </TableRow>
               )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CappedNotice } from "@/components/states";
 import Link from "next/link";
 import { Banknote, FileText, Lock, Plus } from "lucide-react";
 import {
@@ -70,6 +71,8 @@ export default function SettlementsPage() {
   const [page, setPage] = useState<SettlementPageResult | null>(null);
   const [report, setReport] = useState<SettlementReport | null>(null);
   const [centers, setCenters] = useState<Center[]>([]);
+  // LACTEVA-ADMIN-007: the platform's own count, so a capped list can say so.
+  const [centreTotal, setCentreTotal] = useState(0);
   // P1-PORTAL-SCALE-001: server-searched supplier filter, page-resolved names.
   const [supplierFilterLabel, setSupplierFilterLabel] = useState("");
 
@@ -119,7 +122,10 @@ export default function SettlementsPage() {
 
   useEffect(() => {
     listCenters({ limit: 100, offset: 0 })
-      .then((c) => setCenters(c.items ?? []))
+      .then((c) => {
+        setCenters(c.items ?? []);
+        setCentreTotal(c.total ?? 0);
+      })
       .catch(() => setCenters([]));
   }, []);
 
@@ -379,6 +385,12 @@ export default function SettlementsPage() {
                       </option>
                     ))}
                   </select>
+                  <CappedNotice
+                    shown={centers.length}
+                    total={centreTotal}
+                    noun="centres"
+                    hint="Search on the Centres page to find one that is not listed."
+                  />
                 </div>
                 <EntityPicker
                   id="st-supplier"

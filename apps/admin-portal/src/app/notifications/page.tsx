@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { EmptyState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -330,7 +331,10 @@ export default function NotificationsPage() {
                     colSpan={7}
                     className="text-center text-muted-foreground"
                   >
-                    No notifications match.
+                    <EmptyState
+                      title="No notifications"
+                      description="Messages appear here after the platform sends one — an invitation, a settlement, a receipt. Widen the filters if you expected something."
+                    />
                   </TableCell>
                 </TableRow>
               )}

@@ -43,7 +43,7 @@ import { Label } from "@/components/ui/label";
 import { Money, Quantity } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
-import { ErrorState, LoadingState } from "@/components/states";
+import { ErrorState, LoadingState, CappedNotice,} from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 
 /**
@@ -107,6 +107,9 @@ export default function SettlementDetailPage({
   const [balance, setBalance] = useState<SettlementBalance | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  // LACTEVA-ADMIN-007: the platform's own counts, so a capped list says so.
+  const [paymentTotal, setPaymentTotal] = useState(0);
+  const [receiptTotal, setReceiptTotal] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -137,18 +140,24 @@ export default function SettlementDetailPage({
         .then(async (p) => {
           const items = p.items ?? [];
           setPayments(items);
+          setPaymentTotal(p.total ?? 0);
           const found = await Promise.all(
             items.map((pay) =>
               listReceipts({ payment_id: pay.id, limit: 10, offset: 0 })
-                .then((r) => r.items ?? [])
-                .catch(() => []),
+                .then((r) => ({ items: r.items ?? [], total: r.total ?? 0 }))
+                .catch(() => ({ items: [], total: 0 })),
             ),
           );
-          setReceipts(found.flat());
+          setReceipts(found.flatMap((r) => r.items));
+          // Receipts are fetched per payment, so the honest total is the sum
+          // of what each payment's own call reported.
+          setReceiptTotal(found.reduce((sum, r) => sum + r.total, 0));
         })
         .catch(() => {
           setPayments([]);
           setReceipts([]);
+          setPaymentTotal(0);
+          setReceiptTotal(0);
         });
     } catch (err) {
       setDetail({ state: "error", message: describe(err) });
@@ -607,6 +616,12 @@ export default function SettlementDetailPage({
                 </li>
               ))}
             </ul>
+              <CappedNotice
+                shown={payments.length}
+                total={paymentTotal}
+                noun="payments"
+                hint="Open the Payments page to see the rest."
+              />
           </CardContent>
         </Card>
       ) : null}
@@ -651,6 +666,12 @@ export default function SettlementDetailPage({
                 </li>
               ))}
             </ul>
+              <CappedNotice
+                shown={receipts.length}
+                total={receiptTotal}
+                noun="receipts"
+                hint="Open a payment to see all of its receipts."
+              />
           </CardContent>
         </Card>
       ) : null}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { EmptyState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -209,7 +210,10 @@ export default function MatricesPage() {
                     colSpan={7}
                     className="text-center text-muted-foreground"
                   >
-                    No pricing matrices match.
+                    <EmptyState
+                      title="No pricing matrices"
+                      description="A matrix holds the bands that price a product by quality. Create one against a rate card, then add its bands."
+                    />
                   </TableCell>
                 </TableRow>
               )}
