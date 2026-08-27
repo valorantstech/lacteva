@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useBusinessToday } from "@/components/date-range";
 import { Pagination } from "@/components/data-table";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -222,9 +223,9 @@ export default function ReportsPage() {
         </div>
         <div className="flex flex-col gap-1">
           <Label htmlFor="r-center">Centre</Label>
-          <select
+          <Select
             id="r-center"
-            className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+            size="sm"
             value={centerId}
             onChange={(e) => setCenterId(e.target.value)}
           >
@@ -234,7 +235,7 @@ export default function ReportsPage() {
                 {c.code} — {c.name}
               </option>
             ))}
-          </select>
+          </Select>
           <CappedNotice
                 shown={centers.length}
                 total={centreTotal}

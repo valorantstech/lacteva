@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/states";
 
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -218,8 +219,8 @@ export default function RateCardsPage() {
           }}
           className="max-w-xs"
         />
-        <select
-          className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+        <Select
+          size="sm"
           value={status}
           onChange={(e) => {
             setStatus(e.target.value);
@@ -231,7 +232,7 @@ export default function RateCardsPage() {
               {s === "" ? "All statuses" : statusLabel(s)}
             </option>
           ))}
-        </select>
+        </Select>
         <Input
           placeholder="Currency (e.g. KES)"
           value={currency}
@@ -414,8 +415,8 @@ export default function RateCardsPage() {
             </div>
             {detail.card.status === "draft" && (
               <div className="flex flex-wrap items-center gap-2">
-                <select
-                  className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+                <Select
+                  size="sm"
                   defaultValue=""
                   id="rc-assign-center"
                 >
@@ -429,7 +430,7 @@ export default function RateCardsPage() {
                         {c.code} — {c.name}
                       </option>
                     ))}
-                </select>
+                </Select>
                 <Button
                   size="sm"
                   variant="outline"
@@ -621,9 +622,9 @@ function RateCardForm({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="rc-branch">Branch (optional)</Label>
-            <select
+            <Select
               id="rc-branch"
-              className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+              size="sm"
               value={branchId ?? ""}
               onChange={(e) => setBranchId(e.target.value)}
             >
@@ -633,7 +634,7 @@ function RateCardForm({
                   {b.code} — {b.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="col-span-2 flex flex-col gap-1.5">
             <Label htmlFor="rc-description">Description</Label>

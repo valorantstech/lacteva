@@ -28,6 +28,7 @@ import { EntityPicker } from "@/components/entity-picker";
 import { todayIn } from "@/components/date-range";
 import { useLocale, useT } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -362,9 +363,10 @@ export default function NewCollectionPage() {
           <CardContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="w-center">Centre</Label>
-              <select
+              <Select
                 id="w-center"
-                className="h-9 w-full max-w-md rounded-md border border-input bg-background px-2 text-sm"
+                width="full"
+                className="max-w-md"
                 value={centerId}
                 onChange={(e) => setCenterId(e.target.value)}
               >
@@ -374,7 +376,7 @@ export default function NewCollectionPage() {
                     {c.name} ({c.code}) — {c.status}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
 
             {checkingReadiness ? (
@@ -509,9 +511,8 @@ export default function NewCollectionPage() {
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="w-milk">Milk type</Label>
-                <select
+                <Select
                   id="w-milk"
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                   value={milk.milk_type}
                   onChange={(e) =>
                     setMilk({ ...milk, milk_type: e.target.value })
@@ -522,13 +523,12 @@ export default function NewCollectionPage() {
                       {m}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="w-container">Container</Label>
-                <select
+                <Select
                   id="w-container"
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                   value={milk.container_type}
                   onChange={(e) =>
                     setMilk({ ...milk, container_type: e.target.value })
@@ -539,7 +539,7 @@ export default function NewCollectionPage() {
                       {c}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="w-container-id">Container ID</Label>

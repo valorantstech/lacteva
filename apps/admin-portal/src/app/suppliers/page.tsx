@@ -19,6 +19,7 @@ import {
   describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -363,9 +364,8 @@ export default function SuppliersPage() {
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="supplier-status">Status</Label>
-                  <select
+                  <Select
                     id="supplier-status"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={status}
                     onChange={(e) => {
                       setStatus(e.target.value as (typeof STATUSES)[number]);
@@ -377,13 +377,12 @@ export default function SuppliersPage() {
                         {s || "All statuses"}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="supplier-center">Centre</Label>
-                  <select
+                  <Select
                     id="supplier-center"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={centerId}
                     onChange={(e) => {
                       setCenterId(e.target.value);
@@ -396,7 +395,7 @@ export default function SuppliersPage() {
                         {c.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               </>
             }
@@ -540,9 +539,9 @@ function SupplierForm({
             {!editing ? (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="supplier-form-center">Collection centre</Label>
-                <select
+                <Select
                   id="supplier-form-center"
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  width="full"
                   value={centerId}
                   onChange={(e) => setCenterId(e.target.value)}
                 >
@@ -552,7 +551,7 @@ function SupplierForm({
                       {c.name}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <p className="text-xs text-muted-foreground">
                   A supplier must be assigned to a centre before they can be
                   activated.

@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/states";
 import Link from "next/link";
 import { formatAmount } from "@/components/money";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -115,8 +116,8 @@ export default function ReceiptsPage() {
           }}
           className="max-w-sm"
         />
-        <select
-          className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+        <Select
+          size="sm"
           value={status}
           onChange={(e) => {
             setStatus(e.target.value);
@@ -128,7 +129,7 @@ export default function ReceiptsPage() {
               {s === "" ? "All statuses" : s}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       {note && <p className="text-sm text-muted-foreground">{note}</p>}

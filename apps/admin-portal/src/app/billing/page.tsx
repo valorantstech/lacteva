@@ -19,6 +19,7 @@ import {
 import { EntityPicker } from "@/components/entity-picker";
 import { useCustomerNames } from "@/lib/names";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -335,9 +336,8 @@ function BillingView() {
                 />
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="bl-status">Status</Label>
-                  <select
+                  <Select
                     id="bl-status"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={status}
                     onChange={(e) => {
                       setStatus(e.target.value as (typeof STATUSES)[number]);
@@ -349,7 +349,7 @@ function BillingView() {
                         {s || "All statuses"}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 {filtered ? (
                   <Button

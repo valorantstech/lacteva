@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { EmptyState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -225,7 +226,7 @@ export default function NotificationsPage() {
           }}
           className="max-w-xs"
         />
-        <Select
+        <FilterSelect
           value={status}
           onChange={(v) => {
             setStatus(v);
@@ -234,7 +235,7 @@ export default function NotificationsPage() {
           options={[...STATUSES]}
           allLabel="All statuses"
         />
-        <Select
+        <FilterSelect
           value={channel}
           onChange={(v) => {
             setChannel(v);
@@ -243,7 +244,7 @@ export default function NotificationsPage() {
           options={[...CHANNELS]}
           allLabel="All channels"
         />
-        <Select
+        <FilterSelect
           value={templateKey}
           onChange={(v) => {
             setTemplateKey(v);
@@ -414,7 +415,12 @@ function StatCard({
   );
 }
 
-function Select({
+/**
+ * A filter built on the shared Select: a plain list of values plus the word
+ * that stands for "no filter" (LACTEVA-ADMIN-008 renamed it; the primitive
+ * took the bare name).
+ */
+function FilterSelect({
   value,
   onChange,
   options,
@@ -426,8 +432,8 @@ function Select({
   allLabel: string;
 }) {
   return (
-    <select
-      className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+    <Select
+      size="sm"
       value={value}
       onChange={(e) => onChange(e.target.value)}
     >
@@ -436,7 +442,7 @@ function Select({
           {o === "" ? allLabel : o}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }
 
@@ -717,7 +723,7 @@ function ReachabilityPanel() {
           <h2 className="font-medium">Communication reachability</h2>
           {/* The page's own Select helper — the same idiom as the filters
               above, so this panel adds no new component to the portal. */}
-          <Select
+          <FilterSelect
             value={template}
             onChange={setTemplate}
             options={["settlement_finalized", "invoice_issued"]}

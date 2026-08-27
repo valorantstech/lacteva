@@ -11,6 +11,7 @@ import {
   describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -294,9 +295,8 @@ export default function ReceivablesPage_() {
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="rc-scope">Show</Label>
-                  <select
+                  <Select
                     id="rc-scope"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={owingOnly ? "owing" : "all"}
                     onChange={(e) => {
                       setOwingOnly(e.target.value === "owing");
@@ -305,7 +305,7 @@ export default function ReceivablesPage_() {
                   >
                     <option value="owing">Only customers who owe</option>
                     <option value="all">Every customer</option>
-                  </select>
+                  </Select>
                 </div>
                 {q ? (
                   <Button

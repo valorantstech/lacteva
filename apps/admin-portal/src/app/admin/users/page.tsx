@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AdminPage } from "@/components/admin-page";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -185,9 +186,8 @@ export default function UsersPage() {
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="invite-role">Role</Label>
-          <select
+          <Select
             id="invite-role"
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
             value={inviteRole}
             onChange={(e) => setInviteRole(e.target.value)}
           >
@@ -196,7 +196,7 @@ export default function UsersPage() {
                 {role.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <Button type="submit" disabled={inviting || !inviteEmail}>
           {inviting ? "Sending…" : "Send invitation"}

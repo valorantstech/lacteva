@@ -31,6 +31,7 @@ import {
 import { EntityPicker } from "@/components/entity-picker";
 import { useCustomerNames } from "@/lib/names";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -794,9 +795,8 @@ function DeliveriesView() {
                 />
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="dl-status">Status</Label>
-                  <select
+                  <Select
                     id="dl-status"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={status}
                     onChange={(e) => {
                       setStatus(e.target.value as (typeof STATUSES)[number]);
@@ -808,13 +808,12 @@ function DeliveriesView() {
                         {s || "All statuses"}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="dl-billed">Invoiced</Label>
-                  <select
+                  <Select
                     id="dl-billed"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={billed}
                     onChange={(e) => {
                       setBilled(e.target.value as "" | "true" | "false");
@@ -824,7 +823,7 @@ function DeliveriesView() {
                     <option value="">Invoiced or not</option>
                     <option value="false">Not yet billed</option>
                     <option value="true">Already billed</option>
-                  </select>
+                  </Select>
                 </div>
                 {filtered ? (
                   <Button
@@ -947,16 +946,15 @@ function AmendDeliveryCard({
             </div>
             <div className="flex flex-col gap-1">
               <Label htmlFor="amend-status">Status</Label>
-              <select
+              <Select
                 id="amend-status"
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
               >
                 <option value="delivered">delivered</option>
                 <option value="skipped">skipped</option>
                 <option value="cancelled">cancelled</option>
-              </select>
+              </Select>
             </div>
             <div className="flex flex-col gap-1">
               <Label htmlFor="amend-notes">Reason</Label>

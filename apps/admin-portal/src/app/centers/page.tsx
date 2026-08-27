@@ -17,6 +17,7 @@ import {
   describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -314,9 +315,8 @@ export default function CentersPage() {
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="center-status">Status</Label>
-                  <select
+                  <Select
                     id="center-status"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={status}
                     onChange={(e) => {
                       setStatus(e.target.value as (typeof STATUSES)[number]);
@@ -328,7 +328,7 @@ export default function CentersPage() {
                         {s || "All statuses"}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               </>
             }
@@ -490,9 +490,9 @@ function CenterForm({
 
             {editing ? (
               <Field id="center-status" label="Status">
-                <select
+                <Select
                   id="center-status"
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  width="full"
                   value={status}
                   onChange={(e) =>
                     setStatus(e.target.value as Center["status"])
@@ -505,7 +505,7 @@ function CenterForm({
                       </option>
                     ),
                   )}
-                </select>
+                </Select>
               </Field>
             ) : (
               <Field
@@ -514,9 +514,9 @@ function CenterForm({
                 required
                 error={fieldErrors.branch}
               >
-                <select
+                <Select
                   id="center-branch"
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  width="full"
                   value={branchId}
                   onChange={(e) => setBranchId(e.target.value)}
                   aria-invalid={Boolean(fieldErrors.branch)}
@@ -527,7 +527,7 @@ function CenterForm({
                       {b.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </Field>
             )}
           </div>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { EmptyState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -127,8 +128,8 @@ export default function MatricesPage() {
           }}
           className="max-w-xs"
         />
-        <select
-          className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+        <Select
+          size="sm"
           value={status}
           onChange={(e) => {
             setStatus(e.target.value);
@@ -140,7 +141,7 @@ export default function MatricesPage() {
               {s === "" ? "All statuses" : s}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -662,10 +663,10 @@ function MatrixCreateForm({
         <form onSubmit={submit} className="grid max-w-2xl grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="m-card">Rate card (draft)</Label>
-            <select
+            <Select
               id="m-card"
               required
-              className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+              size="sm"
               value={rateCardId}
               onChange={(e) => setRateCardId(e.target.value)}
             >
@@ -675,7 +676,7 @@ function MatrixCreateForm({
                   {c.code} v{c.version} — {c.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="m-name">Name</Label>
@@ -707,10 +708,10 @@ function MatrixCreateForm({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="m-dimension">Quality dimension</Label>
-            <select
+            <Select
               id="m-dimension"
               required
-              className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+              size="sm"
               value={dimensionCode}
               onChange={(e) => setDimensionCode(e.target.value)}
             >
@@ -722,7 +723,7 @@ function MatrixCreateForm({
                     {d.code} — {d.name}
                   </option>
                 ))}
-            </select>
+            </Select>
           </div>
           {error && (
             <p className="col-span-2 text-sm text-destructive">{error}</p>

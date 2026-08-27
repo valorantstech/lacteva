@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CappedNotice } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -117,10 +118,10 @@ export default function ResolutionPlaygroundPage() {
           <form onSubmit={submit} className="grid max-w-2xl grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="r-center">Collection center</Label>
-              <select
+              <Select
                 id="r-center"
                 required
-                className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+                size="sm"
                 value={centerId}
                 onChange={(e) => setCenterId(e.target.value)}
               >
@@ -130,7 +131,7 @@ export default function ResolutionPlaygroundPage() {
                     {c.code} — {c.name}
                   </option>
                 ))}
-              </select>
+              </Select>
               <CappedNotice
                 shown={centers.length}
                 total={centreTotal}
@@ -160,10 +161,10 @@ export default function ResolutionPlaygroundPage() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="r-dimension">Quality dimension</Label>
-              <select
+              <Select
                 id="r-dimension"
                 required
-                className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+                size="sm"
                 value={dimensionCode}
                 onChange={(e) => setDimensionCode(e.target.value)}
               >
@@ -176,7 +177,7 @@ export default function ResolutionPlaygroundPage() {
                       {d.unit ? ` (${d.unit})` : ""}
                     </option>
                   ))}
-              </select>
+              </Select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="r-value">Reading</Label>
@@ -258,9 +259,9 @@ export default function ResolutionPlaygroundPage() {
               </div>
               <div className="flex flex-col gap-1">
                 <Label htmlFor="c-policy">Rounding</Label>
-                <select
+                <Select
                   id="c-policy"
-                  className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+                  size="sm"
                   value={policy}
                   onChange={(e) => setPolicy(e.target.value)}
                 >
@@ -268,7 +269,7 @@ export default function ResolutionPlaygroundPage() {
                   <option value="HALF_UP">HALF_UP</option>
                   <option value="HALF_EVEN">HALF_EVEN</option>
                   <option value="DOWN">DOWN</option>
-                </select>
+                </Select>
               </div>
               <Button
                 size="sm"

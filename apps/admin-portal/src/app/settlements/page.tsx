@@ -19,6 +19,7 @@ import {
 import { EntityPicker } from "@/components/entity-picker";
 import { useSupplierNames } from "@/lib/names";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -351,9 +352,8 @@ export default function SettlementsPage() {
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="st-status">Status</Label>
-                  <select
+                  <Select
                     id="st-status"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={status}
                     onChange={(e) => {
                       setStatus(e.target.value as (typeof STATUSES)[number]);
@@ -365,13 +365,12 @@ export default function SettlementsPage() {
                         {s || "All statuses"}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="st-center">Centre</Label>
-                  <select
+                  <Select
                     id="st-center"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={centerId}
                     onChange={(e) => {
                       setCenterId(e.target.value);
@@ -384,7 +383,7 @@ export default function SettlementsPage() {
                         {c.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                   <CappedNotice
                     shown={centers.length}
                     total={centreTotal}
@@ -535,10 +534,9 @@ function CreateSettlementCard({
             />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="ns-center">Centre</Label>
-              <select
+              <Select
                 id="ns-center"
                 required
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                 value={center}
                 onChange={(e) => setCenter(e.target.value)}
               >
@@ -548,7 +546,7 @@ function CreateSettlementCard({
                     {c.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="ns-from">Period from</Label>

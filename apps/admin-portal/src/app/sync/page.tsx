@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { EmptyState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -207,8 +208,8 @@ export default function SyncMonitorPage() {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <select
-          className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
+        <Select
+          size="sm"
           value={status}
           onChange={(e) => {
             setStatus(e.target.value);
@@ -220,7 +221,7 @@ export default function SyncMonitorPage() {
               {s === "" ? "All outcomes" : s}
             </option>
           ))}
-        </select>
+        </Select>
         <Input
           placeholder="Filter by device id…"
           value={device}

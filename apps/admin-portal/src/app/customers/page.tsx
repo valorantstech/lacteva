@@ -12,6 +12,7 @@ import {
   describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -278,9 +279,8 @@ function CustomersView() {
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="cu-type">Type</Label>
-                  <select
+                  <Select
                     id="cu-type"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={customerType}
                     onChange={(e) => {
                       setCustomerType(e.target.value as (typeof TYPES)[number]);
@@ -292,13 +292,12 @@ function CustomersView() {
                         {t || "All types"}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="cu-status">Status</Label>
-                  <select
+                  <Select
                     id="cu-status"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={status}
                     onChange={(e) => {
                       setStatus(e.target.value as (typeof STATUSES)[number]);
@@ -310,7 +309,7 @@ function CustomersView() {
                         {s || "All statuses"}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 {filtered ? (
                   <Button
@@ -415,9 +414,8 @@ function CreateCustomerCard({
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="nc-type">Type</Label>
-              <select
+              <Select
                 id="nc-type"
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                 value={type}
                 onChange={(e) => setType(e.target.value)}
               >
@@ -426,7 +424,7 @@ function CreateCustomerCard({
                     {t}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="nc-phone">Phone</Label>

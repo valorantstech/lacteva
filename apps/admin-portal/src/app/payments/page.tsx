@@ -27,6 +27,7 @@ import {
 import { EntityPicker } from "@/components/entity-picker";
 import { useSupplierNames } from "@/lib/names";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -424,9 +425,8 @@ export default function PaymentsPage() {
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="pm-status">Status</Label>
-                  <select
+                  <Select
                     id="pm-status"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={status}
                     onChange={(e) => {
                       setStatus(e.target.value as (typeof STATUSES)[number]);
@@ -438,13 +438,12 @@ export default function PaymentsPage() {
                         {s || "All statuses"}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="pm-method">Method</Label>
-                  <select
+                  <Select
                     id="pm-method"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={method}
                     onChange={(e) => {
                       setMethod(e.target.value);
@@ -457,7 +456,7 @@ export default function PaymentsPage() {
                         {m}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <EntityPicker
                   id="pm-supplier"
@@ -577,9 +576,8 @@ function CreatePaymentCard({
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="np-method">Method</Label>
-              <select
+              <Select
                 id="np-method"
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                 value={method}
                 onChange={(e) => setMethod(e.target.value)}
               >
@@ -588,7 +586,7 @@ function CreatePaymentCard({
                     {m}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="np-amount">Amount ({balance.currency})</Label>

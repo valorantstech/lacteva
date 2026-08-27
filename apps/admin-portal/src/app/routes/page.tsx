@@ -22,6 +22,7 @@ import {
   setDeliveryRunStatus,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -343,8 +344,7 @@ function TodaysRuns({
         <div className="flex flex-wrap items-end gap-3">
           <div className="grid gap-1.5">
             <Label htmlFor="run-route">Route</Label>
-            <select
-              className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+            <Select
               id="run-route"
               onChange={(e) => setRouteId(e.target.value)}
               value={routeId}
@@ -357,7 +357,7 @@ function TodaysRuns({
                     {r.code} — {r.name}
                   </option>
                 ))}
-            </select>
+            </Select>
           </div>
           <Button
             disabled={!routeId}
@@ -459,8 +459,7 @@ function Assign({
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={`assign-${label}`}>{label}</Label>
-      <select
-        className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+      <Select
         disabled={disabled}
         id={`assign-${label}`}
         onChange={(e) => e.target.value && onChange(e.target.value)}
@@ -472,7 +471,7 @@ function Assign({
             {o.label}
           </option>
         ))}
-      </select>
+      </Select>
     </div>
   );
 }

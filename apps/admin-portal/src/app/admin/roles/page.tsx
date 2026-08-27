@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminPage } from "@/components/admin-page";
 import { TableSkeleton, CappedNotice,} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -245,9 +246,8 @@ export default function RolesPage() {
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="user">User</Label>
-            <select
+            <Select
               id="user"
-              className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
             >
@@ -257,13 +257,12 @@ export default function RolesPage() {
                   {p.user?.email ?? p.user_id}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="role">Role</Label>
-            <select
+            <Select
               id="role"
-              className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
               value={roleName}
               onChange={(e) => setRoleName(e.target.value)}
             >
@@ -272,13 +271,12 @@ export default function RolesPage() {
                   {r.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="scope">Centre scope</Label>
-            <select
+            <Select
               id="scope"
-              className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
               value={centerId}
               onChange={(e) => setCenterId(e.target.value)}
             >
@@ -288,7 +286,7 @@ export default function RolesPage() {
                   {c.name}
                 </option>
               ))}
-            </select>
+            </Select>
             <CappedNotice
               shown={centers.length}
               total={centreTotal}

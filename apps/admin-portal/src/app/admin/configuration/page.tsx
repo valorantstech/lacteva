@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AdminPage } from "@/components/admin-page";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {getConfig, setConfig,
@@ -81,15 +82,14 @@ export default function ConfigurationPage() {
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="scope">Scope</Label>
-          <select
+          <Select
             id="scope"
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
             value={scope}
             onChange={(e) => setScope(e.target.value as "tenant" | "global")}
           >
             <option value="tenant">tenant</option>
             <option value="global">global</option>
-          </select>
+          </Select>
         </div>
         <Button variant="secondary" disabled={!key} onClick={() => void load()}>
           Load

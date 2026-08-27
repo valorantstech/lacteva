@@ -32,6 +32,7 @@ import {
   describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -978,15 +979,14 @@ function RecordDeliveryForm({
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="d-slot">Slot</Label>
-        <select
+        <Select
           id="d-slot"
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           value={slot}
           onChange={(e) => setSlot(e.target.value)}
         >
           <option value="morning">morning</option>
           <option value="evening">evening</option>
-        </select>
+        </Select>
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="d-qty">Quantity ({unit})</Label>
@@ -1000,16 +1000,15 @@ function RecordDeliveryForm({
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="d-status">Outcome</Label>
-        <select
+        <Select
           id="d-status"
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
         >
           <option value="delivered">delivered</option>
           <option value="skipped">skipped</option>
           <option value="returned">returned</option>
-        </select>
+        </Select>
       </div>
       <Button type="submit" disabled={busy || working}>
         {working ? "Recording…" : "Record delivery"}
@@ -1115,9 +1114,8 @@ function RecordPaymentForm({
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="p-method">Method</Label>
-        <select
+        <Select
           id="p-method"
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           value={method}
           onChange={(e) => setMethod(e.target.value)}
         >
@@ -1126,7 +1124,7 @@ function RecordPaymentForm({
               {m}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="p-ref">Reference</Label>
@@ -1216,23 +1214,23 @@ function PlanControls({
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={`pause-from-${plan.id}`}>{t("plan.pauseFrom")}</Label>
         <input
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           id={`pause-from-${plan.id}`}
           type="date"
           required
           value={from}
           onChange={(e) => setFrom(e.target.value)}
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
         />
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={`pause-to-${plan.id}`}>{t("plan.pauseTo")}</Label>
         <input
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           id={`pause-to-${plan.id}`}
           type="date"
           value={to}
           min={from}
           onChange={(e) => setTo(e.target.value)}
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
         />
       </div>
       <Button size="sm" type="submit" disabled={busy}>
@@ -1319,9 +1317,8 @@ function EditCustomerCard({
             </div>
             <div className="flex flex-col gap-1">
               <Label htmlFor="edit-type">Type</Label>
-              <select
+              <Select
                 id="edit-type"
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                 value={type}
                 onChange={(e) => setType(e.target.value)}
               >
@@ -1329,7 +1326,7 @@ function EditCustomerCard({
                 <option value="shop">shop</option>
                 <option value="hotel">hotel</option>
                 <option value="institution">institution</option>
-              </select>
+              </Select>
             </div>
             <div className="flex flex-col gap-1">
               <Label htmlFor="edit-phone">Phone</Label>

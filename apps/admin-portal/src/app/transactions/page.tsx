@@ -20,6 +20,7 @@ import {
 import { EntityPicker } from "@/components/entity-picker";
 import { useSupplierNames } from "@/lib/names";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
@@ -506,9 +507,8 @@ export default function TransactionsPage() {
               <>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="tx-state">{t("field.status")}</Label>
-                  <select
+                  <Select
                     id="tx-state"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={state}
                     onChange={(e) => {
                       setState(e.target.value as (typeof STATES)[number]);
@@ -522,13 +522,12 @@ export default function TransactionsPage() {
                           : t("tx.allStatuses")}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="tx-center">{t("tx.centre")}</Label>
-                  <select
+                  <Select
                     id="tx-center"
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     value={centerId}
                     onChange={(e) => {
                       setCenterId(e.target.value);
@@ -541,7 +540,7 @@ export default function TransactionsPage() {
                         {c.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <EntityPicker
                   id="tx-supplier"

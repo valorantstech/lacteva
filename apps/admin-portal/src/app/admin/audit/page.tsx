@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AdminPage } from "@/components/admin-page";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
@@ -299,9 +300,9 @@ export default function AuditPage() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="au-action">Action</Label>
-              <select
+              <Select
                 id="au-action"
-                className="h-9 max-w-64 rounded-md border border-input bg-background px-2 text-sm"
+                className="max-w-64"
                 value={action}
                 onChange={(e) => {
                   setAction(e.target.value);
@@ -314,7 +315,7 @@ export default function AuditPage() {
                     {humanAction(a)} ({areaOf(a)})
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="au-from">From</Label>
