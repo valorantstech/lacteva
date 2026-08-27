@@ -81,11 +81,19 @@ describe("home page (MKT-004C · hero per LACTEVA-MARKETING-002)", () => {
 
   it("never fabricates product UI — screenshots are real or say so", () => {
     render(<HomePage />);
-    // With no captures on disk yet, every ProductShot must render the
-    // explicit placeholder, not an invented dashboard.
+    // LACTEVA-MARKETING-006: the captures exist, so every ProductShot on
+    // the home renders a REAL image (alt-labelled), and no placeholder
+    // remains. If a capture file disappears, the honest placeholder comes
+    // back — either state passes the fabrication rule, a mock never would.
+    const shots = screen.getAllByRole("img", { name: /—|handset/ });
+    expect(shots.length).toBe(4);
+    for (const shot of shots) {
+      // next/image wraps the path in its optimizer URL — the screenshots
+      // segment survives, URL-encoded.
+      expect(shot).toHaveAttribute("src", expect.stringContaining("screenshots"));
+    }
     expect(
-      screen.getAllByText(/placeholder — to be replaced with a capture/i)
-        .length,
-    ).toBeGreaterThan(0);
+      screen.queryByText(/placeholder — to be replaced with a capture/i),
+    ).not.toBeInTheDocument();
   });
 });

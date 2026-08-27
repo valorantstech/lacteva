@@ -220,14 +220,20 @@ export default function ProductPage() {
           title="Screens from the platform"
           lede="Running on demonstration data."
         />
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid items-start gap-6 lg:grid-cols-2">
           <ProductShot
-            name="deliveries"
-            label="Daily delivery report — per-customer rounds, volumes, and values"
+            name="portal/dashboard"
+            width={1500}
+            height={784}
+            label="The dairy, this morning — the admin portal's operational dashboard"
           />
           <ProductShot
-            name="billing"
-            label="Billing — invoices, receivables, and customer statements"
+            name="mobile/collect"
+            variant="device"
+            width={720}
+            height={1465}
+            label="Collect milk — the first step of the wizard, at the counter"
+            className="mx-auto w-full max-w-[280px]"
           />
         </div>
       </Section>
@@ -243,8 +249,12 @@ export default function ProductPage() {
             />
           </div>
           <ProductShot
-            name="mobile-operator"
-            label="Lacteva mobile app — field operations"
+            name="mobile/operator-home"
+            variant="device"
+            width={720}
+            height={1465}
+            label="The operator's morning, on a real handset"
+            className="mx-auto w-full max-w-[300px]"
           />
         </div>
       </Section>

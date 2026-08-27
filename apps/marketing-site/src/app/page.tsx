@@ -438,17 +438,23 @@ export default function HomePage() {
         />
         <div className="grid gap-6">
           <ProductShot
-            name="deliveries"
-            label="Daily delivery report — per-customer rounds, volumes, and values"
+            name="portal/dashboard"
+            width={1500}
+            height={784}
+            label="The dairy, this morning — the admin portal's operational dashboard"
           />
           <div className="grid gap-6 lg:grid-cols-2">
             <ProductShot
-              name="transactions"
-              label="Milk collection — sessions and immutable transactions"
+              name="portal/transactions"
+              width={1500}
+              height={784}
+              label="Transactions — every collection recorded, filterable, immutable"
             />
             <ProductShot
-              name="billing"
-              label="Billing — invoices, receivables, and customer statements"
+              name="portal/centres"
+              width={1500}
+              height={784}
+              label="Collection centres — the network, centre by centre"
             />
           </div>
         </div>
@@ -479,8 +485,12 @@ export default function HomePage() {
             </ul>
           </div>
           <ProductShot
-            name="mobile-operator"
-            label="Lacteva mobile app — field operations"
+            name="mobile/operator-home"
+            variant="device"
+            width={720}
+            height={1465}
+            label="The operator's morning, on a real handset"
+            className="mx-auto w-full max-w-[300px]"
           />
         </div>
       </Section>

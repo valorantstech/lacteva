@@ -202,11 +202,14 @@ export default function SolutionsPage() {
               </div>
             </article>
             {solution.id === "distributors" ? (
-              // WO-29's capture lands here: the round on the rider's phone.
               <div className="pt-10">
                 <ProductShot
-                  name="mobile-rider"
-                  label="Lacteva mobile app — the day's round on the rider's phone"
+                  name="mobile/roundsman"
+                  variant="device"
+                  width={720}
+                  height={1465}
+                  label="Today's round on the roundsman's phone — a young dairy's honest morning"
+                  className="mx-auto w-full max-w-[300px]"
                 />
               </div>
             ) : null}
