@@ -44,9 +44,7 @@ const Catalog _en = {
   'round.empty': 'No customers on this round',
   'round.emptyDetail': 'Customers appear here once the dairy registers them.',
   'round.delivered': 'Delivered',
-  'round.customers': 'Customers',
-  'round.quantity': 'Quantity',
-  'round.value': 'Value',
+  'round.value': 'value',
   'round.notRecorded': 'not yet recorded',
   // DEMO-016: a generated round arrives as `scheduled`. The API sends the
   // status CODE; the catalog decides the word, like everything else here.
@@ -384,6 +382,34 @@ const Catalog _en = {
   'manager.unpricedDetail':
       'A published rate card must cover this centre before they can be paid.',
   'manager.rateCardFooter': 'Rate card v{version} published · effective {date}',
+
+  // The driver and roundsman boards (LACTEVA-MOBILE-006).
+  'driver.roundTitle': '{slot} round',
+  // The run's state, from the platform's own code. The chip used to carry a
+  // wall-clock start time; `started_at` is a UTC instant and this app does no
+  // timezone arithmetic.
+  'driver.status.planned': 'Not started',
+  'driver.status.in_progress': 'Run in progress',
+  'driver.status.completed': 'Run finished',
+  'driver.status.cancelled': 'Run cancelled',
+  'driver.ofStops': '{done} of {total} stops',
+  'driver.nextStop': 'Next stop',
+  'driver.stopNumber': 'Stop {n}',
+  'driver.ofTotalStops': 'of {total} stops',
+  'driver.missed': 'Missed',
+  'driver.then': 'Then',
+  'driver.everyStopRecorded': 'Every stop recorded',
+  'round.customerCount': '{count} customers',
+  'round.fromStandingOrders': 'from standing orders',
+  'round.toDeliver': 'to deliver',
+  'round.done': 'done',
+  'round.pending': 'Pending',
+  'round.retryLater': 'Retry later',
+  'round.onInvoice': 'On invoice',
+  'round.toInvoice': '{amount} to invoice',
+  'round.standingOrder': 'Standing order',
+  'round.less': 'Less',
+  'round.more': 'More',
 };
 
 const Catalog _hi = {
@@ -409,8 +435,6 @@ const Catalog _hi = {
   'round.empty': 'इस राउंड में कोई ग्राहक नहीं',
   'round.emptyDetail': 'डेयरी द्वारा पंजीकृत होने पर ग्राहक यहाँ दिखेंगे।',
   'round.delivered': 'वितरित',
-  'round.customers': 'ग्राहक',
-  'round.quantity': 'मात्रा',
   'round.value': 'मूल्य',
   'round.notRecorded': 'अभी दर्ज नहीं',
   'status.scheduled': 'निर्धारित',
@@ -738,6 +762,31 @@ const Catalog _hi = {
   'manager.unpricedDetail':
       'भुगतान से पहले एक प्रकाशित रेट कार्ड इस केंद्र पर लागू होना चाहिए।',
   'manager.rateCardFooter': 'रेट कार्ड v{version} प्रकाशित · {date} से लागू',
+
+  // LACTEVA-MOBILE-006 — the driver and roundsman boards.
+  'driver.roundTitle': '{slot} का फेरा',
+  'driver.status.planned': 'शुरू नहीं हुआ',
+  'driver.status.in_progress': 'फेरा चल रहा है',
+  'driver.status.completed': 'फेरा पूरा हुआ',
+  'driver.status.cancelled': 'फेरा रद्द',
+  'driver.ofStops': '{total} में से {done} पड़ाव',
+  'driver.nextStop': 'अगला पड़ाव',
+  'driver.stopNumber': 'पड़ाव {n}',
+  'driver.ofTotalStops': 'कुल {total} में से',
+  'driver.missed': 'छूट गया',
+  'driver.then': 'फिर',
+  'driver.everyStopRecorded': 'हर पड़ाव दर्ज हो गया',
+  'round.customerCount': '{count} ग्राहक',
+  'round.fromStandingOrders': 'नियमित ऑर्डर से बना',
+  'round.toDeliver': 'पहुँचाना है',
+  'round.done': 'हो गया',
+  'round.pending': 'बाकी',
+  'round.retryLater': 'बाद में फिर',
+  'round.onInvoice': 'बिल में',
+  'round.toInvoice': '{amount} बिल बनना है',
+  'round.standingOrder': 'नियमित ऑर्डर',
+  'round.less': 'कम',
+  'round.more': 'ज़्यादा',
 };
 
 const Catalog _ar = {
@@ -763,8 +812,6 @@ const Catalog _ar = {
   'round.empty': 'لا يوجد عملاء في هذه الجولة',
   'round.emptyDetail': 'يظهر العملاء هنا بمجرد أن تسجّلهم الألبان.',
   'round.delivered': 'مُسلَّم',
-  'round.customers': 'العملاء',
-  'round.quantity': 'الكمية',
   'round.value': 'القيمة',
   'round.notRecorded': 'لم يُسجَّل بعد',
   'status.scheduled': 'مجدول',
@@ -1088,6 +1135,31 @@ const Catalog _ar = {
   'manager.unpricedDetail':
       'يجب أن تغطي بطاقة أسعار منشورة هذا المركز قبل الدفع.',
   'manager.rateCardFooter': 'بطاقة الأسعار v{version} منشورة · سارية من {date}',
+
+  // LACTEVA-MOBILE-006 — the driver and roundsman boards.
+  'driver.roundTitle': 'جولة {slot}',
+  'driver.status.planned': 'لم تبدأ',
+  'driver.status.in_progress': 'الجولة جارية',
+  'driver.status.completed': 'انتهت الجولة',
+  'driver.status.cancelled': 'أُلغيت الجولة',
+  'driver.ofStops': '{done} من {total} محطات',
+  'driver.nextStop': 'المحطة التالية',
+  'driver.stopNumber': 'المحطة {n}',
+  'driver.ofTotalStops': 'من {total} محطات',
+  'driver.missed': 'فائتة',
+  'driver.then': 'ثم',
+  'driver.everyStopRecorded': 'سُجلت كل المحطات',
+  'round.customerCount': '{count} عميلًا',
+  'round.fromStandingOrders': 'مولّدة من الطلبات الدائمة',
+  'round.toDeliver': 'للتوصيل',
+  'round.done': 'منجز',
+  'round.pending': 'قيد الانتظار',
+  'round.retryLater': 'أعد المحاولة لاحقًا',
+  'round.onInvoice': 'على الفاتورة',
+  'round.toInvoice': '{amount} للفوترة',
+  'round.standingOrder': 'الطلب الدائم',
+  'round.less': 'أقل',
+  'round.more': 'أكثر',
 };
 
 const Map<String, Catalog> catalogs = {'en': _en, 'hi': _hi, 'ar': _ar};

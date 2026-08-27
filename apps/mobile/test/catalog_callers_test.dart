@@ -25,6 +25,7 @@ const _dynamicFamilies = <String>[
   'driver.outcome.', // driver.dart: t('driver.outcome.$outcome')
   'slot.', // record screens: t('slot.$slot')
   'milk.', // collection wizard: t('milk.$milkType')
+  'driver.status.', // driver.dart: t('driver.status.${run['status']}')
 ];
 
 void main() {
@@ -69,6 +70,12 @@ void main() {
     // The milk types the collection wizard offers.
     for (final code in ['cow', 'buffalo', 'goat', 'mixed']) {
       expect(L10n(en).t('milk.$code'), isNot('milk.$code'));
+    }
+    // LACTEVA-MOBILE-006: every run status the platform can send
+    // (`modules/logistics/models.py: RUN_STATUSES`). The driver header shows
+    // this word where the board showed a wall-clock time.
+    for (final code in ['planned', 'in_progress', 'completed', 'cancelled']) {
+      expect(L10n(en).t('driver.status.$code'), isNot('driver.status.$code'));
     }
   });
 }

@@ -171,6 +171,13 @@ void main() {
         report: const {
           'deliveries': 9,
           'customers_served': 8,
+          // LACTEVA-MOBILE-006: the board's strip reports the round's SIZE and
+          // what it intended to send, both of which the report has always
+          // carried. Added here so the fixture is the shape
+          // `/v1/deliveries/report` actually returns — and they disagree with
+          // the two rows below for the same reason the rest of it does.
+          'planned': 14,
+          'planned_quantity': '31.000',
           'total_quantity': '21.500',
           'quantity_unit': 'L',
           'total_amount': '1290.00',
@@ -204,8 +211,15 @@ void main() {
       // The one already served says so; the other says it plainly.
       expect(find.text('H-001 · delivered 2.000 L'), findsOneWidget);
       expect(find.text('H-002 · not yet recorded'), findsOneWidget);
-      expect(find.text('9'), findsOneWidget, reason: "the server's count");
-      expect(find.text('21.500 L'), findsOneWidget);
+      // The claim is unchanged and the selector moved with the redesign: the
+      // figures are the platform's aggregate for the whole day, not a sum of
+      // the rows that happen to be in memory.
+      expect(
+        find.text('9 / 14'),
+        findsOneWidget,
+        reason: "the server's count",
+      );
+      expect(find.text('31.000 L'), findsOneWidget);
     });
 
     testWidgets('a round of forty households is not forty requests', (

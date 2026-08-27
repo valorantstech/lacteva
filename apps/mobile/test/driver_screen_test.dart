@@ -102,7 +102,11 @@ void main() {
       find.textContaining('Venkatanarasimharajuvaripeta'),
       findsOneWidget,
     );
-    expect(find.text('Delivered'), findsOneWidget); // outcome chip
+    // LACTEVA-MOBILE-006 moved this: the board makes ONE stop the subject, so
+    // the settled stops are no longer listed with outcome chips and the word
+    // that survives is the next stop's action. The claim this test makes is
+    // about layout on cheap hardware, and it still holds.
+    expect(find.text('Delivered'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

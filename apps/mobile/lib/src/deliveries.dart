@@ -192,60 +192,115 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
     final canRecord = widget.session.can('sales.delivery.record');
     final t = L10n.of(widget.session);
     return Scaffold(
-      appBar: AppBar(
-        title: Text(t.t('round.title')),
-        actions: [
-          IconButton(
-            tooltip: t.t('round.refresh'),
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh),
-          ),
-          SignOutButton(client: widget.client, label: t.t('common.signOut')),
-        ],
-      ),
-      body: Column(
-        children: [
-          _SyncBanner(pending: _pending, onSync: _sync, t: t),
-          if (_report != null) _DayTotals(report: _report!, t: t),
-          if (_run != null) _RunBanner(run: _run!),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            _SyncBanner(pending: _pending, onSync: _sync, t: t),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
               ),
-            ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _customers.isEmpty
-                ? _Empty(
-                    icon: Icons.people_outline,
-                    title: t.t('round.empty'),
-                    detail: t.t('round.emptyDetail'),
-                  )
-                : RefreshIndicator(
-                    onRefresh: _load,
-                    child: ListView.separated(
-                      itemCount: _customers.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, i) {
-                        final c = _customers[i];
-                        final id = c['id'].toString();
-                        return _CustomerRow(
-                          customer: c,
-                          delivered: _doneToday[id],
-                          t: t,
-                          onTap: canRecord ? () => _open(c) : null,
-                        );
-                      },
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView(
+                        padding: EdgeInsets.zero,
+                        children: [
+                          _RoundHeader(
+                            businessDate: _businessDate,
+                            customers: _customers.length,
+                            run: _run,
+                            t: t,
+                            onSignOut: SignOutButton(
+                              client: widget.client,
+                              label: t.t('common.signOut'),
+                            ),
+                          ),
+                          // Reporting is its own grant. Without it the round
+                          // still works — it simply has no figures, which is
+                          // the behaviour this screen has always had.
+                          if (_report != null)
+                            _RoundFigures(report: _report!, t: t),
+                          if (_customers.isEmpty)
+                            _Empty(
+                              icon: Icons.people_outline,
+                              title: t.t('round.empty'),
+                              detail: t.t('round.emptyDetail'),
+                            )
+                          else
+                            for (final c in _customers)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(20, 0, 20, 9),
+                                child: _RoundRow(
+                                  customer: c,
+                                  delivered: _doneToday[c['id'].toString()],
+                                  session: widget.session,
+                                  t: t,
+                                  onOpen: canRecord ? () => _open(c) : null,
+                                  onDeliver: canRecord
+                                      ? (quantity) => _deliver(c, quantity)
+                                      : null,
+                                ),
+                              ),
+                          const SizedBox(height: 26),
+                        ],
+                      ),
                     ),
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  /// The fast path: one tap, the standing order, done.
+  ///
+  /// Exactly the call `RecordDeliveryScreen` makes, with exactly its contract
+  /// — an EMPTY quantity means "the standing order", which the platform reads
+  /// from the customer's plan. The app has never invented a default quantity
+  /// and does not start now; the stepper only speaks when the rider overrides.
+  Future<void> _deliver(Map<String, dynamic> customer, String quantity) async {
+    final t = L10n.of(widget.session);
+    try {
+      final result = await widget.client.recordDeliveryOffline(
+        customerId: customer['id'].toString(),
+        deliveryDate: _businessDate,
+        // The round is generated per slot; morning is the round this screen
+        // shows, and the full slot choice stays on the detail screen.
+        slot: 'morning',
+        status: 'delivered',
+        quantity: quantity,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result['_queued'] == true
+                ? t.t('record.queued')
+                : t.t('record.recorded'),
+          ),
+        ),
+      );
+      await _load();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.detail)));
+    } catch (_) {
+      // Transport failure is not a platform refusal (P0-PRODUCT-008 D-1).
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t.t('common.couldNotReach'))));
+    }
   }
 
   Future<void> _sync() async {
@@ -278,6 +333,7 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
   }
 }
 
+
 /// Online/offline and what is waiting — DEMO-012 §9.
 ///
 /// Always present. A rider must never have to guess whether the last twenty
@@ -295,37 +351,46 @@ class _SyncBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final offline = pending > 0;
-    final scheme = Theme.of(context).colorScheme;
+    final waiting = pending > 0;
     return Material(
-      color: offline
-          ? scheme.tertiaryContainer
-          : scheme.surfaceContainerHighest,
+      color: waiting ? LactevaColors.warningTint : LactevaColors.successTint,
       child: InkWell(
-        onTap: offline ? onSync : null,
+        onTap: waiting ? onSync : null,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           child: Row(
             children: [
               Icon(
-                offline
+                waiting
                     ? Icons.cloud_upload_outlined
                     : Icons.cloud_done_outlined,
                 size: 20,
+                color: waiting
+                    ? LactevaColors.onWarningTint
+                    : LactevaColors.onSuccessTint,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  offline
+                  waiting
                       ? t.t('round.waiting', {'count': pending})
                       : t.t('round.allSent'),
-                  style: Theme.of(context).textTheme.bodyMedium,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    color: waiting
+                        ? LactevaColors.onWarningTint
+                        : LactevaColors.onSuccessTint,
+                  ),
                 ),
               ),
-              if (offline)
+              if (waiting)
                 Text(
                   t.t('round.sync'),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: LactevaColors.onWarningTint,
+                  ),
                 ),
             ],
           ),
@@ -335,151 +400,491 @@ class _SyncBanner extends StatelessWidget {
   }
 }
 
-/// The day, as the DATABASE aggregated it (§7). Nothing here is summed on the
-/// phone — the totals cover the whole day, not the rows that happen to be in
-/// memory.
-/// Which route this is, who is driving it and in what (DEMO-034).
+/// Which day, how many households, and which route (DEMO-034).
 ///
-/// Deliberately three facts and no numbers. Everything a rider needs to know
-/// they are on the right round, and nothing about money — the day's figures
-/// are `_DayTotals`' job, and the run does not know them.
-class _RunBanner extends StatelessWidget {
-  const _RunBanner({required this.run});
+/// The date is rendered exactly as the PLATFORM sent it. A phone cannot turn
+/// an ISO date into "Wed 27 Aug" for the dairy's calendar without shipping a
+/// timezone database, and a round filed under the wrong day lands on the wrong
+/// month's invoice — so the board's friendly date is the platform's plain one.
+class _RoundHeader extends StatelessWidget {
+  const _RoundHeader({
+    required this.businessDate,
+    required this.customers,
+    required this.run,
+    required this.t,
+    required this.onSignOut,
+  });
 
-  final Map<String, dynamic> run;
+  final String businessDate;
+  final int customers;
+  final Map<String, dynamic>? run;
+  final L10n t;
+  final Widget onSignOut;
 
   @override
   Widget build(BuildContext context) {
-    final route = (run['route_name'] ?? run['route_code'] ?? '').toString();
-    final driver = (run['driver_name'] ?? '').toString();
-    final vehicle = (run['vehicle_registration'] ?? '').toString();
-    final status = (run['status'] ?? '').toString();
-
-    final parts = <String>[
-      if (driver.isNotEmpty) driver,
-      if (vehicle.isNotEmpty) vehicle,
-    ];
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      color: Theme.of(context).colorScheme.secondaryContainer,
+    final r = run;
+    final route = r == null
+        ? ''
+        : (r['route_name'] ?? r['route_code'] ?? '').toString();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.alt_route, size: 18),
-          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(route, style: Theme.of(context).textTheme.titleSmall),
-                if (parts.isNotEmpty)
-                  Text(
-                    parts.join(' · '),
-                    style: Theme.of(context).textTheme.labelSmall,
+                Text(
+                  t.t('round.title'),
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.44,
+                    color: LactevaColors.ink,
                   ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  [
+                    businessDate,
+                    t.t('round.customerCount', {'count': customers}),
+                    if (route.isNotEmpty) route,
+                    t.t('round.fromStandingOrders'),
+                  ].join(' · '),
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    color: LactevaColors.muted,
+                  ),
+                ),
               ],
             ),
           ),
-          Text(status, style: Theme.of(context).textTheme.labelMedium),
+          onSignOut,
         ],
       ),
     );
   }
 }
 
-class _DayTotals extends StatelessWidget {
-  const _DayTotals({required this.report, required this.t});
+/// The day, as the DATABASE aggregated it (§7).
+///
+/// Nothing here is summed on the phone — the totals cover the whole day, not
+/// the rows that happen to be in memory. The board's third figure was money
+/// collected at the door; no read links a customer payment to a round or a
+/// day, so this shows the day's delivered VALUE, which the report does
+/// compute, and says so.
+class _RoundFigures extends StatelessWidget {
+  const _RoundFigures({required this.report, required this.t});
 
   final Map<String, dynamic> report;
   final L10n t;
 
   @override
   Widget build(BuildContext context) {
-    // P1-LOCALE-I18N-001: these four keys existed in all three catalogs and
-    // the tiles retyped their English — wired now.
+    final unit = (report['quantity_unit'] ?? 'L').toString();
     final cells = <(String, String)>[
-      (t.t('round.delivered'), '${report['deliveries'] ?? 0}'),
-      (t.t('round.customers'), '${report['customers_served'] ?? 0}'),
       (
-        t.t('round.quantity'),
-        '${report['total_quantity'] ?? 0} ${report['quantity_unit'] ?? 'L'}',
+        '${report['planned_quantity'] ?? report['total_quantity'] ?? 0} $unit',
+        t.t('round.toDeliver'),
       ),
-      (t.t('round.value'), _money(report['total_amount'])),
+      (
+        '${report['deliveries'] ?? 0} / ${report['planned'] ?? report['customers_served'] ?? 0}',
+        t.t('round.done'),
+      ),
+      (_money(report['total_amount']), t.t('round.value')),
     ];
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          for (final (label, value) in cells)
-            Column(
-              children: [
-                Text(value, style: Theme.of(context).textTheme.titleMedium),
-                Text(label, style: Theme.of(context).textTheme.labelSmall),
-              ],
-            ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          gradient: paleGradient(),
+          border: Border.all(color: LactevaColors.paleTintBorder),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            for (final (value, label) in cells)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          value,
+                          maxLines: 1,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: LactevaColors.ink,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: LactevaColors.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _CustomerRow extends StatelessWidget {
-  const _CustomerRow({
+/// One household: pending with a stepper, or done with its outcome.
+class _RoundRow extends StatelessWidget {
+  const _RoundRow({
     required this.customer,
     required this.delivered,
+    required this.session,
     required this.t,
-    required this.onTap,
+    required this.onOpen,
+    required this.onDeliver,
   });
 
   final Map<String, dynamic> customer;
   final Map<String, dynamic>? delivered;
+  final Session session;
   final L10n t;
+  final VoidCallback? onOpen;
+  final void Function(String quantity)? onDeliver;
+
+  @override
+  Widget build(BuildContext context) {
+    final row = delivered;
+    final status = row?['status']?.toString();
+    return Container(
+      decoration: BoxDecoration(
+        color: LactevaColors.milk,
+        border: Border.all(color: LactevaColors.hairline),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onOpen,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: status == null
+                ? _pending(context)
+                : _settled(context, row!, status),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pending(BuildContext context) {
+    final deliver = onDeliver;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _identity(bold: true)),
+            const SizedBox(width: 12),
+            _Chip(
+              text: t.t('round.pending'),
+              tint: LactevaColors.warningTint,
+              ink: LactevaColors.onWarningTint,
+            ),
+          ],
+        ),
+        if (deliver != null) ...[
+          const SizedBox(height: 12),
+          _DeliverControls(t: t, onDeliver: deliver),
+        ],
+      ],
+    );
+  }
+
+  Widget _settled(BuildContext context, Map<String, dynamic> row, String status) {
+    final done = status == 'delivered';
+    final quantity = row['quantity'];
+    final unit = (row['quantity_unit'] ?? 'L').toString();
+    return Row(
+      children: [
+        Icon(
+          done ? Icons.check : Icons.error_outline,
+          size: 20,
+          color: done ? LactevaColors.success : LactevaColors.warning,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                customer['name']?.toString() ?? '—',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: LactevaColors.ink,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                // The status arrives as a CODE and is translated here. It used
+                // to be printed raw, so a Hindi-speaking rider read the English
+                // word the database happens to store (DEMO-016).
+                '${customer['code'] ?? ''} · ${t.t('status.$status')}'
+                '${quantity != null ? ' $quantity $unit' : ''}',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  color: LactevaColors.muted,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        _outcomeChip(row, done),
+      ],
+    );
+  }
+
+  /// What happened to the money for this delivery.
+  ///
+  /// Three states, and each is a fact the platform sent. The board's third was
+  /// "₹84 taken" — cash collected at the door — but nothing links a customer
+  /// payment to a delivery, so a delivered row that is not yet on an invoice
+  /// shows its VALUE and says it is still to be invoiced. Claiming money had
+  /// changed hands would be the app inventing a receipt.
+  Widget _outcomeChip(Map<String, dynamic> row, bool done) {
+    if (!done) {
+      return _Chip(
+        text: t.t('round.retryLater'),
+        tint: LactevaColors.warningTint,
+        ink: LactevaColors.onWarningTint,
+      );
+    }
+    if (row['invoice_id'] != null) {
+      return _Chip(
+        text: t.t('round.onInvoice'),
+        tint: LactevaColors.waterTint,
+        ink: LactevaColors.info,
+      );
+    }
+    return _Chip(
+      text: t.t('round.toInvoice', {'amount': money(row['amount']?.toString(), session)}),
+      tint: LactevaColors.successTint,
+      ink: LactevaColors.onSuccessTint,
+    );
+  }
+
+  Widget _identity({required bool bold}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        customer['name']?.toString() ?? '—',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
+          color: LactevaColors.ink,
+        ),
+      ),
+      const SizedBox(height: 1),
+      Text(
+        '${customer['code'] ?? ''} · ${t.t('round.notRecorded')}',
+        style: const TextStyle(fontSize: 12.5, color: LactevaColors.muted),
+      ),
+    ],
+  );
+}
+
+/// The stepper and the one tap beside it.
+///
+/// **It starts on the standing order and shows no number**, because the app
+/// does not know one: the plan lives on the platform and an empty quantity is
+/// the contract that means "whatever the plan says". Inventing 2.0 L to fill
+/// the board's box would be the phone guessing at a household's order. The
+/// first tap on `+` starts an override at half a litre; `−` walks it back and,
+/// at the bottom, hands the decision back to the plan.
+class _DeliverControls extends StatefulWidget {
+  const _DeliverControls({required this.t, required this.onDeliver});
+
+  final L10n t;
+  final void Function(String quantity) onDeliver;
+
+  @override
+  State<_DeliverControls> createState() => _DeliverControlsState();
+}
+
+class _DeliverControlsState extends State<_DeliverControls> {
+  /// Null means "the standing order" — not zero, which would be a delivery of
+  /// nothing.
+  double? _override;
+
+  static const _step = 0.5;
+
+  void _bump(double by) {
+    setState(() {
+      final next = (_override ?? 0) + by;
+      _override = next <= 0 ? null : next;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    final value = _override;
+    return Row(
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: LactevaColors.controlBorder, width: 1.5),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _StepButton(
+                icon: Icons.remove,
+                semantic: t.t('round.less'),
+                onTap: value == null ? null : () => _bump(-_step),
+              ),
+              Container(
+                width: 74,
+                height: 46,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  border: Border.symmetric(
+                    vertical: BorderSide(
+                      color: LactevaColors.controlBorder,
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    value == null
+                        ? t.t('round.standingOrder')
+                        : '${value.toStringAsFixed(1)} L',
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: value == null ? 13 : 17,
+                      fontWeight: FontWeight.w700,
+                      color: value == null
+                          ? LactevaColors.muted
+                          : LactevaColors.ink,
+                    ),
+                  ),
+                ),
+              ),
+              _StepButton(
+                icon: Icons.add,
+                semantic: t.t('round.more'),
+                onTap: () => _bump(_step),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Material(
+            color: LactevaColors.dairy,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => widget.onDeliver(
+                value == null ? '' : value.toStringAsFixed(1),
+              ),
+              child: SizedBox(
+                height: 46,
+                child: Center(
+                  child: Text(
+                    t.t('round.delivered'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: LactevaColors.onBrand,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  const _StepButton({
+    required this.icon,
+    required this.semantic,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String semantic;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final status = delivered?['status']?.toString();
-    final done = status == 'delivered';
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      leading: CircleAvatar(
-        radius: 22,
-        backgroundColor: done
-            ? LactevaColors.success.withValues(alpha: 0.12)
-            : status != null
-            ? LactevaColors.warning.withValues(alpha: 0.12)
-            : Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: Icon(
-          done
-              ? Icons.check
-              : status != null
-              ? Icons.remove
-              : Icons.local_shipping_outlined,
-          color: done ? LactevaColors.success : null,
+    return Semantics(
+      button: true,
+      label: semantic,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          width: 46,
+          height: 46,
+          child: Icon(
+            icon,
+            size: 22,
+            color: onTap == null
+                ? LactevaColors.controlBorder
+                : LactevaColors.dairy,
+          ),
         ),
       ),
-      title: Text(
-        customer['name']?.toString() ?? '—',
-        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w500),
-      ),
-      subtitle: Text(
-        status == null
-            ? '${customer['code'] ?? ''} · ${t.t('round.notRecorded')}'
-            // The status arrives as a CODE and is translated here. It used to
-            // be printed raw, so a Hindi-speaking rider read the English word
-            // the database happens to store (DEMO-016).
-            : '${customer['code'] ?? ''} · ${t.t('status.$status')}'
-                  '${delivered?['quantity'] != null ? ' ${delivered!['quantity']} ${delivered!['quantity_unit'] ?? 'L'}' : ''}',
-      ),
-      trailing: onTap == null
-          ? null
-          : const Icon(Icons.chevron_right, size: 28),
-      onTap: onTap,
     );
   }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({required this.text, required this.tint, required this.ink});
+
+  final String text;
+  final Color tint;
+  final Color ink;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    decoration: BoxDecoration(
+      color: tint,
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(
+        fontSize: 11.5,
+        fontWeight: FontWeight.w700,
+        color: ink,
+      ),
+    ),
+  );
 }
 
 /// One delivery. Three big buttons and, only if you need it, a quantity.

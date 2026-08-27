@@ -109,7 +109,56 @@ abstract final class LactevaColors {
   /// A bar that is context rather than subject — the quiet columns behind the
   /// one being read.
   static const quietBar = Color(0xFFDCE7D6);
+
+  /// The darker foreground the round's amber chips take. [warning] is tuned to
+  /// sit on cream; on the amber tint it loses too much separation to be read
+  /// at a gate in sunlight.
+  static const onWarningTint = Color(0xFF8A5410);
+
+  /// Water, tinted. Wayfinding — a map pin, an invoice — never money and never
+  /// success.
+  static const waterTint = Color(0xFFEAF1F5);
+
+  // ---------------------------------------------------------------------
+  // On ink (LACTEVA-MOBILE-006, from the Driver board).
+  //
+  // The on-board band is the one dark surface in the product. It is dark
+  // because it is a FACT about the van rather than a control — the eye should
+  // pass over it unless it is looking for it — and the two foregrounds below
+  // are the measured pair for that ground.
+  // ---------------------------------------------------------------------
+
+  static const onInk = Color(0xFFF7F5EC);
+  static const onInkMuted = Color(0xFF9DAB99);
+
+  // ---------------------------------------------------------------------
+  // Controls and quiet grounds.
+  // ---------------------------------------------------------------------
+
+  /// The outline of a control a thumb operates — a stepper, a secondary
+  /// action. Heavier than [hairline], which merely separates.
+  static const controlBorder = Color(0xFFD8D3C6);
+
+  /// The round's figures sit on a barely-there wash rather than on plain milk,
+  /// so a strip of numbers reads as one object.
+  static const paleTint = Color(0xFFF3F7EE);
+  static const paleTintBorder = Color(0xFFE4EADA);
 }
+
+/// The pale wash under a strip of figures, at the boards' 150° (see
+/// [kBrandGradientBegin] for why these alignments and not an angle).
+LinearGradient paleGradient() => const LinearGradient(
+  begin: kBrandGradientBegin,
+  end: kBrandGradientEnd,
+  colors: [LactevaColors.milk, LactevaColors.paleTint],
+);
+
+/// Progress, left to right — a run draining rather than a state.
+const LinearGradient kProgressGradient = LinearGradient(
+  begin: Alignment.centerLeft,
+  end: Alignment.centerRight,
+  colors: [LactevaColors.success, LactevaColors.fresh],
+);
 
 /// The brand gradient, as the boards draw it.
 ///
