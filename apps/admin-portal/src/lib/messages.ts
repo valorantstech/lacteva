@@ -231,6 +231,20 @@ const en: Catalog = {
   "dashboard.salesValue": "Sales value",
   "dashboard.thisMonth": "This month",
   "dashboard.title": "Dashboard",
+  // --- the hero band (LACTEVA-ADMIN-015) ------------------------------
+  "dashboard.heroTitle": "The dairy, this morning",
+  "dashboard.heroRange": "{from} to {to}",
+  "dashboard.centresCollecting": "{collecting} of {total} centres collecting",
+  "dashboard.heroCollected": "collected",
+  "dashboard.heroFarmers": "farmers delivered",
+  "dashboard.heroPayable": "payable accrued",
+  "dashboard.heroReceived": "receivables collected",
+  "dashboard.trendTitle": "Collection, this range",
+  "dashboard.trendDetail": "quantity per day",
+  "dashboard.attention": "Needs your attention",
+  "dashboard.attentionClear": "Nothing needs your attention.",
+  "dashboard.attentionUnavailable": "Unavailable.",
+  "dashboard.review": "Review",
   "dashboard.today": "Today",
 
   // --- entities ------------------------------------------------------
@@ -882,6 +896,20 @@ const hi: Catalog = {
   "dashboard.salesValue": "बिक्री मूल्य",
   "dashboard.thisMonth": "इस महीने",
   "dashboard.title": "डैशबोर्ड",
+  // --- LACTEVA-ADMIN-015, the hero band -------------------------------
+  "dashboard.heroTitle": "आज सुबह की डेयरी",
+  "dashboard.heroRange": "{from} से {to}",
+  "dashboard.centresCollecting": "{total} में से {collecting} केंद्र संग्रह कर रहे हैं",
+  "dashboard.heroCollected": "संग्रहित",
+  "dashboard.heroFarmers": "किसानों ने दिया",
+  "dashboard.heroPayable": "देय जमा हुआ",
+  "dashboard.heroReceived": "प्राप्तियाँ वसूल हुईं",
+  "dashboard.trendTitle": "इस अवधि का संग्रह",
+  "dashboard.trendDetail": "प्रति दिन मात्रा",
+  "dashboard.attention": "आपके ध्यान की ज़रूरत",
+  "dashboard.attentionClear": "अभी कुछ ध्यान देने योग्य नहीं।",
+  "dashboard.attentionUnavailable": "उपलब्ध नहीं।",
+  "dashboard.review": "देखें",
   "dashboard.today": "आज",
 
   // --- entities ------------------------------------------------------
@@ -1529,6 +1557,20 @@ const ar: Catalog = {
   "dashboard.salesValue": "قيمة المبيعات",
   "dashboard.thisMonth": "هذا الشهر",
   "dashboard.title": "لوحة المعلومات",
+  // --- LACTEVA-ADMIN-015, the hero band -------------------------------
+  "dashboard.heroTitle": "الألبان هذا الصباح",
+  "dashboard.heroRange": "من {from} إلى {to}",
+  "dashboard.centresCollecting": "{collecting} من {total} مراكز تجمع الآن",
+  "dashboard.heroCollected": "مجموع",
+  "dashboard.heroFarmers": "مزارعًا سلّموا",
+  "dashboard.heroPayable": "المستحق المتراكم",
+  "dashboard.heroReceived": "المحصّل من الذمم",
+  "dashboard.trendTitle": "التجميع في هذه الفترة",
+  "dashboard.trendDetail": "الكمية يوميًا",
+  "dashboard.attention": "يحتاج انتباهك",
+  "dashboard.attentionClear": "لا شيء يحتاج انتباهك.",
+  "dashboard.attentionUnavailable": "غير متاح.",
+  "dashboard.review": "مراجعة",
   "dashboard.today": "اليوم",
 
   // --- entities ------------------------------------------------------

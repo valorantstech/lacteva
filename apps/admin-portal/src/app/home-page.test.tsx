@@ -285,9 +285,17 @@ describe("dashboard", () => {
     render(<Home />);
 
     // Collection KPIs.
+    //
+    // LACTEVA-ADMIN-015 put the four headline figures in the hero band as
+    // well as the grid below it, deliberately: the band answers the question
+    // an owner opens the page with, and the grid keeps the detail for the
+    // reader who wants it. So the quantity and the payable appear TWICE, and
+    // the assertion says exactly that rather than being loosened to "at least
+    // one" — a figure that stopped appearing in either place is still a
+    // failure.
     expect(await screen.findByText("42")).toBeInTheDocument();
-    expect(screen.getByText("1,234.5")).toBeInTheDocument();
-    expect(screen.getByText("56,789.50")).toBeInTheDocument();
+    expect(await screen.findAllByText("1,234.5")).toHaveLength(2);
+    expect(await screen.findAllByText("56,789.50")).toHaveLength(2);
     expect(screen.getByText("4.21%")).toBeInTheDocument();
     expect(screen.getByText("24")).toBeInTheDocument();
 
@@ -351,8 +359,9 @@ describe("dashboard", () => {
   it("formats money with grouping and keeps the platform's decimals", async () => {
     routeAll();
     render(<Home />);
-    // 56789.50 -> 56,789.50 with no rounding and no float round-trip.
-    expect(await screen.findByText("56,789.50")).toBeInTheDocument();
+    // 56789.50 -> 56,789.50 with no rounding and no float round-trip. Twice
+    // now: the hero repeats the payable the grid also carries.
+    expect((await screen.findAllByText("56,789.50")).length).toBe(2);
     expect(screen.getAllByText("KES").length).toBeGreaterThan(0);
     // The rate band keeps four decimal places, because a unit price has them.
     expect(screen.getByText(/45\.5000 KES \/ kg/)).toBeInTheDocument();
@@ -380,10 +389,14 @@ describe("dashboard", () => {
     ).toBeInTheDocument();
   });
 
-  it("reports 'no action required' when there are no exceptions", async () => {
+  it("says so plainly when there are no exceptions", async () => {
     routeAll();
     render(<Home />);
-    expect(await screen.findByText(/no action required/i)).toBeInTheDocument();
+    // The sentence moved into the catalog with the rest of this surface
+    // (LACTEVA-ADMIN-015); the claim is unchanged.
+    expect(
+      await screen.findByText(/nothing needs your attention/i),
+    ).toBeInTheDocument();
   });
 
   it("surfaces real exceptions with their counts and a way to act", async () => {
@@ -422,10 +435,17 @@ describe("dashboard", () => {
       "/v1/audit": () => json({}),
     });
     render(<Home />);
-    // The page still renders its structure instead of throwing.
+    // The page still renders its structure instead of throwing. The heading it
+    // is checked by moved with LACTEVA-ADMIN-015 — the hero band carries this
+    // page's one `<h1>` now, and a second `PageHeader` above it would have put
+    // two on the page. The claim is unchanged: `{}` reaches the render and the
+    // page comes up.
     expect(
-      await screen.findByRole("heading", { name: "Dashboard" }),
+      await screen.findByRole("heading", { name: "The dairy, this morning" }),
     ).toBeInTheDocument();
+    // And it says nothing it was not told: a body with no figures in it must
+    // not become a dairy that collected zero.
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
   it("lets one failed widget cost only itself", async () => {
@@ -439,7 +459,7 @@ describe("dashboard", () => {
       await screen.findByText(/centre performance is unavailable/i),
     ).toBeInTheDocument();
     // ...while every other region still shows its data.
-    expect(screen.getByText("56,789.50")).toBeInTheDocument();
+    expect(screen.getAllByText("56,789.50").length).toBeGreaterThan(0);
     expect(screen.getByText("Amina Njoroge")).toBeInTheDocument();
   });
 

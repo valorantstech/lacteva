@@ -491,6 +491,21 @@
     animation: lacteva-reveal-out var(--motion-fast) var(--ease-out-liquid) forwards;
   }
 
+  /*
+   * The dashboard vessel filling (LACTEVA-ADMIN-015). It rises once, on
+   * arrival, at the token for something arriving — and the reduced-motion
+   * rule below collapses it to nothing. The vessel is drawn at its final
+   * height either way, so removing the motion removes only the motion.
+   */
+  @keyframes lacteva-vessel {
+    from { transform: scaleY(0); }
+    to   { transform: scaleY(1); }
+  }
+  .lacteva-vessel {
+    transform-origin: bottom;
+    animation: lacteva-vessel var(--motion-slow) var(--ease-out-liquid) both;
+  }
+
   .lacteva-surface { animation: lacteva-surface 4.5s var(--ease-in-out-liquid) infinite; }
   .lacteva-ripple  { animation: lacteva-ripple var(--motion-slow) var(--ease-out-liquid) forwards; }
   .lacteva-tick    { animation: lacteva-tick var(--motion-base) var(--ease-out-liquid); }

@@ -100,18 +100,25 @@ export function TrendChart({
         >
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.25" />
-              <stop offset="100%" stopColor="var(--color-primary)" stopOpacity="0.02" />
+              <stop offset="0%" stopColor="var(--color-success)" stopOpacity="0.14" />
+              <stop offset="100%" stopColor="var(--color-success)" stopOpacity="0.01" />
             </linearGradient>
           </defs>
-          {[0, 25, 50, 75, 100].map((y) => (
+          {/* LACTEVA-ADMIN-015: three lines rather than five, and the two
+              above the baseline quieter than it. A grid is scaffolding; the
+              eye should find the series, not the ruling. */}
+          {[0, 50, 100].map((y) => (
             <line
               key={y}
               x1="0"
               y1={y}
               x2="100"
               y2={y}
-              stroke="var(--color-border)"
+              stroke={
+                y === 100
+                  ? "var(--color-border)"
+                  : "color-mix(in oklch, var(--color-border) 45%, transparent)"
+              }
               strokeWidth="0.3"
               vectorEffect="non-scaling-stroke"
             />
@@ -122,14 +129,51 @@ export function TrendChart({
               <polyline
                 points={points}
                 fill="none"
-                stroke="var(--color-primary)"
-                strokeWidth="1.5"
+                stroke="var(--color-success)"
+                strokeWidth="2.5"
                 vectorEffect="non-scaling-stroke"
+                strokeLinecap="round"
                 strokeLinejoin="round"
               />
             </>
           ) : null}
         </svg>
+
+        {/*
+          The endpoint, emphasised (LACTEVA-ADMIN-015).
+
+          HTML rather than SVG, and not for convenience: this plot is
+          `preserveAspectRatio="none"`, so a `<circle>` in it renders as an
+          ellipse and a `<text>` renders stretched. Positioning the dot and its
+          label over the plot with the same scale arithmetic is the only way to
+          draw a round dot and readable words on a chart that must fill
+          whatever width it is given.
+        */}
+        {peak > 0 ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            data-testid="trend-endpoint"
+          >
+            <span
+              className="absolute size-[9px] -translate-x-full -translate-y-1/2 rounded-full bg-success"
+              style={{ left: "100%", top: `${100 - scale(series[series.length - 1])}%` }}
+            />
+            <span
+              className="absolute -translate-x-full -translate-y-[calc(100%+10px)] whitespace-nowrap text-meta font-semibold text-foreground"
+              style={{ left: "100%", top: `${100 - scale(series[series.length - 1])}%` }}
+            >
+              {metric === "quantity" ? (
+                <Quantity value={data[data.length - 1].quantity} unit="kg" />
+              ) : (
+                <Money
+                  amount={data[data.length - 1].value}
+                  currency={data[data.length - 1].currency ?? currency}
+                />
+              )}
+            </span>
+          </div>
+        ) : null}
 
         {/* One hover target per day, laid over the plot. Buttons rather than
             SVG hit areas so the series is reachable by keyboard. */}

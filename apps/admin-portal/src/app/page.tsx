@@ -50,9 +50,10 @@ import {
 } from "@/components/date-range";
 import { BarBreakdown, TrendChart } from "@/components/trend-chart";
 import { Money, Quantity } from "@/components/money";
-import { PageHeader, SectionHeading } from "@/components/page-header";
+import { SectionHeading } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
 import { Metric, Surface } from "@/components/surface";
+import { DashboardHero } from "@/components/dashboard-hero";
 import {
   EmptyState,
   ErrorState,
@@ -61,6 +62,7 @@ import {
 } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { useT, useLocale } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 /**
  * The customer dashboard (DEMO-002).
@@ -216,24 +218,66 @@ export default function Home() {
   const currencies = Object.entries(collection?.payable_by_currency ?? {});
   const primary = currencies[0];
 
+  // The vessel's scale (LACTEVA-ADMIN-015). A vessel is a measurement and a
+  // measurement needs something to be full OF; the platform reports no
+  // expected volume, so the scale is the best DAY in the same window, picked
+  // — not averaged — out of the trend this page already fetches. Selecting a
+  // maximum from figures the platform sent is not the browser computing an
+  // aggregate; averaging them would have been.
+  const trendPoints = trend.state === "ready" ? (trend.data.points ?? []) : [];
+  const peakDay = trendPoints.reduce(
+    (best, p) => Math.max(best, p.total_net_weight_kg),
+    0,
+  );
+  const vesselFill =
+    collection && peakDay > 0
+      ? Math.min(collection.total_net_weight_kg / peakDay, 1)
+      : null;
+
   return (
     <PageContainer width="wide">
-      <PageHeader
-        title={t("dashboard.title")}
-        description={t("dashboard.description")}
-        actions={
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy}
-            onClick={() => void load(range)}
-          >
-            {busy ? t("dashboard.refreshing") : t("action.refresh")}
-          </Button>
+      <DashboardHero
+        dateLine={
+          report
+            ? t("dashboard.heroRange", {
+                from: report.date_from,
+                to: report.date_to,
+              })
+            : t("dashboard.heroRange", { from: range.from, to: range.to })
         }
+        centresCollecting={report ? report.active_centers : null}
+        centresTotal={
+          report ? report.active_centers + report.inactive_centers : null
+        }
+        litres={collection ? collection.total_net_weight_kg : null}
+        fill={vesselFill}
+        farmers={collection ? collection.suppliers_served : null}
+        payable={primary ? String(primary[1]) : collection ? "0.00" : null}
+        payableCurrency={primary ? primary[0] : orgCurrency}
+        received={sales ? sales.received : null}
+        receivedCurrency={sales?.currency ?? orgCurrency}
       />
 
-      <DateRangePicker value={range} onChange={setRange} busy={busy} />
+      {/*
+        No second title. The hero above IS this page's heading — it carries the
+        `<h1>`, and a `PageHeader` here would have put a second one on the page,
+        which is the same class of fault as the nested `<main>` landmarks the
+        design-system migration removed. The board has one title too.
+
+        The description it used to carry is the hero's date line, which says
+        the same thing with real dates in it.
+      */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <DateRangePicker value={range} onChange={setRange} busy={busy} />
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void load(range)}
+        >
+          {busy ? t("dashboard.refreshing") : t("action.refresh")}
+        </Button>
+      </div>
 
       {dashboard.state === "forbidden" ? (
         <Card>
@@ -383,56 +427,89 @@ export default function Home() {
           } /><span aria-hidden className="text-muted-foreground"><UserRound className="size-4" /></span></Surface>
       </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle
-              aria-hidden
-              className="size-4 text-muted-foreground"
-            />
-            Needs attention
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {dashboard.state === "loading" ? (
-            <LoadingState label="Checking for exceptions…" />
-          ) : !report ? (
-            <p className="text-sm text-muted-foreground">Unavailable.</p>
-          ) : (report.attention ?? []).length === 0 ? (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CheckCircle2 aria-hidden className="size-4" />
-              No action required.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {(report.attention ?? []).map((item) => (
-                <li key={item.key} className="flex items-center gap-3 text-sm">
-                  <StatusBadge
-                    status={item.severity === "critical" ? "failed" : "pending"}
-                  />
-                  <span className="font-medium tabular-nums">{item.count}</span>
-                  <span className="text-muted-foreground">{item.label}</span>
-                  {item.href ? (
-                    <a
-                      className="ml-auto text-xs underline-offset-4 hover:underline"
-                      href={item.href}
-                    >
-                      review
-                    </a>
-                  ) : null}
+      {/*
+        Needs your attention (LACTEVA-ADMIN-015).
+
+        Every row is a platform `AttentionItem` — the reporting module decides
+        what is worth surfacing and how badly, and this renders that verdict.
+        The board drew three specific cards; two of them are these items
+        (`unpriced` is the rate-pending card, `settlements_ready` is the
+        settlement-due one) and the third had no read at all. See the report.
+
+        A severity is a TINT and an outline, never a fill: a filled row reads
+        as a control, and none of these is one.
+      */}
+      <section aria-label={t("dashboard.attention")} className="flex flex-col gap-3">
+        <SectionHeading title={t("dashboard.attention")} />
+        {dashboard.state === "loading" ? (
+          <LoadingState label="Checking for exceptions…" />
+        ) : !report ? (
+          <p className="text-sm text-muted-foreground">
+            {t("dashboard.attentionUnavailable")}
+          </p>
+        ) : (report.attention ?? []).length === 0 ? (
+          <p className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3.5 text-sm text-muted-foreground">
+            <CheckCircle2 aria-hidden className="size-4 text-success" />
+            {t("dashboard.attentionClear")}
+          </p>
+        ) : (
+          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {(report.attention ?? []).map((item) => {
+              const critical = item.severity === "critical";
+              return (
+                <li
+                  key={item.key}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl border bg-card px-4 py-3.5",
+                    critical ? "border-warning/35" : "border-border",
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "flex size-9 shrink-0 items-center justify-center rounded-[11px]",
+                      critical
+                        ? "bg-warning/12 text-warning"
+                        : "bg-water/12 text-water",
+                    )}
+                  >
+                    {critical ? (
+                      <AlertTriangle className="size-[19px]" />
+                    ) : (
+                      <FileText className="size-[19px]" />
+                    )}
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="text-sm font-semibold tabular-nums">
+                      {item.count} {item.label}
+                    </span>
+                    {item.href ? (
+                      <a
+                        className="text-meta text-muted-foreground underline-offset-4 hover:underline"
+                        href={item.href}
+                      >
+                        {t("dashboard.review")}
+                      </a>
+                    ) : null}
+                  </span>
                 </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle className="text-base">Collection trend</CardTitle>
+            {/* i18n-WIRED surface: these two were English literals on a page
+                whose every other string goes through the catalog. */}
+            <CardTitle className="text-base">
+              {t("dashboard.trendTitle")}
+            </CardTitle>
             <CardDescription>
-              {range.from} to {range.to}
+              {t("dashboard.heroRange", { from: range.from, to: range.to })} ·{" "}
+              {t("dashboard.trendDetail")}
             </CardDescription>
           </div>
           <div
