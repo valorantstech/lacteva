@@ -2,7 +2,7 @@
 id: REPO-MIGRATION-V1
 title: Repository Migration Plan — Baseline V1
 type: reference
-status: Approved
+status: Superseded
 version: "1.0"
 owner: Documentation Engineering
 created: 2026-08-02
@@ -13,7 +13,7 @@ baseline: ARCH-BASELINE-V1
 
 # Repository Migration Plan — Baseline V1
 
-Migrates the repository to [ARCHITECTURE_BASELINE_V1](ARCHITECTURE_BASELINE_V1.md) per the [audit](REPOSITORY_AUDIT.md), under the locked rules: **no deletions, no renames of approved concepts, no architecture changes; deprecation over deletion; git history preserved** (all changes are ordinary commits — no history rewriting, no file moves).
+Migrates the repository to [ARCHITECTURE_BASELINE_V1](../../ARCHITECTURE_BASELINE_V1.md) per the [audit](REPOSITORY_AUDIT.md), under the locked rules: **no deletions, no renames of approved concepts, no architecture changes; deprecation over deletion; git history preserved** (all changes are ordinary commits — no history rewriting, no file moves).
 
 ## 1. Executed Migration Steps (M-series — done in this migration)
 
@@ -60,3 +60,4 @@ Rule: a deprecated document keeps its file and history; front matter gains `stat
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-02 | Documentation Engineering | Initial migration plan: M1–M6 executed steps, MR-1…MR-8 manual review queue, empty deprecation ledger. |
+| 1.1 | 2026-08-27 | Documentation Engineering | Superseded by LACTEVA-ARCH-002: M1–M6 are executed and the root consolidation this plan did not cover has now happened. Kept as the record of how the governed `docs/` tree came to exist. Moved to `docs/21-milestones/`; content otherwise unchanged. |

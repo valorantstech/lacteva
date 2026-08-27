@@ -57,11 +57,11 @@ related: [CAP-0001, PDT-0001, QR-0004, QR-0006]
 | Backend stack | Python 3.13 / FastAPI / SQLAlchemy 2 / Alembic / PostgreSQL / Redis / RabbitMQ / MinIO-S3 / OpenSearch / uv / Ruff / Pytest / Docker |
 | Clients | Flutter (mobile), Next.js + TypeScript + Tailwind + shadcn/ui (admin portal) |
 | Cloud | AWS |
-| Deployment shape | Modular monolith `services/platform-core`; internal modules are the service seams (split criteria in [DEVELOPMENT_ROADMAP](DEVELOPMENT_ROADMAP.md)) |
+| Deployment shape | Modular monolith `services/platform-core`; internal modules are the service seams (split criteria in [DEVELOPMENT_ROADMAP](docs/21-milestones/DEVELOPMENT_ROADMAP.md)) |
 | Tenancy | `Organization.id` **is** the tenant id, platform-wide |
 | Permissions | Central registry (`modules/authz/permissions.py`); keys `<module>.<action>`; RBAC with wildcard system role |
 | Events | Envelope + `<domain>.<fact>.v<major>` types on topic exchange `lacteva.events` |
-| Implementation sequence | [DEVELOPMENT_ROADMAP](DEVELOPMENT_ROADMAP.md) M0–M4 |
+| Implementation sequence | [DEVELOPMENT_ROADMAP](docs/21-milestones/DEVELOPMENT_ROADMAP.md) M0–M4 |
 
 *Status caveat (open item MR-2):* the stack is locked here but its founding ADRs are unwritten — backfill is queue item B4; the ADRs will cite this baseline, not re-decide it.
 
@@ -69,7 +69,7 @@ related: [CAP-0001, PDT-0001, QR-0004, QR-0006]
 
 1. This baseline outranks every other document on *what the architecture is*; the referenced document outranks the baseline on *detail* (the baseline never restates detail).
 2. Between documents: **Approved beats Draft; more specific beats more general; newer version beats older** — in that order.
-3. Roadmaps: [QR-0004](docs/12-quality/QR-0004-documentation-roadmap.md) governs documentation order; [DEVELOPMENT_ROADMAP](DEVELOPMENT_ROADMAP.md) governs code order; [QR-0006](docs/12-quality/QR-0006-next-work-queue.md) is the merged actionable queue. On conflict between them, QR-0006 is corrected to match the other two.
+3. Roadmaps: [QR-0004](docs/12-quality/QR-0004-documentation-roadmap.md) governs documentation order; [DEVELOPMENT_ROADMAP](docs/21-milestones/DEVELOPMENT_ROADMAP.md) governs code order; [QR-0006](docs/12-quality/QR-0006-next-work-queue.md) is the merged actionable queue. On conflict between them, QR-0006 is corrected to match the other two.
 4. Terminology conflicts resolve to the [GLOSSARY](docs/11-glossary/GLOSSARY.md); a document using a term otherwise is defective.
 5. Code vs documentation: approved documents describe intent; code describes reality. Divergence is a defect tracked in `docs/12-quality/` — never silently resolved in either direction.
 
@@ -81,7 +81,7 @@ Every formal document carries front matter `baseline: ARCH-BASELINE-V1` (registe
 
 - **V1 is immutable once ratified.** Changes produce `ARCHITECTURE_BASELINE_V2.md` with a supersession record, approved by the Architecture Board per GOV-0002.
 - Adding detail to referenced documents (new ADRs, approved DOMs) does **not** require a new baseline version — the baseline locks structure and precedence, not content growth within it.
-- Ratification of V1 itself is open item MR-3 in the [migration plan](REPOSITORY_MIGRATION_PLAN.md) (requires staffed Architecture Board).
+- Ratification of V1 itself is open item MR-3 in the [migration plan](docs/21-milestones/REPOSITORY_MIGRATION_PLAN.md) (requires staffed Architecture Board).
 
 ## Change Log
 

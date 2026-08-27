@@ -25,9 +25,9 @@ Snapshot: 2026-08-02 — 87 markdown files (47 with formal document IDs, plus RE
 | [`docs/03-architecture/01-business-layer/BUSINESS-RULES.md`](03-architecture/01-business-layer/BUSINESS-RULES.md) | **Business Rules Register** — source of truth for BR-NNNN platform invariants |
 | [`docs/product/PRODUCT_STRATEGY.md`](product/PRODUCT_STRATEGY.md) | Product strategy — segments, editions, pricing, deployment, ICPs, V1.0 definition |
 | [`docs/03-architecture/04-technology-layer/PROJECTION-LIFECYCLE.md`](03-architecture/04-technology-layer/PROJECTION-LIFECYCLE.md) | Projection lifecycle & replay — states, rebuild, versioning, verification |
-| [`REPOSITORY_AUDIT.md`](../REPOSITORY_AUDIT.md) | Baseline-migration audit (findings F-A1…F-A6, health score) |
-| [`REPOSITORY_MIGRATION_PLAN.md`](../REPOSITORY_MIGRATION_PLAN.md) | Migration steps, manual-review queue MR-1…MR-8, deprecation ledger |
-| [`DEVELOPMENT_ROADMAP.md`](../DEVELOPMENT_ROADMAP.md) | Code implementation sequence M0–M4 |
+| [`REPOSITORY_AUDIT.md`](21-milestones/REPOSITORY_AUDIT.md) | Baseline-migration audit (findings F-A1…F-A6, health score) |
+| [`REPOSITORY_MIGRATION_PLAN.md`](21-milestones/REPOSITORY_MIGRATION_PLAN.md) | Migration steps, manual-review queue MR-1…MR-8, deprecation ledger |
+| [`DEVELOPMENT_ROADMAP.md`](21-milestones/DEVELOPMENT_ROADMAP.md) | Code implementation sequence M0–M4 |
 | [`README.md`](../README.md) | Repository entry point and map |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution workflow and rules |
 | [`CHANGELOG.md`](../CHANGELOG.md) | Repository-level change history |

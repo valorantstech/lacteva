@@ -2,7 +2,7 @@
 id: DEV-ROADMAP
 title: Development Roadmap — Platform Implementation
 type: reference
-status: Approved
+status: Superseded
 version: "1.0"
 owner: Engineering
 created: 2026-08-02
@@ -13,7 +13,7 @@ baseline: ARCH-BASELINE-V1
 
 # Development Roadmap — Platform Implementation
 
-Implementation sequence for the Lacteva platform codebase. This complements the *documentation* roadmap ([QR-0004](docs/12-quality/QR-0004-documentation-roadmap.md)) — that one sequences documents; this one sequences code. Milestone tags (`M0`…`M4`) are referenced by every `TODO(M#)` marker in the codebase: `grep -rn "TODO(M" services/` is the live debt inventory.
+Implementation sequence for the Lacteva platform codebase. This complements the *documentation* roadmap ([QR-0004](../12-quality/QR-0004-documentation-roadmap.md)) — that one sequences documents; this one sequences code. Milestone tags (`M0`…`M4`) are referenced by every `TODO(M#)` marker in the codebase: `grep -rn "TODO(M" services/` is the live debt inventory.
 
 ## M0 — Platform Foundation ✅ (this delivery)
 
@@ -59,7 +59,7 @@ Implementation sequence for the Lacteva platform codebase. This complements the 
 
 ## M4 — First Business Module: Lacteva Collect
 
-Gated on: M1 complete + Collect package approval (docs pipeline B2/B3, [QR-0006](docs/12-quality/QR-0006-next-work-queue.md)). New module/service implementing PSP-0003…0006 (shift engine) with permissions `collect.*` added to the registry, events from PSP-0010 as first real `EVT` contracts, and the Flutter operator flows. **No Collect code before its architecture artifacts are approved** — the platform foundation deliberately contains zero dairy logic.
+Gated on: M1 complete + Collect package approval (docs pipeline B2/B3, [QR-0006](../12-quality/QR-0006-next-work-queue.md)). New module/service implementing PSP-0003…0006 (shift engine) with permissions `collect.*` added to the registry, events from PSP-0010 as first real `EVT` contracts, and the Flutter operator flows. **No Collect code before its architecture artifacts are approved** — the platform foundation deliberately contains zero dairy logic.
 
 ## Working Agreements
 
@@ -73,3 +73,4 @@ Gated on: M1 complete + Collect package approval (docs pipeline B2/B3, [QR-0006]
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-02 | Engineering | Initial roadmap with M0 delivery record and M1–M4 sequence. |
+| 1.1 | 2026-08-27 | Engineering | Superseded by LACTEVA-ARCH-002 and by `LACTEVA-MASTER-PRODUCT-ROADMAP.md`, which is the live roadmap. Kept as the record of the M0–M4 sequence as it was planned on 2026-08-02. Moved to `docs/21-milestones/`; content otherwise unchanged. |

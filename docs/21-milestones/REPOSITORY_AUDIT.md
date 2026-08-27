@@ -2,7 +2,7 @@
 id: REPO-AUDIT-V1
 title: Repository Audit — Baseline Migration
 type: reference
-status: Approved
+status: Superseded
 version: "1.0"
 owner: Documentation Engineering
 created: 2026-08-02
@@ -13,7 +13,7 @@ baseline: ARCH-BASELINE-V1
 
 # Repository Audit — Baseline Migration (2026-08-02)
 
-Full-repository scan preceding migration to [ARCHITECTURE_BASELINE_V1](ARCHITECTURE_BASELINE_V1.md). Method: machine scan (`tools/validate/validate_docs.py`, `tools/xref/generate_xref.py --check`, staleness grep) + manual review of every documentation domain against prior audits ([QR-0001](docs/12-quality/QR-0001-repository-health-report.md), [QR-0002](docs/12-quality/QR-0002-gap-analysis.md), [QR-0005](docs/12-quality/QR-0005-documentation-coverage-report.md)). This audit records **findings**; actions live in the [migration plan](REPOSITORY_MIGRATION_PLAN.md).
+Full-repository scan preceding migration to [ARCHITECTURE_BASELINE_V1](../../ARCHITECTURE_BASELINE_V1.md). Method: machine scan (`tools/validate/validate_docs.py`, `tools/xref/generate_xref.py --check`, staleness grep) + manual review of every documentation domain against prior audits ([QR-0001](../12-quality/QR-0001-repository-health-report.md), [QR-0002](../12-quality/QR-0002-gap-analysis.md), [QR-0005](../12-quality/QR-0005-documentation-coverage-report.md)). This audit records **findings**; actions live in the [migration plan](REPOSITORY_MIGRATION_PLAN.md).
 
 ## 1. Machine Consistency Report (task 12)
 
@@ -83,3 +83,4 @@ Weighted: content integrity 40% (score 100), reference/naming consistency 20% (1
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-02 | Documentation Engineering | Baseline-migration audit: findings F-A1…F-A6, alignment census, health score. |
+| 1.1 | 2026-08-27 | Documentation Engineering | Superseded by LACTEVA-ARCH-002: the repository shape this audit measured — eighty-five markdown files at the root — no longer exists. Kept as the record of what was found, and of the health score that motivated the move. Moved to `docs/21-milestones/`; content otherwise unchanged. |

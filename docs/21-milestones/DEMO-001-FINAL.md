@@ -127,7 +127,7 @@ sudo docker compose -f docker-compose.production.yml --env-file /etc/lacteva/.en
   exec -T api python /tmp/seed_demo.py seed
 ```
 
-Full detail in [`infra/demo/README.md`](infra/demo/README.md).
+Full detail in [`infra/demo/README.md`](../../infra/demo/README.md).
 
 ---
 

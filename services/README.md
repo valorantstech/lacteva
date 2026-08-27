@@ -4,7 +4,7 @@ Home of Lacteva's platform services — one subfolder per service, named per [ST
 
 | Service | Purpose | Status |
 | --- | --- | --- |
-| [`platform-core/`](platform-core/README.md) | Platform foundation: identity, organizations, authn/authz, configuration, audit, event/notification/storage/search infrastructure (modular monolith; modules are future service seams) | M0 delivered — see [DEVELOPMENT_ROADMAP.md](../DEVELOPMENT_ROADMAP.md) |
+| [`platform-core/`](platform-core/README.md) | Platform foundation: identity, organizations, authn/authz, configuration, audit, event/notification/storage/search infrastructure (modular monolith; modules are future service seams) | M0 delivered — see [DEVELOPMENT_ROADMAP.md](../docs/21-milestones/DEVELOPMENT_ROADMAP.md) |
 
 Note: the stack and service shape were directed externally ahead of the founding platform ADRs; backfilling those ADRs is queue item B4 ([QR-0006](../docs/12-quality/QR-0006-next-work-queue.md)) so decisions get their durable record.
 

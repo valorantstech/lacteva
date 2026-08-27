@@ -12,7 +12,7 @@ baseline: ARCH-BASELINE-V1
 
 # Developing on Lacteva
 
-How to work on this codebase. Getting it *running* is [RUNNING.md](RUNNING.md); what to build next is [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md); what the architecture *is* — [ARCHITECTURE_BASELINE_V1.md](ARCHITECTURE_BASELINE_V1.md).
+How to work on this codebase. Getting it *running* is [RUNNING.md](RUNNING.md); what to build next is [DEVELOPMENT_ROADMAP.md](docs/21-milestones/DEVELOPMENT_ROADMAP.md); what the architecture *is* — [ARCHITECTURE_BASELINE_V1.md](ARCHITECTURE_BASELINE_V1.md).
 
 ## Repository Shape
 

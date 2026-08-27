@@ -80,7 +80,7 @@ The work order offered a list of candidate concepts. The one the repository
 already supports is the first on that list: **late settlement against a
 subsequent open period.** No new accounting concept was introduced.
 
-**Registered as [BR-0027](docs/03-architecture/01-business-layer/BUSINESS-RULES.md)**
+**Registered as [BR-0027](../03-architecture/01-business-layer/BUSINESS-RULES.md)**
 — *a late collection is carried forward; a closed period is never reopened to
 receive it.* Register version 1.16 → 1.17.
 
