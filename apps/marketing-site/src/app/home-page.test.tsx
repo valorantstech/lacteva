@@ -2,12 +2,25 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import HomePage from "./page";
 
-describe("home page (MKT-004C)", () => {
-  it("leads with the connected-operations positioning", () => {
+describe("home page (MKT-004C · hero per LACTEVA-MARKETING-002)", () => {
+  it("leads with the approved hero headline", () => {
     render(<HomePage />);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-      /run your dairy operations as one connected business/i,
-    );
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading).toHaveTextContent(/every drop,/i);
+    expect(heading).toHaveTextContent(/accounted for\./i);
+  });
+
+  it("routes the hero CTAs — trial, and the ruled substitution to /product", () => {
+    render(<HomePage />);
+    // The board's "Watch the counter flow" has nothing real to open, so the
+    // work order's fallback ships: "See how it works" → /product.
+    expect(
+      screen.getByRole("link", { name: /start your dairy's trial/i }),
+    ).toHaveAttribute("href", "/start-free-trial");
+    expect(
+      screen.getByRole("link", { name: /see how it works/i }),
+    ).toHaveAttribute("href", "/product");
+    expect(screen.queryByText(/watch the counter flow/i)).not.toBeInTheDocument();
   });
 
   it("routes the trial and demo CTAs to their pages", () => {
@@ -24,6 +37,16 @@ describe("home page (MKT-004C)", () => {
     for (const link of demoLinks) {
       expect(link).toHaveAttribute("href", "/request-demo");
     }
+  });
+
+  it("carries the board's proof row and module chips", () => {
+    render(<HomePage />);
+    for (const fact of ["Offline-first", "FAT-banded rates", "Parchi to payment"]) {
+      expect(screen.getByText(fact)).toBeInTheDocument();
+    }
+    expect(screen.getByText(/runs the whole dairy:/i)).toBeInTheDocument();
+    expect(screen.getByText("Quality")).toBeInTheDocument();
+    expect(screen.getByText("Invoices")).toBeInTheDocument();
   });
 
   it("states the trial honestly — a person sets it up", () => {

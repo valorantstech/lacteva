@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { LinkButton } from "@/components/link-button";
-import { Wordmark } from "@/components/logo";
+import { NavLogoReveal } from "@/components/nav-logo-reveal";
 
 // Final navigation (MKT-004E). "Resources" stays deferred until there is
 // real content to put behind it. "About" → /company is intentional.
@@ -15,13 +15,16 @@ const NAV = [
  * Server component; the whole site is navigable without JavaScript. Login
  * goes through /login, which hands over to the separately deployed
  * authenticated portal — the two applications share a link, never a UI.
+ * The one client leaf is the logo lockup, whose reveal plays on a
+ * visitor's first page (LACTEVA-MARKETING-002) and renders statically
+ * everywhere else.
  */
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/90 backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-6 px-4 sm:px-6 lg:px-8">
         <Link href="/" aria-label="Lacteva home" className="shrink-0">
-          <Wordmark />
+          <NavLogoReveal />
         </Link>
         <nav aria-label="Main" className="hidden items-center gap-6 md:flex">
           {NAV.map((item) => (

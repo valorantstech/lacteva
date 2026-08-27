@@ -72,6 +72,20 @@
   --ink: oklch(0.22 0.02 160);
   --ink-foreground: oklch(0.97 0.008 95);
   --ink-muted: oklch(0.72 0.015 145);
+
+  /*
+   * — Motion. The design system's tokens (LACTEVA-DESIGN-SYSTEM-V1), same
+   * values as the admin portal's globals.css: milk settles, it does not
+   * stop. Every marketing motion eases out long and arrives softly.
+   */
+  --motion-instant: 90ms;
+  --motion-fast: 160ms;
+  --motion-base: 240ms;
+  --motion-slow: 420ms;
+  --motion-flow: 900ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out-liquid: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-liquid: cubic-bezier(0.65, 0, 0.35, 1);
 }
 
 @layer base {
@@ -100,5 +114,101 @@
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
+  }
+}
+
+/*
+ * ── MARKETING MOTION (LACTEVA-MARKETING-002) ────────────────────────────────
+ *
+ * The living hero's choreography. All of it collapses to an instant under
+ * the reduced-motion rule above, so the static composition is always one
+ * media query away.
+ */
+@layer components {
+  /* Orchestrated entrance: each hero element rises and settles in turn.
+     Stagger via --enter-delay, set inline where the order is decided. */
+  @keyframes hero-enter {
+    from {
+      opacity: 0;
+      transform: translateY(0.625rem);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .hero-enter {
+    animation: hero-enter var(--motion-slow) var(--ease-out-liquid) both;
+    animation-delay: var(--enter-delay, 0ms);
+  }
+
+  /* The static pour stream (the approved board's own keyframes) — shown
+     whenever the canvas fluid is not running. */
+  @keyframes hero-pour {
+    0% {
+      transform: translateX(-50%) translateY(-4px) scaleY(0.98);
+    }
+    50% {
+      transform: translateX(-50%) translateY(3px) scaleY(1.02);
+    }
+    100% {
+      transform: translateX(-50%) translateY(-4px) scaleY(0.98);
+    }
+  }
+  .hero-pour {
+    animation: hero-pour 5s ease-in-out infinite;
+    transform-origin: top;
+  }
+
+  /* The nav logo reveal — the LogoReveal board's three beats, 1.4s total:
+     the drop falls (420ms) → the milk ripples (600ms, two rings) → the
+     wordmark settles in (380ms, fade + 4px rise). The animations only
+     exist under [data-reveal="on"], which NavLogoReveal flips exactly once
+     per session; everywhere else the same markup is the static lockup. */
+  @keyframes nav-reveal-drop {
+    0% {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    55% {
+      opacity: 1;
+      transform: translateY(2px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  [data-reveal="on"] .nav-reveal-drop {
+    animation: nav-reveal-drop var(--motion-slow) var(--ease-out-liquid) both;
+    transform-box: fill-box;
+  }
+  @keyframes nav-reveal-ring {
+    from {
+      opacity: 0.5;
+      transform: scale(0.55);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.5);
+    }
+  }
+  [data-reveal="on"] .nav-reveal-ring {
+    animation: nav-reveal-ring 600ms var(--ease-out-liquid) both;
+    animation-delay: var(--reveal-delay, 360ms);
+  }
+  @keyframes nav-reveal-word {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  [data-reveal="on"] .nav-reveal-word {
+    animation: nav-reveal-word 380ms var(--ease-out-liquid) both;
+    animation-delay: 1020ms;
   }
 }

@@ -22,11 +22,13 @@ import {
   Warehouse,
 } from "lucide-react";
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 import { CtaBand } from "@/components/cta-band";
+import { HeroMilk } from "@/components/hero-milk";
 import { LifecycleFlow } from "@/components/lifecycle-flow";
 import { LinkButton } from "@/components/link-button";
 import { ProductShot } from "@/components/product-shot";
-import { Eyebrow, Section, SectionHeading } from "@/components/section";
+import { Section, SectionHeading } from "@/components/section";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -40,6 +42,37 @@ export const metadata: Metadata = {
  * exists"). No statistics, no ROI, no superlatives, no instant-provisioning
  * language: the trial is fulfilled by a person, and the copy says so.
  */
+
+/**
+ * The living hero (LACTEVA-MARKETING-002): the approved MarketingHero board,
+ * built alive. Copy is the board's, with one ruled substitution — the board's
+ * secondary CTA "Watch the counter flow" has nothing real to open, so per the
+ * work order it ships as "See how it works" linking to /product. The board
+ * has no trial small-print; the honesty line stays anyway, because the trial
+ * being set up by a person is a claim-discipline fact, not a decoration.
+ *
+ * The entrance is orchestrated in CSS (badge → headline lines → subhead →
+ * CTAs → proof row) on the DS ease-out-liquid tokens, so it also runs on the
+ * no-JS page and collapses to an instant under prefers-reduced-motion.
+ */
+const enter = (ms: number) =>
+  ({ "--enter-delay": `${ms}ms` }) as CSSProperties;
+
+const HERO_PROOF = [
+  { fact: "Offline-first", note: "no signal, no lost milk" },
+  { fact: "FAT-banded rates", note: "your chart, applied exactly" },
+  { fact: "Parchi to payment", note: "one connected ledger" },
+] as const;
+
+const HERO_MODULES = [
+  "Collection",
+  "Quality",
+  "Pricing",
+  "Settlement",
+  "Delivery",
+  "Invoices",
+  "Reports",
+] as const;
 
 const PROBLEMS = [
   {
@@ -197,36 +230,92 @@ const TRUST_POINTS = [
 export default function HomePage() {
   return (
     <>
-      {/* 1 — Hero */}
-      <Section className="border-b border-border/60">
-        <div className="grid items-center gap-12 xl:grid-cols-2">
+      {/* 1 — The living hero (board: MarketingHero) */}
+      <section className="relative overflow-hidden bg-[linear-gradient(150deg,#0C160E_0%,#0E3D14_62%,#14481E_100%)] text-[#FDFBF4]">
+        {/* The warm glow behind the milk. Two-column layouts only: on a
+            phone its 560px square hangs past the viewport and mobile
+            Chrome shrinks the whole layout to fit it. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute top-[90px] right-[-80px] hidden size-[560px] rounded-full bg-[radial-gradient(circle_at_40%_32%,rgba(253,251,244,0.10),rgba(253,251,244,0)_60%)] lg:block"
+        />
+        <div className="relative mx-auto grid w-full max-w-6xl items-center gap-x-10 gap-y-12 px-4 pt-14 pb-10 sm:px-6 lg:grid-cols-[1.1fr_1fr] lg:pt-20 lg:pb-14 lg:px-8">
           <div className="flex max-w-2xl flex-col gap-6">
-            <Eyebrow>Connected Dairy Operations Platform</Eyebrow>
-            <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl lg:text-6xl">
-              Run your dairy operations as one connected business.
+            <div className="hero-enter flex items-center gap-2.5">
+              <span className="size-2 rounded-full bg-[#7FD495]" aria-hidden />
+              <p className="text-[13px] font-semibold tracking-[0.1em] text-[#90E0A5] uppercase">
+                The dairy platform for milk that moves
+              </p>
+            </div>
+            <h1 className="text-[2.6rem] leading-[1.04] font-bold tracking-[-0.03em] text-balance sm:text-6xl lg:text-[62px]">
+              <span className="hero-enter block" style={enter(80)}>
+                Every drop,
+              </span>
+              <span className="hero-enter block" style={enter(160)}>
+                accounted for.
+              </span>
             </h1>
-            <p className="text-lg leading-relaxed text-muted-foreground">
-              Lacteva connects milk procurement, collection, customers,
-              delivery, billing, payments, and reporting in one scalable
-              dairy operations platform.
+            <p
+              className="hero-enter max-w-[480px] text-lg leading-[1.55] text-[#C9D8BE]"
+              style={enter(280)}
+            >
+              From the farmer&apos;s can to the customer&apos;s doorstep —
+              collection, quality, pricing, settlement and delivery, priced by
+              the platform and honest to the paisa. Built for the counter,
+              offline-first.
             </p>
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              <LinkButton href="/start-free-trial">Start Free Trial</LinkButton>
-              <LinkButton href="/request-demo" variant="outline">
-                Book a Demo
+            <div
+              className="hero-enter flex flex-wrap items-center gap-3.5"
+              style={enter(400)}
+            >
+              <LinkButton
+                href="/start-free-trial"
+                className="rounded-xl bg-[#FDFBF4] font-bold text-[#0E3D14] hover:bg-white"
+              >
+                Start your dairy&apos;s trial
+              </LinkButton>
+              <LinkButton
+                href="/product"
+                className="rounded-xl border-[1.5px] border-[rgba(253,251,244,0.35)] bg-transparent font-semibold text-[#FDFBF4] hover:bg-[rgba(253,251,244,0.08)]"
+              >
+                See how it works
               </LinkButton>
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p className="hero-enter text-sm text-[#9DAB99]" style={enter(480)}>
               30-day free trial — our team sets up your environment.
             </p>
+            <div
+              className="hero-enter flex flex-wrap gap-x-6 gap-y-4 border-t border-[rgba(253,251,244,0.14)] pt-5"
+              style={enter(560)}
+            >
+              {HERO_PROOF.map((item) => (
+                <div key={item.fact} className="flex flex-col gap-px">
+                  <div className="text-xl font-bold">{item.fact}</div>
+                  <div className="text-[12.5px] text-[#9DAB99]">{item.note}</div>
+                </div>
+              ))}
+            </div>
           </div>
-          <ProductShot
-            name="dashboard"
-            label="Lacteva admin portal — operational overview"
-            priority
-          />
+          <div className="hero-enter" style={enter(200)}>
+            <HeroMilk />
+          </div>
         </div>
-      </Section>
+        <div className="relative mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-3.5 gap-y-2.5 px-4 pb-8 sm:px-6 lg:px-8">
+          <span className="hero-enter text-[12.5px] text-[#9DAB99]" style={enter(680)}>
+            Runs the whole dairy:
+          </span>
+          <div className="hero-enter flex flex-wrap gap-2" style={enter(720)}>
+            {HERO_MODULES.map((module) => (
+              <span
+                key={module}
+                className="rounded-full border border-[rgba(253,251,244,0.22)] px-3 py-1 text-xs text-[#C9D8BE]"
+              >
+                {module}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* 2 — Problem */}
       <Section variant="tinted">
