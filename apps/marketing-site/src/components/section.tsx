@@ -23,7 +23,10 @@ export function Section({
       data-settle
       className={cn(
         variant === "tinted" && "bg-secondary/50",
-        variant === "ink" && "bg-ink text-ink-foreground",
+        // The deep-ink band is the brand's 150° gradient (the hero's own
+        // ground), not flat ink — LACTEVA-MARKETING-005.
+        variant === "ink" &&
+          "bg-[linear-gradient(150deg,#0C160E_0%,#0E3D14_62%,#14481E_100%)] text-ink-foreground",
         className,
       )}
     >

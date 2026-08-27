@@ -12,7 +12,7 @@ export function CtaBand({
   copy?: string;
 }) {
   return (
-    <div className="flex flex-col items-start gap-6 rounded-2xl bg-ink p-10 text-ink-foreground sm:p-14">
+    <div className="flex flex-col items-start gap-6 rounded-2xl bg-[linear-gradient(150deg,#0C160E_0%,#0E3D14_62%,#14481E_100%)] p-10 text-ink-foreground sm:p-14">
       <h2 className="max-w-2xl text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
         {title}
       </h2>

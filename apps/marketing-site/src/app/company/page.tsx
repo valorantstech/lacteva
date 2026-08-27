@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LinkButton } from "@/components/link-button";
+import { SceneCapture } from "@/components/scenes";
 import { Section, SectionHeading } from "@/components/section";
 
 export const metadata: Metadata = {
@@ -31,12 +32,16 @@ export default function CompanyPage() {
   return (
     <>
       <Section className="border-b border-border/60">
-        <SectionHeading
-          as="h1"
-          eyebrow="Company"
-          title="Lacteva is the flagship product of Phoenix Software"
-          lede="Our mission: digitize the entire dairy value chain — from the farmer pouring milk at a village collection center through processing, settlement, and market intelligence — for dairy businesses that today run on paper."
-        />
+        <div className="grid items-center gap-10 lg:grid-cols-[1.2fr_1fr]">
+          <SectionHeading
+            as="h1"
+            eyebrow="Company"
+            title="Lacteva is the flagship product of Phoenix Software"
+            lede="Our mission: digitize the entire dairy value chain — from the farmer pouring milk at a village collection center through processing, settlement, and market intelligence — for dairy businesses that today run on paper."
+          />
+          {/* the mission is the counter at 5 a.m. — the Capture scene */}
+          <SceneCapture />
+        </div>
       </Section>
 
       <Section>
@@ -56,8 +61,9 @@ export default function CompanyPage() {
         </div>
       </Section>
 
-      <Section variant="tinted">
+      <Section variant="ink">
         <SectionHeading
+          onInk
           eyebrow="Why fair records matter"
           title="Steps one and two are what a customer buys. Step three is the long game."
         />
@@ -68,10 +74,10 @@ export default function CompanyPage() {
             "The resulting data enables credit, breeding, nutrition, and market decisions that no participant in the chain can make today.",
           ].map((step, i) => (
             <li key={i} className="flex items-start gap-4">
-              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground tabular-nums">
+              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-ink-foreground text-sm font-semibold text-ink tabular-nums">
                 {i + 1}
               </span>
-              <p className="text-base leading-relaxed">{step}</p>
+              <p className="text-base leading-relaxed text-ink-foreground">{step}</p>
             </li>
           ))}
         </ol>

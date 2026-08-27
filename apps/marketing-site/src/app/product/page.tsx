@@ -3,6 +3,13 @@ import { ArrowRight } from "lucide-react";
 import { CtaBand } from "@/components/cta-band";
 import { LifecycleFlow } from "@/components/lifecycle-flow";
 import { ProductShot } from "@/components/product-shot";
+import {
+  SceneBill,
+  SceneCapture,
+  SceneDeliver,
+  SceneManage,
+  SceneUnderstand,
+} from "@/components/scenes";
 import { Section, SectionHeading } from "@/components/section";
 
 export const metadata: Metadata = {
@@ -17,6 +24,16 @@ export const metadata: Metadata = {
  * value, with the feature depth second. Every capability listed is
  * shipped; claims.test.ts polices the copy.
  */
+// Each group carries its lifecycle scene (LACTEVA-MARKETING-005): the
+// same flat world the hero's farmer lives in, one stage per group.
+const SCENES = {
+  Procure: SceneCapture,
+  Operate: SceneManage,
+  Serve: SceneDeliver,
+  Bill: SceneBill,
+  Understand: SceneUnderstand,
+} as const;
+
 const GROUPS = [
   {
     name: "Procure",
@@ -133,41 +150,48 @@ export default function ProductPage() {
           title="Five areas of the business. One platform underneath."
         />
         <div className="flex flex-col gap-12">
-          {GROUPS.map((group, i) => (
-            <article
-              key={group.name}
-              className="grid gap-6 border-t border-border pt-10 first:border-t-0 first:pt-0 lg:grid-cols-[1.2fr_1fr] lg:gap-12"
-            >
-              <div className="flex flex-col gap-3">
-                <p className="text-xs font-semibold text-primary tabular-nums">
-                  {String(i + 1).padStart(2, "0")}
-                </p>
-                <h3 className="text-2xl font-semibold tracking-tight">
-                  {group.name}
-                </h3>
-                <p className="text-base font-medium">{group.headline}</p>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {group.value}
-                </p>
-              </div>
-              <ul className="flex h-fit flex-wrap gap-2 lg:justify-end">
-                {group.items.map((item) => (
-                  <li
-                    key={item}
-                    className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground"
-                  >
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </article>
-          ))}
+          {GROUPS.map((group, i) => {
+            const Scene = SCENES[group.name];
+            return (
+              <article
+                key={group.name}
+                className="grid gap-6 border-t border-border pt-10 first:border-t-0 first:pt-0 lg:grid-cols-[1.2fr_1fr] lg:gap-12"
+              >
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs font-semibold text-primary tabular-nums">
+                    {String(i + 1).padStart(2, "0")}
+                  </p>
+                  <h3 className="text-2xl font-semibold tracking-tight">
+                    {group.name}
+                  </h3>
+                  <p className="text-base font-medium">{group.headline}</p>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {group.value}
+                  </p>
+                </div>
+                <div className="flex h-fit flex-col gap-4">
+                  <Scene />
+                  <ul className="flex flex-wrap gap-2 lg:justify-end">
+                    {group.items.map((item) => (
+                      <li
+                        key={item}
+                        className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground"
+                      >
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </Section>
 
-      {/* How the groups connect */}
-      <Section variant="tinted">
+      {/* How the groups connect — on the deep-ink band for rhythm */}
+      <Section variant="ink">
         <SectionHeading
+          onInk
           eyebrow="The operational workflow"
           title="Capabilities are only half the story — the connections are the product."
         />

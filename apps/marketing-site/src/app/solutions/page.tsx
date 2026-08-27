@@ -9,6 +9,15 @@ import {
   Warehouse,
 } from "lucide-react";
 import { CtaBand } from "@/components/cta-band";
+import { ProductShot } from "@/components/product-shot";
+import {
+  SceneBill,
+  SceneCapture,
+  SceneCollect,
+  SceneDeliver,
+  SceneManage,
+  SceneUnderstand,
+} from "@/components/scenes";
 import { Section, SectionHeading } from "@/components/section";
 
 export const metadata: Metadata = {
@@ -24,6 +33,18 @@ export const metadata: Metadata = {
  * its own benefit; none of them may read like a template. Suitability is
  * the message: no deployment or customer-count claims anywhere.
  */
+// Each audience carries the lifecycle scene that is its daily life
+// (LACTEVA-MARKETING-005): the cooperative lives at the scale, the
+// distributor on the round, the enterprise in roles and grants.
+const AUDIENCE_SCENES = {
+  "dairy-companies": SceneUnderstand,
+  cooperatives: SceneCapture,
+  "collection-organizations": SceneCollect,
+  distributors: SceneDeliver,
+  "growing-businesses": SceneBill,
+  enterprise: SceneManage,
+} as const;
+
 const SOLUTIONS = [
   {
     id: "dairy-companies",
@@ -140,43 +161,58 @@ export default function SolutionsPage() {
         </nav>
       </Section>
 
-      {SOLUTIONS.map((solution, i) => (
-        <Section key={solution.id} variant={i % 2 === 0 ? "default" : "tinted"}>
-          <article
-            id={solution.id}
-            className="grid scroll-mt-28 gap-8 lg:grid-cols-2 lg:gap-14"
-          >
-            <div className="flex flex-col gap-4">
-              <solution.icon className="size-6 text-primary" aria-hidden />
-              <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                {solution.name}
-              </h2>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {solution.problem}
-              </p>
-              <p className="text-sm leading-relaxed">
-                <span className="font-semibold">With Lacteva: </span>
-                {solution.benefit}
-              </p>
-            </div>
-            <div className="lacteva-lift flex flex-col gap-3 rounded-xl border border-border bg-card p-6 lg:h-fit">
-              <p className="text-xs font-semibold tracking-wide text-primary uppercase">
-                What matters most here
-              </p>
-              <ul className="flex flex-col gap-2.5">
-                {solution.capabilities.map((cap) => (
-                  <li
-                    key={cap}
-                    className="border-l-2 border-primary/40 ps-3 text-sm leading-relaxed text-muted-foreground"
-                  >
-                    {cap}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </article>
-        </Section>
-      ))}
+      {SOLUTIONS.map((solution, i) => {
+        const Scene = AUDIENCE_SCENES[solution.id];
+        return (
+          <Section key={solution.id} variant={i % 2 === 0 ? "default" : "tinted"}>
+            <article
+              id={solution.id}
+              className="grid scroll-mt-28 gap-8 lg:grid-cols-2 lg:gap-14"
+            >
+              <div className="flex flex-col gap-4">
+                <solution.icon className="size-6 text-primary" aria-hidden />
+                <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                  {solution.name}
+                </h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {solution.problem}
+                </p>
+                <p className="text-sm leading-relaxed">
+                  <span className="font-semibold">With Lacteva: </span>
+                  {solution.benefit}
+                </p>
+              </div>
+              <div className="flex flex-col gap-4">
+                <Scene />
+                <div className="lacteva-lift flex flex-col gap-3 rounded-xl border border-border bg-card p-6 lg:h-fit">
+                  <p className="text-xs font-semibold tracking-wide text-primary uppercase">
+                    What matters most here
+                  </p>
+                  <ul className="flex flex-col gap-2.5">
+                    {solution.capabilities.map((cap) => (
+                      <li
+                        key={cap}
+                        className="border-l-2 border-primary/40 ps-3 text-sm leading-relaxed text-muted-foreground"
+                      >
+                        {cap}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </article>
+            {solution.id === "distributors" ? (
+              // WO-29's capture lands here: the round on the rider's phone.
+              <div className="pt-10">
+                <ProductShot
+                  name="mobile-rider"
+                  label="Lacteva mobile app — the day's round on the rider's phone"
+                />
+              </div>
+            ) : null}
+          </Section>
+        );
+      })}
 
       <Section>
         <CtaBand title="Not sure which fits? Start with your operation." copy="Tell us how your dairy business runs — we'll show you Lacteva on your own workflow, with a 30-day free trial or a live demo." />

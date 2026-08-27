@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { CalendarCheck, Network, Smartphone, TrendingUp } from "lucide-react";
 import { CtaBand } from "@/components/cta-band";
 import { LinkButton } from "@/components/link-button";
+import { SceneCollect } from "@/components/scenes";
 import { Section, SectionHeading } from "@/components/section";
 
 export const metadata: Metadata = {
@@ -72,21 +73,24 @@ const EVALUATE = [
 export default function PricingPage() {
   return (
     <>
-      {/* Hero */}
+      {/* Hero — the money page carries the settlement scene */}
       <Section className="border-b border-border/60">
-        <div className="flex max-w-3xl flex-col gap-6">
-          <SectionHeading
-            as="h1"
-            eyebrow="Pricing"
-            title="Simple to start. Ready to scale."
-            lede="Explore Lacteva with a 30-day free trial, or talk to our team about the right setup for your dairy operation. Subscription plans are being finalized and will be published here — until then, our team will walk you through options sized to your organization."
-          />
-          <div className="flex flex-wrap items-center gap-3">
-            <LinkButton href="/start-free-trial">Start Free Trial</LinkButton>
-            <LinkButton href="/request-demo" variant="outline">
-              Book a Demo
-            </LinkButton>
+        <div className="grid items-center gap-10 lg:grid-cols-[1.2fr_1fr]">
+          <div className="flex max-w-3xl flex-col gap-6">
+            <SectionHeading
+              as="h1"
+              eyebrow="Pricing"
+              title="Simple to start. Ready to scale."
+              lede="Explore Lacteva with a 30-day free trial, or talk to our team about the right setup for your dairy operation. Subscription plans are being finalized and will be published here — until then, our team will walk you through options sized to your organization."
+            />
+            <div className="flex flex-wrap items-center gap-3">
+              <LinkButton href="/start-free-trial">Start Free Trial</LinkButton>
+              <LinkButton href="/request-demo" variant="outline">
+                Book a Demo
+              </LinkButton>
+            </div>
           </div>
+          <SceneCollect />
         </div>
       </Section>
 
@@ -115,9 +119,10 @@ export default function PricingPage() {
         </ol>
       </Section>
 
-      {/* What you're evaluating */}
-      <Section>
+      {/* What you're evaluating — on the deep-ink band for rhythm */}
+      <Section variant="ink">
         <SectionHeading
+          onInk
           eyebrow="What you're evaluating"
           title="The platform, on your own operation"
         />
