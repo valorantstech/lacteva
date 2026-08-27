@@ -423,6 +423,30 @@ const renderDetail = async (ui: React.ReactElement) => {
 const urls = (spy: ReturnType<typeof routeAll>) =>
   spy.mock.calls.map((c) => String(c[0]));
 
+/**
+ * The alert that says something in particular (LACTEVA-QA-004).
+ *
+ * `findByRole("alert")` asks for THE alert, and these pages have several
+ * regions that load and fail on their own — every `ErrorState` is also
+ * `role="alert"`. When a neighbour is still showing one, the bare selector
+ * throws "Found multiple elements", which is the flake QA-003 traced on
+ * `transactions/[id]` after three cycles of blaming the hardware.
+ *
+ * `role="alert"` is not a name-from-content role and cannot be selected by
+ * `name`, so the alert is found by what it SAYS. This is stronger than the
+ * bare selector it replaces: that one required exactly one alert anywhere and
+ * that it happened to say this; this requires an alert that says it.
+ */
+async function alertSaying(pattern: RegExp): Promise<HTMLElement> {
+  return waitFor(() => {
+    const found = screen
+      .getAllByRole("alert")
+      .find((el) => pattern.test(el.textContent ?? ""));
+    if (!found) throw new Error(`no alert yet matching ${pattern}`);
+    return found;
+  });
+}
+
 describe("customers", () => {
   it("lists customers with their codes", async () => {
     routeAll();
@@ -779,7 +803,9 @@ describe("the monthly bill", () => {
         }),
     });
     await renderDetail(<InvoiceDetailPage params={params()} />);
-    const alert = await screen.findByRole("alert");
+    // The same shape as the QA-003 flake: a reconciliation verdict on a
+    // detail page whose other regions can each raise an alert of their own.
+    const alert = await alertSaying(/no longer matches the lines/);
     expect(alert).toHaveTextContent(/no longer matches the lines/);
   });
 

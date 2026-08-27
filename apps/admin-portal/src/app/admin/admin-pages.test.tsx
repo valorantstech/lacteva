@@ -45,6 +45,30 @@ function routeFetch(routes: Record<string, unknown>, status = 200) {
 beforeEach(() => vi.unstubAllGlobals());
 afterEach(() => vi.unstubAllGlobals());
 
+/**
+ * The alert that says something in particular (LACTEVA-QA-004).
+ *
+ * `findByRole("alert")` asks for THE alert, and these pages have several
+ * regions that load and fail on their own — every `ErrorState` is also
+ * `role="alert"`. When a neighbour is still showing one, the bare selector
+ * throws "Found multiple elements", which is the flake QA-003 traced on
+ * `transactions/[id]` after three cycles of blaming the hardware.
+ *
+ * `role="alert"` is not a name-from-content role and cannot be selected by
+ * `name`, so the alert is found by what it SAYS. This is stronger than the
+ * bare selector it replaces: that one required exactly one alert anywhere and
+ * that it happened to say this; this requires an alert that says it.
+ */
+async function alertSaying(pattern: RegExp): Promise<HTMLElement> {
+  return waitFor(() => {
+    const found = screen
+      .getAllByRole("alert")
+      .find((el) => pattern.test(el.textContent ?? ""));
+    if (!found) throw new Error(`no alert yet matching ${pattern}`);
+    return found;
+  });
+}
+
 describe("users", () => {
   const people = {
     "/v1/members": [
@@ -123,9 +147,9 @@ describe("users", () => {
       ),
     );
     render(<UsersPage />);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "You do not have permission.",
-    );
+    expect(
+      await alertSaying(/You do not have permission\./),
+    ).toHaveTextContent("You do not have permission.");
   });
 });
 

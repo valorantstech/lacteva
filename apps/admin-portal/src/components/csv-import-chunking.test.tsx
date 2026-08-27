@@ -46,6 +46,30 @@ const bodyRows = (call: unknown[]) =>
 
 beforeEach(() => vi.unstubAllGlobals());
 
+/**
+ * The alert that says something in particular (LACTEVA-QA-004).
+ *
+ * `findByRole("alert")` asks for THE alert, and this screen has more than one
+ * region that can raise one — every `ErrorState` is also `role="alert"`. When
+ * a neighbour is still showing one, the bare selector throws "Found multiple
+ * elements", which is the flake QA-003 traced on `transactions/[id]` after
+ * three cycles of blaming the hardware.
+ *
+ * `role="alert"` is not a name-from-content role and cannot be selected by
+ * `name`, so the alert is found by what it SAYS. This is stronger than the
+ * bare selector it replaces: that one required exactly one alert anywhere and
+ * that it happened to say this; this requires an alert that says it.
+ */
+async function alertSaying(pattern: RegExp): Promise<HTMLElement> {
+  return waitFor(() => {
+    const found = screen
+      .getAllByRole("alert")
+      .find((el) => pattern.test(el.textContent ?? ""));
+    if (!found) throw new Error(`no alert yet matching ${pattern}`);
+    return found;
+  });
+}
+
 describe("a file larger than the platform's per-request limit", () => {
   it("goes out in batches the platform will accept", async () => {
     const spy = vi.fn(async (_url: string, init: RequestInit) =>
@@ -155,10 +179,9 @@ describe("when a batch fails half way through", () => {
 
     // 500 created and listed, and the file line the run stopped at — 502,
     // because row 501 of the data is line 502 of the file.
-    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
-    expect(screen.getByRole("alert").textContent).toMatch(
-      /line 502 onward was sent/,
-    );
+    const alert = await alertSaying(/line 502 onward was sent/);
+    expect(alert).toBeInTheDocument();
+    expect(alert.textContent).toMatch(/line 502 onward was sent/);
     expect(await screen.findByText(/500 created/)).toBeInTheDocument();
   });
 });

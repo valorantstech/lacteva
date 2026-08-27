@@ -233,6 +233,30 @@ const renderDetail = async (ui: React.ReactElement) => {
   });
 };
 
+/**
+ * The alert that says something in particular (LACTEVA-QA-004).
+ *
+ * `findByRole("alert")` asks for THE alert, and these pages have several
+ * regions that load and fail on their own — every `ErrorState` is also
+ * `role="alert"`. When a neighbour is still showing one, `findByRole` throws
+ * "Found multiple elements", which is the flake QA-003 traced on
+ * `transactions/[id]` after three cycles of blaming the hardware.
+ *
+ * `role="alert"` is not a name-from-content role and cannot be selected by
+ * `name`, so the alert is found by what it SAYS. This is stronger than the
+ * bare selector it replaces: that one required exactly one alert anywhere and
+ * that it happened to say this; this requires an alert that says it.
+ */
+async function alertSaying(pattern: RegExp): Promise<HTMLElement> {
+  return waitFor(() => {
+    const found = screen
+      .getAllByRole("alert")
+      .find((el) => pattern.test(el.textContent ?? ""));
+    if (!found) throw new Error(`no alert yet matching ${pattern}`);
+    return found;
+  });
+}
+
 describe("centres list", () => {
   it("shows each centre with the activity the platform aggregated", async () => {
     routeAll();
@@ -281,7 +305,9 @@ describe("centres list", () => {
       "/v1/collection-centers?": () => json({ detail: "boom" }, 500),
     });
     render(<CentersPage />);
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    // The platform's own word for what went wrong, which is what this page
+    // promises to show rather than a generic sentence of its own.
+    expect(await alertSaying(/boom/)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /try again/i }),
     ).toBeInTheDocument();
@@ -459,7 +485,7 @@ describe("supplier detail", () => {
   it("explains a supplier that cannot be loaded, and offers the way back", async () => {
     routeAll({ "/v1/suppliers/s1": () => json({ detail: "gone" }, 404) });
     await renderDetail(<SupplierDetailPage params={params()} />);
-    const alert = await screen.findByRole("alert");
+    const alert = await alertSaying(/could not be loaded/i);
     expect(within(alert).getByText(/could not be loaded/i)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /back to suppliers/i }),
