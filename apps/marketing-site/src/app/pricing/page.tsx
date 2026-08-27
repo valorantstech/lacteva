@@ -101,7 +101,7 @@ export default function PricingPage() {
           {TRIAL_STEPS.map((item, i) => (
             <li
               key={item.step}
-              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-5"
+              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-5"
             >
               <span className="text-xs font-semibold text-primary tabular-nums">
                 {String(i + 1).padStart(2, "0")}
@@ -125,7 +125,7 @@ export default function PricingPage() {
           {EVALUATE.map((item) => (
             <div
               key={item.title}
-              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
+              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
             >
               <item.icon className="size-5 text-primary" aria-hidden />
               <h3 className="font-semibold">{item.title}</h3>

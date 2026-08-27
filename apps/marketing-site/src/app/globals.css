@@ -74,6 +74,13 @@
   --ink-muted: oklch(0.72 0.015 145);
 
   /*
+   * — Elevation. Green-tinted shadows (the DS rule: neutral black shadow
+   * over a warm ground reads as dirt) — same values as the portal's.
+   */
+  --elevation-1: 0 1px 2px -1px oklch(0.3 0.03 155 / 0.1), 0 1px 3px oklch(0.3 0.03 155 / 0.06);
+  --elevation-3: 0 8px 24px -8px oklch(0.3 0.03 155 / 0.16), 0 2px 6px -2px oklch(0.3 0.03 155 / 0.08);
+
+  /*
    * — Motion. The design system's tokens (LACTEVA-DESIGN-SYSTEM-V1), same
    * values as the admin portal's globals.css: milk settles, it does not
    * stop. Every marketing motion eases out long and arrives softly.
@@ -323,5 +330,46 @@
   [data-reveal="on"] .nav-reveal-word {
     animation: nav-reveal-word 380ms var(--ease-out-liquid) both;
     animation-delay: 1020ms;
+  }
+
+  /* Scroll settle-ins (LACTEVA-MARKETING-004): a section below the fold
+     rises 4px and fades in as it enters the viewport, once. ScrollMotion
+     arms only sections that start below the fold and sets each direct
+     child's --settle-delay (steps of 40ms), so nothing already on screen
+     ever blinks, the no-JS page is simply visible, and reduced motion
+     never arms at all. Opacity and transform only — zero layout shift. */
+  @keyframes settle-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  [data-settle].settle-armed > div > * {
+    opacity: 0;
+  }
+  [data-settle].settle-go > div > * {
+    animation: settle-in var(--motion-base) var(--ease-out-liquid) both;
+    animation-delay: var(--settle-delay, 0ms);
+  }
+
+  /* The lift (the DS lacteva-lift rule, verbatim from the portal): one
+     rule, so every liftable surface lifts identically — and it lifts by
+     2px, not 8. Restraint is the brand. */
+  .lacteva-lift {
+    transition:
+      transform var(--motion-fast) var(--ease-out-liquid),
+      box-shadow var(--motion-fast) var(--ease-out-liquid);
+  }
+  .lacteva-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--elevation-3);
+  }
+  .lacteva-lift:active {
+    transform: translateY(0);
+    box-shadow: var(--elevation-1);
   }
 }

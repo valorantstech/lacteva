@@ -34,7 +34,7 @@ export function LifecycleFlow() {
     <ol className="flex flex-col gap-1 lg:grid lg:grid-cols-4 lg:gap-y-8">
       {STAGES.map((stage, i) => (
         <li key={stage.label} className="flex flex-col lg:flex-row lg:items-stretch">
-          <div className="flex items-start gap-4 rounded-xl border border-ink-foreground/15 bg-ink-foreground/5 p-4 lg:min-w-0 lg:flex-1 lg:flex-col lg:gap-3">
+          <div className="lacteva-lift flex items-start gap-4 rounded-xl border border-ink-foreground/15 bg-ink-foreground/5 p-4 lg:min-w-0 lg:flex-1 lg:flex-col lg:gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <stage.icon className="size-4.5" aria-hidden />
             </span>

@@ -31,7 +31,7 @@ export function SiteHeader() {
             <Link
               key={item.href}
               href={item.href}
-              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+              className="lacteva-lift text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               {item.label}
             </Link>
@@ -41,7 +41,7 @@ export function SiteHeader() {
           <Link
             href="/login"
             prefetch={false}
-            className="hidden text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
+            className="lacteva-lift hidden text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
           >
             Login
           </Link>

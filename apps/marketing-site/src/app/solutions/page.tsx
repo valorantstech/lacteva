@@ -159,7 +159,7 @@ export default function SolutionsPage() {
                 {solution.benefit}
               </p>
             </div>
-            <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-6 lg:h-fit">
+            <div className="lacteva-lift flex flex-col gap-3 rounded-xl border border-border bg-card p-6 lg:h-fit">
               <p className="text-xs font-semibold tracking-wide text-primary uppercase">
                 What matters most here
               </p>

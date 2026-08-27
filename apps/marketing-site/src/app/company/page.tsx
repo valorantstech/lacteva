@@ -45,7 +45,7 @@ export default function CompanyPage() {
           {WHO.map((item) => (
             <div
               key={item.title}
-              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
+              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
             >
               <h3 className="font-semibold">{item.title}</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">

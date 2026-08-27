@@ -175,7 +175,7 @@ export default function ProductPage() {
           {CONNECTIONS.map((c) => (
             <div
               key={c.from}
-              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
+              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
             >
               <p className="flex items-center gap-2 text-sm font-semibold">
                 {c.from}

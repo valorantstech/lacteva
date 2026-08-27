@@ -16,7 +16,11 @@ export function Section({
   variant?: "default" | "tinted" | "ink";
 }) {
   return (
+    // data-settle: ScrollMotion gives sections that start below the fold
+    // a settle-in on first entry (LACTEVA-MARKETING-004). Without JS the
+    // attribute is inert and the section simply renders.
     <section
+      data-settle
       className={cn(
         variant === "tinted" && "bg-secondary/50",
         variant === "ink" && "bg-ink text-ink-foreground",

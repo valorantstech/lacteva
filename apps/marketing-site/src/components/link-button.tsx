@@ -28,6 +28,8 @@ export function LinkButton({
   ...props
 }: LinkButtonProps) {
   return (
+    // Every CTA lifts 2px on hover — the DS lacteva-lift rule
+    // (LACTEVA-MARKETING-004), defined once in globals.css.
     <Link
       data-slot="link-button"
       className={cn(
@@ -37,6 +39,7 @@ export function LinkButton({
               "bg-ink-foreground text-ink hover:bg-ink-foreground/90",
             )
           : buttonVariants({ variant, size }),
+        "lacteva-lift",
         className,
       )}
       {...props}

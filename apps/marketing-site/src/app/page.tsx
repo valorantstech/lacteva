@@ -308,7 +308,7 @@ export default function HomePage() {
             {HERO_MODULES.map((module) => (
               <span
                 key={module}
-                className="rounded-full border border-[rgba(253,251,244,0.22)] px-3 py-1 text-xs text-[#C9D8BE]"
+                className="lacteva-lift rounded-full border border-[rgba(253,251,244,0.22)] px-3 py-1 text-xs text-[#C9D8BE]"
               >
                 {module}
               </span>
@@ -328,7 +328,7 @@ export default function HomePage() {
           {PROBLEMS.map((item) => (
             <div
               key={item.title}
-              className="flex flex-col gap-2 rounded-xl border border-dashed border-border bg-card/60 p-5"
+              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-dashed border-border bg-card/60 p-5"
             >
               <item.icon className="size-5 text-muted-foreground" aria-hidden />
               <h3 className="text-sm font-semibold">{item.title}</h3>
@@ -365,7 +365,7 @@ export default function HomePage() {
           {CAPABILITY_GROUPS.map((group) => (
             <div
               key={group.name}
-              className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5"
+              className="lacteva-lift flex flex-col gap-3 rounded-xl border border-border bg-card p-5"
             >
               <div>
                 <h3 className="font-semibold">{group.name}</h3>
@@ -396,7 +396,7 @@ export default function HomePage() {
           {HOW_IT_WORKS.map((item, i) => (
             <li
               key={item.step}
-              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-5"
+              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-5"
             >
               <span className="text-xs font-semibold text-primary tabular-nums">
                 {String(i + 1).padStart(2, "0")}
@@ -509,7 +509,7 @@ export default function HomePage() {
           ].map((item) => (
             <div
               key={item.title}
-              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
+              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
             >
               <h3 className="font-semibold">{item.title}</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
@@ -553,7 +553,7 @@ export default function HomePage() {
               { icon: CalendarClock, text: "Timezone-aware business dates — a 5 a.m. round belongs to your day, not the server's." },
               { icon: Users, text: "Localized for the team: English, Swahili, Hindi, and Arabic ship today." },
             ].map((item, i) => (
-              <div key={i} className="flex items-start gap-3 rounded-xl border border-border bg-card p-4">
+              <div key={i} className="lacteva-lift flex items-start gap-3 rounded-xl border border-border bg-card p-4">
                 <item.icon className="mt-0.5 size-4.5 shrink-0 text-primary" aria-hidden />
                 <span className="text-sm leading-relaxed text-muted-foreground">
                   {item.text}
@@ -575,7 +575,7 @@ export default function HomePage() {
           {TRUST_POINTS.map((point) => (
             <div
               key={point.title}
-              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
+              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
             >
               <point.icon className="size-5 text-primary" aria-hidden />
               <h3 className="font-semibold">{point.title}</h3>
