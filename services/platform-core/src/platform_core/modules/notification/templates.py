@@ -93,7 +93,7 @@ PURPOSES: dict[str, str] = {
     "price_unavailable": "Tells an operator no rate could be resolved for a collection",
     "invitation": "Sends a new user their one-time invitation link",
     "invitation_accepted": "Confirms to an administrator that an invitation was accepted",
-    "password_reset": "Sends a user a one-time password-reset link",
+    "password_reset": "Sends a user a one-time password-reset code",
 }
 
 #: Templates that carry a business fact to a farmer or a customer, as opposed
@@ -326,8 +326,10 @@ TEMPLATES: tuple[Template, ...] = (
         "en",
         "Reset your Lacteva password",
         "A password reset was requested for your account. "
-        "The link expires in {expires_hours} hours. "
-        "If you did not request this, ignore this message.",
+        "Use this code to complete your reset: {reset_token}. "
+        "The code expires in {expires_hours} hours. "
+        "If you did not request this, ignore this message. "
+        "Do not share this code with anyone.",
     ),
     _t(
         "invitation",

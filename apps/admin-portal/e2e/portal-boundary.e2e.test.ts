@@ -51,6 +51,12 @@ const { GET: proxyGet } = await import("@/app/api/proxy/[...path]/route");
 const { POST: acceptInvitation } = await import(
   "@/app/api/auth/invitation/route"
 );
+const { POST: resetRequest } = await import(
+  "@/app/api/auth/password-reset/request/route"
+);
+const { POST: resetConfirm } = await import(
+  "@/app/api/auth/password-reset/confirm/route"
+);
 
 const params = (path: string[]) => ({ params: Promise.resolve({ path }) });
 
@@ -803,5 +809,144 @@ describe("the money path, end to end over real HTTP", () => {
     const body = (totals.settlement ?? totals) as Record<string, unknown>;
     // The farmer is finally payable, for exactly what the reprice computed.
     expect(String(body.gross_amount)).toBe(gross);
+  });
+});
+
+describe("a locked-out person gets back in", () => {
+  /**
+   * The journey WO-8 could not write, because the harness found the defect it
+   * was meant to traverse: the reset email carried no code at all
+   * (LACTEVA-BACKEND-004). The code now travels as a secret, sent directly, so
+   * this can finally be driven the whole way — request, read the code out of
+   * the message the platform really delivered, spend it, and sign in.
+   *
+   * It is the only test anywhere that proves the reset flow is usable by a
+   * human being. Everything in WO-4 mocked the platform, which is exactly why
+   * a flow nobody could finish shipped on both clients.
+   */
+  it("resets a password with the code from the real email, and retires the old one", async () => {
+    if (!harnessed) return;
+    const maildir = process.env.LACTEVA_E2E_MAIL;
+    if (!maildir) return; // the sink is the harness's, not this test's to build
+
+    const count = () =>
+      readdirSync(maildir).filter((f) => f.startsWith("msg-")).length;
+    const before = count();
+
+    // The manager, because this journey ends by signing them in and the
+    // operator is used by the tests above.
+    const email = fx.users.manager.email;
+    const oldPassword = fx.password;
+    const newPassword = "a-new-password-from-e2e-1";
+
+    // Through the portal's OWN pre-auth route — /api/proxy would refuse this,
+    // which is the whole reason that route exists.
+    //
+    // `tenant_id` is supplied deliberately: without it the platform's lookup
+    // does not find a tenant user, `request_password_reset` returns early, and
+    // the 202-always contract hides the fact that nothing happened. The
+    // portal's `lib/api.ts` helper omits it today — reported as a DISCOVERED
+    // item, not fixed here.
+    const asked = await resetRequest(
+      new Request("http://portal.test/api/auth/password-reset/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, tenant_id: fx.org.id }),
+      }),
+    );
+    expect(asked.status).toBe(202);
+    // 202 says nothing about whether the account exists, and must not.
+    expect(await asked.text()).not.toMatch(/token|code/i);
+
+    // Read the code the way its reader does: out of the delivered message.
+    const code = await (async () => {
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline) {
+        const files = readdirSync(maildir)
+          .filter((f) => f.startsWith("msg-"))
+          .sort()
+          .slice(before)
+          .reverse();
+        for (const file of files) {
+          const body = readFileSync(join(maildir, file), "utf8").replace(
+            /=\r?\n/g,
+            "",
+          );
+          const m = body.match(/complete your reset:\s*(\S+?)\.(?:\s|$)/);
+          if (m) return m[1];
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      throw new Error("the platform delivered no reset code");
+    })();
+    expect(code.length).toBeGreaterThan(20);
+
+    const confirmed = await resetConfirm(
+      new Request("http://portal.test/api/auth/password-reset/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: code, new_password: newPassword }),
+      }),
+    );
+    expect(confirmed.status).toBe(204);
+
+    // The new password works...
+    jar.clear();
+    const withNew = await login(
+      new Request("http://portal.test/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password: newPassword,
+          tenant_id: fx.org.id,
+        }),
+      }),
+    );
+    expect(withNew.status).toBe(204);
+    expect(jar.size).toBeGreaterThan(0);
+
+    // ...and the old one does not. A reset that leaves the previous password
+    // working has not reset anything.
+    jar.clear();
+    const withOld = await login(
+      new Request("http://portal.test/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password: oldPassword,
+          tenant_id: fx.org.id,
+        }),
+      }),
+    );
+    expect(withOld.status).toBeGreaterThanOrEqual(400);
+    expect(jar.size).toBe(0);
+
+    // And the code is spent: a one-time code that can be replayed is not one.
+    const replay = await resetConfirm(
+      new Request("http://portal.test/api/auth/password-reset/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: code, new_password: "yet-another-one-1" }),
+      }),
+    );
+    expect(replay.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it("refuses a code that was never issued", async () => {
+    if (!harnessed) return;
+    const bogus = await resetConfirm(
+      new Request("http://portal.test/api/auth/password-reset/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: "not-a-real-code-at-all",
+          new_password: "should-never-apply-1",
+        }),
+      }),
+    );
+    expect(bogus.status).toBeGreaterThanOrEqual(400);
+    expect(bogus.status).not.toBe(204);
   });
 });

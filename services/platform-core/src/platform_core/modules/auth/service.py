@@ -281,19 +281,25 @@ class AuthService:
         """Always succeeds outwardly (no account oracle). Returns the raw token
         to the CALLER (service layer) only — the API never exposes it.
 
-        Delivery is NOT this module's business (NOT-001/BR-0016): the event
-        carries the address and the notification consumer renders and sends."""
+        The code reaches the person the same way an invitation's does: sent
+        from here, directly, with the secret outside the event (see
+        `_send_reset_code`). The event is still published, because it is the
+        audit fact that a reset was asked for — it simply is not the delivery.
+        """
         user = await self._identity.get_by_email(email, tenant_id)
         if user is None or not user.is_active:
             return None
         raw = secrets.token_urlsafe(32)
-        self._session.add(
-            PasswordResetToken(
-                user_id=user.id,
-                token_hash=_hash_secret(raw),
-                expires_at=utcnow() + RESET_TOKEN_TTL,
-            )
+        token = PasswordResetToken(
+            user_id=user.id,
+            token_hash=_hash_secret(raw),
+            expires_at=utcnow() + RESET_TOKEN_TTL,
         )
+        self._session.add(token)
+        # Flushed for its id, exactly as the invitation is: the id is what keys
+        # the notification's idempotency, and `IdMixin` fills it at INSERT.
+        await self._session.flush()
+        await self._send_reset_code(token, user, raw)
         await self._bus.publish(
             EventEnvelope.new(
                 "identity.password-reset-requested.v1",
@@ -307,6 +313,49 @@ class AuthService:
             )
         )
         return raw
+
+    async def _send_reset_code(self, token: PasswordResetToken, user, raw_token: str):
+        """The second place a business module sends a notification itself, and
+        for the same reason as the first (SEC-003 / F-04).
+
+        Everywhere else the module publishes and the notification consumer
+        sends — NOT-001/BR-0016, and it stands. It cannot stand here: the
+        consumer reads the durable outbox log, so anything it needs must be
+        written into `event_outbox.payload`, which is never pruned and is in
+        every backup. A live reset code there trades one exposure for a worse
+        one, which is exactly why the event has never carried it.
+
+        What it carried instead, until now, was nothing usable: the message
+        said a reset had been requested and that "the link expires in 2 hours",
+        with no link and no code. The code was minted, hashed, stored and
+        returned to a caller that dropped it, so `confirm_password_reset` could
+        not be reached by any real person and both clients advertised a flow
+        nobody could finish (LACTEVA-BACKEND-004, found by the E2E harness).
+
+        Everything else is the invitation's arrangement, unchanged: same
+        service, same provider, same delivery record, same retry budget, and
+        idempotency keyed on THIS token — so a second request sends the second
+        code rather than suppressing it or re-sending a stale one.
+        """
+        from platform_core.modules.notification.service import (
+            NotificationRequest,
+            NotificationService,
+        )
+
+        return await NotificationService(self._session).dispatch(
+            NotificationRequest(
+                event_id=token.id,
+                event_name="identity.password-reset-requested.v1",
+                tenant_id=user.tenant_id,
+                template_key="password_reset",
+                channel="email",
+                recipient=user.email,
+                recipient_ref=user.id,
+                language=user.locale,
+                variables={"expires_hours": int(RESET_TOKEN_TTL.total_seconds() // 3600)},
+                secret_variables={"reset_token": raw_token},
+            )
+        )
 
     async def confirm_password_reset(self, token: str, new_password: str) -> None:
         record = await self._session.scalar(

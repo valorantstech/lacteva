@@ -149,16 +149,6 @@ def _receipt_generated(envelope: EventEnvelope) -> dict | None:
     }
 
 
-def _password_reset(envelope: EventEnvelope) -> dict | None:
-    data = envelope.data
-    return {
-        "recipient_ref": _uuid(data.get("user_id")),
-        "recipient": data.get("email"),
-        "language": data.get("locale"),
-        "variables": {"expires_hours": data.get("expires_hours", 2)},
-    }
-
-
 def _member_added(envelope: EventEnvelope) -> dict | None:
     data = envelope.data
     return {
@@ -249,15 +239,22 @@ MAPPINGS: dict[str, EventMapping] = {
     ),
     PAYMENT_COMPLETED: EventMapping("payment_completed", "sms", _payment_completed),
     RECEIPT_GENERATED: EventMapping("receipt_available", "sms", _receipt_generated),
-    PASSWORD_RESET_REQUESTED: EventMapping("password_reset", "email", _password_reset),
-    # SEC-003 / F-04: `INVITATION_ISSUED` is deliberately NOT mapped here.
-    # The invitation email carries a one-time token, and a consumer can only
-    # read what the event payload carries — which would put that token in
-    # `event_outbox`, a table that is never pruned and is in every backup.
-    # `InvitationService._send_invitation` sends it instead, through this same
-    # NotificationService, with the token as a secret variable. The event is
-    # still published: it is the record that an invitation was issued, and
-    # other consumers may read it.
+    # SEC-003 / F-04: `INVITATION_ISSUED` and `PASSWORD_RESET_REQUESTED` are
+    # deliberately NOT mapped here.
+    #
+    # Both emails carry a one-time token, and a consumer can only read what the
+    # event payload carries — which would put that token in `event_outbox`, a
+    # table that is never pruned and is in every backup.
+    # `InvitationService._send_invitation` and `AuthService._send_reset_code`
+    # send them instead, through this same NotificationService, with the token
+    # as a secret variable. Both events are still published: they are the
+    # record that an invitation was issued and that a reset was asked for, and
+    # other consumers may read them.
+    #
+    # The reset used to be mapped here, and that is precisely how it came to
+    # send a message with no code in it (LACTEVA-BACKEND-004): the consumer
+    # rendered a template from an event that could not, by design, carry the
+    # one thing the reader needed.
     MEMBER_ADDED: EventMapping("invitation_accepted", "email", _member_added),
     TRANSACTION_REJECTED: EventMapping("milk_rejected", "sms", _transaction_rejected),
     # DEMO-025: the DEFAULT stays `push`, and that is deliberate. DEMO-012
