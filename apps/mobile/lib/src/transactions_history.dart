@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api.dart';
+import 'brand/motion.dart';
 import 'l10n.dart';
 import 'session.dart';
 
@@ -106,7 +107,8 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       appBar: AppBar(
         title: Text(t.t('history.title', {'center': widget.centerName})),
       ),
-      body: RefreshIndicator(
+      body: SettleInScope(
+        child: RefreshIndicator(
         onRefresh: () => _load(reset: true),
         child: ListView(
           padding: const EdgeInsets.all(12),
@@ -139,8 +141,10 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                 padding: const EdgeInsets.all(32),
                 child: Center(child: Text(t.t('history.empty'))),
               ),
-            for (final tx in _items)
-              Card(
+            for (final (index, tx) in _items.indexed)
+              SettleIn(
+                index: index,
+                child: Card(
                 child: ListTile(
                   leading: Icon(
                     tx['state'] == 'COMPLETED'
@@ -167,6 +171,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                   onTap: () => _openDetail(tx),
                 ),
               ),
+              ),
             if (_items.isNotEmpty && _items.length < _total)
               Padding(
                 padding: const EdgeInsets.all(8),
@@ -186,6 +191,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
               ),
           ],
         ),
+      ),
       ),
     );
   }

@@ -451,6 +451,11 @@ const Catalog _en = {
   'schedule.weekdays': 'Weekdays',
   'schedule.custom': 'On chosen days',
   'customer.tomorrow': 'Tomorrow',
+
+  // Panel 3 of the motion storyboard (LACTEVA-MOBILE-008): the word beside
+  // the droplets. Never the droplets alone — movement is not a signal a
+  // person who cannot see it can act on.
+  'sync.sending': 'Sending {count} collections…',
 };
 
 const Catalog _hi = {
@@ -864,6 +869,9 @@ const Catalog _hi = {
   'schedule.weekdays': 'कार्यदिवस',
   'schedule.custom': 'चुने हुए दिनों पर',
   'customer.tomorrow': 'कल',
+
+  // LACTEVA-MOBILE-008 — the word beside the sync droplets.
+  'sync.sending': '{count} संग्रह भेजे जा रहे हैं…',
 };
 
 const Catalog _ar = {
@@ -1273,6 +1281,9 @@ const Catalog _ar = {
   'schedule.weekdays': 'أيام العمل',
   'schedule.custom': 'في أيام مختارة',
   'customer.tomorrow': 'غدًا',
+
+  // LACTEVA-MOBILE-008 — the word beside the sync droplets.
+  'sync.sending': 'جارٍ إرسال {count} عملية استلام…',
 };
 
 const Map<String, Catalog> catalogs = {'en': _en, 'hi': _hi, 'ar': _ar};

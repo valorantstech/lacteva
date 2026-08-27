@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'brand/mark.dart';
+import 'brand/motion.dart';
 import 'brand/reveal.dart';
 import 'center_summary.dart';
 import 'collection_wizard.dart';
@@ -414,6 +415,9 @@ class _CentersListScreenState extends State<CentersListScreen> {
               ),
             ),
           Expanded(
+            // Panel 4: the centres arrive rather than popping. First paint
+            // only — searching and paging find the scope closed.
+            child: SettleInScope(
             child: RefreshIndicator(
               onRefresh: _load,
               child: ListView(
@@ -449,29 +453,33 @@ class _CentersListScreenState extends State<CentersListScreen> {
                       child: Center(child: Text(t.t('center.noneMatch'))),
                     ),
                   if (page != null)
-                    ...page.items.map(
-                      (c) => Card(
-                        child: ListTile(
-                          title: Text(c.name),
-                          subtitle: Text(c.code),
-                          leading: StatusChip(status: c.status),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.edit_outlined),
-                            tooltip: t.t('common.edit'),
-                            onPressed: () => _openForm(center: c),
-                          ),
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => CenterDetailScreen(
-                                client: widget.client,
-                                centerId: c.id,
-                                session: widget.session,
+                    ...page.items.indexed.map((row) {
+                      final (index, c) = row;
+                      return SettleIn(
+                        index: index,
+                        child: Card(
+                          child: ListTile(
+                            title: Text(c.name),
+                            subtitle: Text(c.code),
+                            leading: StatusChip(status: c.status),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.edit_outlined),
+                              tooltip: t.t('common.edit'),
+                              onPressed: () => _openForm(center: c),
+                            ),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => CenterDetailScreen(
+                                  client: widget.client,
+                                  centerId: c.id,
+                                  session: widget.session,
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
+                      );
+                    }),
                   if (page != null && page.total > pageSize)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -504,6 +512,7 @@ class _CentersListScreenState extends State<CentersListScreen> {
                     ),
                 ],
               ),
+            ),
             ),
           ),
         ],

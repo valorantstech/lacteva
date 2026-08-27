@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api.dart';
+import 'brand/motion.dart';
 import 'build_flags.dart';
 import 'l10n.dart';
 import 'session.dart';
@@ -480,15 +481,18 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
             ],
             if (_step == 5 && tx != null) ...[
               const SizedBox(height: 24),
-              Icon(
-                tx['rejected_reason'] == null
-                    ? Icons.check_circle
-                    : Icons.cancel,
-                size: 72,
-                color: tx['rejected_reason'] == null
-                    ? LactevaColors.success
-                    : LactevaColors.danger,
-              ),
+              // Panel 5: a save confirms with a tick inside ONE milk ripple.
+              // A rejection does not ripple — a ripple is a celebration, and
+              // milk that was refused is not one.
+              if (tx['rejected_reason'] == null)
+                Center(
+                  child: SuccessRipple(
+                    size: 72,
+                    label: t.t('wizard.txState', {'state': tx['state']}),
+                  ),
+                )
+              else
+                const Icon(Icons.cancel, size: 72, color: LactevaColors.danger),
               const SizedBox(height: 12),
               Center(
                 child: Text(
@@ -537,27 +541,29 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                   ),
                 )
               else if (_slip != null) ...[
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          t.t('wizard.parchi', {
-                            'number': _slip!['slip_number'],
-                          }),
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${_slip!['text']}',
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 13,
+                ParchiMint(
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            t.t('wizard.parchi', {
+                              'number': _slip!['slip_number'],
+                            }),
+                            style: Theme.of(context).textTheme.titleMedium,
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 8),
+                          Text(
+                            '${_slip!['text']}',
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

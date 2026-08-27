@@ -34,6 +34,7 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import 'mark.dart';
+import 'motion.dart';
 
 /// The three beats, and what the last one waits for.
 abstract final class RevealBeats {
@@ -164,7 +165,7 @@ class _LactevaRevealState extends State<LactevaReveal>
     _asked = true;
     // Reduced motion is decided before the gate is even claimed: a person who
     // will never see the reveal should not have "today" spent on their behalf.
-    if (MediaQuery.disableAnimationsOf(context)) return;
+    if (!motionAllowed(context)) return;
     unawaited(_maybePlay());
   }
 

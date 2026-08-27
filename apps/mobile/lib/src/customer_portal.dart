@@ -19,6 +19,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'brand/motion.dart';
 import 'l10n.dart';
 import 'session.dart';
 import 'sign_out.dart';
@@ -484,8 +485,8 @@ class _ShimmeringMarkState extends State<_ShimmeringMark>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final reduced = MediaQuery.disableAnimationsOf(context);
-    if (reduced) {
+    // LACTEVA-MOBILE-008: one gate for all five moments and these two.
+    if (!motionAllowed(context)) {
       _controller?.dispose();
       _controller = null;
       return;

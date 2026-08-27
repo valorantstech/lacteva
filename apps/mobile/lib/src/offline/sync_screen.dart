@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../brand/motion.dart';
+import '../l10n.dart';
 import '../session.dart';
 import 'offline_client.dart';
 import 'queue.dart';
@@ -149,6 +151,27 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Panel 3: work LEAVING the phone, which is the thing an operator
+          // actually wants to know. The droplets travel only while a run is in
+          // flight and the queue holds something; the sentence and the count
+          // are there either way, because movement is never the only signal
+          // and a count is what somebody repeats to the dairy.
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: SyncDroplets(
+              sending: _busy,
+              pending: snapshot.pending,
+              label: _busy && snapshot.pending > 0
+                  ? L10n.of(widget.session).t('sync.sending', {
+                      'count': snapshot.pending,
+                    })
+                  : snapshot.pending == 0
+                  ? L10n.of(widget.session).t('round.allSent')
+                  : L10n.of(widget.session).t('round.waiting', {
+                      'count': snapshot.pending,
+                    }),
+            ),
+          ),
           Card(
             child: ListTile(
               leading: Icon(
