@@ -45,6 +45,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 DAIRY_RGB = (0x1B / 255, 0x5E / 255, 0x20 / 255)
 MILK_RGB = (0xFD / 255, 0xFB / 255, 0xF4 / 255)
+# The band's far corners (LACTEVA-BRAND-003 / MOBILE-007): two stops banded
+# visibly across a surface this wide, so the gradient gets the third the
+# boards give it.
+DAIRY_DEEP_RGB = (0x0E / 255, 0x3D / 255, 0x14 / 255)
+DAIRY_NIGHT_RGB = (0x12 / 255, 0x3A / 255, 0x18 / 255)
 
 # Android's maskable contract: a 108dp canvas of which the centre 72dp is
 # visible and only a 66dp CIRCLE is guaranteed. Everything the foreground
@@ -130,6 +135,186 @@ def write(path: pathlib.Path, data: str | bytes) -> None:
     with open(path, mode) as handle:
         handle.write(data)
     print(f"  {path.relative_to(ROOT)}")
+
+
+# ---------------------------------------------------------------------------
+# Google Play store assets (LACTEVA-LAUNCH-001a)
+# ---------------------------------------------------------------------------
+#
+# The two images the Play Console will not accept a listing without. Both are
+# generated from the same geometry as everything else, so the store shows the
+# mark the product actually has.
+#
+# THE SPEC APPLIED, and how each decision was made safe against a policy this
+# machine cannot fetch:
+#
+#   * Hi-res icon — 512 x 512 PNG, under 1 MB. Play documents "32-bit PNG"
+#     and separately composites its own rounded mask and shadow. The rounded
+#     field this product uses would therefore be rounded TWICE, and its
+#     transparent corners would show the store's own ground through the gap.
+#     So the icon is FULL BLEED and FULLY OPAQUE: a 32-bit PNG whose alpha
+#     channel is 255 everywhere. That satisfies "32-bit PNG" and "no
+#     transparency" at once, whichever the live policy says today, and it is
+#     asserted rather than assumed — see `check_play.py`.
+#
+#   * Feature graphic — 1024 x 500, and this one genuinely must not be
+#     transparent: it is a banner Play draws behind its own controls. It is
+#     written as RGB with no alpha channel at all, so there is nothing to get
+#     wrong.
+#
+# SAFE MARGINS. Play crops the feature graphic on some surfaces and lays a
+# play button over its centre on others. Everything that carries meaning is
+# kept inside the central box below, which leaves a tenth of the width and a
+# eighth of the height clear on every side.
+PLAY_ICON = 512
+FEATURE_W, FEATURE_H = 1024, 500
+FEATURE_MARGIN_X, FEATURE_MARGIN_Y = 104, 62
+
+
+def _brand_gradient(width: float, height: float) -> cairo.LinearGradient:
+    """The product's 150 degree dairy gradient, over a box of this size.
+
+    CSS measures the angle clockwise from "to top", so 150 degrees points down
+    and to the right: the unit vector is (sin 150, -cos 150) = (0.5, 0.866).
+    Cairo takes two points instead, so the vector is scaled to cross the box
+    and centred on it.
+    """
+    dx, dy = 0.5, 0.866
+    cx, cy = width / 2, height / 2
+    reach = (abs(dx) * width + abs(dy) * height) / 2
+    gradient = cairo.LinearGradient(
+        cx - dx * reach, cy - dy * reach, cx + dx * reach, cy + dy * reach
+    )
+    gradient.add_color_stop_rgb(0, *DAIRY_RGB)
+    gradient.add_color_stop_rgb(0.78, *DAIRY_DEEP_RGB)
+    gradient.add_color_stop_rgb(1, *DAIRY_NIGHT_RGB)
+    return gradient
+
+
+def _rich_drop(ctx: cairo.Context, scale: float, cx: float, cy: float) -> None:
+    """The enriched mark: lit body, one warm highlight, one meniscus.
+
+    The same three layers `mark.rich_mark_svg()` draws, in the same order and
+    from the same numbers — `mark.rich_details()` is the one source, so the
+    store banner cannot drift from the sign-in screen.
+    """
+    detail = mark.rich_details()
+    grid = mark.FIELD
+
+    def place(x: float, y: float) -> tuple[float, float]:
+        return cx + (x - grid / 2) * scale, cy + (y - grid / 2) * scale
+
+    ctx.save()
+    _drop(ctx, scale, cx, cy)
+    x0, y0, x1, y1 = ctx.path_extents()
+    body = cairo.LinearGradient(
+        x0 + (x1 - x0) * 0.2, y0, x0 + (x1 - x0) * 0.8, y1
+    )
+    for stop in detail["body"]:
+        body.add_color_stop_rgb(stop["offset"], *_hex_rgb(stop["color"]))
+    ctx.set_source(body)
+    ctx.fill_preserve()
+    ctx.clip()
+
+    highlight = detail["highlight"]
+    hx, hy = place(highlight["cx"], highlight["cy"])
+    rx, ry = highlight["rx"] * scale, highlight["ry"] * scale
+    glow = cairo.RadialGradient(hx, hy, 0, hx, hy, max(rx, ry))
+    glow.add_color_stop_rgba(0, *_hex_rgb(mark.MILK_LIT), 0.9)
+    glow.add_color_stop_rgba(1, *_hex_rgb(mark.MILK_LIT), 0)
+    ctx.save()
+    ctx.translate(hx, hy)
+    ctx.scale(rx, ry)
+    ctx.arc(0, 0, 1, 0, 2 * math.pi)
+    ctx.restore()
+    ctx.set_source(glow)
+    ctx.fill()
+
+    meniscus = detail["meniscus"]
+    mx1, my1 = place(meniscus["x1"], meniscus["y1"])
+    mx2, my2 = place(meniscus["x2"], meniscus["y2"])
+    radius = meniscus["r"] * scale
+    # The arc between two points, drawn as its circle clipped to the drop —
+    # which is where a meniscus belongs, and why the SVG clips it too.
+    span = math.hypot(mx2 - mx1, my2 - my1)
+    if 0 < span <= 2 * radius:
+        mid = ((mx1 + mx2) / 2, (my1 + my2) / 2)
+        offset = math.sqrt(max(radius**2 - (span / 2) ** 2, 0))
+        nx, ny = -(my2 - my1) / span, (mx2 - mx1) / span
+        centre = (mid[0] + nx * offset, mid[1] + ny * offset)
+        ctx.new_path()
+        ctx.arc(
+            centre[0],
+            centre[1],
+            radius,
+            math.atan2(my1 - centre[1], mx1 - centre[0]),
+            math.atan2(my2 - centre[1], mx2 - centre[0]),
+        )
+        ctx.set_line_width(meniscus["width"] * scale)
+        ctx.set_line_cap(cairo.LINE_CAP_ROUND)
+        ctx.set_source_rgba(*DAIRY_RGB, meniscus["opacity"])
+        ctx.stroke()
+    ctx.restore()
+
+
+def _hex_rgb(value: str) -> tuple[float, float, float]:
+    value = value.lstrip("#")
+    return tuple(int(value[i : i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+def play_icon() -> Image.Image:
+    """512 x 512, full bleed, fully opaque. See the note above for why."""
+    return render(PLAY_ICON, full_bleed=True)
+
+
+def feature_graphic() -> Image.Image:
+    """1024 x 500: the rich mark and the wordmark on the dairy gradient."""
+    surface = cairo.ImageSurface(cairo.FORMAT_RGB24, FEATURE_W, FEATURE_H)
+    ctx = cairo.Context(surface)
+    ctx.rectangle(0, 0, FEATURE_W, FEATURE_H)
+    ctx.set_source(_brand_gradient(FEATURE_W, FEATURE_H))
+    ctx.fill()
+
+    # The light in the corner, as every brand surface in this product has it.
+    glow = cairo.RadialGradient(
+        FEATURE_W - 150, -40, 0, FEATURE_W - 150, -40, 420
+    )
+    glow.add_color_stop_rgba(0, *MILK_RGB, 0.13)
+    glow.add_color_stop_rgba(1, *MILK_RGB, 0)
+    ctx.rectangle(0, 0, FEATURE_W, FEATURE_H)
+    ctx.set_source(glow)
+    ctx.fill()
+
+    # Everything below lives inside the safe box.
+    drop_height = FEATURE_H - 2 * FEATURE_MARGIN_Y
+    drop_scale = drop_height / mark.drop_bbox()[3]
+    drop_cx = FEATURE_MARGIN_X + (mark.drop_bbox()[2] * drop_scale) / 2
+    _rich_drop(ctx, drop_scale, drop_cx, FEATURE_H / 2)
+
+    text_x = drop_cx + mark.drop_bbox()[2] * drop_scale / 2 + 56
+    ctx.set_source_rgb(*MILK_RGB)
+    ctx.select_font_face("sans-serif", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+    ctx.set_font_size(96)
+    ctx.move_to(text_x, FEATURE_H / 2 + 6)
+    ctx.show_text("Lacteva")
+
+    ctx.set_source_rgba(*MILK_RGB, 0.72)
+    ctx.select_font_face(
+        "sans-serif", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL
+    )
+    ctx.set_font_size(30)
+    ctx.move_to(text_x + 3, FEATURE_H / 2 + 56)
+    ctx.show_text("Every drop, accounted for")
+
+    surface.flush()
+    data = bytes(surface.get_data())
+    # cairo's RGB24 is still four bytes per pixel with the top one unused;
+    # reading it as BGRA and dropping the channel is what makes it RGB.
+    img = Image.frombuffer(
+        "RGBA", (FEATURE_W, FEATURE_H), data, "raw", "BGRA", surface.get_stride(), 1
+    )
+    # RGB, so the banner has no alpha channel to get wrong.
+    return img.convert("RGB")
 
 
 def _dart_mark() -> str:
@@ -230,6 +415,20 @@ def main() -> int:
 
     print("marketing")
     write(marketing / "src/app/icon.svg", mark.mark_svg())
+
+    print("google play")
+    play = pathlib.Path(__file__).resolve().parent / "play"
+    play.mkdir(parents=True, exist_ok=True)
+    icon = play_icon()
+    assert icon.size == (PLAY_ICON, PLAY_ICON)
+    assert min(icon.getchannel("A").getdata()) == 255, "the store icon must be opaque"
+    icon.save(play / "icon-512.png", format="PNG")
+    print(f"  {(play / 'icon-512.png').relative_to(ROOT)}")
+    banner = feature_graphic()
+    assert banner.size == (FEATURE_W, FEATURE_H)
+    assert banner.mode == "RGB", "the feature graphic must carry no alpha channel"
+    banner.save(play / "feature-graphic-1024x500.png", format="PNG")
+    print(f"  {(play / 'feature-graphic-1024x500.png').relative_to(ROOT)}")
 
     print("the rich mark")
     # A file, so the geometry has one authored home; the clients that need it
