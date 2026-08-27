@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'status_chip.dart';
 
 import 'api.dart';
 import 'l10n.dart';
@@ -107,7 +108,7 @@ class _RateCardsListScreenState extends State<RateCardsListScreen> {
                     subtitle: Text(
                       '${c.code} v${c.version} · ${c.currency} · ${c.effectiveLabel}',
                     ),
-                    trailing: RateCardStatusChip(status: c.status),
+                    trailing: StatusChip(status: c.status),
                     onTap: () async {
                       await Navigator.of(context).push(
                         MaterialPageRoute(
@@ -152,27 +153,6 @@ class _RateCardsListScreenState extends State<RateCardsListScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class RateCardStatusChip extends StatelessWidget {
-  const RateCardStatusChip({super.key, required this.status});
-
-  final String status;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = switch (status) {
-      'published' => scheme.primaryContainer,
-      'archived' => scheme.surfaceContainerHighest,
-      _ => scheme.secondaryContainer,
-    };
-    return Chip(
-      label: Text(status.replaceAll('_', ' ')),
-      backgroundColor: color,
-      visualDensity: VisualDensity.compact,
     );
   }
 }
@@ -461,7 +441,7 @@ class _RateCardDetailScreenState extends State<RateCardDetailScreen> {
                       '${card.currency} · ${card.effectiveLabel}'
                       '${card.description.isNotEmpty ? '\n${card.description}' : ''}',
                     ),
-                    trailing: RateCardStatusChip(status: card.status),
+                    trailing: StatusChip(status: card.status),
                     isThreeLine: card.description.isNotEmpty,
                   ),
                 ),

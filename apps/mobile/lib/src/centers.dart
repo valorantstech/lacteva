@@ -16,8 +16,10 @@ import 'pricing_resolution.dart';
 import 'rate_cards.dart';
 import 'settlements.dart';
 import 'sign_out.dart';
+import 'status_chip.dart';
 import 'suppliers.dart';
 import 'transactions_history.dart';
+import 'theme.dart';
 
 /// Login screen — SPRINT-003: first real auth flow in the mobile app.
 class LoginScreen extends StatefulWidget {
@@ -456,23 +458,6 @@ class _CentersListScreenState extends State<CentersListScreen> {
         ],
       ),
     );
-  }
-}
-
-class StatusChip extends StatelessWidget {
-  const StatusChip({super.key, required this.status});
-
-  final String status;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = switch (status) {
-      'active' => Colors.green,
-      'maintenance' => Colors.orange,
-      'archived' => Colors.grey,
-      _ => Colors.blueGrey,
-    };
-    return CircleAvatar(radius: 6, backgroundColor: color);
   }
 }
 
@@ -1036,9 +1021,9 @@ class _ReadinessScreenState extends State<ReadinessScreen> {
   }
 
   Color _statusColor(String status) => switch (status) {
-    'READY' => Colors.green,
-    'WARNING' => Colors.orange,
-    _ => Colors.red,
+    'READY' => LactevaColors.success,
+    'WARNING' => LactevaColors.warning,
+    _ => LactevaColors.danger,
   };
 
   @override
@@ -1092,10 +1077,10 @@ class _ReadinessScreenState extends State<ReadinessScreen> {
                             ? Icons.check_circle_outline
                             : Icons.error_outline,
                         color: check.passed
-                            ? Colors.green
+                            ? LactevaColors.success
                             : (check.severity == 'blocking'
-                                  ? Colors.red
-                                  : Colors.orange),
+                                  ? LactevaColors.danger
+                                  : LactevaColors.warning),
                       ),
                       title: Text(check.rule),
                       subtitle: Text(check.detail),

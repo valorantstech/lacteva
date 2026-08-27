@@ -23,6 +23,7 @@ import 'offline/offline_client.dart';
 import 'l10n.dart';
 import 'session.dart';
 import 'sign_out.dart';
+import 'theme.dart';
 
 /// The device's own UTC date — a LAST RESORT only (DEMO-013).
 ///
@@ -447,9 +448,9 @@ class _CustomerRow extends StatelessWidget {
       leading: CircleAvatar(
         radius: 22,
         backgroundColor: done
-            ? Colors.green.shade100
+            ? LactevaColors.success.withValues(alpha: 0.12)
             : status != null
-            ? Colors.orange.shade100
+            ? LactevaColors.warning.withValues(alpha: 0.12)
             : Theme.of(context).colorScheme.surfaceContainerHighest,
         child: Icon(
           done
@@ -457,7 +458,7 @@ class _CustomerRow extends StatelessWidget {
               : status != null
               ? Icons.remove
               : Icons.local_shipping_outlined,
-          color: done ? Colors.green.shade800 : null,
+          color: done ? LactevaColors.success : null,
         ),
       ),
       title: Text(
@@ -640,21 +641,21 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
             _BigButton(
               label: t.t('record.delivered'),
               icon: Icons.check_circle_outline,
-              color: Colors.green.shade700,
+              color: LactevaColors.success,
               onPressed: _busy ? null : () => _record('delivered'),
             ),
             const SizedBox(height: 12),
             _BigButton(
               label: t.t('record.notDelivered'),
               icon: Icons.cancel_outlined,
-              color: Colors.orange.shade800,
+              color: LactevaColors.warning,
               onPressed: _busy ? null : () => _record('skipped'),
             ),
             const SizedBox(height: 12),
             _BigButton(
               label: t.t('record.returned'),
               icon: Icons.undo,
-              color: Colors.blueGrey.shade700,
+              color: Theme.of(context).colorScheme.outline,
               onPressed: _busy ? null : () => _record('returned'),
             ),
           ],

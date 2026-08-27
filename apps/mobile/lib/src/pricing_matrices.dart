@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'l10n.dart';
+import 'theme.dart';
 
 /// Pricing Matrix screens — Pricing Increment-002 (data only, no calculation).
 class MatrixListScreen extends StatefulWidget {
@@ -451,7 +452,9 @@ class _MatrixDetailScreenState extends State<MatrixDetailScreen> {
                         r.active
                             ? Icons.check_circle_outline
                             : Icons.pause_circle_outline,
-                        color: r.active ? Colors.green : Colors.grey,
+                        color: r.active
+                            ? LactevaColors.success
+                            : Theme.of(context).colorScheme.outline,
                       ),
                       title: Text('[${r.fromValue} – ${r.toValue})'),
                       subtitle: Text('Unit price ${r.unitPrice}'),

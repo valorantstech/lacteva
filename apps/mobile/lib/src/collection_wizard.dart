@@ -5,6 +5,7 @@ import 'api.dart';
 import 'build_flags.dart';
 import 'l10n.dart';
 import 'session.dart';
+import 'theme.dart';
 
 /// The platform's own capture bounds, mirrored for the OFFLINE path
 /// (P1-MOBILE-COUNTER-001; audit D-8). Online, the server refuses garbage
@@ -485,8 +486,8 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                     : Icons.cancel,
                 size: 72,
                 color: tx['rejected_reason'] == null
-                    ? Colors.green
-                    : Colors.red,
+                    ? LactevaColors.success
+                    : LactevaColors.danger,
               ),
               const SizedBox(height: 12),
               Center(

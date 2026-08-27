@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'theme.dart';
 
 /// Payment history — PAY-001.
 ///
@@ -193,10 +194,10 @@ IconData paymentIcon(String status) => switch (status) {
 };
 
 Color paymentColor(String status, ColorScheme scheme) => switch (status) {
-  'completed' => Colors.green,
+  'completed' => LactevaColors.success,
   'failed' => scheme.error,
   'cancelled' => scheme.outline,
-  'processing' => Colors.orange,
+  'processing' => LactevaColors.warning,
   _ => scheme.primary,
 };
 

@@ -480,22 +480,6 @@ class ApiClient {
     return RateCardSummary.fromJson(result);
   }
 
-  Future<void> assignRateCardCenter(String id, String centerId) async {
-    await _send(
-      'POST',
-      '/v1/rate-cards/$id/centers',
-      body: {'center_id': centerId},
-    );
-  }
-
-  Future<void> assignRateCardProduct(String id, String productCode) async {
-    await _send(
-      'POST',
-      '/v1/rate-cards/$id/products',
-      body: {'product_code': productCode},
-    );
-  }
-
   Future<List<DimensionSummary>> listQualityDimensions() async {
     final result =
         await _send('GET', '/v1/quality-dimensions') as List<dynamic>;

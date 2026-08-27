@@ -4,6 +4,7 @@ import '../session.dart';
 import 'offline_client.dart';
 import 'queue.dart';
 import 'sync_engine.dart';
+import '../theme.dart';
 
 /// A thin strip that tells the operator the truth about connectivity and the
 /// queue (OFF-001).
@@ -35,7 +36,7 @@ class OfflineBanner extends StatelessWidget {
     final colour = offline
         ? scheme.errorContainer
         : snapshot.conflicts > 0
-        ? Colors.orange.shade100
+        ? LactevaColors.warning.withValues(alpha: 0.12)
         : scheme.secondaryContainer;
     return Material(
       color: colour,
@@ -152,7 +153,7 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
             child: ListTile(
               leading: Icon(
                 snapshot.online ? Icons.cloud_done : Icons.cloud_off,
-                color: snapshot.online ? Colors.green : scheme.error,
+                color: snapshot.online ? LactevaColors.success : scheme.error,
               ),
               title: Text(snapshot.online ? 'Online' : 'Offline'),
               subtitle: Text(
@@ -172,7 +173,7 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
               _Tile(
                 label: 'Conflicts',
                 value: snapshot.conflicts,
-                tone: snapshot.conflicts > 0 ? Colors.orange : null,
+                tone: snapshot.conflicts > 0 ? LactevaColors.warning : null,
               ),
             ],
           ),
@@ -185,7 +186,7 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
                   _lastRun!.clean
                       ? Icons.check_circle_outline
                       : Icons.info_outline,
-                  color: _lastRun!.clean ? Colors.green : Colors.orange,
+                  color: _lastRun!.clean ? LactevaColors.success : LactevaColors.warning,
                 ),
                 title: Text(
                   'Last run: ${_lastRun!.applied} applied, '
@@ -227,7 +228,7 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
             ...conflicts.map(
               (op) => Card(
                 child: ListTile(
-                  leading: Icon(Icons.warning_amber, color: Colors.orange),
+                  leading: Icon(Icons.warning_amber, color: LactevaColors.warning),
                   title: Text(_readable(op.kind)),
                   subtitle: Text(
                     '${_conflictLabel(op.conflictReason)}\n'
@@ -289,7 +290,7 @@ class ConflictDetailScreen extends StatelessWidget {
         children: [
           Card(
             child: ListTile(
-              leading: const Icon(Icons.warning_amber, color: Colors.orange),
+              leading: const Icon(Icons.warning_amber, color: LactevaColors.warning),
               title: Text(_conflictLabel(operation.conflictReason)),
               subtitle: Text(operation.conflictDetail ?? ''),
             ),
@@ -399,9 +400,9 @@ IconData _stateIcon(SyncState state) => switch (state) {
 };
 
 Color _stateColour(SyncState state, ColorScheme scheme) => switch (state) {
-  SyncState.synced => Colors.green,
+  SyncState.synced => LactevaColors.success,
   SyncState.failed => scheme.error,
-  SyncState.conflict => Colors.orange,
+  SyncState.conflict => LactevaColors.warning,
   SyncState.syncing => scheme.primary,
   SyncState.pending => scheme.outline,
 };

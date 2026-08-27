@@ -22,6 +22,7 @@ import 'api.dart';
 import 'l10n.dart';
 import 'session.dart';
 import 'sign_out.dart';
+import 'theme.dart';
 
 /// The device's own UTC date — a fallback only (DEMO-013).
 ///
@@ -436,7 +437,7 @@ class _HistoryCard extends StatelessWidget {
                   d['status'] == 'delivered'
                       ? Icons.check_circle_outline
                       : Icons.remove_circle_outline,
-                  color: d['status'] == 'delivered' ? Colors.green : null,
+                  color: d['status'] == 'delivered' ? LactevaColors.success : null,
                 ),
                 title: Text('${d['delivery_date']} · ${d['slot']}'),
                 subtitle: Text(d['status']?.toString() ?? ''),
@@ -555,7 +556,7 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
                                   : Icons.warning_amber_outlined,
                               size: 18,
                               color: d['totals_match_lines'] == true
-                                  ? Colors.green
+                                  ? LactevaColors.success
                                   : Theme.of(context).colorScheme.error,
                             ),
                             const SizedBox(width: 8),

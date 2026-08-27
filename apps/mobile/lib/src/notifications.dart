@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'theme.dart';
 
 /// Notification history — NOT-001.
 ///
@@ -69,9 +70,9 @@ class _NotificationHistoryScreenState extends State<NotificationHistoryScreen> {
   };
 
   Color _color(String status, ColorScheme scheme) => switch (status) {
-    'sent' => Colors.green,
+    'sent' => LactevaColors.success,
     'dead' => scheme.error,
-    'failed' => Colors.orange,
+    'failed' => LactevaColors.warning,
     _ => scheme.outline,
   };
 

@@ -121,4 +121,56 @@ void main() {
     expect(Scaffold.of(ctx).widget.backgroundColor ?? Theme.of(ctx).scaffoldBackgroundColor,
         LactevaColors.cream);
   });
+
+  group('no screen invents a colour (LACTEVA-MOBILE-003)', () {
+    // Thirty-six hard-coded `Colors.*` sites had accumulated across ten files
+    // — green for done, orange for attention, grey for over — each chosen by
+    // whichever hue was nearest to hand rather than by what the state MEANT.
+    // Two of them drew the same status in two different colours on two
+    // screens, and one drew it with no word at all.
+    //
+    // The palette is the product's chromatic decisions. A literal is a screen
+    // making one of its own, privately, where nothing can see it drift.
+    //
+    // `theme.dart` is the exception because it is where the palette lives: it
+    // maps Material's slots onto the tokens, and doing that requires naming
+    // Material's colours once.
+    const allowed = <String>{'lib/src/theme.dart'};
+
+    test('no Colors. literal outside theme.dart', () {
+      final offenders = <String>[];
+      for (final file
+          in Directory('lib').listSync(recursive: true).whereType<File>()) {
+        final path = file.path;
+        if (!path.endsWith('.dart') || allowed.contains(path)) continue;
+        final lines = file.readAsLinesSync();
+        for (var i = 0; i < lines.length; i++) {
+          final line = lines[i];
+          // `LactevaColors.` contains `Colors.`; it is the point, not a
+          // violation.
+          final stripped = line.replaceAll('LactevaColors.', '');
+          if (stripped.contains('Colors.')) {
+            offenders.add('$path:${i + 1}: ${line.trim()}');
+          }
+        }
+      }
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'these name a Material colour directly instead of a semantic token '
+            'from theme.dart, so the palette can drift where nothing sees it: '
+            '$offenders',
+      );
+    });
+
+    test('the semantic tokens a screen should reach for all exist', () {
+      // Without this the guard above passes beautifully against a palette that
+      // has quietly lost the tokens screens are supposed to use.
+      expect(LactevaColors.success, isA<Color>());
+      expect(LactevaColors.warning, isA<Color>());
+      expect(LactevaColors.danger, isA<Color>());
+      expect(LactevaColors.info, isA<Color>());
+    });
+  });
 }

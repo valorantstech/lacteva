@@ -4,6 +4,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'api.dart';
 import 'l10n.dart';
 import 'session.dart';
+import 'theme.dart';
 
 /// Supplier CRUD — SPRINT-005.
 class SuppliersListScreen extends StatefulWidget {
@@ -391,7 +392,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                           QrImageView(
                             data: detail.qrPayload,
                             size: 220,
-                            backgroundColor: Colors.white,
+                            backgroundColor: LactevaColors.milk,
                           ),
                           const SizedBox(height: 8),
                           Text(
