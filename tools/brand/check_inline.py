@@ -49,6 +49,7 @@ GENERATED_DART = [
 # The rich rendering's own numbers, wherever a surface has to name them.
 RICH_STOPS = [
     ("apps/admin-portal/src/components/brand-mark.tsx", "the portal rich mark"),
+    ("apps/marketing-site/src/components/logo.tsx", "the marketing rich mark"),
 ]
 
 

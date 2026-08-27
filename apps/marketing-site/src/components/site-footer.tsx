@@ -31,7 +31,9 @@ export function SiteFooter() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-12 sm:px-6 lg:px-8">
         <div className="flex flex-col justify-between gap-10 sm:flex-row">
           <div className="flex max-w-sm flex-col gap-3">
-            <Wordmark className="text-ink-foreground" />
+            {/* The footer is the mark's dark ground: the rich drop, bare —
+                milk-on-dairy, the size where the light actually reads. */}
+            <Wordmark rich="footer" className="text-ink-foreground" />
             <p className="text-sm leading-relaxed text-ink-muted">
               One connected platform for modern dairy operations — from milk
               procurement through delivery, billing, payments, and reporting.

@@ -39,14 +39,110 @@ export function LogoDrop({ className }: { className?: string }) {
   );
 }
 
-export function Wordmark({ className }: { className?: string }) {
+/**
+ * The RICH rendering (LACTEVA-MARKETING-003; the LogoReveal board's "this
+ * rendering owns splash, login and the website"). Same geometry — MARK_PATH
+ * above is still the only outline — with the light added: body gradient into
+ * a cream shadow, one warm highlight, a low-opacity green meniscus. Every
+ * number is generated (tools/brand/mark.json, `rich` block) and pinned by
+ * check_inline.py's RICH_STOPS, because BRAND-002 found a mark whose
+ * silhouette agreed across surfaces while its highlight existed on one.
+ *
+ * The flat mark keeps the small jobs — icon.svg and the favicon stay flat; a
+ * gradient at 16px is a smudge.
+ *
+ * `idPrefix` must be unique per rendered instance: SVG ids are
+ * document-global, and this drop appears twice on every page (nav + footer).
+ */
+export function RichDropArt({
+  idPrefix,
+  className,
+}: {
+  idPrefix: string;
+  className?: string;
+}) {
+  const body = `${idPrefix}-milkbody`;
+  const glow = `${idPrefix}-milkglow`;
+  const clip = `${idPrefix}-drop`;
+  return (
+    <g className={className}>
+      <defs>
+        <linearGradient id={body} x1="0.2" y1="0" x2="0.8" y2="1">
+          <stop offset="0" stopColor="#FFFFFF" />
+          <stop offset="0.55" stopColor="#FDFBF4" />
+          <stop offset="1" stopColor="#E4DEC9" />
+        </linearGradient>
+        <radialGradient id={glow} cx="0.35" cy="0.28" r="0.55">
+          <stop offset="0" stopColor="#FFFFFF" />
+          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+        </radialGradient>
+        {/* The meniscus is clipped to the drop: mapped faithfully from the
+            board it runs a little past the bulb, and an unclipped tail is a
+            green whisker hanging off the mark. */}
+        <clipPath id={clip}>
+          <path d={MARK_PATH} />
+        </clipPath>
+      </defs>
+      <path d={MARK_PATH} fill={`url(#${body})`} />
+      <ellipse
+        cx="26.635"
+        cy="29.09"
+        rx="6.19"
+        ry="8.667"
+        fill={`url(#${glow})`}
+        opacity="0.9"
+      />
+      <path
+        d="M24.571 45.598A7.841 7.841 0 0 0 30.762 52.614"
+        fill="none"
+        stroke="#1B5E20"
+        strokeOpacity="0.18"
+        strokeWidth="1.651"
+        strokeLinecap="round"
+        clipPath={`url(#${clip})`}
+      />
+    </g>
+  );
+}
+
+/** The rich drop alone — for dark grounds where the lit milk reads. */
+export function RichDrop({
+  idPrefix,
+  className,
+}: {
+  idPrefix: string;
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="19 11.63 26 37.27"
+      aria-hidden="true"
+      className={cn("h-9 w-auto", className)}
+    >
+      <RichDropArt idPrefix={idPrefix} />
+    </svg>
+  );
+}
+
+export function Wordmark({
+  className,
+  rich,
+}: {
+  className?: string;
+  /**
+   * Render the lit drop instead of the field mark — pass this instance's
+   * unique gradient-id prefix. Rich is for large marks on dark grounds
+   * (the footer's ink band); the flat field mark keeps the small jobs.
+   */
+  rich?: string;
+}) {
   return (
     // Text color inherits, so a dark band recolors the wordmark by setting
     // its own text class; `text-foreground` here is only the default.
     <span
       className={cn("flex items-center gap-2.5 text-foreground", className)}
     >
-      <LogoMark />
+      {rich ? <RichDrop idPrefix={rich} /> : <LogoMark />}
       <span className="text-lg font-semibold tracking-tight">Lacteva</span>
     </span>
   );

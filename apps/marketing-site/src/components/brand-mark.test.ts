@@ -21,7 +21,17 @@ import { describe, expect, it } from "vitest";
 
 const CONTRACT = JSON.parse(
   readFileSync(join(process.cwd(), "../../tools/brand/mark.json"), "utf8"),
-) as { path: string; dropViewBox: string; dairy: string; milk: string };
+) as {
+  path: string;
+  dropViewBox: string;
+  dairy: string;
+  milk: string;
+  rich: {
+    highlight: { cx: number; cy: number; rx: number; ry: number };
+    meniscus: { r: number; width: number; opacity: number };
+    body: Array<{ offset: number; color: string }>;
+  };
+};
 
 const read = (relative: string) =>
   readFileSync(join(process.cwd(), relative), "utf8");
@@ -45,5 +55,22 @@ describe("the Lacteva mark", () => {
   it("keeps the pinned palette", () => {
     expect(CONTRACT.dairy).toBe("#1B5E20");
     expect(CONTRACT.milk).toBe("#FDFBF4");
+  });
+
+  it("the rich rendering carries the generated stops (LACTEVA-MARKETING-003)", () => {
+    // The vitest half of check_inline.py's RICH_STOPS: the lockup must name
+    // the highlight, the meniscus and every body stop from the contract —
+    // BRAND-002's half-drift was a silhouette that agreed while the light
+    // existed on one surface only.
+    const source = read("src/components/logo.tsx");
+    const required = [
+      String(CONTRACT.rich.highlight.cx),
+      String(CONTRACT.rich.highlight.cy),
+      String(CONTRACT.rich.meniscus.r),
+      ...CONTRACT.rich.body.map((stop) => stop.color),
+    ];
+    for (const value of required) {
+      expect(source, `logo.tsx names ${value}`).toContain(value);
+    }
   });
 });
