@@ -410,6 +410,47 @@ const Catalog _en = {
   'round.standingOrder': 'Standing order',
   'round.less': 'Less',
   'round.more': 'More',
+
+  // The household home (LACTEVA-MOBILE-007; board: Customer).
+  'customer.yourMilk': 'Your milk, this month',
+  'customer.vesselLabel': 'Milk delivered this month',
+  'customer.deliveredThisMonth': 'delivered this month',
+  'customer.deliveredOf': 'delivered of ~{expected} this month',
+  'customer.due': '{amount} due',
+  'customer.allPaid': 'Everything is paid up',
+  'customer.dueOn': 'on invoice {invoice}',
+  'customer.nextDelivery': 'Your next delivery',
+  'customer.planLine': '{quantity} {product} · {slot} · your standing order',
+  'customer.noPlanYet': 'Welcome to Lacteva',
+  'customer.noPlanYetDetail':
+      'Once the dairy sets up your standing order, your deliveries appear here.',
+  'customer.thisWeek': 'This week',
+  'customer.invoiceLine': '{from} → {to} · {count} deliveries listed',
+  'customer.firstMonth':
+      'Your first delivery will appear here the morning it arrives.',
+  'customer.freshFrom': 'Fresh from {dairy} · every morning',
+  'customer.freshEveryMorning': 'Fresh milk, every morning',
+  // The days of the week strip. Short forms, because seven of them share the
+  // width of a phone.
+  'day.mon': 'Mon',
+  'day.tue': 'Tue',
+  'day.wed': 'Wed',
+  'day.thu': 'Thu',
+  'day.fri': 'Fri',
+  'day.sat': 'Sat',
+  'day.sun': 'Sun',
+  // The platform's own invoice status codes (`billing/models.py`).
+  'invoice.draft': 'Draft',
+  'invoice.issued': 'Due',
+  'invoice.paid': 'Paid',
+  'invoice.cancelled': 'Cancelled',
+  // The plan's schedule mask. The platform sends the KEY, never a sentence —
+  // it does not decide what a Hindi-speaking household reads.
+  'schedule.daily': 'On its way daily',
+  'schedule.mon_sat': 'Monday to Saturday',
+  'schedule.weekdays': 'Weekdays',
+  'schedule.custom': 'On chosen days',
+  'customer.tomorrow': 'Tomorrow',
 };
 
 const Catalog _hi = {
@@ -787,6 +828,42 @@ const Catalog _hi = {
   'round.standingOrder': 'नियमित ऑर्डर',
   'round.less': 'कम',
   'round.more': 'ज़्यादा',
+
+  // LACTEVA-MOBILE-007 — the household home.
+  'customer.yourMilk': 'इस महीने का आपका दूध',
+  'customer.vesselLabel': 'इस महीने पहुँचाया गया दूध',
+  'customer.deliveredThisMonth': 'इस महीने पहुँचा',
+  'customer.deliveredOf': 'इस महीने ~{expected} में से पहुँचा',
+  'customer.due': '{amount} बकाया',
+  'customer.allPaid': 'सब भुगतान हो चुका है',
+  'customer.dueOn': 'बिल {invoice} पर',
+  'customer.nextDelivery': 'आपकी अगली डिलीवरी',
+  'customer.planLine': '{quantity} {product} · {slot} · आपका नियमित ऑर्डर',
+  'customer.noPlanYet': 'लैक्टेवा में आपका स्वागत है',
+  'customer.noPlanYetDetail':
+      'डेयरी आपका नियमित ऑर्डर तय कर दे, फिर आपकी डिलीवरी यहाँ दिखेगी।',
+  'customer.thisWeek': 'इस हफ़्ते',
+  'customer.invoiceLine': '{from} → {to} · {count} डिलीवरी दर्ज',
+  'customer.firstMonth':
+      'आपकी पहली डिलीवरी जिस सुबह आएगी, उसी सुबह यहाँ दिखेगी।',
+  'customer.freshFrom': '{dairy} से ताज़ा · हर सुबह',
+  'customer.freshEveryMorning': 'ताज़ा दूध, हर सुबह',
+  'day.mon': 'सोम',
+  'day.tue': 'मंगल',
+  'day.wed': 'बुध',
+  'day.thu': 'गुरु',
+  'day.fri': 'शुक्र',
+  'day.sat': 'शनि',
+  'day.sun': 'रवि',
+  'invoice.draft': 'मसौदा',
+  'invoice.issued': 'बकाया',
+  'invoice.paid': 'भुगतान हुआ',
+  'invoice.cancelled': 'रद्द',
+  'schedule.daily': 'रोज़ आ रहा है',
+  'schedule.mon_sat': 'सोमवार से शनिवार',
+  'schedule.weekdays': 'कार्यदिवस',
+  'schedule.custom': 'चुने हुए दिनों पर',
+  'customer.tomorrow': 'कल',
 };
 
 const Catalog _ar = {
@@ -1160,6 +1237,42 @@ const Catalog _ar = {
   'round.standingOrder': 'الطلب الدائم',
   'round.less': 'أقل',
   'round.more': 'أكثر',
+
+  // LACTEVA-MOBILE-007 — the household home.
+  'customer.yourMilk': 'حليبك هذا الشهر',
+  'customer.vesselLabel': 'الحليب المسلّم هذا الشهر',
+  'customer.deliveredThisMonth': 'سُلّم هذا الشهر',
+  'customer.deliveredOf': 'سُلّم من ~{expected} هذا الشهر',
+  'customer.due': '{amount} مستحق',
+  'customer.allPaid': 'كل شيء مدفوع',
+  'customer.dueOn': 'على الفاتورة {invoice}',
+  'customer.nextDelivery': 'توصيلتك القادمة',
+  'customer.planLine': '{quantity} {product} · {slot} · طلبك الدائم',
+  'customer.noPlanYet': 'مرحبًا بك في لاكتيفا',
+  'customer.noPlanYetDetail':
+      'بمجرد أن تُعدّ الألبان طلبك الدائم، ستظهر توصيلاتك هنا.',
+  'customer.thisWeek': 'هذا الأسبوع',
+  'customer.invoiceLine': '{from} ← {to} · {count} توصيلة مدرجة',
+  'customer.firstMonth':
+      'ستظهر أول توصيلة لك هنا في الصباح الذي تصل فيه.',
+  'customer.freshFrom': 'طازج من {dairy} · كل صباح',
+  'customer.freshEveryMorning': 'حليب طازج، كل صباح',
+  'day.mon': 'إثن',
+  'day.tue': 'ثلا',
+  'day.wed': 'أرب',
+  'day.thu': 'خمي',
+  'day.fri': 'جمع',
+  'day.sat': 'سبت',
+  'day.sun': 'أحد',
+  'invoice.draft': 'مسودة',
+  'invoice.issued': 'مستحقة',
+  'invoice.paid': 'مدفوعة',
+  'invoice.cancelled': 'ملغاة',
+  'schedule.daily': 'في الطريق يوميًا',
+  'schedule.mon_sat': 'من الإثنين إلى السبت',
+  'schedule.weekdays': 'أيام العمل',
+  'schedule.custom': 'في أيام مختارة',
+  'customer.tomorrow': 'غدًا',
 };
 
 const Map<String, Catalog> catalogs = {'en': _en, 'hi': _hi, 'ar': _ar};

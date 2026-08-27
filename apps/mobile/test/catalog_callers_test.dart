@@ -26,6 +26,9 @@ const _dynamicFamilies = <String>[
   'slot.', // record screens: t('slot.$slot')
   'milk.', // collection wizard: t('milk.$milkType')
   'driver.status.', // driver.dart: t('driver.status.${run['status']}')
+  'invoice.', // customer_portal.dart: t('invoice.${bill['status']}')
+  'schedule.', // customer_portal.dart: t('${plan['schedule_key']}')
+  'day.', // customer_portal.dart: the week strip, by index
 ];
 
 void main() {
@@ -76,6 +79,18 @@ void main() {
     // this word where the board showed a wall-clock time.
     for (final code in ['planned', 'in_progress', 'completed', 'cancelled']) {
       expect(L10n(en).t('driver.status.$code'), isNot('driver.status.$code'));
+    }
+    // LACTEVA-MOBILE-007: every invoice status (`billing/models.py`), every
+    // schedule mask the plan view can send (`customer/service.py`), and the
+    // seven days the household's week strip is built from.
+    for (final code in ['draft', 'issued', 'paid', 'cancelled']) {
+      expect(L10n(en).t('invoice.$code'), isNot('invoice.$code'));
+    }
+    for (final code in ['daily', 'mon_sat', 'weekdays', 'custom']) {
+      expect(L10n(en).t('schedule.$code'), isNot('schedule.$code'));
+    }
+    for (final code in ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']) {
+      expect(L10n(en).t('day.$code'), isNot('day.$code'));
     }
   });
 }

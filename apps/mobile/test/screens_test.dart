@@ -155,8 +155,28 @@ Session _session({Set<String> permissions = const {}, String? customerId}) =>
       customerId: customerId,
     );
 
-Future<void> _pump(WidgetTester tester, Widget screen) async {
-  await tester.pumpWidget(MaterialApp(home: screen));
+/// Pump and settle.
+///
+/// `reducedMotion` exists for the household home, which shimmers its mark
+/// forever by design (LACTEVA-MOBILE-007) — a settle would simply time out.
+/// These tests are about what the platform said, not about the animation, and
+/// asking for reduced motion is how the screen is told to stand still. The
+/// shimmer itself is pinned in `customer_board_test.dart`.
+Future<void> _pump(
+  WidgetTester tester,
+  Widget screen, {
+  bool reducedMotion = false,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: reducedMotion
+          ? MediaQuery(
+              data: const MediaQueryData(disableAnimations: true),
+              child: screen,
+            )
+          : screen,
+    ),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -341,9 +361,10 @@ void main() {
             customerId: 'cus-1',
           ),
         ),
+        reducedMotion: true,
       );
 
-      expect(find.text('450.00 INR'), findsOneWidget);
+      expect(find.text('450.00 due'), findsOneWidget);
       expect(find.text('Invoiced 1200.00 · paid 900.00'), findsOneWidget);
       expect(
         find.textContaining('300.00'),
@@ -385,6 +406,7 @@ void main() {
             customerId: 'cus-1',
           ),
         ),
+        reducedMotion: true,
       );
 
       // Six aggregates for the whole page, whatever the history holds — not
@@ -416,10 +438,11 @@ void main() {
             customerId: 'cus-1',
           ),
         ),
+        reducedMotion: true,
       );
 
       expect(find.text('RCT-2026-0003'), findsOneWidget);
-      expect(find.text('750.00 INR'), findsOneWidget);
+      expect(find.text('750.00'), findsOneWidget);
     });
 
     testWidgets('a missing receipts grant hides receipts, breaks nothing', (
@@ -439,9 +462,10 @@ void main() {
             customerId: 'cus-1',
           ),
         ),
+        reducedMotion: true,
       );
 
-      expect(find.text('0.00 INR'), findsOneWidget);
+      expect(find.text('0.00 due'), findsOneWidget);
     });
 
     testWidgets("today's delivery is the one from today", (tester) async {
@@ -476,6 +500,7 @@ void main() {
             customerId: 'cus-1',
           ),
         ),
+        reducedMotion: true,
       );
 
       expect(find.textContaining('1.500'), findsWidgets);

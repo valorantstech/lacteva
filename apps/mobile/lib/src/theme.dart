@@ -77,6 +77,20 @@ abstract final class LactevaColors {
   /// cream and goes muddy against deep green.
   static const onBrandLive = Color(0xFF7FD495);
 
+  /// Good news ON the brand ground — "nothing due". [success] is measured for
+  /// cream and disappears into deep green; this is its counterpart, and the
+  /// reason `Metric.onBrand` exists in the portal.
+  static const onBrandPositive = Color(0xFF90E0A5);
+
+  /// The far corner of the household hero. The band is deep enough that a
+  /// two-stop gradient banded visibly across 390px, so the boards give it a
+  /// third, slightly warmer stop to land on.
+  static const dairyNight = Color(0xFF123A18);
+
+  /// Milk with a shadow in it — the bottom of a filled vessel, where [milk]
+  /// is its lit surface.
+  static const milkFill = Color(0xFFF1EDDD);
+
   // ---------------------------------------------------------------------
   // Structure on cream.
   // ---------------------------------------------------------------------
@@ -151,6 +165,19 @@ LinearGradient paleGradient() => const LinearGradient(
   begin: kBrandGradientBegin,
   end: kBrandGradientEnd,
   colors: [LactevaColors.milk, LactevaColors.paleTint],
+);
+
+/// The household hero's ground: the brand gradient with a third stop, because
+/// two stops banded visibly across a band this deep.
+LinearGradient deepBrandGradient() => const LinearGradient(
+  begin: kBrandGradientBegin,
+  end: kBrandGradientEnd,
+  colors: [
+    LactevaColors.dairy,
+    LactevaColors.dairyDeep,
+    LactevaColors.dairyNight,
+  ],
+  stops: [0, 0.78, 1],
 );
 
 /// Progress, left to right — a run draining rather than a state.
