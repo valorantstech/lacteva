@@ -291,7 +291,7 @@ export default function InvoiceDetailPage({
                     "cancel",
                     () =>
                       cancelInvoice(invoice.id, "cancelled from the portal"),
-                    "Bill cancelled. Its deliveries are billable again.",
+                    "Invoice cancelled. Its deliveries are invoiceable again.",
                   )
                 }
               >
@@ -328,7 +328,7 @@ export default function InvoiceDetailPage({
                     void run(
                       "issue",
                       () => issueInvoice(invoice.id),
-                      "Bill issued. It is now immutable and payable.",
+                      "Invoice issued. It is now immutable and payable.",
                     );
                   }}
                 >

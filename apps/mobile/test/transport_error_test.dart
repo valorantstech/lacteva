@@ -62,6 +62,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Could not reach the platform'), findsNothing);
-    expect(find.text('No centers match.'), findsOneWidget);
+    expect(find.text('No centres match.'), findsOneWidget);
   });
 }

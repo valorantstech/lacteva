@@ -104,7 +104,7 @@ Future<void> _pump(WidgetTester tester, _Fake client, {int step = 0}) async {
 Future<void> _driveToReview(WidgetTester tester, _Fake client) async {
   await _pump(tester, client);
   await tester.enterText(find.byType(TextField).first, 'SUP-001');
-  await tester.tap(find.text('Identify supplier'));
+  await tester.tap(find.text('Identify farmer'));
   await tester.pumpAndSettle();
   await tester.tap(find.text('Receive milk'));
   await tester.pumpAndSettle();

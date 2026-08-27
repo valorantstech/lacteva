@@ -215,7 +215,7 @@ export default function ReportsPage() {
           />
         </div>
         <div className="flex flex-col gap-1">
-          <Label htmlFor="r-center">Center</Label>
+          <Label htmlFor="r-center">Centre</Label>
           <select
             id="r-center"
             className="h-8 rounded-lg border border-border bg-background px-2 text-sm"
@@ -283,7 +283,7 @@ export default function ReportsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Center</TableHead>
+                <TableHead>Centre</TableHead>
                 <TableHead className="text-end">Transactions</TableHead>
                 <TableHead className="text-end">Accepted</TableHead>
                 <TableHead className="text-end">Milk (kg)</TableHead>

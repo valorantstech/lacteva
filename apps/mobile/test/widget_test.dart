@@ -97,8 +97,8 @@ void main() {
       ),
     );
     expect(find.text('Collection — step 1 of 6'), findsOneWidget);
-    expect(find.text('Supplier code'), findsOneWidget);
-    expect(find.text('Identify supplier'), findsOneWidget);
+    expect(find.text('Farmer code'), findsOneWidget);
+    expect(find.text('Identify farmer'), findsOneWidget);
   });
 
   testWidgets('rate card form validates required fields', (tester) async {

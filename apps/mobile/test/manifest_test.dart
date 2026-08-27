@@ -53,6 +53,22 @@ void main() {
     });
   });
 
+  test('the launcher caption is the product name, not the package', () {
+    // LACTEVA-ADMIN-005 / D6. This read `lacteva_mobile` — the Flutter project
+    // slug — so the home screen showed the refined Lacteva mark captioned with
+    // a developer's directory name. It is the second half of the same sentence
+    // the icon says, and a customer reads both at once.
+    //
+    // The application id is a DIFFERENT thing and stays
+    // `com.lacteva.lacteva_mobile`: changing it would orphan every existing
+    // install and the signing identity with it.
+    expect(
+      _manifest('main').readAsStringSync(),
+      contains('android:label="Lacteva"'),
+      reason: 'the caption under the launcher icon is the product name',
+    );
+  });
+
   test('debug and profile keep their own INTERNET declaration', () {
     // They are merged over `main`, so a duplicate is harmless — and removing
     // them to "de-duplicate" would break `flutter run`, which needs the

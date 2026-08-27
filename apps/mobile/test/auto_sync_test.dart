@@ -95,6 +95,6 @@ void main() {
     expect(client.syncCalls, 1);
     expect(tester.takeException(), isNull, reason: 'fire-and-forget swallows');
     // The home actually rendered.
-    expect(find.text('Collection centers'), findsOneWidget);
+    expect(find.text('Collection centres'), findsOneWidget);
   });
 }

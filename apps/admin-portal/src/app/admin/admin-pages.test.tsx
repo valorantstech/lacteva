@@ -357,7 +357,7 @@ describe("navigation (NAV-001)", () => {
       await screen.findByRole("link", { name: /sign in/i }),
     ).toBeInTheDocument();
     for (const label of [
-      "Centers",
+      "Centres",
       "Suppliers",
       "Settlements",
       "Users",
@@ -385,7 +385,7 @@ describe("navigation (NAV-001)", () => {
 
     render(<AppShell>{null}</AppShell>);
     expect(
-      await screen.findByRole("link", { name: "Centers" }),
+      await screen.findByRole("link", { name: "Centres" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Suppliers" })).toBeInTheDocument();
     for (const hidden of [
@@ -417,7 +417,7 @@ describe("navigation (NAV-001)", () => {
     expect(
       await screen.findByRole("link", { name: "Users" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Centers" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Centres" })).toBeInTheDocument();
   });
 
   it("asks a platform session with no organization to choose one (TENANT-001)", async () => {
@@ -442,7 +442,7 @@ describe("navigation (NAV-001)", () => {
     routeFetch(SIGNED_IN);
 
     render(<AppShell>{null}</AppShell>);
-    await screen.findByRole("link", { name: "Centers" });
+    await screen.findByRole("link", { name: "Centres" });
     expect(screen.queryByLabelText("Organization ID")).not.toBeInTheDocument();
   });
 
@@ -452,7 +452,7 @@ describe("navigation (NAV-001)", () => {
 
     render(<AppShell>{null}</AppShell>);
     expect(
-      await screen.findByRole("link", { name: "Centers" }),
+      await screen.findByRole("link", { name: "Centres" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "Settlements" }),
@@ -476,7 +476,7 @@ describe("navigation (NAV-001)", () => {
 
     render(<AppShell>{null}</AppShell>);
     expect(
-      screen.queryByRole("link", { name: "Centers" }),
+      screen.queryByRole("link", { name: "Centres" }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: /sign in/i }),
@@ -499,7 +499,7 @@ describe("navigation (NAV-001)", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("link", { name: "Centers" }),
+        screen.queryByRole("link", { name: "Centres" }),
       ).not.toBeInTheDocument(),
     );
   });

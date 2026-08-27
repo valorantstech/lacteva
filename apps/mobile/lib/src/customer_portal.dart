@@ -265,7 +265,7 @@ class _BalanceCard extends StatelessWidget {
               style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            Text('Billed ${b?['invoiced'] ?? '—'} · paid ${b?['paid'] ?? '—'}'),
+            Text('Invoiced ${b?['invoiced'] ?? '—'} · paid ${b?['paid'] ?? '—'}'),
             if ((b?['unbilled_deliveries'] ?? 0) != 0)
               Padding(
                 padding: const EdgeInsets.only(top: 6),

@@ -563,7 +563,7 @@ export default function CustomerDetailPage({
                       <th className="py-2 pe-4 text-end font-medium">Rate</th>
                       <th className="py-2 pe-4 text-end font-medium">Amount</th>
                       <th className="py-2 pe-4 font-medium">Status</th>
-                      <th className="py-2 font-medium">Billed</th>
+                      <th className="py-2 font-medium">Invoiced</th>
                     </tr>
                   </thead>
                   <tbody>

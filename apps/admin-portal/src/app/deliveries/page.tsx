@@ -219,7 +219,7 @@ function DeliveriesView() {
     },
     {
       key: "billed",
-      header: "Billed",
+      header: "Invoiced",
       secondary: true,
       cell: (d) =>
         d.invoice_id ? (
@@ -810,7 +810,7 @@ function DeliveriesView() {
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="dl-billed">Billed</Label>
+                  <Label htmlFor="dl-billed">Invoiced</Label>
                   <select
                     id="dl-billed"
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm"
@@ -820,7 +820,7 @@ function DeliveriesView() {
                       setOffset(0);
                     }}
                   >
-                    <option value="">Billed or not</option>
+                    <option value="">Invoiced or not</option>
                     <option value="false">Not yet billed</option>
                     <option value="true">Already billed</option>
                   </select>

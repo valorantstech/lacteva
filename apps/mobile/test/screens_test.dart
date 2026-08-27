@@ -330,7 +330,7 @@ void main() {
       );
 
       expect(find.text('450.00 INR'), findsOneWidget);
-      expect(find.text('Billed 1200.00 · paid 900.00'), findsOneWidget);
+      expect(find.text('Invoiced 1200.00 · paid 900.00'), findsOneWidget);
       expect(
         find.textContaining('300.00'),
         findsNothing,

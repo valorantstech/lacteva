@@ -845,7 +845,7 @@ describe("deep links from the dashboard", () => {
         );
       expect(asked.length).toBeGreaterThan(0);
     });
-    expect(await screen.findByLabelText("Billed")).toHaveValue("false");
+    expect(await screen.findByLabelText("Invoiced")).toHaveValue("false");
   });
 
   it("lands on drafted bills, and asks the server for them", async () => {

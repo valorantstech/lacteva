@@ -101,7 +101,7 @@ export default function ReceivablesPage_() {
     },
     {
       key: "billed",
-      header: "Billed",
+      header: "Invoiced",
       align: "end",
       secondary: true,
       cell: (row) => <Money amount={row.invoiced} currency={row.currency} />,
