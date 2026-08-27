@@ -398,7 +398,24 @@ describe("transaction detail", () => {
         }),
     });
     await renderDetail(<TransactionDetailPage params={params()} />);
-    const alert = await screen.findByRole("alert");
+    // LACTEVA-QA-003. This asked for "the" alert, and this page has several
+    // regions that each load and fail on their own — every `ErrorState` is
+    // also `role="alert"`. Under contention a neighbouring region was still
+    // showing one when the reconciliation arrived, and `findByRole` throws on
+    // more than one match. Naming the alert we mean is deterministic no
+    // matter how many others are on screen, and it is a STRONGER assertion
+    // than before: it required exactly one alert anywhere and that it happened
+    // to say this; it now requires an alert that says it.
+    // `role="alert"` is not a name-from-content role, so it cannot be
+    // selected by `name`; the alert is found by what it SAYS instead.
+    const disagreement = /449\.00 KES for a collection worth 450\.00 KES/;
+    const alert = await waitFor(() => {
+      const found = screen
+        .getAllByRole("alert")
+        .find((el) => disagreement.test(el.textContent ?? ""));
+      if (!found) throw new Error("the reconciliation alert has not arrived");
+      return found;
+    });
     expect(alert).toHaveTextContent(
       /449\.00 KES for a collection worth 450\.00 KES/,
     );

@@ -30,15 +30,6 @@ export function LogoMark({ className }: { className?: string }) {
   );
 }
 
-/** The mark alone, taking its colour from the text around it. */
-export function LogoDrop({ className }: { className?: string }) {
-  return (
-    <svg viewBox="19 11.63 26 37.27" aria-hidden="true" className={cn("size-4", className)}>
-      <path d={MARK_PATH} fill="currentColor" />
-    </svg>
-  );
-}
-
 /**
  * The RICH rendering (LACTEVA-MARKETING-003; the LogoReveal board's "this
  * rendering owns splash, login and the website"). Same geometry — MARK_PATH

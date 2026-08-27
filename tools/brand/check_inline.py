@@ -46,6 +46,9 @@ GENERATED_DART = [
     ("apps/mobile/lib/src/brand/mark.g.dart", "the Flutter mark"),
 ]
 
+#: The generator's own rich rendering, checked byte for byte like the flat one.
+RICH_SVG = "tools/brand/lacteva-mark-rich.svg"
+
 # The rich rendering's own numbers, wherever a surface has to name them.
 RICH_STOPS = [
     ("apps/admin-portal/src/components/brand-mark.tsx", "the portal rich mark"),
@@ -65,10 +68,9 @@ def main() -> int:
                 f"    Run: python3 tools/brand/generate.py  — then update the inline copy."
             )
 
-    rich_svg = ROOT / "tools/brand/lacteva-mark-rich.svg"
-    if rich_svg.read_text(encoding="utf-8") != mark.rich_mark_svg():
+    if (ROOT / RICH_SVG).read_text(encoding="utf-8") != mark.rich_mark_svg():
         problems.append(
-            "tools/brand/lacteva-mark-rich.svg is not what the generator produces.\n"
+            f"{RICH_SVG} is not what the generator produces.\n"
             "    Run: python3 tools/brand/generate.py"
         )
 
@@ -126,8 +128,26 @@ def main() -> int:
             print(f"  - {problem}")
         return 1
 
-    surfaces = len(INLINE) + len(GENERATED_SVG) + len(GENERATED_DART) + 1
-    print(f"mark: one geometry, {surfaces} surfaces agree (flat and rich)")
+    # The label must count what was actually ENFORCED, not what was easy to
+    # add up. `RICH_STOPS` is a second, different check on a file `INLINE`
+    # already covers — the outline AND the light — so it is a check rather
+    # than a surface, and saying "6 surfaces" while running seven checks is a
+    # summary that quietly under-reports its own work.
+    surfaces = {relative for relative, _ in INLINE}
+    surfaces |= {relative for relative, _ in GENERATED_SVG}
+    surfaces |= {relative for relative, _ in GENERATED_DART}
+    surfaces.add(RICH_SVG)
+    checks = (
+        len(INLINE)
+        + len(GENERATED_SVG)
+        + len(GENERATED_DART)
+        + len(RICH_STOPS)
+        + 1  # the generated rich SVG
+    )
+    print(
+        f"mark: one geometry, {len(surfaces)} surfaces agree "
+        f"across {checks} checks (flat and rich)"
+    )
     return 0
 
 
