@@ -5,21 +5,24 @@ import { cn } from "@/lib/utils";
 
 /**
  * The living milk (LACTEVA-MARKETING-002; owner direction 2026-08-27:
- * a dairy milk CAN — the big collection-centre jar — drawn transparent,
- * with a farmer pouring milk in).
+ * the collection-centre milk can, transparent, with an Indian dairy
+ * farmer — realistic flat style, true to scale: the can is knee-high,
+ * the farmer stands over it).
  *
  * Three layers, one 420×470 coordinate space, so the whole scene scales
- * as one responsive figure:
+ * as ONE responsive figure:
  *   1. the canvas — the real-time fluid: a spring-damped surface
- *      heightfield inside the can, fed by milk drops falling from the
- *      farmer's tilted pot; each drop stretches under gravity and lands
- *      with a plop, a ripple ring and a crown of micro-droplets;
+ *      heightfield inside the can, fed by milk drops born at the lip of
+ *      the farmer's steel pot; each drop stretches under gravity and
+ *      lands with a plop, a ripple ring and a crown of micro-droplets;
  *   2. the static fallback — the same milk, still, plus CSS drips
  *      (hidden under reduced motion: calm milk reads as design, drops
  *      frozen mid-air read as a glitch);
  *   3. the scene layer, always visible — the transparent can (outline,
- *      glass tint, wall reflections, ear handles) and the farmer, drawn
- *      once as SVG over whichever milk is live.
+ *      glass tint, wall reflections, ear handles) and the farmer:
+ *      wrapped turban with its tail, mustache, kurta with placket and
+ *      shoulder gamchha, dhoti, sandals, a steel pot tipped over the
+ *      mouth.
  *
  * The can is ONE geometry: the same path strings clip the canvas fluid
  * (via Path2D) and draw the SVG, so the renderings cannot drift. No
@@ -32,27 +35,25 @@ const W = 420;
 const H = 470;
 const COLS = 96;
 
-// The milk can: rolled rim, short neck, shoulder, straight body, bottom
-// rim band — the 20L collection-centre can, minus its lid (it is being
-// filled). Outer silhouette is stroked as the transparent wall; the
-// interior is the clip everything liquid lives inside.
+// The milk can — knee-high, as the 20L can actually is: rolled rim,
+// short neck, shoulder, straight body, bottom rim band.
 const CAN_OUTER_D =
-  "M116 148H244Q250 148 250 154V156Q250 162 244 162H238V190" +
-  "C238 206 272 210 272 232V410Q276 414 276 420V424Q276 432 268 432H92" +
-  "Q84 432 84 424V420Q84 414 88 410V232" +
-  "C88 210 122 206 122 190V162H116Q110 162 110 156V154Q110 148 116 148Z";
+  "M98 256H182Q188 256 188 262V264Q188 270 182 270H180V288" +
+  "C180 300 202 304 202 322V420Q206 424 206 430V432Q206 440 198 440H82" +
+  "Q74 440 74 432V430Q74 424 78 420V322" +
+  "C78 304 100 300 100 288V270H98Q92 270 92 264V262Q92 256 98 256Z";
 const CAN_INTERIOR_D =
-  "M128 165V192C128 210 96 214 96 234V414Q96 424 108 424H252" +
-  "Q264 424 264 414V234C264 214 232 210 232 192V165Z";
-const CAN_HANDLE_R_D = "M272 196C292 194 296 214 282 224L276 216C282 212 282 204 272 204Z";
-const CAN_HANDLE_L_D = "M88 196C68 194 64 214 78 224L84 216C78 212 78 204 88 204Z";
+  "M108 273V290C108 306 86 310 86 324V424Q86 432 96 432H184" +
+  "Q194 432 194 424V324C194 306 172 310 172 290V273Z";
+const CAN_HANDLE_R_D = "M202 296C218 294 222 310 210 318L205 311C210 308 210 302 202 302Z";
+const CAN_HANDLE_L_D = "M78 296C62 294 58 310 70 318L75 311C70 308 70 302 78 302Z";
 
-const CAN = { cx: 180, surfHalf: 82, bottom: 448 };
-const SURFACE_Y = 252; // resting milk line, below the shoulder
-const MAX_DEFLECT = 13;
+const CAN = { cx: 140, surfHalf: 54, bottom: 436 };
+const SURFACE_Y = 340; // resting milk line inside the can
+const MAX_DEFLECT = 10;
 
 // Where the farmer's pot pours from, and how the milk falls.
-const POUR = { x: 216, y: 128 };
+const POUR = { x: 150, y: 204 };
 const GRAVITY = 620; // design px/s²
 const DROP_START_VY = 50;
 
@@ -149,24 +150,23 @@ export function HeroMilk({ className }: { className?: string }) {
       vels[c] += strength;
       vels[c - 1] += strength * 0.55;
       vels[c + 1] += strength * 0.55;
-      if (rings.length < 7) rings.push({ x, r: 6, life: 1 });
+      if (rings.length < 6) rings.push({ x, r: 5, life: 1 });
     };
 
     const step = () => {
       const dt = 1 / 60;
 
-      // The next drop, from the farmer's pot lip — sized and timed with a
-      // little deterministic variety (no Math.random: the pattern needs no
-      // state and never repeats visibly). The fall is short, so the
-      // cadence is quick enough that one is usually in the air.
+      // The next drop, from the pot's lip — sized and timed with a little
+      // deterministic variety (no Math.random: the pattern needs no state
+      // and never repeats visibly).
       nextDropIn -= dt;
       if (nextDropIn <= 0) {
         dropCount += 1;
         drops.push({
-          x: POUR.x + Math.sin(dropCount * 2.4) * 7,
+          x: POUR.x + Math.sin(dropCount * 2.4) * 5,
           y: POUR.y,
           vy: DROP_START_VY,
-          size: 7.5 + 2 * Math.sin(dropCount * 1.7),
+          size: 6.5 + 1.8 * Math.sin(dropCount * 1.7),
         });
         nextDropIn = 0.55 + 0.2 * Math.sin(dropCount * 2.9);
       }
@@ -179,14 +179,14 @@ export function HeroMilk({ className }: { className?: string }) {
         d.y += d.vy * dt;
         const surface = surfaceAt(d.x);
         if (d.y + d.size * 0.5 >= surface) {
-          plop(d.x, Math.min(2.2, d.vy * 0.004 * (d.size / 9)));
+          plop(d.x, Math.min(2, d.vy * 0.004 * (d.size / 8)));
           for (let s = 0; s < 3; s++) {
             splashes.push({
               x: d.x + (s - 1) * d.size * 0.5,
               y: surface - 2,
-              vx: (s - 1) * (28 + d.size * 2),
-              vy: -(60 + d.vy * 0.16) - s * 8,
-              r: 1.4 + (s === 1 ? 1.1 : 0.5),
+              vx: (s - 1) * (24 + d.size * 2),
+              vy: -(55 + d.vy * 0.15) - s * 7,
+              r: 1.3 + (s === 1 ? 1 : 0.5),
               life: 1,
             });
           }
@@ -201,7 +201,7 @@ export function HeroMilk({ className }: { className?: string }) {
         s.x += s.vx * dt;
         s.y += s.vy * dt;
         s.life -= dt * 1.6;
-        if (s.life <= 0 || s.y > surfaceAt(s.x) + 6) splashes.splice(i, 1);
+        if (s.life <= 0 || s.y > surfaceAt(s.x) + 5) splashes.splice(i, 1);
       }
 
       // Cursor: the surface answers sideways motion under the pointer.
@@ -209,12 +209,12 @@ export function HeroMilk({ className }: { className?: string }) {
         const speed = Math.min(Math.abs(pointerX - lastPointerX), 40);
         if (speed > 0.5) {
           const c = colAt(pointerX);
-          const amp = Math.min(speed * 0.045, 1.1);
+          const amp = Math.min(speed * 0.045, 1);
           vels[c] += amp;
           vels[c - 1] += amp * 0.6;
           vels[c + 1] += amp * 0.6;
           if (speed > 12 && ringCooldown <= 0) {
-            rings.push({ x: pointerX, r: 9, life: 1 });
+            rings.push({ x: pointerX, r: 8, life: 1 });
             ringCooldown = 24;
           }
         }
@@ -224,7 +224,7 @@ export function HeroMilk({ className }: { className?: string }) {
 
       // Milk is never perfectly still: the faintest ambient swell.
       for (let i = 1; i < COLS - 1; i++) {
-        vels[i] += Math.sin(t * 0.7 + i * 0.55) * 0.002;
+        vels[i] += Math.sin(t * 0.7 + i * 0.55) * 0.0018;
       }
 
       // Spring toward rest + neighbour tension, twice-damped: milk, not water.
@@ -253,8 +253,8 @@ export function HeroMilk({ className }: { className?: string }) {
       }
 
       for (let i = rings.length - 1; i >= 0; i--) {
-        rings[i].r += 0.8;
-        rings[i].life -= 0.012;
+        rings[i].r += 0.7;
+        rings[i].life -= 0.013;
         if (rings[i].life <= 0) rings.splice(i, 1);
       }
       t += dt;
@@ -307,7 +307,7 @@ export function HeroMilk({ className }: { className?: string }) {
       g.lineTo(right + 8, CAN.bottom);
       g.lineTo(left - 8, CAN.bottom);
       g.closePath();
-      const bg = g.createLinearGradient(left, SURFACE_Y - 10, right, CAN.bottom);
+      const bg = g.createLinearGradient(left, SURFACE_Y - 8, right, CAN.bottom);
       bg.addColorStop(0, "#FFFFFF");
       bg.addColorStop(0.45, "#FDFBF4");
       bg.addColorStop(1, "#E4DEC9");
@@ -315,7 +315,7 @@ export function HeroMilk({ className }: { className?: string }) {
       g.fill();
 
       // Depth at the bottom of the can.
-      const shade = g.createLinearGradient(0, SURFACE_Y + 70, 0, CAN.bottom);
+      const shade = g.createLinearGradient(0, SURFACE_Y + 40, 0, CAN.bottom);
       shade.addColorStop(0, "rgba(27,94,32,0)");
       shade.addColorStop(1, "rgba(27,94,32,0.10)");
       g.fillStyle = shade;
@@ -333,20 +333,20 @@ export function HeroMilk({ className }: { className?: string }) {
 
       // The warm highlight, upper left of the milk body.
       const hl = g.createRadialGradient(
-        CAN.cx - 46, SURFACE_Y + 44, 4,
-        CAN.cx - 46, SURFACE_Y + 44, 60,
+        CAN.cx - 26, SURFACE_Y + 34, 3,
+        CAN.cx - 26, SURFACE_Y + 34, 44,
       );
       hl.addColorStop(0, "rgba(255,255,255,0.9)");
       hl.addColorStop(1, "rgba(255,255,255,0)");
       g.fillStyle = hl;
-      g.fillRect(left, SURFACE_Y - 6, CAN.surfHalf * 2, 120);
+      g.fillRect(left, SURFACE_Y - 5, CAN.surfHalf * 2, 90);
 
       // Ripple rings riding the surface.
       for (const ring of rings) {
         g.beginPath();
-        g.ellipse(ring.x, surfaceAt(ring.x) + 7, ring.r, ring.r * 0.28, 0, 0, Math.PI * 2);
+        g.ellipse(ring.x, surfaceAt(ring.x) + 6, ring.r, ring.r * 0.28, 0, 0, Math.PI * 2);
         g.strokeStyle = `rgba(27,94,32,${(0.14 * ring.life).toFixed(3)})`;
-        g.lineWidth = 1.5;
+        g.lineWidth = 1.4;
         g.stroke();
       }
       g.restore();
@@ -402,7 +402,7 @@ export function HeroMilk({ className }: { className?: string }) {
     const onPointerDown = (e: PointerEvent) => {
       const rect = wrap.getBoundingClientRect();
       const x = ((e.clientX - rect.left) / rect.width) * W;
-      plop(x, 3);
+      plop(x, 2.6);
     };
     const onReduce = () => {
       if (reduced?.matches) die();
@@ -456,9 +456,9 @@ export function HeroMilk({ className }: { className?: string }) {
         className,
       )}
     >
-      {/* Ground shadow — one for the can, one for the farmer. */}
-      <div className="absolute bottom-[5%] left-[13%] h-[4%] w-[50%] rounded-full bg-black/30 blur-lg" />
-      <div className="absolute bottom-[5%] right-[6%] h-[3.5%] w-[26%] rounded-full bg-black/25 blur-lg" />
+      {/* Ground shadows — the can's and the farmer's. */}
+      <div className="absolute bottom-[4.5%] left-[13%] h-[3.5%] w-[38%] rounded-full bg-black/30 blur-lg" />
+      <div className="absolute right-[10%] bottom-[4.5%] h-[3.5%] w-[32%] rounded-full bg-black/25 blur-lg" />
 
       {/* The static milk: the server render, the no-JS page, and the
           fallback the canvas hands back to. Three CSS drips fall from the
@@ -470,14 +470,14 @@ export function HeroMilk({ className }: { className?: string }) {
         <svg
           data-hero-drip
           viewBox="0 0 24 34"
-          className="hero-drip absolute top-[27%] left-[49%] w-[4.5%]"
+          className="hero-drip absolute top-[42%] left-[33.5%] w-[4.5%]"
         >
           <path d="M12 2C15 11 20 15 20 23a8 8 0 1 1-16 0C4 15 9 11 12 2Z" fill="#FDFBF4" />
         </svg>
         <svg
           data-hero-drip
           viewBox="0 0 24 34"
-          className="hero-drip absolute top-[26%] left-[52%] w-[4%]"
+          className="hero-drip absolute top-[41%] left-[36%] w-[4%]"
           style={{ "--drip-delay": "-0.9s" } as React.CSSProperties}
         >
           <path d="M12 2C15 11 20 15 20 23a8 8 0 1 1-16 0C4 15 9 11 12 2Z" fill="#FDFBF4" />
@@ -485,7 +485,7 @@ export function HeroMilk({ className }: { className?: string }) {
         <svg
           data-hero-drip
           viewBox="0 0 24 34"
-          className="hero-drip absolute top-[28%] left-[46.5%] w-[3.5%]"
+          className="hero-drip absolute top-[42.5%] left-[31.5%] w-[3.5%]"
           style={{ "--drip-delay": "-1.8s" } as React.CSSProperties}
         >
           <path d="M12 2C15 11 20 15 20 23a8 8 0 1 1-16 0C4 15 9 11 12 2Z" fill="#FDFBF4" />
@@ -507,18 +507,18 @@ export function HeroMilk({ className }: { className?: string }) {
           </defs>
           <g clipPath="url(#hero-can-clip)">
             <path
-              d="M94 253Q136 248 180 252Q226 257 266 252L266 448H94Z"
+              d="M84 341Q112 336 140 340Q170 344 196 340L196 440H84Z"
               fill="url(#hero-can-milk)"
             />
             <path
-              d="M96 253Q136 248 180 252Q226 257 264 252"
+              d="M86 341Q112 336 140 340Q170 344 194 340"
               fill="none"
               stroke="rgba(255,255,255,0.85)"
               strokeWidth="2"
             />
-            <ellipse cx="134" cy="296" rx="46" ry="36" fill="url(#hero-can-glow)" />
+            <ellipse cx="118" cy="372" rx="30" ry="24" fill="url(#hero-can-glow)" />
             <ellipse
-              cx="214" cy="272" rx="30" ry="8"
+              cx="160" cy="356" rx="18" ry="5"
               fill="none" stroke="rgba(27,94,32,0.10)" strokeWidth="2"
             />
           </g>
@@ -531,81 +531,107 @@ export function HeroMilk({ className }: { className?: string }) {
       />
 
       {/* The scene layer, always visible over whichever milk is live: the
-          transparent can, and the farmer pouring from a small pot. */}
+          transparent can, and the farmer pouring from his steel pot. */}
       <svg viewBox="0 0 420 470" className="pointer-events-none absolute inset-0 size-full">
-        {/* — The can: glass tint, wall reflections, silhouette, handles. — */}
-        <g clipPath="url(#hero-can-scene-clip)">
-          <rect x="84" y="140" width="200" height="300" fill="rgba(255,255,255,0.05)" />
-          <path
-            d="M112 214C104 262 104 336 112 408"
-            fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="6"
-          />
-          <path
-            d="M250 226C256 268 256 336 249 396"
-            fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="4"
-          />
-        </g>
         <defs>
           <clipPath id="hero-can-scene-clip">
             <path d={CAN_INTERIOR_D} />
           </clipPath>
         </defs>
+
+        {/* — The can: glass tint, wall reflections, silhouette, handles. — */}
+        <g clipPath="url(#hero-can-scene-clip)">
+          <rect x="74" y="250" width="132" height="192" fill="rgba(255,255,255,0.05)" />
+          <path
+            d="M96 300C90 340 90 392 96 426"
+            fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="5"
+          />
+          <path
+            d="M184 306C189 342 189 392 183 420"
+            fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="3.5"
+          />
+        </g>
         <path d={CAN_OUTER_D} fill="none" stroke="rgba(253,251,244,0.6)" strokeWidth="3" />
         <path d={CAN_HANDLE_R_D} fill="rgba(253,251,244,0.6)" />
         <path d={CAN_HANDLE_L_D} fill="rgba(253,251,244,0.6)" />
         <ellipse
-          cx="180" cy="150" rx="62" ry="6"
+          cx="140" cy="258" rx="38" ry="4"
           fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2"
         />
 
-        {/* — The farmer: flat and friendly, in the brand's creams and
-              greens; leaning in, both hands tipping a small pot whose lip
-              is where every drop is born (POUR). — */}
+        {/* — The farmer. Flat but true: wrapped turban with its tail,
+              mustache, kurta with placket and a green gamchha over the
+              shoulder, dhoti, sandals. He stands the way a person does
+              beside a knee-high can, tipping a steel pot; POUR is his
+              pot's lip. — */}
         <g>
-          {/* legs / lower garment — feet on the can's ground line */}
+          {/* dhoti + legs */}
           <path
-            d="M324 268L318 424H342L348 306H358L362 424H386L382 268Z"
-            fill="#C9D8BE"
+            d="M252 278L258 340 252 424H276L282 348H288L292 424H316L314 340 318 278Z"
+            fill="#FAF7EA"
           />
-          <ellipse cx="330" cy="427" rx="13" ry="5" fill="#9DAB99" />
-          <ellipse cx="374" cy="427" rx="13" ry="5" fill="#9DAB99" />
+          <path d="M282 282Q279 320 283 346" fill="none" stroke="#E3DCC4" strokeWidth="1.5" />
+          <path d="M264 300Q262 340 266 380" fill="none" stroke="#E3DCC4" strokeWidth="1.5" />
+          {/* feet + sandals */}
+          <ellipse cx="264" cy="427" rx="12" ry="5" fill="#C98A5B" />
+          <ellipse cx="304" cy="427" rx="12" ry="5" fill="#C98A5B" />
+          <path d="M252 432H278" stroke="#6B4A2F" strokeWidth="3.5" strokeLinecap="round" />
+          <path d="M292 432H318" stroke="#6B4A2F" strokeWidth="3.5" strokeLinecap="round" />
+
           {/* kurta */}
           <path
-            d="M336 134C322 142 318 170 318 198L316 272Q353 282 388 272L386 198C386 170 380 142 368 134Q352 127 336 134Z"
-            fill="#F1EDDD"
+            d="M262 138C250 146 246 172 244 200L240 262Q240 278 254 280L316 282Q328 280 327 264L322 200C320 170 314 146 305 138Q284 130 262 138Z"
+            fill="#F5F1E3"
           />
-          {/* head + turban */}
-          <circle cx="352" cy="112" r="13" fill="#E0C39C" />
+          <path d="M284 142V202" stroke="#DDD5BD" strokeWidth="1.5" />
+          <path d="M279 139L284 148L290 138" fill="none" stroke="#DDD5BD" strokeWidth="1.5" />
+          <path d="M253 212Q251 242 254 268" fill="none" stroke="#E3DCC4" strokeWidth="1.5" />
+          <path d="M312 214Q315 244 313 270" fill="none" stroke="#E3DCC4" strokeWidth="1.5" />
+          {/* gamchha over the far shoulder */}
+          <path d="M296 137L312 140L326 226L313 230Z" fill="#7FD495" />
+          <path d="M316 219L325 217M317 224L326 222" stroke="#5CB877" strokeWidth="1.5" />
+
+          {/* neck + head */}
+          <rect x="279" y="122" width="12" height="12" fill="#C98A5B" />
+          <ellipse cx="285" cy="112" rx="14" ry="15" fill="#C98A5B" />
+          <circle cx="300" cy="112" r="4" fill="#C98A5B" />
+          {/* eyes down toward the pour, brows, nose, mustache */}
+          <path d="M276 108Q279 111 282 108" fill="none" stroke="#3E2C1E" strokeWidth="2" strokeLinecap="round" />
+          <path d="M288 108Q291 111 294 108" fill="none" stroke="#3E2C1E" strokeWidth="2" strokeLinecap="round" />
+          <path d="M275 103L283 101" stroke="#3E2C1E" strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M287 101L295 103" stroke="#3E2C1E" strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M285 108L284 114Q284 116 287 116" fill="none" stroke="#A9714A" strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M274 120Q285 126 296 120Q291 126 285 126Q279 126 274 120Z" fill="#3E2C1E" />
+          {/* turban: wrapped, with a top fold and its tail */}
+          <ellipse cx="285" cy="92" rx="27" ry="15" fill="#F1EDDD" transform="rotate(-8 285 92)" />
+          <ellipse cx="280" cy="80" rx="13" ry="8" fill="#F1EDDD" />
+          <path d="M262 92Q285 79 308 91" fill="none" stroke="#D9D2BA" strokeWidth="1.5" />
+          <path d="M264 98Q285 87 306 97" fill="none" stroke="#D9D2BA" strokeWidth="1.5" />
+          <path d="M305 96L312 122L305 124L300 100Z" fill="#E4DEC9" />
+
+          {/* arms, reaching down to the pot over the can */}
           <path
-            d="M336 108C336 96 344 90 352 90C362 90 368 97 368 108Q352 100 336 108Z"
-            fill="#7FD495"
-          />
-          <circle cx="338" cy="97" r="4.5" fill="#7FD495" />
-          {/* arms reaching to the pot */}
-          <path
-            d="M332 146C304 150 272 142 250 132L246 144C268 154 300 162 330 160Z"
-            fill="#F1EDDD"
+            d="M256 150C230 160 205 176 186 188L194 204C212 192 236 178 260 168Z"
+            fill="#F5F1E3"
           />
           <path
-            d="M364 150C336 160 300 160 274 152L270 163C298 172 340 170 366 162Z"
-            fill="#F1EDDD"
+            d="M300 152C270 168 240 186 212 200L218 214C244 200 274 186 304 168Z"
+            fill="#EFEAD8"
           />
-          <circle cx="249" cy="139" r="6" fill="#E0C39C" />
-          <circle cx="273" cy="158" r="6" fill="#E0C39C" />
-          {/* the small pot, tipped toward the can's mouth */}
-          <g transform="rotate(-34 244 128)">
-            <rect
-              x="228" y="112" width="34" height="28" rx="5"
-              fill="rgba(253,251,244,0.14)"
-              stroke="rgba(253,251,244,0.85)" strokeWidth="2.5"
+          <circle cx="182" cy="198" r="7.5" fill="#C98A5B" />
+          <circle cx="201" cy="203" r="7.5" fill="#B87C4F" />
+
+          {/* the steel pot, tipped toward the can's mouth */}
+          <g transform="rotate(-30 178 186)">
+            <path
+              d="M160 172Q156 190 164 200Q178 208 192 200Q200 190 196 172Q178 164 160 172Z"
+              fill="#DDDDD5" stroke="#C4C4BA" strokeWidth="1"
             />
-            <line
-              x1="228" y1="118" x2="262" y2="118"
-              stroke="rgba(253,251,244,0.5)" strokeWidth="1.5"
-            />
+            <ellipse cx="178" cy="172" rx="18" ry="5" fill="#EDEDE6" stroke="#C4C4BA" strokeWidth="1" />
+            <path d="M166 178Q163 190 168 197" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" />
           </g>
           {/* milk at the pot's lip — where every drop is born */}
-          <ellipse cx="221" cy="129" rx="6" ry="3.4" fill="#FDFBF4" />
+          <ellipse cx="152" cy="201" rx="6" ry="3.2" fill="#FDFBF4" />
         </g>
       </svg>
     </div>
