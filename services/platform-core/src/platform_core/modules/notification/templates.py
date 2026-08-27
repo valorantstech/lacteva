@@ -325,7 +325,7 @@ TEMPLATES: tuple[Template, ...] = (
         "email",
         "en",
         "Reset your Lacteva password",
-        "A password reset was requested for your account. "
+        "A password reset was requested for your account in {organization}. "
         "Use this code to complete your reset: {reset_token}. "
         "The code expires in {expires_hours} hours. "
         "If you did not request this, ignore this message. "

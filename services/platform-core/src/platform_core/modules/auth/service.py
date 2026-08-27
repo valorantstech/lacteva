@@ -285,34 +285,89 @@ class AuthService:
         from here, directly, with the secret outside the event (see
         `_send_reset_code`). The event is still published, because it is the
         audit fact that a reset was asked for — it simply is not the delivery.
+
+        WITHOUT a tenant it resolves the way LOGIN does (LACTEVA-BACKEND-005).
+        Both clients omit `tenant_id`, and they are right to: a locked-out
+        person does not know their organization's UUID, which is exactly the
+        problem DEMO-010 solved for the login form. `get_by_email(email, None)`
+        matches `tenant_id IS NULL`, so every real tenant user's reset request
+        found nothing, returned early, and disappeared behind the 202 that
+        exists to reveal nothing. The flow was reachable only by someone who
+        could supply a UUID they had no way to know.
+
+        So the lookup is now login's: the same bounded cross-organization
+        candidate read. An address that owns accounts in several organizations
+        gets a code for EACH — the inbox is the identity, and the owner of the
+        inbox is entitled to recover every account it holds — and each message
+        names its organization so the reader knows which account its code
+        opens. A caller who names a tenant explicitly keeps the exact-match
+        path, unchanged.
+
+        Nothing about the outward contract moves: still 202 whatever happens,
+        still nothing sent for an address the platform does not know.
         """
-        user = await self._identity.get_by_email(email, tenant_id)
-        if user is None or not user.is_active:
-            return None
-        raw = secrets.token_urlsafe(32)
-        token = PasswordResetToken(
-            user_id=user.id,
-            token_hash=_hash_secret(raw),
-            expires_at=utcnow() + RESET_TOKEN_TTL,
-        )
-        self._session.add(token)
-        # Flushed for its id, exactly as the invitation is: the id is what keys
-        # the notification's idempotency, and `IdMixin` fills it at INSERT.
-        await self._session.flush()
-        await self._send_reset_code(token, user, raw)
-        await self._bus.publish(
-            EventEnvelope.new(
-                "identity.password-reset-requested.v1",
-                {
-                    "user_id": str(user.id),
-                    "email": user.email,
-                    "locale": user.locale,
-                    "expires_hours": int(RESET_TOKEN_TTL.total_seconds() // 3600),
-                },
-                actor_id=user.id,
+        from platform_core.core.rls import rebind_tenant
+
+        if tenant_id is not None:
+            found = await self._identity.get_by_email(email, tenant_id)
+            users = [found] if found is not None and found.is_active else []
+        else:
+            # Already filtered to active accounts and bounded by
+            # LOGIN_CANDIDATE_LIMIT — the same bound, for the same reason.
+            users = await self._identity.candidates_for_login(email)
+
+        raw_last: str | None = None
+        for user in users:
+            # Bound to each account's own tenant before its message is built,
+            # exactly as login rebinds once it knows whose account it is
+            # (SEC-002). Not tidiness: `dispatch` reads tenant-owned settings,
+            # so an unbound send would render one organization's message
+            # against another's configuration.
+            await rebind_tenant(self._session, user.tenant_id)
+            raw = secrets.token_urlsafe(32)
+            token = PasswordResetToken(
+                user_id=user.id,
+                token_hash=_hash_secret(raw),
+                expires_at=utcnow() + RESET_TOKEN_TTL,
             )
-        )
-        return raw
+            self._session.add(token)
+            # Flushed for its id, exactly as the invitation is: the id is what
+            # keys the notification's idempotency, and `IdMixin` fills it at
+            # INSERT.
+            await self._session.flush()
+            await self._send_reset_code(token, user, raw)
+            await self._bus.publish(
+                EventEnvelope.new(
+                    "identity.password-reset-requested.v1",
+                    {
+                        "user_id": str(user.id),
+                        "email": user.email,
+                        "locale": user.locale,
+                        "expires_hours": int(RESET_TOKEN_TTL.total_seconds() // 3600),
+                    },
+                    actor_id=user.id,
+                )
+            )
+            raw_last = raw
+        return raw_last
+
+    async def _organization_name(self, tenant_id: uuid.UUID | None) -> str:
+        """Which account this code opens (LACTEVA-BACKEND-005).
+
+        One address can hold accounts in several organizations, and each now
+        gets its own code. Two identical emails arriving together, both saying
+        only "your account", would be a puzzle rather than a recovery — so the
+        message says whose account it is.
+
+        A platform account belongs to no organization, and "Lacteva" is what
+        the invitation template already calls that case.
+        """
+        if tenant_id is None:
+            return "Lacteva"
+        from platform_core.modules.organization.models import Organization
+
+        organization = await self._session.get(Organization, tenant_id)
+        return organization.name if organization is not None else "Lacteva"
 
     async def _send_reset_code(self, token: PasswordResetToken, user, raw_token: str):
         """The second place a business module sends a notification itself, and
@@ -352,7 +407,10 @@ class AuthService:
                 recipient=user.email,
                 recipient_ref=user.id,
                 language=user.locale,
-                variables={"expires_hours": int(RESET_TOKEN_TTL.total_seconds() // 3600)},
+                variables={
+                    "expires_hours": int(RESET_TOKEN_TTL.total_seconds() // 3600),
+                    "organization": await self._organization_name(user.tenant_id),
+                },
                 secret_variables={"reset_token": raw_token},
             )
         )

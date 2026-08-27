@@ -842,16 +842,17 @@ describe("a locked-out person gets back in", () => {
     // Through the portal's OWN pre-auth route — /api/proxy would refuse this,
     // which is the whole reason that route exists.
     //
-    // `tenant_id` is supplied deliberately: without it the platform's lookup
-    // does not find a tenant user, `request_password_reset` returns early, and
-    // the 202-always contract hides the fact that nothing happened. The
-    // portal's `lib/api.ts` helper omits it today — reported as a DISCOVERED
-    // item, not fixed here.
+    // NO `tenant_id`, deliberately: this is byte-for-byte what the portal's
+    // own `requestPasswordReset` sends, and what the mobile client sends. It
+    // used to find nothing — `get_by_email(email, None)` matches
+    // `tenant_id IS NULL` — and the 202 hid it. The platform now resolves the
+    // account the way login does (LACTEVA-BACKEND-005), so the journey below
+    // is the one a real locked-out person actually takes.
     const asked = await resetRequest(
       new Request("http://portal.test/api/auth/password-reset/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, tenant_id: fx.org.id }),
+        body: JSON.stringify({ email }),
       }),
     );
     expect(asked.status).toBe(202);

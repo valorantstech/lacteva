@@ -308,8 +308,15 @@ async def test_non_archival_status_change_sends_nothing(client, provider_guard):
     assert await _notifications("supplier_archived") == []
 
 
-async def test_password_reset_notification_from_the_event(client, provider_guard):
-    """auth no longer sends anything itself — the event drives delivery."""
+async def test_password_reset_notification_is_sent_directly(client, provider_guard):
+    """The auth service sends this one itself (LACTEVA-BACKEND-004).
+
+    It used to be driven by the event, and that is exactly how it came to be
+    sent with no code in it: a consumer can only render what the event carries,
+    and the event must not carry a live secret (SEC-003 — `event_outbox` is
+    never pruned and is in every backup). The name and the sentence above both
+    said the opposite until this was corrected.
+    """
     recorder = _RecordingProvider()
     provider_guard.register_provider("email", recorder)
     await register_and_login(client, "reset@example.com")
