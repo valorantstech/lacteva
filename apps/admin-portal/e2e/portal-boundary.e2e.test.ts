@@ -78,6 +78,158 @@ beforeAll(() => {
   process.env.LACTEVA_API_URL = process.env.LACTEVA_E2E_API ?? fx.base_url;
 });
 
+/**
+ * The money path, over the real boundary (LACTEVA-QA-001).
+ *
+ * Every figure below is the PLATFORM's own decimal string, compared as a
+ * string. Nothing here multiplies, sums or rounds: a test that recomputes the
+ * money is a second pricing engine, and the second engine is always the one
+ * that is wrong. `Decimal` arithmetic in the platform and `Number` arithmetic
+ * in a test cannot be made to agree by trying harder — so the test never
+ * tries. It reads what the platform stored and demands the same characters
+ * back from every later read.
+ *
+ * These journeys existed only as in-process proofs (R-6). Money is the one
+ * place "works in-process" is not enough for a customer.
+ */
+const post = async (path: string[], body?: unknown) => {
+  const { POST: proxyPost } = await import("@/app/api/proxy/[...path]/route");
+  return proxyPost(
+    new Request(`http://portal.test/api/proxy/${path.join("/")}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    }),
+    params(path),
+  );
+};
+
+const get = async (path: string[], query = "") =>
+  proxyGet(
+    new Request(`http://portal.test/api/proxy/${path.join("/")}${query}`),
+    params(path),
+  );
+
+/** Body of a response we expect to have succeeded, with the status in the message. */
+async function ok<T>(res: Response, what: string, expected = [200, 201]): Promise<T> {
+  const text = await res.text();
+  expect(expected, `${what}: ${res.status} ${text.slice(0, 300)}`).toContain(res.status);
+  return (text ? JSON.parse(text) : {}) as T;
+}
+
+/**
+ * Poll until the platform has something to show.
+ *
+ * Receipts are written by a CONSUMER, not by the request that triggers them —
+ * the relay delivers the event and the consumer renders the document. In
+ * process that is a `run_once()` call; against a real server it is simply
+ * asynchronous, so a test that reads immediately is testing its own timing.
+ */
+async function eventually<T>(
+  read: () => Promise<T>,
+  ready: (value: T) => boolean,
+  what: string,
+  timeoutMs = 15_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  let last: T = await read();
+  while (Date.now() < deadline) {
+    if (ready(last)) return last;
+    await new Promise((r) => setTimeout(r, 400));
+    last = await read();
+  }
+  expect.fail(`${what} never arrived within ${timeoutMs}ms`);
+}
+
+/** A published rate card covering `centre` for RAW-COW-MILK at `rate`. */
+async function publishRateCard(centre: string, code: string, rate: string, from: string) {
+  const card = await ok<{ id: string }>(
+    await post(["v1", "rate-cards"], {
+      name: `E2E ${code}`,
+      code,
+      currency: "INR",
+      effective_from: from,
+    }),
+    "create rate card",
+  );
+  await ok(await post(["v1", "rate-cards", card.id, "centers"], { center_id: centre }), "scope centre");
+  await ok(
+    await post(["v1", "rate-cards", card.id, "products"], { product_code: "RAW-COW-MILK" }),
+    "scope product",
+  );
+  const matrix = await ok<{ id: string }>(
+    await post(["v1", "pricing-matrices"], {
+      rate_card_id: card.id,
+      name: `${code} FAT`,
+      product_code: "RAW-COW-MILK",
+      dimension_code: "FAT",
+    }),
+    "create matrix",
+  );
+  await ok(
+    await post(["v1", "pricing-matrices", matrix.id, "rows"], {
+      from_value: 3.0,
+      to_value: 6.0,
+      unit_price: rate,
+    }),
+    "add band",
+  );
+  // Publishing is a three-step authority, not a flag: submit, approve, publish.
+  for (const step of ["submit", "approve", "publish"]) {
+    await ok(await post(["v1", "rate-cards", card.id, step]), `${step} card`, [200, 201]);
+  }
+  return card.id;
+}
+
+/** Drive one collection to COMPLETED through the portal's own proxy. */
+async function collect(sessionId: string, supplierId: string, fat = "4.2") {
+  // `manual` identifies by id. `code` expects the supplier's CODE and `qr` a
+  // minted payload; the id belongs to the manual method, which is the one a
+  // back-office screen uses.
+  const tx = await ok<{ id: string }>(
+    await post(["v1", "milk-transactions"], { session_id: sessionId }),
+    "create transaction",
+  );
+  await ok(
+    await post(["v1", "milk-transactions", tx.id, "identify"], {
+      method: "manual",
+      supplier_id: supplierId,
+    }),
+    "identify",
+  );
+  await ok(
+    await post(["v1", "milk-transactions", tx.id, "milk"], {
+      milk_type: "cow",
+      container_type: "can",
+      container_identifier: "CAN-E2E",
+    }),
+    "milk",
+  );
+  await ok(
+    await post(["v1", "milk-transactions", tx.id, "weight"], {
+      source: "manual",
+      gross: 32.5,
+      tare: 2.5,
+    }),
+    "weight",
+  );
+  const priced = await ok<Record<string, unknown>>(
+    await post(["v1", "milk-transactions", tx.id, "quality"], {
+      source: "manual",
+      fat: Number(fat),
+      snf: 8.5,
+      clr: 28.0,
+    }),
+    "quality",
+  );
+  await ok(await post(["v1", "milk-transactions", tx.id, "accept"]), "accept");
+  const done = await ok<Record<string, unknown>>(
+    await post(["v1", "milk-transactions", tx.id, "complete"]),
+    "complete",
+  );
+  return { id: tx.id, priced, done };
+}
+
 describe("portal → platform, over the real boundary", () => {
   it("signs a real operator in and keeps the token off the page", async () => {
     if (!harnessed) return;
@@ -337,5 +489,319 @@ describe("portal → platform, over the real boundary", () => {
     );
     expect(foreign.status).not.toBe(200);
     expect([403, 404]).toContain(foreign.status);
+  });
+});
+
+describe("the money path, end to end over real HTTP", () => {
+  // (a) Procurement: milk in, money out.
+  it("prices a collection, settles it, pays it, and receipts it — same figures throughout", async () => {
+    if (!harnessed) return;
+    await signIn(fx.users.admin.email, fx.org.id);
+
+    const centre = fx.centres[0].id;
+    const supplier = fx.suppliers[0].id;
+    await publishRateCard(centre, `E2EPROC${Date.now().toString().slice(-6)}`, "46.5000", "2026-01-01");
+
+    const session = await ok<{ id: string }>(
+      await post(["v1", "collection-sessions"], { center_id: centre, label: "e2e-money" }),
+      "open session",
+    );
+    const { id: txId, done } = await collect(session.id, supplier);
+
+    // The platform priced it. These strings are the platform's, and they are
+    // the ONLY source for every assertion that follows.
+    const unitPrice = String(done.unit_price);
+    const gross = String(done.gross_amount);
+    expect(done.pricing_status).toBe("priced");
+    expect(unitPrice).toBe("46.5000");
+    // 32.5 - 2.5 = 30kg at 46.50. Asserted as the platform's own string; the
+    // test does not do this multiplication, it reads the answer.
+    expect(gross).toBe("1395.00");
+    expect(done.state).toBe("COMPLETED");
+
+    const settlement = await ok<{ id: string }>(
+      await post(["v1", "settlements"], {
+        supplier_id: supplier,
+        center_id: centre,
+        currency: "INR",
+        period_from: "2026-01-01",
+        period_to: "2026-12-31",
+      }),
+      "create settlement",
+    );
+    const swept = await ok<{ added: number; skipped: number }>(
+      await post(["v1", "settlements", settlement.id, "collect"]),
+      "collect period",
+    );
+    expect(swept.added).toBe(1);
+
+    await ok(await post(["v1", "settlements", settlement.id, "calculate"]), "calculate totals");
+    const totals = await ok<Record<string, unknown>>(
+      await get(["v1", "settlements", settlement.id]),
+      "read settlement",
+    );
+    const settlementBody = (totals.settlement ?? totals) as Record<string, unknown>;
+    // The settlement's gross is the collection's gross, character for
+    // character. A settlement that "nearly" agrees with its own lines is the
+    // failure this journey exists to catch.
+    expect(String(settlementBody.gross_amount)).toBe(gross);
+    const net = String(settlementBody.net_amount);
+    // BR-0011, surfaced by the platform for exactly this question: the header
+    // totals and the lines underneath them are the same money.
+    expect(totals.totals_match_lines).toBe(true);
+    expect(settlementBody.line_count).toBe(1);
+
+    const finalized = await ok<Record<string, unknown>>(
+      await post(["v1", "settlements", settlement.id, "finalize"]),
+      "finalize",
+    );
+    expect(finalized.status).toBe("finalized");
+    // Finalizing must not move the money.
+    expect(String(finalized.net_amount)).toBe(net);
+
+    const payment = await ok<{ id: string; amount: string; payment_number: string }>(
+      await post(["v1", "payments"], {
+        supplier_id: supplier,
+        currency: "INR",
+        method: "BANK_TRANSFER",
+        allocations: [{ settlement_id: settlement.id }],
+      }),
+      "create payment",
+    );
+    // Paying "the outstanding" must pay exactly the net, not a rounding of it.
+    expect(payment.amount).toBe(net);
+    expect(payment.payment_number).toMatch(/^PAY-/);
+
+    // A payment is not money until it has actually moved. The platform makes
+    // that a lifecycle rather than a flag — draft, pending, processing,
+    // completed — and only a COMPLETED payment earns a receipt. Every step is
+    // asserted to leave the amount exactly where it was.
+    const lifecycle: [string, string, unknown][] = [
+      ["submit", "pending", {}],
+      ["execute", "processing", {}],
+      // The bank's own reference for the transfer — the thing an operator
+      // reconciles against a statement.
+      ["complete", "completed", { reference: `E2E-BNK-${Date.now().toString().slice(-6)}` }],
+    ];
+    for (const [step, expected, body] of lifecycle) {
+      const moved = await ok<Record<string, unknown>>(
+        await post(["v1", "payments", payment.id, step], body),
+        `payment ${step}`,
+      );
+      expect(moved.status).toBe(expected);
+      expect(String(moved.amount)).toBe(net);
+    }
+
+    const receipts = await eventually(
+      async () =>
+        await ok<{ items: Record<string, unknown>[] }>(
+          await get(["v1", "receipts"], `?payment_id=${payment.id}`),
+          "read receipts",
+        ),
+      (r) => r.items.length > 0,
+      "the payment receipt",
+    );
+    const receipt = receipts.items[0];
+    // The receipt is the farmer's evidence, so it must carry BOTH figures and
+    // both must still be the settlement's.
+    expect(String(receipt.net_amount)).toBe(net);
+    expect(String(receipt.gross_amount)).toBe(gross);
+    expect(String(receipt.receipt_number)).toMatch(/^RCP-/);
+    expect(String(receipt.payment_number)).toBe(payment.payment_number);
+
+    // And the collection still says what it said at the start: money that has
+    // travelled through four documents has not drifted in any of them.
+    const reread = await ok<Record<string, unknown>>(
+      await get(["v1", "milk-transactions", txId]),
+      "re-read the collection",
+    );
+    expect(String(reread.gross_amount)).toBe(gross);
+    expect(String(reread.unit_price)).toBe(unitPrice);
+  });
+
+  // (b) Sales: milk out, money in.
+  it("invoices a customer's deliveries, takes payment, and receipts it", async () => {
+    if (!harnessed) return;
+    await signIn(fx.users.admin.email, fx.org.id);
+    const stamp = Date.now().toString().slice(-8);
+
+    const customer = await ok<{ id: string; code: string }>(
+      await post(["v1", "customers"], {
+        name: `E2E Tea House ${stamp} (TEST DATA)`,
+        customer_type: "shop",
+        phone: `+9196${stamp}`,
+        plan: {
+          product: "RAW-COW-MILK",
+          default_quantity: "2.000",
+          quantity_unit: "L",
+          unit_price: "60.0000",
+        },
+      }),
+      "create customer with a plan",
+    );
+    expect(customer.code).toMatch(/^CUS-/);
+
+    // Three days of deliveries, recorded through the portal. The client sends
+    // quantities and NEVER a price — the plan's rate is the platform's.
+    const days = ["2026-03-02", "2026-03-03", "2026-03-04"];
+    for (const day of days) {
+      await ok(
+        await post(["v1", "deliveries"], {
+          customer_id: customer.id,
+          delivery_date: day,
+          slot: "morning",
+          status: "delivered",
+          quantity: "2.000",
+        }),
+        `deliver ${day}`,
+      );
+    }
+
+    const invoice = await ok<Record<string, unknown>>(
+      await post(["v1", "invoices"], {
+        customer_id: customer.id,
+        period_from: days[0],
+        period_to: days[days.length - 1],
+      }),
+      "generate invoice",
+    );
+    expect(invoice.line_count).toBe(3);
+    // 3 x 2L at 60.0000. Again: read, not computed.
+    const subtotal = String(invoice.subtotal);
+    expect(subtotal).toBe("360.00");
+    const invoiceId = String(invoice.id);
+
+    const issued = await ok<Record<string, unknown>>(
+      await post(["v1", "invoices", invoiceId, "issue"]),
+      "issue invoice",
+    );
+    expect(issued.status).toBe("issued");
+    // Issuing makes it immutable; it must not make it a different number.
+    expect(String(issued.subtotal)).toBe(subtotal);
+    const total = String(issued.total ?? issued.subtotal);
+
+    const before = await ok<Record<string, unknown>>(
+      await get(["v1", "customers", customer.id, "balance"]),
+      "balance before payment",
+    );
+    expect(String(before.outstanding)).toBe(total);
+
+    const payment = await ok<Record<string, unknown>>(
+      await post(["v1", "customer-payments"], {
+        customer_id: customer.id,
+        amount: total,
+        method: "MOBILE_MONEY",
+        reference: `E2E-${stamp}`,
+      }),
+      "record customer payment",
+    );
+    expect(String(payment.amount)).toBe(total);
+
+    const after = await ok<Record<string, unknown>>(
+      await get(["v1", "customers", customer.id, "balance"]),
+      "balance after payment",
+    );
+    expect(String(after.paid)).toBe(total);
+    expect(String(after.outstanding)).toBe("0.00");
+
+    const detail = await ok<Record<string, unknown>>(
+      await get(["v1", "invoices", invoiceId]),
+      "invoice after payment",
+    );
+    const inv = (detail.invoice ?? detail) as Record<string, unknown>;
+    expect(inv.status).toBe("paid");
+    expect(String(detail.outstanding)).toBe("0.00");
+
+    const receipts = await eventually(
+      async () =>
+        await ok<{ items: Record<string, unknown>[] }>(
+          await get(["v1", "customer-receipts"], `?customer_id=${customer.id}`),
+          "customer receipts",
+        ),
+      (r) => r.items.length > 0,
+      "the customer receipt",
+    );
+    expect(String(receipts.items[0].amount)).toBe(total);
+    expect(String(receipts.items[0].receipt_number)).toMatch(/^CRC-/);
+  });
+
+  // (c) The WO-5 loop, closed over the real boundary.
+  it("reprices a rate-pending collection once a card covers it, and settles it", async () => {
+    if (!harnessed) return;
+    await signIn(fx.users.admin.email, fx.org.id);
+
+    // A centre with no published card: capture is rate-pending, exactly as the
+    // first physical handset run found on day one.
+    const centre = fx.centres[1].id;
+    const supplier = fx.suppliers[1].id;
+    // The seed assigns an operator to centre 1 only, and a centre with nobody
+    // at it is NOT_READY — the platform refuses to open a session there, which
+    // is correct. Assigning someone is onboarding, done through the same
+    // endpoint the runbook uses.
+    const me = await ok<{ user: { id: string } }>(await get(["v1", "auth", "me"]), "who am I");
+    await post(["v1", "collection-centers", centre, "operators"], {
+      user_id: me.user.id,
+      role_label: "operator",
+    });
+    // And a farmer may only deliver where they are assigned — the platform
+    // refuses the rest, which is the rule this journey depends on rather than
+    // works around.
+    await post(["v1", "suppliers", supplier, "centers"], { center_id: centre });
+    const session = await ok<{ id: string }>(
+      await post(["v1", "collection-sessions"], { center_id: centre, label: "e2e-reprice" }),
+      "open session",
+    );
+    const { id: txId, done } = await collect(session.id, supplier);
+    expect(done.pricing_status).toBe("pricing_unavailable");
+    expect(done.calculation_id).toBeNull();
+    expect(done.gross_amount).toBeNull();
+
+    const settlement = await ok<{ id: string }>(
+      await post(["v1", "settlements"], {
+        supplier_id: supplier,
+        center_id: centre,
+        currency: "INR",
+        period_from: "2026-01-01",
+        period_to: "2026-12-31",
+      }),
+      "create settlement",
+    );
+    // Stranded: settlement will not touch a collection with no calculation.
+    const beforeSweep = await ok<{ added: number }>(
+      await post(["v1", "settlements", settlement.id, "collect"]),
+      "sweep before repricing",
+    );
+    expect(beforeSweep.added).toBe(0);
+
+    await publishRateCard(centre, `E2ELATE${Date.now().toString().slice(-6)}`, "44.0000", "2026-01-01");
+
+    const repriced = await ok<Record<string, unknown>>(
+      await post(["v1", "milk-transactions", txId, "reprice"]),
+      "reprice",
+    );
+    expect(repriced.pricing_status).toBe("priced");
+    expect(String(repriced.unit_price)).toBe("44.0000");
+    const gross = String(repriced.gross_amount);
+    expect(gross).toBe("1320.00");
+
+    // Repricing an already-priced collection is a conflict, never a quiet
+    // recalculation — the immutability rule, over the real boundary.
+    const again = await post(["v1", "milk-transactions", txId, "reprice"]);
+    expect(again.status).toBe(409);
+
+    const afterSweep = await ok<{ added: number }>(
+      await post(["v1", "settlements", settlement.id, "collect"]),
+      "sweep after repricing",
+    );
+    expect(afterSweep.added).toBe(1);
+
+    await ok(await post(["v1", "settlements", settlement.id, "calculate"]), "calculate");
+    const totals = await ok<Record<string, unknown>>(
+      await get(["v1", "settlements", settlement.id]),
+      "settlement totals",
+    );
+    const body = (totals.settlement ?? totals) as Record<string, unknown>;
+    // The farmer is finally payable, for exactly what the reprice computed.
+    expect(String(body.gross_amount)).toBe(gross);
   });
 });
