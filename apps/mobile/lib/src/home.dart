@@ -26,7 +26,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'api.dart';
-import 'centers.dart';
+import 'collection_home.dart';
 import 'customer_portal.dart';
 import 'deliveries.dart';
 import 'driver.dart';
@@ -175,7 +175,10 @@ class _HomeRouterState extends State<HomeRouter>
         client: widget.client,
         session: session,
       ),
-      Experience.collection => CentersListScreen(
+      // LACTEVA-MOBILE-005: the collection experience lands on a HOME, not on
+      // a list of centres. The list is still there and still does exactly what
+      // it did — the home reaches it as the centre switcher.
+      Experience.collection => CollectionHomeScreen(
         client: widget.client,
         session: session,
       ),

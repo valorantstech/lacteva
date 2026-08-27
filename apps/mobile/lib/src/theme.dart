@@ -53,7 +53,80 @@ abstract final class LactevaColors {
   /// Intelligence: a hue used nowhere else, so a computed signal is never
   /// mistaken for success, warning or brand.
   static const intelligence = Color(0xFF5B4FA8);
+
+  // ---------------------------------------------------------------------
+  // On the brand ground (LACTEVA-MOBILE-005, from the approved board).
+  //
+  // The hero band is deep green, and the supporting colours tuned for a milk
+  // ground effectively disappear on it — the same correctness problem the
+  // portal's `Metric.onBrand` switch exists to solve. These are their
+  // measured counterparts, taken from the artboard's own values.
+  // ---------------------------------------------------------------------
+
+  /// Text on the brand ground. Warmer than pure white, so it reads as milk
+  /// rather than as a hole in the green.
+  static const onBrand = Color(0xFFFDFBF4);
+
+  /// The greeting above the centre's name, and other secondary lines on brand.
+  static const onBrandMuted = Color(0xFFE5EDD9);
+
+  /// A metric's caption on brand — quieter again than [onBrandMuted].
+  static const onBrandFaint = Color(0xFFC9D8BE);
+
+  /// The dot on the session pill. Lighter than [fresh], which is tuned for
+  /// cream and goes muddy against deep green.
+  static const onBrandLive = Color(0xFF7FD495);
+
+  // ---------------------------------------------------------------------
+  // Structure on cream.
+  // ---------------------------------------------------------------------
+
+  /// The line around a quiet card. Warm, so it belongs to the cream page
+  /// rather than sitting on it as grey.
+  static const hairline = Color(0xFFEDEAE0);
+
+  /// A rule INSIDE a card, one step quieter than [hairline].
+  static const divider = Color(0xFFF0EDE3);
+
+  /// Supporting text. The palette owns no grey, and this is not one: it is a
+  /// desaturated green, which is why captions here look related to the brand.
+  static const muted = Color(0xFF5F6B5C);
+
+  /// The quietest text the product uses — a footer fact, present but never
+  /// competing.
+  static const faint = Color(0xFF8A937F);
+
+  // ---------------------------------------------------------------------
+  // Tints. A state is a tinted ground with a matching foreground, never a
+  // fill: a chip must not read as a button.
+  // ---------------------------------------------------------------------
+
+  static const successTint = Color(0xFFE9F0EA);
+  static const onSuccessTint = Color(0xFF2E5C38);
+  static const warningTint = Color(0xFFF7ECE0);
+  static const warningHairline = Color(0xFFEDE4D2);
+
+  /// A bar that is context rather than subject — the quiet columns behind the
+  /// one being read.
+  static const quietBar = Color(0xFFDCE7D6);
 }
+
+/// The brand gradient, as the boards draw it.
+///
+/// CSS measures a gradient angle clockwise from "to top", so `150deg` points
+/// down and to the right. Flutter takes two [Alignment]s instead, which are
+/// BOX-RELATIVE — the same pair renders a different visual angle in a tall box
+/// than in a wide one, where CSS's degrees are absolute. This is the closest
+/// faithful translation: the unit vector for 150° is (sin 150°, −cos 150°) =
+/// (0.5, 0.866), and the alignments are that vector and its negative.
+const Alignment kBrandGradientBegin = Alignment(-0.5, -0.866);
+const Alignment kBrandGradientEnd = Alignment(0.5, 0.866);
+
+LinearGradient brandGradient() => const LinearGradient(
+  begin: kBrandGradientBegin,
+  end: kBrandGradientEnd,
+  colors: [LactevaColors.dairy, LactevaColors.dairyDeep],
+);
 
 /// The milk motion language, in the same timings as the portal.
 ///

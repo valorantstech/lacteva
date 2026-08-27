@@ -12,6 +12,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lacteva_mobile/src/api.dart';
+import 'package:lacteva_mobile/src/collection_home.dart';
 import 'package:lacteva_mobile/src/home.dart';
 import 'package:lacteva_mobile/src/offline/offline_client.dart';
 import 'package:lacteva_mobile/src/offline/queue.dart';
@@ -94,7 +95,13 @@ void main() {
     await _pumpHome(tester, client);
     expect(client.syncCalls, 1);
     expect(tester.takeException(), isNull, reason: 'fire-and-forget swallows');
-    // The home actually rendered.
-    expect(find.text('Collection centres'), findsOneWidget);
+    // The home actually rendered. LACTEVA-MOBILE-005 moved where a collection
+    // sign-in lands — from the centres list to the collection home — so this
+    // names the screen rather than a title that has since moved. The claim is
+    // unchanged: a sync that died did not take the screen with it. This fake
+    // returns no centres, so the home renders its honest dead end, which is
+    // still the home rendering.
+    expect(find.byType(CollectionHomeScreen), findsOneWidget);
+    expect(find.text('No centre to open'), findsOneWidget);
   });
 }
