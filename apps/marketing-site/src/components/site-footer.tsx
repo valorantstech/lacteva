@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Wordmark } from "@/components/logo";
+import { TAGLINE, Wordmark } from "@/components/logo";
 
 const COLUMNS = [
   {
@@ -31,9 +31,15 @@ export function SiteFooter() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-12 sm:px-6 lg:px-8">
         <div className="flex flex-col justify-between gap-10 sm:flex-row">
           <div className="flex max-w-sm flex-col gap-3">
-            {/* The footer is the mark's dark ground: the rich drop, bare —
-                milk-on-dairy, the size where the light actually reads. */}
-            <Wordmark rich="footer" className="text-ink-foreground" />
+            {/* The footer is the site's standing ink band, so the lockup is
+                the generated ON-INK variant: cream can, deep drop, all-cream
+                letterforms (LACTEVA-MARKETING-007). */}
+            <Wordmark onInk idPrefix="footer" />
+            {/* The tagline's two homes are here and the CTA band — nowhere
+                else (WO-32). */}
+            <p className="text-sm font-medium tracking-wide text-ink-foreground/90">
+              {TAGLINE}
+            </p>
             <p className="text-sm leading-relaxed text-ink-muted">
               One connected platform for modern dairy operations — from milk
               procurement through delivery, billing, payments, and reporting.

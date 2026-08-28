@@ -320,7 +320,10 @@
   @keyframes nav-reveal-word {
     from {
       opacity: 0;
-      transform: translateY(4px);
+      /* The word is an SVG group since the final lockup (WO-32), so the
+         rise is a fraction of its own box rather than px — px here would
+         be user units, magnified by the lockup's viewBox scale. */
+      transform: translateY(10%);
     }
     to {
       opacity: 1;
@@ -330,6 +333,7 @@
   [data-reveal="on"] .nav-reveal-word {
     animation: nav-reveal-word 380ms var(--ease-out-liquid) both;
     animation-delay: 1020ms;
+    transform-box: fill-box;
   }
 
   /* Scroll settle-ins (LACTEVA-MARKETING-004): a section below the fold

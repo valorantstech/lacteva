@@ -1,8 +1,11 @@
 import { LinkButton } from "@/components/link-button";
+import { TAGLINE } from "@/components/logo";
 
 /**
  * The closing conversion band, shared by every marketing page so the offer
- * is worded once: a 30-day free trial set up by a person, or a demo.
+ * is worded once: a 30-day free trial set up by a person, or a demo. It is
+ * also one of the tagline's two homes — the other is the footer, and WO-32
+ * rules out any third.
  */
 export function CtaBand({
   title = "Ready to connect your dairy operations?",
@@ -13,9 +16,14 @@ export function CtaBand({
 }) {
   return (
     <div className="flex flex-col items-start gap-6 rounded-2xl bg-[linear-gradient(150deg,#0C160E_0%,#0E3D14_62%,#14481E_100%)] p-10 text-ink-foreground sm:p-14">
-      <h2 className="max-w-2xl text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-        {title}
-      </h2>
+      <div className="flex flex-col gap-2.5">
+        <p className="text-sm font-semibold tracking-wide text-ink-foreground/80">
+          {TAGLINE}
+        </p>
+        <h2 className="max-w-2xl text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+          {title}
+        </h2>
+      </div>
       <p className="max-w-2xl text-base leading-relaxed text-ink-muted">
         {copy}
       </p>
