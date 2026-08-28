@@ -209,6 +209,12 @@ export default function ReportsPage() {
   // The SAME defect as `payable` above, twice more on this page: the object
   // was guarded and the field it reaches into was not. Hoisted to a local so
   // the guard is stated once and the JSX below cannot forget it.
+  //
+  // WO-37: the render below still tests `settlements` itself as well. Testing
+  // only the derived rows left the compiler unable to narrow the object, so
+  // three reads of it further down became `possibly null` — a typecheck
+  // failure that the test suite could not see and that kept CI red. Both
+  // halves are needed: the object for the compiler, the field for the defect.
   const settlementRows = settlements?.by_status ?? [];
 
   return (
@@ -461,7 +467,7 @@ export default function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm">
-            {settlementRows.length > 0 ? (
+            {settlements && settlementRows.length > 0 ? (
               <>
                 {settlementRows.map((row) => (
                   <div key={row.status} className="flex justify-between">
