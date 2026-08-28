@@ -25,7 +25,24 @@ set -euo pipefail
 # that depend on them reported the database down on a database that was up.
 ENV_FILE="${ENV_FILE:-/etc/lacteva/.env.production}"
 COMPOSE="${COMPOSE:-docker compose -f docker-compose.production.yml --env-file ${ENV_FILE}}"
-API="${API_URL:-http://localhost:${HTTP_PORT:-80}}"
+# WO-37: default to the deployment's OWN name, not localhost.
+#
+# AWS-001 taught this script to follow nginx's 301 to HTTPS. The redirect
+# lands on `https://localhost`, and the certificate is issued for the
+# deployment's real hostname — so curl refused it:
+#
+#   SSL: no alternative certificate subject name matches target host 'localhost'
+#
+# and the verifier failed at its first gate on a platform that was serving
+# perfectly. That is the same shape as the bug AWS-001 fixed, one layer down:
+# a healthy deployment failing its own verification, which is what triggers
+# deploy.sh's automatic rollback.
+#
+# `LACTEVA_PUBLIC_URL` is the name the certificate is for and is already in
+# the environment file every other part of this script reads. Falling back to
+# localhost keeps a first deployment — which has no DNS name yet — working.
+PUBLIC_URL="$(sed -n 's/^LACTEVA_PUBLIC_URL=//p' "${ENV_FILE}" 2>/dev/null | tail -1 | tr -d '\042\047')"   # \042 = " and \047 = ', either may quote it
+API="${API_URL:-${PUBLIC_URL:-http://localhost:${HTTP_PORT:-80}}}"
 
 # AWS-001: FOLLOW the redirect.
 #
