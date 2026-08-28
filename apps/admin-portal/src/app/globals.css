@@ -451,45 +451,14 @@
    *   2 · it lands, milk ripples 600ms  two rings, the second trailing
    *   3 · the wordmark settles   380ms  fade + 4px rise
    */
-  @keyframes lacteva-reveal-drop {
-    from { opacity: 0; transform: translateY(-2.5rem); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
 
-  @keyframes lacteva-reveal-ring {
-    from { opacity: 0.5;  transform: scale(0.75); }
-    to   { opacity: 0;    transform: scale(1.6); }
-  }
 
-  @keyframes lacteva-reveal-word {
-    from { opacity: 0; transform: translateY(0.25rem); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
 
   /* The whole overlay leaves at the end, and quickly: the last thing a
      reveal should do is linger over a password box. */
-  @keyframes lacteva-reveal-out {
-    from { opacity: 1; }
-    to   { opacity: 0; }
-  }
 
-  .lacteva-reveal-drop {
-    animation: lacteva-reveal-drop var(--motion-slow) var(--ease-out-liquid) both;
-  }
-  .lacteva-reveal-ring {
-    animation: lacteva-reveal-ring 600ms var(--ease-out-liquid) var(--motion-slow) both;
-  }
   /* The second ring trails the first by a third of a beat, which is what makes
      two rings read as one impact rather than as a target. */
-  .lacteva-reveal-ring-late {
-    animation-delay: calc(var(--motion-slow) + 200ms);
-  }
-  .lacteva-reveal-word {
-    animation: lacteva-reveal-word 380ms var(--ease-out-liquid) 1020ms both;
-  }
-  .lacteva-reveal-out {
-    animation: lacteva-reveal-out var(--motion-fast) var(--ease-out-liquid) forwards;
-  }
 
   /*
    * The dashboard vessel filling (LACTEVA-ADMIN-015). It rises once, on

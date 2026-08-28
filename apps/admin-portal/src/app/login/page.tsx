@@ -15,8 +15,7 @@ import { ApiError, login,
   describeError,
 } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { BrandMark } from "@/components/brand-mark";
-import { LoginReveal } from "@/components/login-reveal";
+import { LactevaLockup } from "@/components/lockup";
 
 /**
  * Sign in (DEMO-010).
@@ -99,19 +98,24 @@ export default function LoginPage() {
   //    `items-center` a height to centre the sign-in card within. Removing it
   //    would push the card to the top of the page.
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
+    // WO-39: the front door joins the brand.
+    //
+    // The soft dairy wash is the DS's own `--gradient-cream-fresh` — the
+    // atmosphere language the rest of the product speaks — not a new colour.
+    // `lacteva-settle` is the DS motion token for "something arrived", and
+    // the global `prefers-reduced-motion` rule collapses it to 1ms, so a
+    // person who asked not to be moved gets the finished page immediately
+    // rather than a page that never finishes arriving.
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-[image:var(--gradient-cream-fresh)] p-8">
       {/*
-        LACTEVA-BRAND-003. The mark stands ABOVE the card, static, always —
-        which is what makes the reveal removable: a person who asked for
-        reduced motion, or who has already seen it this session, gets the
-        same page with the same mark on it and nothing to dismiss.
+        The full lockup — the can, the owner's TRACED letterforms and the
+        tagline — from the one generated composition the shell also wears.
+        What stood here was the retired BRAND-003 lit drop with "Lacteva" set
+        in the UI font: two brand generations behind the shell around it, and
+        the first thing a customer sees at the real URL.
       */}
-      <div className="flex flex-col items-center gap-2">
-        <BrandMark size={54} />
-        <span className="text-xl font-semibold tracking-tight">Lacteva</span>
-      </div>
-      <LoginReveal />
-      <Card className="w-full max-w-sm">
+      <LactevaLockup withTagline idPrefix="login" className="lacteva-settle" />
+      <Card className="lacteva-settle w-full max-w-sm">
         <CardHeader>
           <CardTitle>{t("login.title")}</CardTitle>
           <CardDescription>{t("login.subtitle")}</CardDescription>

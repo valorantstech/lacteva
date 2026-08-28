@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LactevaLockup } from "@/components/lockup";
 import { ApiError, confirmPasswordReset, requestPasswordReset } from "@/lib/api";
 
 /**
@@ -94,8 +95,12 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-8">
-      <Card className="w-full max-w-sm">
+    // WO-39: the same front-door family as /login — the one generated
+    // lockup on the DS's own dairy wash, arriving on the settle token. The
+    // flow below and its enumeration-safe copy are untouched.
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-[image:var(--gradient-cream-fresh)] p-8">
+      <LactevaLockup withTagline idPrefix="reset-password" className="lacteva-settle" />
+      <Card className="lacteva-settle w-full max-w-sm">
         <CardHeader>
           <CardTitle>Reset your password</CardTitle>
           <CardDescription>

@@ -59,6 +59,13 @@ INLINE = [
     ("apps/marketing-site/src/components/logo.tsx", "the marketing lockup", ("can", "drop")),
     ("apps/admin-portal/src/components/app-shell.tsx", "the portal shell",
      ("can", "drop", "wordmark-navy", "wordmark-green")),
+    # WO-39: the portal's front door. The login, reset-password and
+    # accept-invitation pages all draw this one composition, and it is the
+    # first surface anywhere to carry the tagline and its rules — so this is
+    # the only place those two layers are guarded against drift.
+    ("apps/admin-portal/src/components/lockup.tsx", "the portal auth lockup",
+     ("can", "drop", "wordmark-navy", "wordmark-green",
+      "wordmark-rule", "wordmark-tagline")),
     # LACTEVA-BRAND-003: the RICH rendering. Same geometry, lit — so it is
     # checked against the same path. A surface that drew the enriched mark
     # from its own numbers would be the BRAND-002 defect wearing better
@@ -108,6 +115,8 @@ def main() -> int:
         "drop": mark.drop_path(),
         "wordmark-navy": mark.wordmark_layer("navy"),
         "wordmark-green": mark.wordmark_layer("green"),
+        "wordmark-rule": mark.wordmark_layer("rule"),
+        "wordmark-tagline": mark.wordmark_layer("tagline"),
     }
 
     # 1 · the reconstruction is still the owner's artwork
