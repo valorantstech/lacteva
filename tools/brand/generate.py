@@ -13,6 +13,10 @@ by the docs tooling. No ImageMagick, no Inkscape, no network.
 
 Surfaces written:
 
+  tools/brand lacteva-lockup*.svg                  (the full lockup, for WO-32)
+              lacteva-wordmark*.svg                (the traced wordmark alone)
+              lacteva-mark.svg                     (the can, on a light ground)
+              play/*                               (the store kit)
   marketing   src/app/icon.svg                     (the SVG master, mark-only)
   portal      src/app/favicon.ico                  (multi-resolution)
   mobile      android .../mipmap-*/ic_launcher.png (legacy, five densities)
@@ -40,6 +44,7 @@ from PIL import Image
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import mark  # noqa: E402
+import svgpath  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -69,8 +74,8 @@ def _rounded_field(ctx: cairo.Context) -> None:
     ctx.close_path()
 
 
-def _drop(ctx: cairo.Context, scale=1.0, cx=mark.FIELD / 2, cy=mark.FIELD / 2) -> None:
-    start, segments = mark.drop_outline(scale, cx, cy)
+def _outline(ctx: cairo.Context, outline) -> None:
+    start, segments = outline
     ctx.new_path()
     ctx.move_to(*start)
     for c1, c2, end in segments:
@@ -78,39 +83,49 @@ def _drop(ctx: cairo.Context, scale=1.0, cx=mark.FIELD / 2, cy=mark.FIELD / 2) -
     ctx.close_path()
 
 
-def render(
-    size: int, *, dark_ground=False, drop_only=False, full_bleed=False, maskable=False
-) -> Image.Image:
-    """One rendering of the mark at `size` px.
+def _drop(ctx: cairo.Context, scale=1.0, cx=mark.FIELD / 2, cy=mark.FIELD / 2) -> None:
+    _outline(ctx, mark.drop_outline(scale, cx, cy))
 
-    `drop_only` omits the field (the adaptive foreground layer draws the drop
-    over a separate background layer). `full_bleed` fills the whole square
-    instead of the rounded field, for the platforms that supply their own
-    shape. `maskable` additionally shrinks the drop into Android's guaranteed
-    safe CIRCLE — iOS does not need it, because its mask is a superellipse
-    that keeps far more of the square, and a drop sized for a circle looks
-    lost inside one.
+
+def _can(ctx: cairo.Context, scale=1.0, cx=mark.FIELD / 2, cy=mark.FIELD / 2) -> None:
+    _outline(ctx, mark.can_outline(scale, cx, cy))
+
+
+def render(
+    size: int, *, dark_ground=False, full_bleed=False, maskable=False
+) -> Image.Image:
+    """One rendering of the icon at `size` px: field, can, drop.
+
+    `full_bleed` fills the whole square instead of the rounded field, for the
+    platforms that supply their own shape. `maskable` additionally shrinks the
+    MARK into Android's guaranteed safe CIRCLE — iOS does not need it, because
+    its mask is a superellipse that keeps far more of the square, and a can
+    sized for a circle looks lost inside one.
+
+    BRAND-004 made the can the outer shape, so what gets measured against the
+    safe circle is the can; the drop is inside it by construction and needs no
+    separate guarantee.
     """
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, size, size)
     ctx = cairo.Context(surface)
     ctx.scale(size / mark.FIELD, size / mark.FIELD)
 
-    field_rgb, drop_rgb = (MILK_RGB, DAIRY_RGB) if dark_ground else (DAIRY_RGB, MILK_RGB)
+    ground_rgb = MILK_RGB if dark_ground else DAIRY_RGB
+    body_rgb = DAIRY_RGB if dark_ground else _hex_rgb(mark.LOGO_CREAM)
+    drop_rgb = _hex_rgb(mark.LOGO_CREAM) if dark_ground else _hex_rgb(mark.LOGO_DEEP)
 
-    if not drop_only:
-        if full_bleed:
-            ctx.rectangle(0, 0, mark.FIELD, mark.FIELD)
-        else:
-            _rounded_field(ctx)
-        ctx.set_source_rgb(*field_rgb)
-        ctx.fill()
-
-    if maskable:
-        # The launcher may crop to a circle, so the drop is drawn at the same
-        # scale the adaptive foreground uses rather than the full one.
-        _drop(ctx, *_safe_placement())
+    if full_bleed:
+        ctx.rectangle(0, 0, mark.FIELD, mark.FIELD)
     else:
-        _drop(ctx)
+        _rounded_field(ctx)
+    ctx.set_source_rgb(*ground_rgb)
+    ctx.fill()
+
+    placement = _safe_placement() if maskable else (1.0, mark.FIELD / 2, mark.FIELD / 2)
+    _can(ctx, *placement)
+    ctx.set_source_rgb(*body_rgb)
+    ctx.fill()
+    _drop(ctx, *placement)
     ctx.set_source_rgb(*drop_rgb)
     ctx.fill()
 
@@ -123,7 +138,7 @@ def render(
 
 
 def _safe_placement() -> tuple[float, float, float]:
-    """(scale, cx, cy) in the 64 grid that fits the drop in the safe circle."""
+    """(scale, cx, cy) in the 64 grid that fits the MARK in the safe circle."""
     reach = mark.max_radius(1.0, mark.FIELD / 2, mark.FIELD / 2)
     allowed = (SAFE_RADIUS / ADAPTIVE_CANVAS) * mark.FIELD * SAFE_MARGIN
     return allowed / reach, mark.FIELD / 2, mark.FIELD / 2
@@ -267,8 +282,85 @@ def play_icon() -> Image.Image:
     return render(PLAY_ICON, full_bleed=True)
 
 
+def _lockup(ctx: cairo.Context, x: float, y: float, height: float, *, on_ink: bool) -> float:
+    """Draw the full lockup with its top-left at (x, y). Returns its width.
+
+    The placement comes from `mark.lockup_geometry()`, which the SVG lockup
+    uses too — two renderers laying out the same lockup from their own
+    arithmetic is how a lockup ends up with two different gaps.
+
+    `on_ink` is Amendment 1's one-colour derivation: the SAME outlines, filled
+    once in cream. Not a second wordmark — the identical traced paths. Navy on
+    a deep green ground would be unreadable, and a gradient on it would be
+    mud, so the derivation exists precisely for surfaces like this banner.
+    """
+    geometry = mark.lockup_geometry()
+    scale = height / geometry["height"]
+    data = mark.wordmark()
+
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.scale(scale, scale)
+
+    can = geometry["can"]
+    box = mark.can_bbox()
+    ctx.save()
+    ctx.translate(can["x"], can["y"])
+    ctx.scale(can["scale"], can["scale"])
+    ctx.translate(-box[0], -box[1])
+    _can(ctx)
+    ctx.set_source_rgb(*(_hex_rgb(mark.LOGO_CREAM) if on_ink else _hex_rgb(mark.LOGO_DAIRY)))
+    ctx.fill()
+    _drop(ctx)
+    ctx.set_source_rgb(*(_hex_rgb(mark.LOGO_DEEP) if on_ink else _hex_rgb(mark.LOGO_CREAM)))
+    ctx.fill()
+    ctx.restore()
+
+    ctx.save()
+    ctx.translate(geometry["text"]["x"], geometry["text"]["y"])
+    for layer, colour in (
+        ("navy", mark.LOGO_NAVY),
+        ("green", mark.LOGO_VA_TOP),
+        ("rule", mark.LOGO_RULE),
+        ("tagline", mark.LOGO_TAGLINE),
+    ):
+        _path(ctx, mark.wordmark_layer(layer))
+        if on_ink:
+            ctx.set_source_rgb(*_hex_rgb(mark.LOGO_CREAM))
+        elif layer == "green":
+            gradient = data["gradient"]
+            ramp = cairo.LinearGradient(0, gradient["y0"], 0, gradient["y1"])
+            ramp.add_color_stop_rgb(0, *_hex_rgb(gradient["from"]))
+            ramp.add_color_stop_rgb(1, *_hex_rgb(gradient["to"]))
+            ctx.set_source(ramp)
+        else:
+            ctx.set_source_rgb(*_hex_rgb(colour))
+        ctx.fill()
+    ctx.restore()
+    ctx.restore()
+    return geometry["width"] * scale
+
+
+def _path(ctx: cairo.Context, d: str) -> None:
+    """Trace SVG path data onto the context, using the shared walker."""
+    ctx.new_path()
+    for run in svgpath.subpaths(d):
+        ctx.move_to(*run[0][0])
+        for _, c1, c2, end in run:
+            ctx.curve_to(c1[0], c1[1], c2[0], c2[1], end[0], end[1])
+        ctx.close_path()
+
+
 def feature_graphic() -> Image.Image:
-    """1024 x 500: the rich mark and the wordmark on the dairy gradient."""
+    """1024 x 500: the full lockup, in cream, on the dairy gradient.
+
+    WO-30 drew the wordmark here with cairo's toy font API against whatever
+    "sans-serif" resolved to on the build machine, which meant the banner was
+    not reproducible and, worse, was a font-rendered approximation of a
+    wordmark the owner had already drawn. BRAND-004 Amendment 1 forbids that
+    outright. It now draws the TRACED outlines, so the banner is byte-stable
+    on any machine and carries the real artwork.
+    """
     surface = cairo.ImageSurface(cairo.FORMAT_RGB24, FEATURE_W, FEATURE_H)
     ctx = cairo.Context(surface)
     ctx.rectangle(0, 0, FEATURE_W, FEATURE_H)
@@ -285,26 +377,20 @@ def feature_graphic() -> Image.Image:
     ctx.set_source(glow)
     ctx.fill()
 
-    # Everything below lives inside the safe box.
-    drop_height = FEATURE_H - 2 * FEATURE_MARGIN_Y
-    drop_scale = drop_height / mark.drop_bbox()[3]
-    drop_cx = FEATURE_MARGIN_X + (mark.drop_bbox()[2] * drop_scale) / 2
-    _rich_drop(ctx, drop_scale, drop_cx, FEATURE_H / 2)
-
-    text_x = drop_cx + mark.drop_bbox()[2] * drop_scale / 2 + 56
-    ctx.set_source_rgb(*MILK_RGB)
-    ctx.select_font_face("sans-serif", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-    ctx.set_font_size(96)
-    ctx.move_to(text_x, FEATURE_H / 2 + 6)
-    ctx.show_text("Lacteva")
-
-    ctx.set_source_rgba(*MILK_RGB, 0.72)
-    ctx.select_font_face(
-        "sans-serif", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL
+    # Everything below lives inside the safe box: Play crops this banner on
+    # some surfaces and lays a play button over its centre on others.
+    box_w = FEATURE_W - 2 * FEATURE_MARGIN_X
+    box_h = FEATURE_H - 2 * FEATURE_MARGIN_Y
+    geometry = mark.lockup_geometry()
+    height = min(box_h, box_w * geometry["height"] / geometry["width"])
+    width = height * geometry["width"] / geometry["height"]
+    _lockup(
+        ctx,
+        (FEATURE_W - width) / 2,
+        (FEATURE_H - height) / 2,
+        height,
+        on_ink=True,
     )
-    ctx.set_font_size(30)
-    ctx.move_to(text_x + 3, FEATURE_H / 2 + 56)
-    ctx.show_text("Every drop, accounted for")
 
     surface.flush()
     data = bytes(surface.get_data())
@@ -320,50 +406,76 @@ def feature_graphic() -> Image.Image:
 def _dart_mark() -> str:
     """The mark as Dart, because Flutter has no SVG renderer here.
 
-    Adding `flutter_svg` to draw one shape would be a dependency, a licence
-    and a parser on the critical path of an app that already ships. The path
-    is cubics and a Flutter `Path` is cubics, so the generator simply emits
+    Adding `flutter_svg` to draw two shapes would be a dependency, a licence
+    and a parser on the critical path of an app that already ships. The paths
+    are cubics and a Flutter `Path` is cubics, so the generator simply emits
     the same numbers in the other language — and `check_inline.py` regenerates
     this file and compares, so it cannot drift any more than the SVG can.
+
+    BRAND-004 adds the CAN. The drop keeps its own function and its own
+    bounds because the sign-in reveal draws the lit drop alone and its
+    choreography is not this work order's to change; the can is emitted beside
+    it so no Flutter surface ever has cause to draw the mark from its own
+    numbers.
     """
-    start, segments = mark.drop_outline()
-    x, y, w, h = mark.drop_bbox()
     d = mark.rich_details()
     hl, me = d["highlight"], d["meniscus"]
 
     def n(v: float) -> str:
         return f"{v:.3f}".rstrip("0").rstrip(".")
 
-    lines = [
-        f"  ..moveTo({n(start[0])} * s, {n(start[1])} * s)",
-    ]
-    for c1, c2, end in segments:
-        lines.append(
-            f"  ..cubicTo({n(c1[0])} * s, {n(c1[1])} * s, "
-            f"{n(c2[0])} * s, {n(c2[1])} * s, "
-            f"{n(end[0])} * s, {n(end[1])} * s)"
-        )
-    lines.append("  ..close();")
-    body = "\n".join(lines)
+    def dart_path(outline) -> str:
+        start, segments = outline
+        lines = [f"  ..moveTo({n(start[0])} * s, {n(start[1])} * s)"]
+        for c1, c2, end in segments:
+            lines.append(
+                f"  ..cubicTo({n(c1[0])} * s, {n(c1[1])} * s, "
+                f"{n(c2[0])} * s, {n(c2[1])} * s, "
+                f"{n(end[0])} * s, {n(end[1])} * s)"
+            )
+        lines.append("  ..close();")
+        return "\n".join(lines)
+
+    dx, dy, dw, dh = mark.drop_bbox()
+    cx, cy, cw, ch = mark.can_bbox()
 
     return f'''// GENERATED by tools/brand/generate.py — do not edit by hand.
 //
-// The Lacteva mark, in Dart (LACTEVA-BRAND-002 geometry, BRAND-003 rendering).
+// The Lacteva mark, in Dart (LACTEVA-BRAND-004 geometry, BRAND-003 rendering).
 // `tools/brand/check_inline.py` regenerates this file and compares it, so an
 // edit here is a build failure rather than a second mark.
 import \'dart:ui\';
 
 /// The drop\'s tight bounding box in the {int(mark.FIELD)} grid the geometry is authored in.
 const Rect kMarkBounds = Rect.fromLTWH(
-  {n(x)},
-  {n(y)},
-  {n(w)},
-  {n(h)},
+  {n(dx)},
+  {n(dy)},
+  {n(dw)},
+  {n(dh)},
 );
 
 /// The drop outline, in grid units scaled by [s].
+///
+/// This is the shape knocked OUT of the can. It is also what the sign-in
+/// reveal lights, which is why it has a function of its own.
 Path lactevaDropPath(double s) => Path()
-{body}
+{dart_path(mark.drop_outline())}
+
+/// The can\'s tight bounding box in the same grid.
+const Rect kCanBounds = Rect.fromLTWH(
+  {n(cx)},
+  {n(cy)},
+  {n(cw)},
+  {n(ch)},
+);
+
+/// The can body, in grid units scaled by [s] (LACTEVA-BRAND-004).
+///
+/// Fill this, then fill [lactevaDropPath] in the ground colour, and the drop
+/// is a knockout. Filling both into ONE path with an even-odd fill type does
+/// the same thing in a single pass where a surface wants that.
+Path lactevaCanPath(double s) => Path()
+{dart_path(mark.can_outline())}
 
 /// The warm specular highlight, in grid units.
 ///
@@ -397,11 +509,46 @@ def main() -> int:
         pathlib.Path(__file__).resolve().parent / "mark.json",
         json.dumps(
             {
+                # `path` is the DROP, and stays the drop: every client already
+                # reads that key, and BRAND-004 did not move the drop out of
+                # the mark, it knocked it into a can.
                 "path": mark.drop_path(),
                 "dropViewBox": mark.drop_view_box(),
+                # LACTEVA-BRAND-004. The can is the outer shape now.
+                "can": mark.can_path(),
+                "canViewBox": mark.can_view_box(),
+                # Both in one string, for a surface that fills once with
+                # `evenodd` and gets a true knockout.
+                "mark": mark.mark_path(),
                 "field": {"size": int(mark.FIELD), "corner": mark.CORNER},
                 "dairy": mark.DAIRY,
                 "milk": mark.MILK,
+                # The identity's own colours. These are LOGO colours and they
+                # are NOT Design System tokens — no navy enters a token, a
+                # component or a theme (WO-31).
+                "logo": {
+                    "dairy": mark.LOGO_DAIRY,
+                    "cream": mark.LOGO_CREAM,
+                    "deep": mark.LOGO_DEEP,
+                    "navy": mark.LOGO_NAVY,
+                    "vaTop": mark.LOGO_VA_TOP,
+                    "vaBottom": mark.LOGO_VA_BOTTOM,
+                    "rule": mark.LOGO_RULE,
+                    "tagline": mark.LOGO_TAGLINE,
+                    "taglineText": mark.TAGLINE,
+                },
+                # The traced wordmark, so a client can draw the lockup without
+                # reading a second file or setting a font.
+                "wordmark": {
+                    "reference": mark.wordmark()["reference"],
+                    "gradient": mark.wordmark()["gradient"],
+                    "capsViewBox": mark.wordmark_caps_view_box(),
+                    "layers": {
+                        name: mark.wordmark_layer(name)
+                        for name in ("navy", "green", "rule", "tagline")
+                    },
+                },
+                "lockup": mark.lockup_geometry(),
                 # LACTEVA-BRAND-003. The enriched rendering, as numbers rather
                 # than as a picture, so a TypeScript component and a Dart
                 # painter can each draw it without either re-deriving the
@@ -412,6 +559,17 @@ def main() -> int:
         )
         + "\n",
     )
+
+    print("the lockup — the assets WO-32 consumes")
+    # Written here rather than into apps/marketing-site: WO-31 Amendment 2
+    # limits this generator's writes into that tree to the two surfaces it
+    # already owned, and T3 picks these up in WO-32.
+    here = pathlib.Path(__file__).resolve().parent
+    write(here / "lacteva-lockup.svg", mark.lockup_svg())
+    write(here / "lacteva-lockup-on-ink.svg", mark.lockup_svg(on_ink=True))
+    write(here / "lacteva-wordmark.svg", mark.wordmark_svg())
+    write(here / "lacteva-wordmark-on-ink.svg", mark.wordmark_svg(on_ink=True))
+    write(here / "lacteva-mark.svg", mark.mark_on_light_svg())
 
     print("marketing")
     write(marketing / "src/app/icon.svg", mark.mark_svg())
@@ -464,12 +622,16 @@ def main() -> int:
         print(f"  {target.relative_to(ROOT)}")
 
     print("mobile — android adaptive")
-    scale, cx, cy = _safe_placement()
+    scale, _, _ = _safe_placement()
     # The foreground is authored on Android's 108 grid, so the path is emitted
     # in those units directly.
     fg_scale = scale * (ADAPTIVE_CANVAS / mark.FIELD)
-    fg_path = mark.drop_path(fg_scale, ADAPTIVE_CANVAS / 2, ADAPTIVE_CANVAS / 2)
-    reach = mark.max_radius(fg_scale, ADAPTIVE_CANVAS / 2, ADAPTIVE_CANVAS / 2)
+    centre = ADAPTIVE_CANVAS / 2
+    can_data = mark.can_path(fg_scale, centre, centre)
+    drop_data = mark.drop_path(fg_scale, centre, centre)
+    # The CAN is the outer shape, so the can is what gets measured against the
+    # safe circle; the drop is inside it by construction.
+    reach = mark.max_radius(fg_scale, centre, centre)
     assert reach <= SAFE_RADIUS, f"foreground reaches {reach:.2f}dp, safe circle is {SAFE_RADIUS}"
     print(f"  (foreground reaches {reach:.2f}dp of the {SAFE_RADIUS}dp safe circle)")
 
@@ -480,14 +642,29 @@ def main() -> int:
         '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
         '    android:width="108dp" android:height="108dp"\n'
         '    android:viewportWidth="108" android:viewportHeight="108">\n'
-        f'    <path android:fillColor="{mark.MILK}" android:pathData="{fg_path}"/>\n'
+        f'    <path android:fillColor="{mark.LOGO_CREAM}" android:pathData="{can_data}"/>\n'
+        f'    <path android:fillColor="{mark.LOGO_DEEP}" android:pathData="{drop_data}"/>\n'
+        "</vector>\n",
+    )
+    # The MONOCHROME layer is tinted a single colour by the launcher, so the
+    # two-path foreground would arrive as a solid can with no drop in it. One
+    # path with an even-odd fill makes the drop a real hole, which is the only
+    # rendering of this mark that survives being flattened to one colour.
+    write(
+        res / "drawable/ic_launcher_monochrome.xml",
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
+        '    android:width="108dp" android:height="108dp"\n'
+        '    android:viewportWidth="108" android:viewportHeight="108">\n'
+        '    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"\n'
+        f'        android:pathData="{can_data + drop_data}"/>\n'
         "</vector>\n",
     )
     write(
         res / "values/ic_launcher_background.xml",
         '<?xml version="1.0" encoding="utf-8"?>\n'
         "<resources>\n"
-        f'    <color name="ic_launcher_background">{mark.DAIRY}</color>\n'
+        f'    <color name="ic_launcher_background">{mark.LOGO_DAIRY}</color>\n'
         "</resources>\n",
     )
     adaptive = (
@@ -495,7 +672,7 @@ def main() -> int:
         '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
         '    <background android:drawable="@color/ic_launcher_background"/>\n'
         '    <foreground android:drawable="@drawable/ic_launcher_foreground"/>\n'
-        '    <monochrome android:drawable="@drawable/ic_launcher_foreground"/>\n'
+        '    <monochrome android:drawable="@drawable/ic_launcher_monochrome"/>\n'
         "</adaptive-icon>\n"
     )
     write(res / "mipmap-anydpi-v26/ic_launcher.xml", adaptive)

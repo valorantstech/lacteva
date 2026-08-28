@@ -19,7 +19,17 @@ Also checked, because a rejected upload costs a day:
 
   * the store limits Play enforces on title, short and full description;
   * the two generated assets' dimensions, and that each carries the
-    transparency the spec wants — asserted rather than assumed.
+    transparency the spec wants — asserted rather than assumed;
+  * that both assets are exactly what `generate.py` produces TODAY.
+
+That last one is new with LACTEVA-BRAND-004 and it is worth saying why it was
+impossible before. WO-30 drew the banner's wordmark with cairo's toy font API
+against whatever "sans-serif" resolved to on the build machine, so the bytes
+depended on the machine and the committed PNG could only be taken on trust.
+BRAND-004 replaced that with the owner's TRACED outlines, which are committed
+data — so the banner is reproducible, and a reproducible asset can be
+checked rather than believed. If either image drifts from the generator, the
+store would be showing a logo the product does not have.
 
 Exit 0 = the listing is safe to paste into the console.
 """
@@ -31,6 +41,9 @@ import re
 import sys
 
 from PIL import Image
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import generate  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 LISTING = ROOT / "docs/20-business/LACTEVA-PLAY-LISTING.md"
@@ -59,7 +72,7 @@ def claim_patterns() -> list[tuple[re.Pattern[str], str]]:
     """
     source = CLAIMS.read_text(encoding="utf-8")
     entries = re.findall(
-        r"\{\s*pattern:\s*/(.+?)/([a-z]*),\s*why:\s*\"(.*?)\"", source, re.S
+        r"\{\s*pattern:\s*/(.+?)/([a-z]*),\s*why:\s*\"(.*?)\"", source, re.DOTALL
     )
     if not entries:
         raise SystemExit(
@@ -80,7 +93,7 @@ def listing_fields() -> dict[str, str]:
     fields: dict[str, str] = {}
     for name in LIMITS:
         match = re.search(
-            rf"<!-- listing:{name} -->\s*```\n(.*?)```", text, re.S
+            rf"<!-- listing:{name} -->\s*```\n(.*?)```", text, re.DOTALL
         )
         if not match:
             raise SystemExit(
@@ -109,6 +122,11 @@ def main() -> int:
                 f"Play's limit is {limit}"
             )
 
+    fresh = {
+        "tools/brand/play/icon-512.png": generate.play_icon,
+        "tools/brand/play/feature-graphic-1024x500.png": generate.feature_graphic,
+    }
+
     for relative, size, transparency in ASSETS:
         path = ROOT / relative
         if not path.exists():
@@ -116,6 +134,22 @@ def main() -> int:
                 f"{relative} is missing. Run: python3 tools/brand/generate.py"
             )
             continue
+        # Regenerate and compare the PIXELS. Comparing file bytes would fail
+        # on a different zlib without a single pixel having moved, which is a
+        # false alarm this check cannot afford to raise.
+        rendered = fresh[relative]()
+        committed = Image.open(path)
+        if rendered.size != committed.size or rendered.mode != committed.mode:
+            problems.append(
+                f"{relative} is {committed.size} {committed.mode}; the "
+                f"generator now makes {rendered.size} {rendered.mode}"
+            )
+        elif list(rendered.getdata()) != list(committed.convert(rendered.mode).getdata()):
+            problems.append(
+                f"{relative} is not what the generator produces — the store "
+                "would show a logo the product does not have.\n"
+                "    Run: python3 tools/brand/generate.py"
+            )
         if path.stat().st_size > MAX_BYTES:
             problems.append(
                 f"{relative} is {path.stat().st_size // 1024} KB; Play's limit is 1024 KB"

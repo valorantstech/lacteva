@@ -1,5 +1,10 @@
 /**
- * The enriched mark (LACTEVA-BRAND-003).
+ * The enriched mark (LACTEVA-BRAND-003, on BRAND-004's drop).
+ *
+ * BRAND-004 made the drop a knockout in a can, which moved it and changed
+ * its size. Every number below FOLLOWED, because `mark.rich_details()`
+ * derives the light from the bulb rather than writing it down: the
+ * highlight and the meniscus travelled with the drop and nobody moved them.
  *
  * Same geometry as the flat mark — `tools/brand/mark.py` is still the only
  * place the drop is drawn — with light added: a body gradient running milk
@@ -19,7 +24,7 @@
  * agreed across surfaces while its highlight existed on only one of them.
  */
 const DROP =
-  "M30.69 13.229C32 11.1 32 11.1 33.31 13.229C35.613 19.1 38.866 24.386 43.071 29.085C46.426 34.537 45.314 41.619 40.449 45.78C35.585 49.94 28.415 49.94 23.551 45.78C18.686 41.619 17.574 34.537 20.929 29.085C25.134 24.386 28.387 19.1 30.69 13.229Z";
+  "M32 30C36.2 35.9 39.8 40.4 39.8 44.9C39.8 49.208 36.308 52.7 32 52.7C27.692 52.7 24.2 49.208 24.2 44.9C24.2 40.4 27.8 35.9 32 30Z";
 
 export function BrandMark({
   size = 96,
@@ -33,8 +38,8 @@ export function BrandMark({
       aria-hidden
       className={className}
       width={size}
-      height={(size * 1.4335).toFixed(2)}
-      viewBox="19 11.63 26 37.27"
+      height={(size * 1.4551).toFixed(2)}
+      viewBox="24.2 30 15.6 22.7"
     >
       <defs>
         <linearGradient
@@ -66,19 +71,19 @@ export function BrandMark({
       </defs>
       <path d={DROP} fill="url(#lacteva-milkbody)" />
       <ellipse
-        cx="26.635"
-        cy="29.09"
-        rx="6.19"
-        ry="8.667"
+        cx="28.781"
+        cy="40.814"
+        rx="3.714"
+        ry="5.2"
         fill="url(#lacteva-milkglow)"
         opacity="0.9"
       />
       <path
-        d="M24.571 45.598A7.841 7.841 0 0 0 30.762 52.614"
+        d="M27.543 50.719A4.705 4.705 0 0 0 31.257 54.929"
         fill="none"
         stroke="#1B5E20"
         strokeOpacity="0.18"
-        strokeWidth="1.651"
+        strokeWidth="0.99"
         strokeLinecap="round"
         clipPath="url(#lacteva-drop)"
       />
