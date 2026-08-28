@@ -15,8 +15,13 @@ export function CtaBand({
   copy?: string;
 }) {
   return (
-    <div className="flex flex-col items-start gap-6 rounded-2xl bg-[linear-gradient(150deg,#0C160E_0%,#0E3D14_62%,#14481E_100%)] p-10 text-ink-foreground sm:p-14">
-      <div className="flex flex-col gap-2.5">
+    <div className="lacteva-band-ink relative flex flex-col items-start gap-6 overflow-hidden rounded-2xl p-10 sm:p-14">
+      {/* The slow milk shimmer (LACTEVA-MARKETING-008) — a decoration
+          behind the words, collapsed by the reduced-motion rule. */}
+      <div aria-hidden className="lacteva-shimmer-layer" />
+      {/* Content sits above the shimmer layer (static siblings would
+          otherwise paint below an absolutely positioned one). */}
+      <div className="relative flex flex-col gap-2.5">
         <p className="text-sm font-semibold tracking-wide text-ink-foreground/80">
           {TAGLINE}
         </p>
@@ -24,10 +29,10 @@ export function CtaBand({
           {title}
         </h2>
       </div>
-      <p className="max-w-2xl text-base leading-relaxed text-ink-muted">
+      <p className="relative max-w-2xl text-base leading-relaxed text-ink-muted">
         {copy}
       </p>
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="relative flex flex-wrap items-center gap-3">
         <LinkButton href="/start-free-trial" variant="onInk">
           Start Free Trial
         </LinkButton>

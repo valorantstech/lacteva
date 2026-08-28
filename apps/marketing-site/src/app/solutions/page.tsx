@@ -19,6 +19,7 @@ import {
   SceneUnderstand,
 } from "@/components/scenes";
 import { Section, SectionHeading } from "@/components/section";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Solutions",
@@ -163,18 +164,32 @@ export default function SolutionsPage() {
 
       {SOLUTIONS.map((solution, i) => {
         const Scene = AUDIENCE_SCENES[solution.id];
+        // The distributors band goes deep-ink (LACTEVA-MARKETING-008):
+        // every page carries at least one ink band, and this is the one
+        // with the handset capture — the proof that reads best on dark.
+        const onInk = solution.id === "distributors";
         return (
-          <Section key={solution.id} variant={i % 2 === 0 ? "default" : "tinted"}>
+          <Section
+            key={solution.id}
+            variant={onInk ? "ink" : i % 2 === 0 ? "default" : "tinted"}
+          >
             <article
               id={solution.id}
               className="grid scroll-mt-28 gap-8 lg:grid-cols-2 lg:gap-14"
             >
               <div className="flex flex-col gap-4">
-                <solution.icon className="size-6 text-primary" aria-hidden />
+                <span className="lacteva-icon-duo" aria-hidden>
+                  <solution.icon className="size-4.5" />
+                </span>
                 <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
                   {solution.name}
                 </h2>
-                <p className="text-sm leading-relaxed text-muted-foreground">
+                <p
+                  className={cn(
+                    "text-sm leading-relaxed",
+                    onInk ? "text-ink-muted" : "text-muted-foreground",
+                  )}
+                >
                   {solution.problem}
                 </p>
                 <p className="text-sm leading-relaxed">
@@ -183,8 +198,10 @@ export default function SolutionsPage() {
                 </p>
               </div>
               <div className="flex flex-col gap-4">
-                <Scene />
-                <div className="lacteva-lift flex flex-col gap-3 rounded-xl border border-border bg-card p-6 lg:h-fit">
+                <div data-parallax="0.05">
+                  <Scene />
+                </div>
+                <div className="lacteva-card lacteva-lift flex flex-col gap-3 rounded-xl p-6 lg:h-fit">
                   <p className="text-xs font-semibold tracking-wide text-primary uppercase">
                     What matters most here
                   </p>

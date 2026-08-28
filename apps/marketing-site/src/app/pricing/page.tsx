@@ -90,7 +90,9 @@ export default function PricingPage() {
               </LinkButton>
             </div>
           </div>
-          <SceneCollect />
+          <div data-parallax="0.05">
+            <SceneCollect />
+          </div>
         </div>
       </Section>
 
@@ -105,7 +107,7 @@ export default function PricingPage() {
           {TRIAL_STEPS.map((item, i) => (
             <li
               key={item.step}
-              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-5"
+              className="lacteva-card lacteva-lift flex flex-col gap-2 rounded-xl p-5"
             >
               <span className="text-xs font-semibold text-primary tabular-nums">
                 {String(i + 1).padStart(2, "0")}
@@ -130,9 +132,11 @@ export default function PricingPage() {
           {EVALUATE.map((item) => (
             <div
               key={item.title}
-              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
+              className="lacteva-card lacteva-lift flex flex-col gap-2.5 rounded-xl p-6"
             >
-              <item.icon className="size-5 text-primary" aria-hidden />
+              <span className="lacteva-icon-duo" aria-hidden>
+                <item.icon className="size-4.5" />
+              </span>
               <h3 className="font-semibold">{item.title}</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 {item.detail}

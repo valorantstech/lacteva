@@ -170,7 +170,11 @@ export default function ProductPage() {
                   </p>
                 </div>
                 <div className="flex h-fit flex-col gap-4">
-                  <Scene />
+                  {/* Gentle parallax: the scene drifts a few px against
+                      the scroll (LACTEVA-MARKETING-008). */}
+                  <div data-parallax="0.05">
+                    <Scene />
+                  </div>
                   <ul className="flex flex-wrap gap-2 lg:justify-end">
                     {group.items.map((item) => (
                       <li
@@ -199,7 +203,7 @@ export default function ProductPage() {
           {CONNECTIONS.map((c) => (
             <div
               key={c.from}
-              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
+              className="lacteva-card lacteva-lift flex flex-col gap-2 rounded-xl p-6"
             >
               <p className="flex items-center gap-2 text-sm font-semibold">
                 {c.from}
@@ -213,8 +217,9 @@ export default function ProductPage() {
         </div>
       </Section>
 
-      {/* Product proof */}
-      <Section>
+      {/* Product proof — on the tinted band, so the browser frames sit on
+          colour rather than on bare paper (LACTEVA-MARKETING-008). */}
+      <Section variant="tinted">
         <SectionHeading
           eyebrow="The product"
           title="Screens from the platform"
@@ -238,8 +243,9 @@ export default function ProductPage() {
         </div>
       </Section>
 
-      {/* Field + office */}
-      <Section variant="tinted">
+      {/* Field + office — default surface so the tinted proof band above
+          keeps its edge (the atmosphere shows through here). */}
+      <Section>
         <div className="grid items-center gap-12 lg:grid-cols-2">
           <div>
             <SectionHeading

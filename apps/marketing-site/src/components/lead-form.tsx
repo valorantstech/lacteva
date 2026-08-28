@@ -80,7 +80,7 @@ export function LeadForm({
     return (
       <div
         role="status"
-        className="flex flex-col gap-2 rounded-xl border border-border bg-card p-8"
+        className="lacteva-card flex flex-col gap-2 rounded-xl p-8"
       >
         <h2 className="text-lg font-semibold">Request received</h2>
         <p className="text-sm leading-relaxed text-muted-foreground">
@@ -93,7 +93,7 @@ export function LeadForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-5 rounded-xl border border-border bg-card p-6 sm:p-8"
+      className="lacteva-card flex flex-col gap-5 rounded-xl p-6 sm:p-8"
     >
       <div className="grid gap-5 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5 text-sm font-medium">

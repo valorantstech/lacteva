@@ -40,7 +40,9 @@ export default function CompanyPage() {
             lede="Our mission: digitize the entire dairy value chain — from the farmer pouring milk at a village collection center through processing, settlement, and market intelligence — for dairy businesses that today run on paper."
           />
           {/* the mission is the counter at 5 a.m. — the Capture scene */}
-          <SceneCapture />
+          <div data-parallax="0.05">
+            <SceneCapture />
+          </div>
         </div>
       </Section>
 
@@ -50,7 +52,7 @@ export default function CompanyPage() {
           {WHO.map((item) => (
             <div
               key={item.title}
-              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
+              className="lacteva-card lacteva-lift flex flex-col gap-2 rounded-xl p-6"
             >
               <h3 className="font-semibold">{item.title}</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
@@ -73,8 +75,14 @@ export default function CompanyPage() {
             "Fair pricing — and a farmer's ability to verify it — builds trust and retention.",
             "The resulting data enables credit, breeding, nutrition, and market decisions that no participant in the chain can make today.",
           ].map((step, i) => (
-            <li key={i} className="flex items-start gap-4">
-              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-ink-foreground text-sm font-semibold text-ink tabular-nums">
+            <li key={i} className="flex items-start gap-5">
+              {/* The step numerals wear the milk gradient on the ink band
+                  (LACTEVA-MARKETING-008). The list itself is ordered — the
+                  numeral is decoration. */}
+              <span
+                aria-hidden
+                className="lacteva-milk-text w-8 shrink-0 text-4xl leading-none font-bold tabular-nums"
+              >
                 {i + 1}
               </span>
               <p className="text-base leading-relaxed text-ink-foreground">{step}</p>

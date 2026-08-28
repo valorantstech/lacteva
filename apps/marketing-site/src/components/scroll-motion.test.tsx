@@ -85,4 +85,47 @@ describe("ScrollMotion", () => {
     render(<ScrollMotion />);
     expect(below.classList.contains("settle-armed")).toBe(false);
   });
+
+  it("drifts a [data-parallax] element with a clamped, transform-only offset", () => {
+    // The parallax (LACTEVA-MARKETING-008): a scene far from the viewport
+    // centre gets its counter-drift immediately — transform only, and
+    // never more than 14px however far away it is.
+    mountSections();
+    const scene = document.createElement("div");
+    scene.setAttribute("data-parallax", "0.05");
+    scene.getBoundingClientRect = () =>
+      ({ top: 1000, height: 200 }) as DOMRect;
+    document.body.appendChild(scene);
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    render(<ScrollMotion />);
+    // centre 1100 vs viewport middle 400 → raw −35px, clamped to −14.
+    expect(scene.style.transform).toBe("translateY(-14px)");
+  });
+
+  it("never drifts under prefers-reduced-motion — the scene just sits", () => {
+    mountSections();
+    const scene = document.createElement("div");
+    scene.setAttribute("data-parallax", "0.05");
+    scene.getBoundingClientRect = () =>
+      ({ top: 1000, height: 200 }) as DOMRect;
+    document.body.appendChild(scene);
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    render(<ScrollMotion />);
+    expect(scene.style.transform).toBe("");
+  });
 });

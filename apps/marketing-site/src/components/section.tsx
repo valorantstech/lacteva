@@ -22,11 +22,12 @@ export function Section({
     <section
       data-settle
       className={cn(
-        variant === "tinted" && "bg-secondary/50",
-        // The deep-ink band is the brand's 150° gradient (the hero's own
-        // ground), not flat ink — LACTEVA-MARKETING-005.
-        variant === "ink" &&
-          "bg-[linear-gradient(150deg,#0C160E_0%,#0E3D14_62%,#14481E_100%)] text-ink-foreground",
+        // The band treatments live in globals.css (LACTEVA-MARKETING-008)
+        // so the tinted wash, the ink 150° gradient and its echoed glow
+        // are each defined exactly once. The default surface is
+        // transparent on purpose: the global atmosphere shows through.
+        variant === "tinted" && "lacteva-band-tinted",
+        variant === "ink" && "lacteva-band-ink",
         className,
       )}
     >

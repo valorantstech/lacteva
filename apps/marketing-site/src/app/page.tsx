@@ -365,7 +365,7 @@ export default function HomePage() {
           {CAPABILITY_GROUPS.map((group) => (
             <div
               key={group.name}
-              className="lacteva-lift flex flex-col gap-3 rounded-xl border border-border bg-card p-5"
+              className="lacteva-card lacteva-lift flex flex-col gap-3 rounded-xl p-5"
             >
               <div>
                 <h3 className="font-semibold">{group.name}</h3>
@@ -385,26 +385,30 @@ export default function HomePage() {
         </div>
       </Section>
 
-      {/* 5 — How it works */}
-      <Section variant="tinted">
+      {/* 5 — How it works. The day's six steps on the deep-ink band, the
+          numerals in the milk gradient (LACTEVA-MARKETING-008). */}
+      <Section variant="ink">
         <SectionHeading
+          onInk
           eyebrow="How it works"
           title="Connect the flow of your dairy business."
           lede="The lifecycle shows what is connected; this is how your team runs a day through it."
         />
-        <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ol className="grid gap-x-10 gap-y-9 sm:grid-cols-2 lg:grid-cols-3">
           {HOW_IT_WORKS.map((item, i) => (
-            <li
-              key={item.step}
-              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-5"
-            >
-              <span className="text-xs font-semibold text-primary tabular-nums">
+            <li key={item.step} className="flex items-start gap-4">
+              <span
+                aria-hidden
+                className="lacteva-milk-text text-4xl leading-none font-bold tabular-nums"
+              >
                 {String(i + 1).padStart(2, "0")}
               </span>
-              <h3 className="font-semibold">{item.step}</h3>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {item.detail}
-              </p>
+              <div className="flex flex-col gap-1">
+                <h3 className="font-semibold text-ink-foreground">{item.step}</h3>
+                <p className="text-sm leading-relaxed text-ink-muted">
+                  {item.detail}
+                </p>
+              </div>
             </li>
           ))}
         </ol>
@@ -418,8 +422,10 @@ export default function HomePage() {
         />
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {AUDIENCES.map((audience) => (
-            <div key={audience.name} className="flex flex-col gap-2">
-              <audience.icon className="size-5 text-primary" aria-hidden />
+            <div key={audience.name} className="flex flex-col gap-2.5">
+              <span className="lacteva-icon-duo" aria-hidden>
+                <audience.icon className="size-4.5" />
+              </span>
               <h3 className="font-semibold">{audience.name}</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 {audience.detail}
@@ -475,8 +481,10 @@ export default function HomePage() {
                 { icon: Route, text: "The day's round on the rider's phone; the day's report on the manager's screen — the same deliveries." },
                 { icon: Globe2, text: "Built for real field conditions: operations captured offline replay safely when the network returns." },
               ].map((item, i) => (
-                <li key={i} className="flex items-start gap-3">
-                  <item.icon className="mt-0.5 size-4.5 shrink-0 text-primary" aria-hidden />
+                <li key={i} className="flex items-start gap-3.5">
+                  <span className="lacteva-icon-duo" aria-hidden>
+                    <item.icon className="size-4.5" />
+                  </span>
                   <span className="text-sm leading-relaxed text-muted-foreground">
                     {item.text}
                   </span>
@@ -519,7 +527,7 @@ export default function HomePage() {
           ].map((item) => (
             <div
               key={item.title}
-              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
+              className="lacteva-card lacteva-lift flex flex-col gap-2 rounded-xl p-6"
             >
               <h3 className="font-semibold">{item.title}</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
@@ -563,8 +571,10 @@ export default function HomePage() {
               { icon: CalendarClock, text: "Timezone-aware business dates — a 5 a.m. round belongs to your day, not the server's." },
               { icon: Users, text: "Localized for the team: English, Swahili, Hindi, and Arabic ship today." },
             ].map((item, i) => (
-              <div key={i} className="lacteva-lift flex items-start gap-3 rounded-xl border border-border bg-card p-4">
-                <item.icon className="mt-0.5 size-4.5 shrink-0 text-primary" aria-hidden />
+              <div key={i} className="lacteva-card lacteva-lift flex items-start gap-3.5 rounded-xl p-4">
+                <span className="lacteva-icon-duo" aria-hidden>
+                  <item.icon className="size-4.5" />
+                </span>
                 <span className="text-sm leading-relaxed text-muted-foreground">
                   {item.text}
                 </span>
@@ -585,9 +595,11 @@ export default function HomePage() {
           {TRUST_POINTS.map((point) => (
             <div
               key={point.title}
-              className="lacteva-lift flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
+              className="lacteva-card lacteva-lift flex flex-col gap-2.5 rounded-xl p-6"
             >
-              <point.icon className="size-5 text-primary" aria-hidden />
+              <span className="lacteva-icon-duo" aria-hidden>
+                <point.icon className="size-4.5" />
+              </span>
               <h3 className="font-semibold">{point.title}</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 {point.detail}

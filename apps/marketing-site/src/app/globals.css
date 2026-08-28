@@ -100,10 +100,33 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    /* The ground is the atmosphere layer below, not a flat fill — the
+       body itself stays transparent so the fixed washes show through
+       every default-surface section (LACTEVA-MARKETING-008). */
+    @apply bg-transparent text-foreground;
   }
   html {
-    @apply font-sans scroll-smooth;
+    @apply bg-background font-sans scroll-smooth;
+  }
+  /* ── The global atmosphere (LACTEVA-MARKETING-008) ─────────────────────
+     "No flat-white viewport anywhere": a fixed backdrop behind the whole
+     page — cream ground, two soft radial dairy washes drifting in from
+     the corners, and a barely-there grain so large plain areas read as
+     paper rather than as untouched screen. Fixed positioning instead of
+     background-attachment: fixed, which repaints on scroll on mobile.
+     Pure CSS + one inline SVG data URI: nothing fetched, nothing shifts —
+     LCP and CLS cannot see it. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='0.032'/%3E%3C/svg%3E"),
+      radial-gradient(56rem 34rem at 8% -6%, oklch(0.72 0.08 145 / 0.09), transparent 62%),
+      radial-gradient(48rem 30rem at 96% 18%, oklch(0.8 0.07 120 / 0.08), transparent 60%),
+      radial-gradient(52rem 36rem at 20% 108%, oklch(0.66 0.08 158 / 0.07), transparent 62%);
   }
   ::selection {
     @apply bg-primary/20;
@@ -375,5 +398,114 @@
   .lacteva-lift:active {
     transform: translateY(0);
     box-shadow: var(--elevation-1);
+  }
+
+  /* ── COLOUR EVERYWHERE (LACTEVA-MARKETING-008) ──────────────────────────
+     The section bands, card surfaces and accents that take the site from
+     informative to atmospheric. One definition per treatment, so every
+     band and every card wears the same weather. */
+
+  /* The tinted band: a 150° cream-to-green wash with one soft radial
+     accent — the light version of the ink band's geometry, so the two
+     alternate as one family. */
+  .lacteva-band-tinted {
+    background:
+      radial-gradient(44rem 24rem at 88% 0%, oklch(0.93 0.05 135 / 0.5), transparent 70%),
+      linear-gradient(150deg, oklch(0.972 0.014 108) 0%, oklch(0.948 0.028 125) 62%, oklch(0.958 0.022 112) 100%);
+  }
+
+  /* The deep-ink band: the brand's 150° gradient (the hero's own ground)
+     with the hero's warm glow echoed as a pseudo-element — no markup, no
+     layout, just light. isolation keeps the negative z-index glow above
+     this band's own background and below its content. */
+  .lacteva-band-ink {
+    position: relative;
+    isolation: isolate;
+    background: linear-gradient(150deg, #0C160E 0%, #0E3D14 62%, #14481E 100%);
+    color: var(--ink-foreground);
+  }
+  .lacteva-band-ink::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(40rem 26rem at 84% 4%, rgba(253, 251, 244, 0.07), transparent 64%),
+      radial-gradient(34rem 24rem at 6% 98%, rgba(127, 212, 149, 0.06), transparent 60%);
+  }
+
+  /* The card surface: a faint vertical milk tint over white, inside a
+     gradient hairline — the two-layer background trick, so the border is
+     a gradient without any extra element. Pairs with .lacteva-lift; the
+     hover adds a green glow under the DS elevation. */
+  .lacteva-card {
+    border: 1px solid transparent;
+    /* A card is a light surface wherever it sits — on an ink band the
+       inherited cream text would wash out on it, so the card resets its
+       own foreground. */
+    color: var(--card-foreground);
+    background:
+      linear-gradient(180deg, #ffffff 0%, oklch(0.985 0.012 108) 100%) padding-box,
+      linear-gradient(150deg, oklch(0.87 0.045 140) 0%, oklch(0.92 0.018 110) 45%, oklch(0.85 0.055 150) 100%) border-box;
+    box-shadow: var(--elevation-1);
+  }
+  .lacteva-card.lacteva-lift:hover {
+    box-shadow:
+      var(--elevation-3),
+      0 10px 34px -10px oklch(0.55 0.12 150 / 0.28);
+  }
+
+  /* Duotone icon chip: the inline icon sits in a two-tone dairy disc —
+     stroke in primary, ground in the soft green pair — instead of
+     floating bare on the page. */
+  .lacteva-icon-duo {
+    display: inline-flex;
+    width: 2.25rem;
+    height: 2.25rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.625rem;
+    color: var(--primary);
+    background:
+      radial-gradient(120% 120% at 28% 22%, oklch(0.97 0.02 120) 0%, transparent 55%),
+      linear-gradient(145deg, oklch(0.94 0.045 130) 0%, oklch(0.9 0.06 148) 100%);
+    box-shadow: inset 0 0 0 1px oklch(0.43 0.105 150 / 0.14);
+  }
+
+  /* Numerals on ink wear the milk gradient — the rich drop's own body
+     colours, clipped to the glyphs. */
+  .lacteva-milk-text {
+    background: linear-gradient(165deg, #ffffff 8%, #fdfbf4 52%, #e4dec9 96%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* The CTA band's shimmer: one wide, faint milk highlight drifting
+     across the gradient every 13 seconds. Transform-only (compositor),
+     and the strip is off-screen at both loop ends so the restart is
+     invisible. Under reduced motion the global rule collapses it. */
+  @keyframes cta-shimmer {
+    0% {
+      transform: translateX(-38%);
+    }
+    55% {
+      transform: translateX(38%);
+    }
+    100% {
+      transform: translateX(38%);
+    }
+  }
+  .lacteva-shimmer-layer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -50%;
+    width: 200%;
+    pointer-events: none;
+    background: linear-gradient(115deg, transparent 44%, rgba(253, 251, 244, 0.06) 50%, transparent 56%);
+    animation: cta-shimmer 13s var(--ease-in-out-liquid) infinite;
   }
 }
