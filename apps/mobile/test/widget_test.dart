@@ -7,6 +7,7 @@ import 'package:lacteva_mobile/src/offline/queue.dart';
 import 'package:lacteva_mobile/src/offline/offline_client.dart';
 import 'package:lacteva_mobile/src/center_summary.dart';
 import 'package:lacteva_mobile/src/brand/mark.dart';
+import 'package:lacteva_mobile/src/brand/wordmark.dart';
 import 'package:lacteva_mobile/src/centers.dart';
 import 'package:lacteva_mobile/src/collection_wizard.dart';
 import 'package:lacteva_mobile/src/notifications.dart';
@@ -31,11 +32,22 @@ void main() {
     await tester.pumpWidget(const LactevaApp());
     // LACTEVA-BRAND-003 moved the identity off the app bar and into the page:
     // the mark and the wordmark stand above the card, static, always — which
-    // is what lets the reveal be removed for reduced motion without the
+    // is what lets the entrance be removed for reduced motion without the
     // screen losing its name. The claim is unchanged: the app opens on
-    // sign-in.
-    expect(find.byType(LactevaMark), findsOneWidget);
-    expect(find.text('Lacteva'), findsOneWidget);
+    // sign-in, wearing its own name.
+    //
+    // WO-33 changed HOW the name is worn, not whether. It used to be the word
+    // "Lacteva" set in the UI font, which BRAND-004 Amendment 1 forbids on a
+    // committed surface; it is now the owner's traced letterforms. So the
+    // assertion moved from the text to the artwork — `find.text('Lacteva')`
+    // would now pass only if somebody had put the approximation back.
+    // WO-33 also changed WHICH mark stands here. It was BRAND-003's lit
+    // drop, which is a dark-ground rendering and went pale against the auth
+    // screens' cream; it is now the can — the same object the launcher, the
+    // splash and the website's nav all show (WO-31 accepted, ruling 4).
+    expect(find.byType(LactevaCanMark), findsOneWidget);
+    expect(find.byType(LactevaWordmark), findsOneWidget);
+    expect(find.text('Lacteva'), findsNothing);
     expect(find.text('Sign in'), findsWidgets);
   });
 

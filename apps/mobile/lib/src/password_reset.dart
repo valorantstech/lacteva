@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'brand/auth_backdrop.dart';
+import 'brand/auth_motion.dart';
+
 import 'api.dart';
 import 'l10n.dart';
+import 'theme.dart';
 
 /// Reset a forgotten password from the handset (LACTEVA-ADMIN-003).
 ///
@@ -111,9 +115,19 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
   @override
   Widget build(BuildContext context) {
     final t = _l;
+    // WO-33: the same ground and the same entrance as sign-in. The two
+    // screens are one moment as far as anybody using them is concerned, and
+    // arriving here used to feel like leaving the product.
     return Scaffold(
-      appBar: AppBar(title: Text(t.t('auth.resetTitle'))),
-      body: Center(
+      appBar: AppBar(
+        title: Text(t.t('auth.resetTitle')),
+        // The ground runs under the bar, so the bar shows it.
+        backgroundColor: LactevaColors.transparent,
+        elevation: 0,
+      ),
+      extendBodyBehindAppBar: true,
+      body: AuthBackdrop(
+        child: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
@@ -122,10 +136,12 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (!_codeSent) ...[
-                  TextField(
-                    controller: _email,
-                    decoration: InputDecoration(labelText: t.t('auth.email')),
-                    keyboardType: TextInputType.emailAddress,
+                  FocusGlow(
+                    child: TextField(
+                      controller: _email,
+                      decoration: InputDecoration(labelText: t.t('auth.email')),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
                   ),
                 ] else ...[
                   // The same words whatever the platform found.
@@ -135,20 +151,24 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                       t.t('auth.resetSent', {'email': _email.text.trim()}),
                     ),
                   ),
-                  TextField(
-                    controller: _code,
-                    decoration: InputDecoration(
-                      labelText: t.t('auth.resetCode'),
+                  FocusGlow(
+                    child: TextField(
+                      controller: _code,
+                      decoration: InputDecoration(
+                        labelText: t.t('auth.resetCode'),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: _password,
-                    decoration: InputDecoration(
-                      labelText: t.t('auth.resetNewPassword'),
-                      helperText: t.t('auth.resetMinLength'),
+                  FocusGlow(
+                    child: TextField(
+                      controller: _password,
+                      decoration: InputDecoration(
+                        labelText: t.t('auth.resetNewPassword'),
+                        helperText: t.t('auth.resetMinLength'),
+                      ),
+                      obscureText: true,
                     ),
-                    obscureText: true,
                   ),
                 ],
                 const SizedBox(height: 20),
@@ -162,20 +182,24 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                       ),
                     ),
                   ),
-                FilledButton(
-                  onPressed: _busy
-                      ? null
-                      : (_codeSent ? _confirm : _requestCode),
-                  child: Text(
-                    _codeSent
-                        ? t.t('auth.resetSubmit')
-                        : t.t('auth.resetSendCode'),
+                PressDip(
+                  enabled: !_busy,
+                  child: FilledButton(
+                    onPressed: _busy
+                        ? null
+                        : (_codeSent ? _confirm : _requestCode),
+                    child: Text(
+                      _codeSent
+                          ? t.t('auth.resetSubmit')
+                          : t.t('auth.resetSendCode'),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ),
+      ),
       ),
     );
   }

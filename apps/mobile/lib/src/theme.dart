@@ -158,6 +158,14 @@ abstract final class LactevaColors {
   /// action. Heavier than [hairline], which merely separates.
   static const controlBorder = Color(0xFFD8D3C6);
 
+  /// Not a colour — the absence of one.
+  ///
+  /// Named here so a surface that must let what is BEHIND it show through
+  /// (WO-33's auth ground runs under the app bar) does not have to reach for
+  /// a Material literal and trip the palette guard. Adding it to the palette
+  /// rather than exempting the files keeps that guard strict everywhere else.
+  static const transparent = Color(0x00000000);
+
   /// The round's figures sit on a barely-there wash rather than on plain milk,
   /// so a strip of numbers reads as one object.
   static const paleTint = Color(0xFFF3F7EE);
@@ -186,6 +194,25 @@ LinearGradient deepBrandGradient() => const LinearGradient(
 );
 
 /// Progress, left to right — a run draining rather than a state.
+/// The corner light every brand band carries (WO-33).
+///
+/// A flat gradient band reads as printed. One soft light in the top corner
+/// gives it depth, and putting it HERE rather than in each screen is the
+/// LACTEVA-BRAND-002 lesson applied to lighting: the operator home, the
+/// household header, the portal dashboard and the store banner are all
+/// supposed to look lit from the same place, and three copies of a radius
+/// drift into three different rooms.
+///
+/// Used as a `foregroundDecoration`, so it lies over the band's own gradient
+/// without either of them having to know about the other.
+const BoxDecoration kBrandBandLight = BoxDecoration(
+  gradient: RadialGradient(
+    center: Alignment(0.86, -1.1),
+    radius: 1.25,
+    colors: [Color(0x24FDFBF4), Color(0x00FDFBF4)],
+  ),
+);
+
 const LinearGradient kProgressGradient = LinearGradient(
   begin: Alignment.centerLeft,
   end: Alignment.centerRight,

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'brand/auth_backdrop.dart';
+import 'brand/auth_motion.dart';
 import 'brand/mark.dart';
 import 'brand/motion.dart';
-import 'brand/reveal.dart';
+import 'brand/wordmark.dart';
 import 'center_summary.dart';
 import 'collection_wizard.dart';
 import 'home.dart';
@@ -30,17 +32,7 @@ class LoginScreen extends StatefulWidget {
     super.key,
     required this.client,
     this.notice,
-    this.gate = const AlwaysReveal(),
-    this.today,
   });
-
-  /// LACTEVA-BRAND-003: whether the reveal has already played today. The
-  /// default remembers nothing, which is right for a screen constructed
-  /// mid-session — `main.dart` supplies the persisted one at launch.
-  final RevealGate gate;
-
-  /// Injected by the tests so the gate is deterministic.
-  final String? today;
 
   /// DEMO-012: the OFFLINE client specifically. Sign-in leads to the delivery
   /// round, which captures into the durable queue — so the type that carries
@@ -63,6 +55,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final _password = TextEditingController();
   String? _error;
   bool _busy = false;
+
+  /// WO-33: the success transition is playing. Set only when motion is
+  /// allowed; reduced motion goes straight through.
+  bool _pouring = false;
 
   /// Captured work waiting on this phone (P1-MOBILE-COUNTER-001 §5). After a
   /// restart while offline the operator cannot sign in — but they CAN be told
@@ -97,6 +93,10 @@ class _LoginScreenState extends State<LoginScreen> {
       // exists in two organizations.
       await widget.client.login(_email.text.trim(), _password.text);
       if (!mounted) return;
+      // WO-33: milk fills the screen on the way through. The pour does NOT
+      // gate the push — the route is built underneath the sheet, so a slow
+      // home costs nothing extra and a fast one is not held back.
+      if (motionAllowed(context)) setState(() => _pouring = true);
       // DEMO-012: the PLATFORM decides where this lands, not this screen.
       // It used to push the collection-centre list at everybody — including
       // a household, who then met a wall of 403s on a screen about somebody
@@ -119,15 +119,18 @@ class _LoginScreenState extends State<LoginScreen> {
     // English today, translatable the day a pre-auth locale source is chosen
     // (P1-LOCALE-I18N-001).
     final t = L10n.of(null);
-    // The reveal wraps the WHOLE screen, and the screen is built first: its
-    // controllers are live and its fields focusable from frame one. The
-    // overlay captures no pointer, so a tap on the email field dismisses the
-    // reveal and opens the keyboard in the same gesture.
-    return LactevaReveal(
-      gate: widget.gate,
-      today: widget.today,
-      child: Scaffold(
-        body: SafeArea(
+    // WO-33: the auth family's ground — cream with two dairy washes that
+    // drift into place and then stop. The card rises onto it. The splash, if
+    // it is playing, is a separate layer in `main.dart` and this screen is
+    // fully built underneath it.
+    return Stack(
+      children: [
+        Scaffold(
+          // No `backgroundColor` override: the backdrop paints its own cream
+          // ground edge to edge, and the theme's scaffold colour is that same
+          // cream underneath it.
+          body: AuthBackdrop(
+            child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
@@ -138,25 +141,20 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // The mark is here, static, always — which is what makes
-                      // the reveal removable. Reduced motion, or a second launch
-                      // today, and this is simply the screen.
+                      // The mark is here, static, always — which is what
+                      // makes the splash removable. Reduced motion, or a
+                      // dismissed sequence, and this is simply the screen.
                       const Padding(
-                        padding: EdgeInsets.only(bottom: 8),
-                        child: Center(child: LactevaMark(size: 54)),
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: Center(child: LactevaCanMark(size: 56)),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 24),
+                      // The owner's letterforms, TRACED — not the word set in
+                      // the UI font, which is what stood here and is what
+                      // BRAND-004 Amendment 1 forbids on a committed surface.
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 24),
                         child: Center(
-                          child: Text(
-                            'Lacteva',
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.48,
-                              color: LactevaColors.ink,
-                            ),
-                          ),
+                          child: LactevaWordmark(height: 26, withTagline: true),
                         ),
                       ),
                       if (_queuedOffline > 0)
@@ -173,26 +171,30 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ),
-                      TextFormField(
-                        controller: _email,
-                        decoration: InputDecoration(
-                          labelText: t.t('auth.email'),
+                      FocusGlow(
+                        child: TextFormField(
+                          controller: _email,
+                          decoration: InputDecoration(
+                            labelText: t.t('auth.email'),
+                          ),
+                          keyboardType: TextInputType.emailAddress,
+                          validator: (v) => (v == null || !v.contains('@'))
+                              ? 'Enter your email'
+                              : null,
                         ),
-                        keyboardType: TextInputType.emailAddress,
-                        validator: (v) => (v == null || !v.contains('@'))
-                            ? 'Enter your email'
-                            : null,
                       ),
                       const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _password,
-                        decoration: InputDecoration(
-                          labelText: t.t('auth.password'),
+                      FocusGlow(
+                        child: TextFormField(
+                          controller: _password,
+                          decoration: InputDecoration(
+                            labelText: t.t('auth.password'),
+                          ),
+                          obscureText: true,
+                          validator: (v) => (v == null || v.isEmpty)
+                              ? 'Enter your password'
+                              : null,
                         ),
-                        obscureText: true,
-                        validator: (v) => (v == null || v.isEmpty)
-                            ? 'Enter your password'
-                            : null,
                       ),
                       const SizedBox(height: 20),
                       if (_error != null)
@@ -205,10 +207,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ),
-                      FilledButton(
-                        onPressed: _busy ? null : _submit,
-                        child: Text(
-                          _busy ? t.t('auth.signingIn') : t.t('auth.signIn'),
+                      PressDip(
+                        enabled: !_busy,
+                        child: FilledButton(
+                          onPressed: _busy ? null : _submit,
+                          child: Text(
+                            _busy ? t.t('auth.signingIn') : t.t('auth.signIn'),
+                          ),
                         ),
                       ),
                       // LACTEVA-ADMIN-003: quiet, under the form. A locked-out
@@ -242,6 +247,16 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
+        ),
+        // The pour, over everything, once sign-in has succeeded. It is a
+        // sibling of the Scaffold rather than a route: a route transition
+        // would animate the form out, and what should be leaving is the
+        // screen, not the card.
+        if (_pouring)
+          const Positioned.fill(
+            child: MilkPour(),
+          ),
+      ],
     );
   }
 }

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'src/brand/reveal.dart';
+import 'src/brand/splash.dart';
 import 'src/centers.dart';
 import 'src/theme.dart';
 import 'src/offline/offline_client.dart';
@@ -27,19 +27,13 @@ Future<void> main() async {
   // directory is the writable, restart-surviving home the comment below
   // always promised.
   String? queuePath;
-  String? revealPath;
   try {
     final dir = await getApplicationDocumentsDirectory();
     queuePath = '${dir.path}/lacteva_sync_queue.json';
-    // LACTEVA-BRAND-003: its own file, beside the queue and never in it — the
-    // queue holds a rider's captured work, and a cosmetic preference has no
-    // business sharing that fsync.
-    revealPath = '${dir.path}/lacteva_reveal.json';
   } catch (_) {
     queuePath = null; // fall through to the in-memory stand-in
-    revealPath = null;
   }
-  runApp(LactevaApp(queuePath: queuePath, revealPath: revealPath));
+  runApp(LactevaApp(queuePath: queuePath));
 }
 
 /// The app's single offline-capable client (OFF-001).
@@ -65,14 +59,9 @@ OfflineApiClient buildClient({
 }
 
 class LactevaApp extends StatefulWidget {
-  const LactevaApp({super.key, this.queuePath, this.revealPath});
+  const LactevaApp({super.key, this.queuePath});
 
   final String? queuePath;
-
-  /// Where "the reveal already played today" is remembered. Null on a device
-  /// with no writable directory, which costs one repeated reveal and nothing
-  /// else.
-  final String? revealPath;
 
   @override
   State<LactevaApp> createState() => _LactevaAppState();
@@ -113,12 +102,19 @@ class _LactevaAppState extends State<LactevaApp> {
       // Design System V1: the shared Lacteva palette and the operator
       // ergonomics that go with it (48dp targets, larger type, milk-on-cream).
       theme: lactevaTheme(),
-      home: LoginScreen(
-        client: _client,
-        gate: widget.revealPath == null
-            ? const AlwaysReveal()
-            : FileRevealGate(widget.revealPath!),
-      ),
+      // WO-33: the cinematic entry, wrapped around the FIRST screen only.
+      //
+      // Not around the whole navigator: `_returnToSignIn` pushes a fresh
+      // LoginScreen when a session expires, and replaying a two-second brand
+      // sequence at somebody whose session just died would be the app
+      // congratulating itself. Wrapping `home` also puts it structurally out
+      // of reach of the collection wizard, so it can never front a capture
+      // resume — the ≤160ms budget is untouched by construction rather than
+      // by promise.
+      //
+      // The sign-in screen underneath is BUILT here, not after: the splash is
+      // a layer over a finished screen, and one tap takes it down.
+      home: LactevaSplash(child: LoginScreen(client: _client)),
     );
   }
 }

@@ -123,3 +123,61 @@ class LactevaMarkPainter extends CustomPainter {
   @override
   bool shouldRepaint(LactevaMarkPainter oldDelegate) => false;
 }
+
+/// The flat mark: the can, with the drop knocked out of it.
+///
+/// This is what the launcher wears, what the website's nav shows and what the
+/// splash draws — so it is what a light surface in the app should show too.
+///
+/// [LactevaMark] above is BRAND-003's LIT DROP, and it is explicitly a
+/// dark-ground rendering: white milk with a cream shadow, which on the auth
+/// screens' cream ground is a pale shape on a pale ground. WO-33 moved
+/// sign-in onto this instead, which also settles the coherence question
+/// WO-31 raised — the mark on the sign-in screen is now the same object as
+/// the mark on the home screen icon.
+class LactevaCanMark extends StatelessWidget {
+  const LactevaCanMark({super.key, this.size = 54, this.onInk = false});
+
+  /// The drawn HEIGHT of the can.
+  final double size;
+
+  /// Cream body and a deep drop, for a dark ground.
+  final bool onInk;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = size * (kCanBounds.width / kCanBounds.height);
+    return ExcludeSemantics(
+      child: SizedBox(
+        width: width,
+        height: size,
+        child: CustomPaint(painter: LactevaCanPainter(onInk: onInk)),
+      ),
+    );
+  }
+}
+
+/// Two fills: the body, then the drop knocked back out of it.
+class LactevaCanPainter extends CustomPainter {
+  const LactevaCanPainter({required this.onInk});
+
+  final bool onInk;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.height / kCanBounds.height;
+    final can = lactevaCanPath(scale);
+    final offset = -can.getBounds().topLeft;
+    canvas.drawPath(
+      can.shift(offset),
+      Paint()..color = onInk ? const Color(kLogoCream) : const Color(kLogoDairy),
+    );
+    canvas.drawPath(
+      lactevaDropPath(scale).shift(offset),
+      Paint()..color = onInk ? const Color(kLogoDeep) : const Color(kLogoCream),
+    );
+  }
+
+  @override
+  bool shouldRepaint(LactevaCanPainter old) => old.onInk != onInk;
+}
