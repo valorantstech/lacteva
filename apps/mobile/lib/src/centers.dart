@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'brand/auth_backdrop.dart';
+import 'brand/auth_lockup.dart';
 import 'brand/auth_motion.dart';
-import 'brand/mark.dart';
 import 'brand/motion.dart';
-import 'brand/wordmark.dart';
 import 'center_summary.dart';
 import 'collection_wizard.dart';
 import 'home.dart';
@@ -141,22 +140,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // The mark is here, static, always — which is what
-                      // makes the splash removable. Reduced motion, or a
-                      // dismissed sequence, and this is simply the screen.
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 10),
-                        child: Center(child: LactevaCanMark(size: 56)),
-                      ),
-                      // The owner's letterforms, TRACED — not the word set in
-                      // the UI font, which is what stood here and is what
-                      // BRAND-004 Amendment 1 forbids on a committed surface.
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 24),
-                        child: Center(
-                          child: LactevaWordmark(height: 26, withTagline: true),
-                        ),
-                      ),
+                      // The mark and the owner's traced letterforms are here,
+                      // static, always — which is what makes the splash
+                      // removable. Reduced motion, or a dismissed sequence,
+                      // and this is simply the screen.
+                      //
+                      // WO-36 moved the composition into `AuthLockup` so the
+                      // reset screen wears the same face rather than a second
+                      // arrangement of the same parts. Nothing about it
+                      // changed here: same sizes, same gaps, same order.
+                      const AuthLockup(),
                       if (_queuedOffline > 0)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 16),

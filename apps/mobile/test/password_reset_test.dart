@@ -22,6 +22,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lacteva_mobile/src/api.dart';
+import 'package:lacteva_mobile/src/brand/auth_lockup.dart';
+import 'package:lacteva_mobile/src/brand/mark.dart';
+import 'package:lacteva_mobile/src/brand/wordmark.dart';
 import 'package:lacteva_mobile/src/password_reset.dart';
 
 class _Fake extends ApiClient {
@@ -54,6 +57,15 @@ Future<void> _pump(WidgetTester tester, _Fake client) async {
   );
   await tester.pumpAndSettle();
 }
+
+/// The field under a given label.
+///
+/// WO-36 adds a third box to step 2, and `find.byType(TextField).last` used
+/// to mean "new password" only because it happened to be last. A positional
+/// selector that stops meaning what it meant is the same failure QA-003 and
+/// QA-005 chased through the portal; this asks for the field by its name.
+Finder _field(String label) =>
+    find.ancestor(of: find.text(label), matching: find.byType(TextField));
 
 /// Step 1, all the way to the code field.
 Future<void> _ask(WidgetTester tester, String email) async {
@@ -130,9 +142,10 @@ void main() {
     await tester.pumpAndSettle();
 
     await _ask(tester, 'manager@kilima.example');
-    await tester.enterText(find.byType(TextField).first, 'code-xyz');
+    await tester.enterText(_field('Reset code'), 'code-xyz');
+    await tester.enterText(_field('New password'), 'correct-horse-battery');
     await tester.enterText(
-      find.byType(TextField).last,
+      _field('Confirm new password'),
       'correct-horse-battery',
     );
     await tester.tap(find.text('Set new password'));
@@ -143,6 +156,108 @@ void main() {
     ]);
     // The `notice` slot the LoginScreen already has, carrying WHY.
     expect(handedBack, 'Your password was updated — sign in to continue.');
+  });
+
+  group('the two new passwords must agree (WO-36)', () {
+    testWidgets('a mismatch blocks the submit and names the problem', (
+      tester,
+    ) async {
+      final client = _Fake();
+      await _pump(tester, client);
+      await _ask(tester, 'manager@kilima.example');
+
+      await tester.enterText(_field('Reset code'), 'code-xyz');
+      await tester.enterText(_field('New password'), 'correct-horse-battery');
+      await tester.enterText(_field('Confirm new password'), 'correct-horse');
+      await tester.tap(find.text('Set new password'));
+      await tester.pumpAndSettle();
+
+      // The platform is never asked. A typo in a password nobody can read
+      // back is the one mistake this screen can catch before it costs
+      // somebody their only way in.
+      expect(client.confirmed, isEmpty);
+      // ...and it says what is wrong, at the field that is wrong.
+      expect(
+        find.text('Those two passwords do not match.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('correcting the confirmation lets it through', (tester) async {
+      final client = _Fake();
+      await _pump(tester, client);
+      await _ask(tester, 'manager@kilima.example');
+
+      await tester.enterText(_field('Reset code'), 'code-xyz');
+      await tester.enterText(_field('New password'), 'correct-horse-battery');
+      await tester.enterText(_field('Confirm new password'), 'wrong');
+      await tester.tap(find.text('Set new password'));
+      await tester.pumpAndSettle();
+      expect(client.confirmed, isEmpty);
+
+      // Typing again clears the complaint rather than leaving it under a
+      // field the person has already fixed.
+      await tester.enterText(
+        _field('Confirm new password'),
+        'correct-horse-battery',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Those two passwords do not match.'), findsNothing);
+
+      await tester.tap(find.text('Set new password'));
+      await tester.pumpAndSettle();
+      expect(client.confirmed, [
+        ['code-xyz', 'correct-horse-battery'],
+      ]);
+    });
+
+    testWidgets('the platform still receives exactly what it always did', (
+      tester,
+    ) async {
+      // The confirmation is a client-side courtesy. The contract is two
+      // arguments, and this screen must not have quietly grown a third.
+      final client = _Fake();
+      await _pump(tester, client);
+      await _ask(tester, 'manager@kilima.example');
+      await tester.enterText(_field('Reset code'), 'code-xyz');
+      await tester.enterText(_field('New password'), 'a-long-enough-secret');
+      await tester.enterText(
+        _field('Confirm new password'),
+        'a-long-enough-secret',
+      );
+      await tester.tap(find.text('Set new password'));
+      await tester.pumpAndSettle();
+      expect(client.confirmed.single, hasLength(2));
+      expect(client.confirmed.single, ['code-xyz', 'a-long-enough-secret']);
+    });
+
+    testWidgets('the ten-character rule is still on the screen', (
+      tester,
+    ) async {
+      final client = _Fake();
+      await _pump(tester, client);
+      await _ask(tester, 'manager@kilima.example');
+      expect(find.text('At least 10 characters.'), findsOneWidget);
+    });
+  });
+
+  group('it wears the same face as sign-in (WO-36)', () {
+    testWidgets('the lockup is on the reset screen too', (tester) async {
+      final client = _Fake();
+      await _pump(tester, client);
+      // The can, the traced letterforms and the tagline — the same widget
+      // sign-in uses, not a second arrangement of the same parts.
+      expect(find.byType(AuthLockup), findsOneWidget);
+      expect(find.byType(LactevaCanMark), findsOneWidget);
+      expect(find.byType(LactevaWordmark), findsOneWidget);
+    });
+
+    testWidgets('and it survives into step 2', (tester) async {
+      final client = _Fake();
+      await _pump(tester, client);
+      await _ask(tester, 'manager@kilima.example');
+      expect(find.byType(AuthLockup), findsOneWidget);
+    });
   });
 
   testWidgets('a transport failure says so instead of sitting there', (
@@ -180,9 +295,12 @@ void main() {
     await _pump(tester, client);
     await _ask(tester, 'manager@kilima.example');
 
-    await tester.enterText(find.byType(TextField).first, 'stale');
+    // Named, not counted: WO-36 put a third box on this step, and `.last`
+    // used to mean "new password" only because it happened to be last.
+    await tester.enterText(_field('Reset code'), 'stale');
+    await tester.enterText(_field('New password'), 'correct-horse-battery');
     await tester.enterText(
-      find.byType(TextField).last,
+      _field('Confirm new password'),
       'correct-horse-battery',
     );
     await tester.tap(find.text('Set new password'));

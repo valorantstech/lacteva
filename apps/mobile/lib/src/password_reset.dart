@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'brand/auth_backdrop.dart';
+import 'brand/auth_lockup.dart';
 import 'brand/auth_motion.dart';
 
 import 'api.dart';
@@ -40,9 +41,16 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
   final _email = TextEditingController();
   final _code = TextEditingController();
   final _password = TextEditingController();
+  final _confirm = TextEditingController();
   bool _codeSent = false;
   bool _busy = false;
   String? _error;
+
+  /// WO-36: the confirmation does not match. Held apart from `_error`, which
+  /// carries what the PLATFORM said — this is the one problem this screen can
+  /// see for itself, and it belongs under the field that has it rather than
+  /// in the slot reserved for the platform's own refusals.
+  String? _mismatch;
 
   L10n get _l => L10n.of(null);
 
@@ -80,10 +88,22 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
     }
   }
 
-  Future<void> _confirm() async {
+  void _clearMismatch() {
+    if (_mismatch != null) setState(() => _mismatch = null);
+  }
+
+  Future<void> _submitNewPassword() async {
+    // The one mistake this screen can catch before it costs somebody their
+    // only way in: a typo in a secret nobody can read back. Caught HERE, so
+    // the platform is never asked and the reset code is not spent on it.
+    if (_password.text != _confirm.text) {
+      setState(() => _mismatch = _l.t('auth.resetMismatch'));
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
+      _mismatch = null;
     });
     try {
       await widget.client.confirmPasswordReset(
@@ -108,6 +128,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
   void dispose() {
     _email.dispose();
     _code.dispose();
+    _confirm.dispose();
     _password.dispose();
     super.dispose();
   }
@@ -135,6 +156,9 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // WO-36: the same face sign-in wears. A locked-out operator
+                // was leaving the product to get back into it.
+                const AuthLockup(),
                 if (!_codeSent) ...[
                   FocusGlow(
                     child: TextField(
@@ -168,6 +192,21 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                         helperText: t.t('auth.resetMinLength'),
                       ),
                       obscureText: true,
+                      // Typing again clears the complaint rather than leaving
+                      // it under a field the person has already fixed.
+                      onChanged: (_) => _clearMismatch(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FocusGlow(
+                    child: TextField(
+                      controller: _confirm,
+                      decoration: InputDecoration(
+                        labelText: t.t('auth.resetConfirmPassword'),
+                        errorText: _mismatch,
+                      ),
+                      obscureText: true,
+                      onChanged: (_) => _clearMismatch(),
                     ),
                   ),
                 ],
@@ -187,7 +226,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                   child: FilledButton(
                     onPressed: _busy
                         ? null
-                        : (_codeSent ? _confirm : _requestCode),
+                        : (_codeSent ? _submitNewPassword : _requestCode),
                     child: Text(
                       _codeSent
                           ? t.t('auth.resetSubmit')
