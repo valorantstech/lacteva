@@ -183,15 +183,33 @@ export default function ReportsPage() {
     return () => clearTimeout(t);
   }, []);
 
-  const payable = daily
-    ? Object.entries(daily.payable_by_currency)
-        // DEMO-010: through the shared formatter, so this page groups its
-        // digits like every other one. It read `13860.00 KES` beside
-        // `13,860.00 KES` elsewhere, which during a demonstration looks like
-        // two different systems rather than one.
-        .map(([currency, amount]) => `${formatAmount(amount)} ${currency}`)
-        .join(" · ") || "0"
-    : "…";
+  // Three different states, and they must not be allowed to read alike.
+  //
+  // WO-33 portal rider: this used to reach straight into
+  // `daily.payable_by_currency` once `daily` was truthy, and
+  // `Object.entries(undefined)` THROWS rather than returning nothing — so a
+  // summary that arrived without the field took the whole page down during
+  // render, as an unhandled error that named no test.
+  //
+  // An absent figure is not a zero. "0" is the platform saying the dairy owes
+  // nobody anything; "—" is the platform not having said. Collapsing the two
+  // is the same defect the dashboard hero was built to avoid.
+  const payable = !daily
+    ? "…"
+    : daily.payable_by_currency == null
+      ? "—"
+      : Object.entries(daily.payable_by_currency)
+          // DEMO-010: through the shared formatter, so this page groups its
+          // digits like every other one. It read `13860.00 KES` beside
+          // `13,860.00 KES` elsewhere, which during a demonstration looks
+          // like two different systems rather than one.
+          .map(([currency, amount]) => `${formatAmount(amount)} ${currency}`)
+          .join(" · ") || "0";
+
+  // The SAME defect as `payable` above, twice more on this page: the object
+  // was guarded and the field it reaches into was not. Hoisted to a local so
+  // the guard is stated once and the JSX below cannot forget it.
+  const settlementRows = settlements?.by_status ?? [];
 
   return (
     <PageContainer width="default">
@@ -443,9 +461,9 @@ export default function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm">
-            {settlements && settlements.by_status.length > 0 ? (
+            {settlementRows.length > 0 ? (
               <>
-                {settlements.by_status.map((row) => (
+                {settlementRows.map((row) => (
                   <div key={row.status} className="flex justify-between">
                     <Badge variant="outline">{row.status}</Badge>
                     <span>
@@ -500,12 +518,14 @@ export default function ReportsPage() {
                 <div className="flex justify-between">
                   <span>Gross priced</span>
                   <span>
-                    {Object.entries(pricing.gross_by_currency)
-                      .map(
-                        ([currency, amount]) =>
-                          `${formatAmount(amount)} ${currency}`,
-                      )
-                      .join(" · ") || "0"}
+                    {pricing.gross_by_currency == null
+                      ? "—"
+                      : Object.entries(pricing.gross_by_currency)
+                          .map(
+                            ([currency, amount]) =>
+                              `${formatAmount(amount)} ${currency}`,
+                          )
+                          .join(" · ") || "0"}
                   </span>
                 </div>
                 <div className="flex justify-between border-t border-border pt-2">

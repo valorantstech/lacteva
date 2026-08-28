@@ -34,6 +34,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'brand/motion.dart';
 import 'center_summary.dart';
 import 'centers.dart';
 import 'collection_wizard.dart';
@@ -286,14 +287,30 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
       );
     }
 
+    final board = _isManagerView
+        ? _managerBoard(centre)
+        : _operatorBoard(centre);
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: _resolve,
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: _isManagerView
-              ? _managerBoard(centre)
-              : _operatorBoard(centre),
+        // WO-33: the board settles in, ONCE. `SettleInScope` is
+        // LACTEVA-MOBILE-008's own primitive — it arms the stagger for a
+        // single build and disarms it, so a pull-to-refresh or a rebuild
+        // after the summary lands does not replay the entrance at somebody
+        // who is already reading.
+        //
+        // The hero is deliberately NOT staggered: it carries the greeting and
+        // the centre name, and the one thing this screen may never do is make
+        // an operator wait to find out where they are.
+        child: SettleInScope(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              board.first,
+              for (var i = 1; i < board.length; i++)
+                SettleIn(index: i - 1, child: board[i]),
+            ],
+          ),
         ),
       ),
     );
@@ -349,6 +366,8 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
       ),
       _NavTile(
         icon: Icons.groups_outlined,
+        // People served — the product's "live" green.
+        iconColor: LactevaColors.fresh,
         label: _l.t('home.farmersTile'),
         onTap: () => _open(
           SuppliersListScreen(client: widget.client, session: widget.session),
@@ -370,6 +389,9 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
       ),
       _NavTile(
         icon: Icons.schedule_outlined,
+        // A record to look back over rather than an action — amber, the
+        // attention hue, kept low.
+        iconColor: LactevaColors.amber,
         label: _l.t('home.shiftHistory'),
         onTap: () => _open(
           CenterDetailScreen(
@@ -530,6 +552,10 @@ class _HeroBand extends StatelessWidget {
       // The board's 64px top padding is a status bar plus breathing room; the
       // real inset is whatever this handset has.
       padding: EdgeInsets.fromLTRB(20, top + 20, 20, 22),
+      // WO-33: depth, not a second colour. The flat gradient read as a
+      // printed band; the light comes from `theme.dart` so this band and the
+      // household's are lit from the same place by construction.
+      foregroundDecoration: kBrandBandLight,
       decoration: BoxDecoration(gradient: brandGradient()),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -817,16 +843,31 @@ class _NavTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final chipText = chip;
+    // WO-33: the tile carries a wash of its OWN meaning's hue — the surface,
+    // not a chip around the icon, because a chip adds height and this grid is
+    // what a board has instead of a menu.
+    //
+    // Never colour alone: every tile is named, and the icon says the same
+    // thing again. The wash only helps the eye sort six doors at 5 a.m.
+    final surface = Color.alphaBlend(
+      iconColor.withValues(alpha: 0.05),
+      LactevaColors.milk,
+    );
     return Material(
-      color: LactevaColors.milk,
+      color: surface,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Ink(
           decoration: BoxDecoration(
-            color: LactevaColors.milk,
-            border: Border.all(color: LactevaColors.hairline),
+            color: surface,
+            border: Border.all(
+              color: Color.alphaBlend(
+                iconColor.withValues(alpha: 0.14),
+                LactevaColors.hairline,
+              ),
+            ),
             borderRadius: BorderRadius.circular(14),
           ),
           child: ConstrainedBox(

@@ -294,6 +294,8 @@ class _Hero extends StatelessWidget {
 
     return Container(
       padding: EdgeInsets.fromLTRB(20, top + 20, 20, 26),
+      // WO-33: the same corner light the operator's band carries.
+      foregroundDecoration: kBrandBandLight,
       decoration: BoxDecoration(gradient: deepBrandGradient()),
       child: Stack(
         clipBehavior: Clip.hardEdge,
