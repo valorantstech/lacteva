@@ -44,6 +44,7 @@
 /// capture-path budget is untouched by anything in this file.
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -99,10 +100,19 @@ double splashBeat(double elapsedMs, int from, int to) {
 
 /// Plays the entry over [child].
 class LactevaSplash extends StatefulWidget {
-  const LactevaSplash({super.key, required this.child});
+  const LactevaSplash({super.key, required this.child, this.onGlass});
 
   /// The screen underneath — built, live and laid out from frame one.
   final Widget child;
+
+  /// Completes when the first frame is actually ON THE GLASS.
+  ///
+  /// Defaults to the binding's own first-rasterized-frame signal, which is
+  /// what a launcher waits for before it takes its window down. Injectable
+  /// because that signal never completes under `TestWidgetsFlutterBinding` —
+  /// there is no glass — so a test that wants to watch the sequence has to
+  /// say when the curtain lifted.
+  final Future<void>? onGlass;
 
   @override
   State<LactevaSplash> createState() => _LactevaSplashState();
@@ -113,6 +123,7 @@ class _LactevaSplashState extends State<LactevaSplash>
   AnimationController? _controller;
   bool _playing = true;
   bool _started = false;
+  bool _armed = false;
 
   @override
   void didChangeDependencies() {
@@ -127,8 +138,34 @@ class _LactevaSplashState extends State<LactevaSplash>
     _controller = AnimationController(vsync: this, duration: duration)
       ..addStatusListener((status) {
         if (status == AnimationStatus.completed) _end();
-      })
-      ..forward();
+      });
+
+    // WO-35, found on glass: the controller is BUILT here and started
+    // somewhere else entirely.
+    //
+    // `didChangeDependencies` runs while the tree is first built — at engine
+    // boot, behind the OS launch window. Frames are produced throughout that
+    // boot and an AnimationController advances on WALL CLOCK between frame
+    // callbacks, so a three-second debug boot spent the whole 2.4-second
+    // sequence before a single beat reached anybody. The handset showed the
+    // launch window and then a settled sign-in; the phone was right and the
+    // 392 green tests were measuring the wrong thing, because `pumpWidget`
+    // has no boot gap.
+    //
+    // So the clock waits for the first frame that is actually on the glass.
+    // Until then the controller sits at zero, which means the splash is
+    // already painting BEAT ZERO while the curtain is still up: the launch
+    // window hands over to the opening frame rather than to a flash of the
+    // sign-in screen underneath.
+    unawaited(_armWhenVisible());
+  }
+
+  Future<void> _armWhenVisible() async {
+    await (widget.onGlass ??
+        WidgetsBinding.instance.waitUntilFirstFrameRasterized);
+    if (!mounted || _armed || !_playing) return;
+    _armed = true;
+    _controller?.forward();
   }
 
   /// Take the splash down.

@@ -20,6 +20,8 @@
 /// the first frame, and one tap anywhere takes the splash down.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lacteva_mobile/src/brand/motion.dart';
@@ -54,9 +56,36 @@ bool splashUp(WidgetTester tester) => tester
     .widgetList<CustomPaint>(find.byType(CustomPaint))
     .any((paint) => paint.painter is SplashPainter);
 
-Widget _app(Widget child, {bool reduceMotion = false}) => MediaQuery(
+/// How far through the sequence the splash has actually got.
+double splashProgress(WidgetTester tester) => tester
+    .widgetList<CustomPaint>(find.byType(CustomPaint))
+    .map((paint) => paint.painter)
+    .whereType<SplashPainter>()
+    .first
+    .progress;
+
+/// The first-frame-on-glass signal (WO-35).
+///
+/// Under `TestWidgetsFlutterBinding` there is no glass, so the real signal
+/// never arrives and a test that wants to watch the sequence has to say when
+/// the curtain lifted. By default it lifts immediately, which is the world
+/// every test before WO-35 was written in; `curtainUp: true` models a launch
+/// still behind the OS launch window, and `onGlass` takes control of the
+/// exact moment.
+Widget _app(
+  Widget child, {
+  bool reduceMotion = false,
+  bool curtainUp = false,
+  Future<void>? onGlass,
+}) =>
+    MediaQuery(
       data: MediaQueryData(disableAnimations: reduceMotion),
-      child: MaterialApp(home: LactevaSplash(child: child)),
+      child: MaterialApp(
+        home: LactevaSplash(
+          onGlass: onGlass ?? (curtainUp ? null : Future<void>.value()),
+          child: child,
+        ),
+      ),
     );
 
 void main() {
@@ -132,10 +161,125 @@ void main() {
       final controller = TextEditingController();
       addTearDown(controller.dispose);
       await tester.pumpWidget(_app(_Underneath(controller: controller)));
-      // One frame past the whole sequence — the controller starts on the
-      // frame AFTER the widget builds, which is the margin every animated
-      // test in this app carries.
+      // One frame to arm the clock on the curtain signal (WO-35), then one
+      // past the whole sequence — a controller starts on the frame AFTER it
+      // is told to, which is the margin every animated test here carries.
+      await tester.pump();
       await tester.pump(SplashBeats.total + const Duration(milliseconds: 32));
+      await tester.pump();
+      expect(splashUp(tester), isFalse);
+    });
+  });
+
+  group('it starts when the curtain lifts, not when the engine boots', () {
+    // THE WO-35 DEFECT, on glass: the splash never appeared on a moto g57.
+    //
+    // The clock used to start in `didChangeDependencies`, which runs while
+    // the tree is first built — at Flutter boot, behind the OS launch window.
+    // Frames are produced throughout that boot, and an AnimationController
+    // advances on WALL CLOCK between frame callbacks, not on frame count. So
+    // a three-second debug boot consumed the whole 2.4-second sequence, and
+    // `_end()` fired before a single beat reached the glass.
+    //
+    // Nothing in the suite saw it, because `pumpWidget` has no boot gap: the
+    // first frame and the first build are the same instant, so all 392 tests
+    // stayed green while the handset showed nothing at all.
+    testWidgets('a slow boot does not advance the clock by one frame', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      final curtain = Completer<void>();
+      await tester.pumpWidget(
+        _app(_Underneath(controller: controller), onGlass: curtain.future),
+      );
+
+      // Beat zero is on screen from the first build, so the launch window
+      // hands over to the opening frame and never to a flash of the form.
+      expect(splashUp(tester), isTrue);
+      expect(splashProgress(tester), 0);
+
+      // A debug boot on that handset is about three seconds from `runApp` to
+      // the first frame on glass. No taps: nobody has touched anything.
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump();
+
+      expect(
+        splashUp(tester),
+        isTrue,
+        reason: 'the sequence used to play out behind the OS launch window',
+      );
+      expect(
+        splashProgress(tester),
+        0,
+        reason: 'not one frame of the sequence may be spent before it is seen',
+      );
+
+      // The curtain lifts. NOW it runs, from the beginning.
+      //
+      // Two pumps of slack: one for the signal to arm the controller, and one
+      // more because a Ticker's FIRST tick is always at elapsed zero. That is
+      // the same margin every animated test in this app carries.
+      curtain.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(splashProgress(tester), greaterThan(0));
+      expect(splashUp(tester), isTrue);
+
+      // ...and still takes its full length from that moment, not from boot.
+      await tester.pump(SplashBeats.total);
+      await tester.pump();
+      expect(splashUp(tester), isFalse);
+    });
+
+    testWidgets('reduced motion waits for the curtain too', (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      final curtain = Completer<void>();
+      await tester.pumpWidget(
+        _app(
+          _Underneath(controller: controller),
+          reduceMotion: true,
+          onGlass: curtain.future,
+        ),
+      );
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump();
+      // The crossfade is 300ms; three seconds of boot would have finished it
+      // several times over.
+      expect(splashUp(tester), isTrue);
+      expect(splashProgress(tester), 0);
+
+      curtain.complete();
+      // Arm, establish the ticker's zero tick, then run the crossfade.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(SplashBeats.reduced + const Duration(milliseconds: 32));
+      await tester.pump();
+      expect(splashUp(tester), isFalse);
+    });
+
+    testWidgets('the default signal is the binding, not a timer', (
+      tester,
+    ) async {
+      // Nothing in this widget measures the boot itself. The signal is the
+      // one the platform already raises when it takes its launch window
+      // down, so a slow phone and a fast one both start at beat zero.
+      const splash = LactevaSplash(child: SizedBox());
+      expect(splash.onGlass, isNull);
+    });
+
+    testWidgets('a tap still dismisses it while it waits', (tester) async {
+      // Nobody should be trapped by a curtain signal that never comes.
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        _app(_Underneath(controller: controller), curtainUp: true),
+      );
+      await tester.pump(const Duration(seconds: 3));
+      expect(splashUp(tester), isTrue);
+      await tester.tapAt(const Offset(200, 300));
       await tester.pump();
       expect(splashUp(tester), isFalse);
     });
@@ -150,6 +294,7 @@ void main() {
       );
       // The whole thing is over inside the crossfade's own budget — a person
       // who asked not to be moved does not wait 2.4 seconds to find out.
+      await tester.pump();
       await tester.pump(SplashBeats.reduced + const Duration(milliseconds: 32));
       await tester.pump();
       expect(splashUp(tester), isFalse);
