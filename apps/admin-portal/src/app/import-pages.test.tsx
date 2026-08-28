@@ -55,7 +55,13 @@ describe("customer import page", () => {
   });
 
   it("sends the rows as parsed — plan nested — and renders per-row verdicts verbatim", async () => {
-    const spy = vi.fn(async () =>
+    // Typed as `fetch`, which is what it stands in for. Declared bare, the
+    // double's call-args tuple is `[]`, so reading `calls[0][1].body` below
+    // is a type error on a line that works perfectly at runtime — which is
+    // what kept `tsc --noEmit`, and therefore CI, red (WO-37). The generic
+    // types the CALL SITE without giving the implementation parameters it
+    // does not use.
+    const spy = vi.fn<typeof fetch>(async () =>
       json([
         { row: 0, status: "created", customer_id: "c1", code: "CUS-2026-000001" },
         {
@@ -96,7 +102,9 @@ describe("customer import page", () => {
 
 describe("supplier import page", () => {
   it("splits centre codes and posts to the supplier endpoint", async () => {
-    const spy = vi.fn(async () => json([{ row: 0, status: "created", supplier_id: "s1" }]));
+    const spy = vi.fn<typeof fetch>(async () =>
+      json([{ row: 0, status: "created", supplier_id: "s1" }]),
+    );
     vi.stubGlobal("fetch", spy);
 
     render(<SupplierImportPage />);
