@@ -221,6 +221,13 @@ class Market:
     fat_bands: list
     staff: dict
     currency_hint: str  # for the seed SUMMARY only; the platform is the truth
+    #: (snf_min, snf_max, rate) or None. A second CONFIGURED dimension on the
+    #: same card — real, published, and answerable by the resolution API.
+    #: Capture prices on FAT; see the note on INDIA_FAT_BANDS for why.
+    snf_bands: list | None = None
+    #: (name, code) or None. A centre opened AFTER the season's rate card was
+    #: published, so its milk arrives rate-pending. See `build_rate_pending`.
+    late_center: tuple | None = None
 
 
 CENTERS = [
@@ -325,6 +332,11 @@ INDIA_CENTERS = [
     ("Devanahalli Collection Centre", "DV-C1"),
 ]
 
+#: Thirty-two farmers (LACTEVA-DEMO-002). Twelve read as a pilot; a
+#: co-operative branch collects from dozens, and the difference shows on every
+#: screen that lists or counts them — the supplier page, the settlement run,
+#: the dashboard's farmer count. Round-robined across the centres, so each
+#: centre carries a believable ten or eleven.
 INDIA_SUPPLIERS = [
     "Ramesh Gowda",
     "Lakshmi Devi",
@@ -338,6 +350,26 @@ INDIA_SUPPLIERS = [
     "Kavitha Iyer",
     "Basavaraj Kulkarni",
     "Shobha Rani",
+    "Girish Kamath",
+    "Sunanda Bhandari",
+    "Nagaraj Desai",
+    "Vasanthi Prabhu",
+    "Shivakumar Angadi",
+    "Rukmini Joshi",
+    "Chandrashekar Naik",
+    "Padmavathi Rao",
+    "Mallikarjun Biradar",
+    "Sujatha Pai",
+    "Harish Ballal",
+    "Geetha Murthy",
+    "Srinivas Achar",
+    "Nirmala Kotian",
+    "Devaraj Gowda",
+    "Yashoda Shetty",
+    "Umesh Karanth",
+    "Bhavani Sharma",
+    "Raghavendra Bhat",
+    "Sharadamma Poojary",
 ]
 
 #: (name, type, phone, address, litres/day, rate, state, evening)
@@ -368,9 +400,39 @@ INDIA_CUSTOMERS = [
     ("Joshi Household", "household", "+919845000124", "3 Sadashivanagar", "2.500", "56.00", "paid", False),
 ]
 
-#: Rupees per litre by fat band. Indian co-operatives pay on fat and SNF; this
-#: keeps the platform's existing single-dimension band and prices it plausibly.
-INDIA_FAT_BANDS = [(3.0, 4.0, 34.0), (4.0, 5.0, 38.5), (5.0, 6.0, 43.0)]
+#: Rupees per litre by fat band, in half-point steps (LACTEVA-DEMO-002).
+#:
+#: A co-operative's chart is FINE-GRAINED — a farmer at 4.4% fat is not paid
+#: the same as one at 4.9%, and three one-point bands made the demo's rate
+#: card look like a placeholder. Six half-point bands from 3.0 to 6.0 read
+#: like the board on a real collection-centre wall.
+#:
+#: The floor is deliberate and load-bearing: a reading BELOW 3.0 matches no
+#: band, which is how the rate-pending collections below come to exist
+#: without anybody faking a state.
+#:
+#: Indian co-operatives pay on fat AND SNF. The platform resolves a price
+#: along ONE dimension per query (`pricing/resolution.py` enforces
+#: exactly-one at every stage), so FAT is what capture prices on; the SNF
+#: matrix built beside it is real, published configuration the resolution API
+#: answers against, and it is NOT claimed to move the money.
+INDIA_FAT_BANDS = [
+    (3.0, 3.5, 32.0),
+    (3.5, 4.0, 35.5),
+    (4.0, 4.5, 38.5),
+    (4.5, 5.0, 41.0),
+    (5.0, 5.5, 43.5),
+    (5.5, 6.0, 46.0),
+]
+
+#: The SNF chart that hangs beside it. Same product, same card, second
+#: dimension — the shape `PricingMatrix` is keyed for
+#: (rate_card_id, product_code, dimension_code).
+INDIA_SNF_BANDS = [
+    (8.0, 8.3, 2.0),
+    (8.3, 8.6, 3.0),
+    (8.6, 9.0, 4.0),
+]
 
 INDIA = Market(
     key="india",
@@ -391,6 +453,8 @@ INDIA = Market(
         "household": "Anita Sharma",
     },
     currency_hint="INR",
+    snf_bands=INDIA_SNF_BANDS,
+    late_center=("Nelamangala Collection Centre", "NM-C1"),
 )
 
 MARKETS = {market.key: market for market in (KENYA, INDIA)}
@@ -959,6 +1023,7 @@ async def make_rate_card(
     center_ids: list[str],
     bands,
     publish: bool,
+    snf_bands=None,
 ) -> dict:
     card = await expect(
         await client.post(
@@ -1022,6 +1087,60 @@ async def make_rate_card(
             201,
             what=f"band {code} {from_value}",
         )
+    # A SECOND dimension on the same card (LACTEVA-DEMO-002). An Indian
+    # co-operative's wall carries a fat chart and an SNF chart, and
+    # `PricingMatrix` is keyed (rate_card_id, product_code, dimension_code)
+    # precisely so a card can hold both.
+    #
+    # The dimension has to exist before a matrix can name it — it is
+    # tenant-editable business DATA, not code (`QualityDimension`), which is
+    # the point that makes this configuration rather than a special case.
+    if snf_bands:
+        await retrying(
+            lambda: client.post(
+                "/v1/quality-dimensions",
+                json={
+                    "code": "SNF",
+                    "name": "Solids-not-fat",
+                    "unit": "%",
+                    "min_value": 0.0,
+                    "max_value": 15.0,
+                },
+                headers=h,
+            ),
+            201,
+            409,
+            what="SNF dimension",
+        )
+        snf = await expect(
+            await client.post(
+                "/v1/pricing-matrices",
+                json={
+                    "rate_card_id": card["id"],
+                    "name": f"{name} — SNF bands",
+                    "product_code": PRODUCT,
+                    "dimension_code": "SNF",
+                },
+                headers=h,
+            ),
+            201,
+            what=f"SNF matrix {code}",
+        )
+        for from_value, to_value, price in snf_bands:
+            await expect(
+                await client.post(
+                    f"/v1/pricing-matrices/{snf['id']}/rows",
+                    json={
+                        "from_value": from_value,
+                        "to_value": to_value,
+                        "unit_price": price,
+                    },
+                    headers=h,
+                ),
+                201,
+                what=f"SNF band {code} {from_value}",
+            )
+
     if publish:
         # A rate card is not published by fiat: it is submitted, approved and
         # then published. Skipping the ceremony in a seeder would hide the very
@@ -1405,6 +1524,7 @@ async def build_demo_org(client, admin: dict, org: dict, market: Market) -> dict
         effective_until=None,
         center_ids=[c["id"] for c in centers],
         bands=market.fat_bands,
+        snf_bands=market.snf_bands,
         publish=True,
     )
     # A draft card as well: rate cards under review are a real state, and a
@@ -1505,6 +1625,10 @@ async def build_demo_org(client, admin: dict, org: dict, market: Market) -> dict
         "suppliers": suppliers,
         "today": today,
         "current_card": current,
+        # LACTEVA-DEMO-002: the late centre is created after the history, so
+        # it needs the same branch and operator the others were made with.
+        "branch_id": branch["id"],
+        "admin_user_id": admin_user_id,
         # DEMO-012: `make_customer_login` invites a member, which needs the
         # platform admin and the organization the invitation belongs to.
         "admin": admin,
@@ -1513,6 +1637,129 @@ async def build_demo_org(client, admin: dict, org: dict, market: Market) -> dict
         # right households without asking what country they are in.
         "market": market,
     }
+
+
+#: How many collections the late centre takes before its card exists, and how
+#: many of them the dairy then reprices. The remainder stay rate-pending on
+#: purpose: a demo where every exception is already resolved does not show the
+#: exception.
+#: The late centre's own farmers. A centre that opens gets the farmers around
+#: it — the existing thirty-two are assigned to the centres they deliver to,
+#: and `identify` refuses a supplier who is not assigned to the centre taking
+#: the milk (found by running this, not by reading it).
+LATE_SUPPLIERS = ["Kempegowda Naidu", "Sarojamma Gowda", "Lingaraju Shetty"]
+#: Indices well clear of the main list, because the demo phone number is
+#: derived from the index and two farmers may not share one.
+LATE_SUPPLIER_INDEX = 90
+
+LATE_COLLECTIONS = 6
+LATE_REPRICED = 4
+#: Inside the history window, so the centre appears on the same reports and
+#: dashboards as everything else rather than off the end of every range.
+LATE_DAYS_AGO = 9
+
+
+async def build_rate_pending(client, built: dict) -> dict:
+    """A centre that opened before its rate card did (LACTEVA-DEMO-002).
+
+    This is LACTEVA-BACKEND-001's own story, told with data instead of prose.
+    Capture refuses to invent a price and settlement refuses a transaction
+    with no calculation — both correct, and together they once stranded milk
+    permanently: the dairy had it, the parchi said "Rate pending", and there
+    was no route to finish the sentence. `reprice` is that route.
+
+    So the demo carries the whole shape:
+
+      * a centre opened mid-season, outside every published card's scope;
+      * six collections taken there anyway, because milk does not wait for
+        paperwork — they complete, and land `pricing_unavailable`;
+      * the card that should have covered it, published afterwards, scoped to
+        THAT centre alone (two published cards over one centre, product and
+        date is an ambiguity `pricing/resolution.py` refuses outright, and
+        rightly);
+      * four of the six repriced, and two left rate-pending.
+
+    Nothing here back-prices anything: `reprice` resolves for the
+    transaction's OWN business date, so publishing a card today cannot pay
+    yesterday's milk at today's rate. The demo shows that too.
+    """
+    market = built["market"]
+    if not market.late_center:
+        return built
+
+    h, today = built["headers"], built["today"]
+    name, code = market.late_center
+
+    late = await make_center(
+        client, h, built["branch_id"], name, code, built["admin_user_id"]
+    )
+    opened = today - timedelta(days=LATE_DAYS_AGO)
+    late_suppliers = [
+        await make_supplier(
+            client, h, farmer, LATE_SUPPLIER_INDEX + i, late["id"]
+        )
+        for i, farmer in enumerate(LATE_SUPPLIERS)
+    ]
+
+    session = await expect(
+        await client.post(
+            "/v1/collection-sessions",
+            json={"center_id": late["id"], "label": f"{opened.isoformat()} morning"},
+            headers=h,
+        ),
+        201,
+        what="open late-centre session",
+    )
+    pending: list[str] = []
+    for n in range(LATE_COLLECTIONS):
+        supplier = late_suppliers[n % len(late_suppliers)]
+        tid = await collect_one(
+            client,
+            h,
+            session_id=session["id"],
+            supplier=supplier,
+            index=LATE_SUPPLIER_INDEX + (n % len(late_suppliers)),
+            when=opened,
+            container=f"CAN-{code}-{n + 1:02d}",
+        )
+        await accept_and_complete(client, h, tid)
+        pending.append(tid)
+    await expect(
+        await client.post(
+            f"/v1/collection-sessions/{session['id']}/close", headers=h
+        ),
+        200,
+        what="close late-centre session",
+    )
+
+    # The card the dairy should have published before it opened the centre.
+    # Scoped to this centre ONLY, and effective from the day it opened, so it
+    # covers the milk already taken without touching any other centre's price.
+    await make_rate_card(
+        client,
+        h,
+        code="RC-2026-NELAMANGALA",
+        name="2026 Nelamangala Rates",
+        effective_from=opened.isoformat(),
+        effective_until=None,
+        center_ids=[late["id"]],
+        bands=market.fat_bands,
+        publish=True,
+    )
+
+    repriced = []
+    for tid in pending[:LATE_REPRICED]:
+        await expect(
+            await client.post(f"/v1/milk-transactions/{tid}/reprice", headers=h),
+            200,
+            what="reprice",
+        )
+        repriced.append(tid)
+
+    built["summary"]["late_center"] = code
+    built["summary"]["rate_pending"] = len(pending) - len(repriced)
+    built["summary"]["repriced"] = len(repriced)
+    return built
 
 
 async def build_money(client, built: dict) -> dict:
@@ -2689,6 +2936,11 @@ async def seed(markets: tuple[Market, ...] = (KENYA, INDIA)) -> dict:
         )
         built = await build_demo_org(client, admin, org, market)
         built = await build_money(client, built)
+        # LACTEVA-DEMO-002, after the money on purpose: the settlement periods
+        # keep the totals they were built with, and the rate-pending rows show
+        # up on the reports as exactly what they are — accepted milk the
+        # platform could not price.
+        built = await build_rate_pending(client, built)
         built = await demonstrate_br_0027(client, built)
         # The sales phase is the last and longest thing the manager does, and
         # it starts a long way from their login.

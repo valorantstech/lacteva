@@ -66,11 +66,6 @@ INLINE = [
     ("apps/admin-portal/src/components/lockup.tsx", "the portal auth lockup",
      ("can", "drop", "wordmark-navy", "wordmark-green",
       "wordmark-rule", "wordmark-tagline")),
-    # LACTEVA-BRAND-003: the RICH rendering. Same geometry, lit — so it is
-    # checked against the same path. A surface that drew the enriched mark
-    # from its own numbers would be the BRAND-002 defect wearing better
-    # clothes.
-    ("apps/admin-portal/src/components/brand-mark.tsx", "the portal rich mark", ("drop",)),
 ]
 
 #: Files the generator writes, which must not be edited by hand either.
@@ -90,8 +85,12 @@ GENERATED_SVG = [
 GENERATED_DART = [("apps/mobile/lib/src/brand/mark.g.dart", "the Flutter mark")]
 
 #: The rich rendering's own numbers, wherever a surface has to name them.
+#: WO-38: the portal's copy is gone. WO-39 retired the login reveal that drew
+#: it, leaving the component with no consumer, and an unused rendering is not
+#: a surface — it is code nobody looks at that a checker swears is correct.
+#: The lit drop is still drawn by the marketing site's nav reveal, and that is
+#: where it is still checked.
 RICH_STOPS = [
-    ("apps/admin-portal/src/components/brand-mark.tsx", "the portal rich mark"),
     ("apps/marketing-site/src/components/logo.tsx", "the marketing rich mark"),
 ]
 
