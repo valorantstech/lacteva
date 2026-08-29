@@ -416,12 +416,43 @@ class AuthService:
         )
 
     async def confirm_password_reset(self, token: str, new_password: str) -> None:
+        """Spend a reset token (LACTEVA-BACKEND-006).
+
+        The caller is ANONYMOUS by definition — somebody locked out of their
+        account — so the request carries no tenant and the session is unbound.
+        `password_reset_token` is not tenant-owned and reads fine, but the
+        ACCOUNT it names is: `user_account` is tenant-owned, so an unbound
+        session cannot see it and `get_user` raised NotFound. The endpoint
+        answered 404 for every tenant user, which reads as "bad token" — the
+        one thing this flow must never say wrongly, because the person
+        retrying is already locked out.
+
+        Found by running the E2E journeys as `lacteva_app` with RLS forced;
+        the harness had been connecting as a superuser, which bypasses every
+        policy, so twenty-eight journeys passed over it.
+
+        The remedy is the shape `accept_invitation` already uses, and the
+        narrowest one available: bypass for the two indexed reads that
+        discover WHICH tenant this is, then bind to that tenant before
+        anything is written. The token hash is a high-entropy secret, so
+        resolving it across tenants reveals nothing to a caller who does not
+        already hold it.
+        """
+        from platform_core.core.rls import bind_platform_context, rebind_tenant
+
+        await bind_platform_context(
+            self._session, reason="password reset: resolve the account from the token"
+        )
         record = await self._session.scalar(
             select(PasswordResetToken).where(PasswordResetToken.token_hash == _hash_secret(token))
         )
         if record is None or record.used_at is not None or as_utc(record.expires_at) < utcnow():
             raise InvalidTokenError()
         user = await self._identity.get_user(record.user_id)
+        # Bypass ends here. Everything below writes tenant-owned rows — the
+        # account, the revoked sessions, the audit entry — and must be
+        # constrained to the tenant the token turned out to belong to.
+        await rebind_tenant(self._session, user.tenant_id)
         user.password_hash = hash_password(new_password)
         record.used_at = utcnow()
         await self.revoke_all_for_user(user.id, reason="password-reset")

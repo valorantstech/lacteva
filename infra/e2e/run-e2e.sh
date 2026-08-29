@@ -105,6 +105,45 @@ echo "── migrating a fresh database ──"
 (cd "$CORE" && "$CORE/.venv/bin/alembic" upgrade head > "$WORK/alembic.log" 2>&1) \
   || { echo "FATAL: migrations failed"; tail -20 "$WORK/alembic.log"; exit 1; }
 
+# --- run the journeys AS THE APPLICATION ROLE (LACTEVA-BACKEND-006) ----------
+#
+# Migrations run as the owner; the application does not. Until now the whole
+# harness connected as `postgres`, and a SUPERUSER IGNORES EVERY RLS POLICY —
+# including FORCE. So the twenty-eight journeys were exercising the platform
+# with its principal security control switched off, and could not have caught
+# the P0 that reached production: an audit write refused because a commit
+# inside the request discarded the transaction-scoped tenant binding.
+#
+# The role is created exactly as DEPLOYMENT.md §Database roles creates it in
+# production, and the app connects as it from here on. `postgres` keeps the
+# DDL it just did and nothing else.
+echo "── switching the app to lacteva_app (NOSUPERUSER NOBYPASSRLS) ──"
+E2E_APP_PASSWORD="e2e-app-$$"
+psql -q -d "$E2E_DB" -v ON_ERROR_STOP=1 <<SQL
+DO \$\$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lacteva_app') THEN
+    CREATE ROLE lacteva_app LOGIN;
+  END IF;
+END \$\$;
+ALTER ROLE lacteva_app WITH PASSWORD '$E2E_APP_PASSWORD';
+ALTER ROLE lacteva_app NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+GRANT CONNECT ON DATABASE "$E2E_DB" TO lacteva_app;
+GRANT USAGE ON SCHEMA public TO lacteva_app;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO lacteva_app;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO lacteva_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO lacteva_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO lacteva_app;
+SQL
+export LACTEVA_DATABASE_URL="postgresql+asyncpg://lacteva_app:$E2E_APP_PASSWORD@/$E2E_DB?host=$PGHOST"
+# Proof, not assumption: the platform refuses to start in prod/staging on a
+# bypassing role, and this asserts the same thing here rather than trusting
+# the DDL above.
+psql -q -d "$E2E_DB" -tAc \
+  "SELECT CASE WHEN rolsuper OR rolbypassrls THEN 'BYPASSES' ELSE 'enforced' END
+   FROM pg_roles WHERE rolname='lacteva_app'" | grep -qx enforced \
+  || { echo "FATAL: lacteva_app can bypass RLS — the journeys would prove nothing"; exit 1; }
+echo "   RLS is enforced for the journeys"
+
 echo "── starting the mail sink ──"
 "$PY" "$ROOT/infra/e2e/mailsink.py" "$SMTP_PORT" "$WORK/mail" > "$WORK/mailsink.log" 2>&1 &
 PIDS+=($!)

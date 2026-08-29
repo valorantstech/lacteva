@@ -30,8 +30,9 @@ from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 import structlog
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Session as SyncSession
 
 from platform_core.core.config import get_settings
 
@@ -201,12 +202,64 @@ async def assert_rls_is_enforceable(session: AsyncSession) -> None:
     log.warning("rls_not_enforceable", role=role, reason=reason, detail=message)
 
 
+#: Where a session remembers what it is bound to, so a NEW transaction on the
+#: same session can be bound the same way. See `_rebind_on_new_transaction`.
+_BINDING_KEY = "lacteva_binding"
+
+
+@event.listens_for(SyncSession, "after_begin")
+def _rebind_on_new_transaction(session, transaction, connection) -> None:
+    """Re-apply this session's binding whenever a transaction begins.
+
+    LACTEVA-BACKEND-006, found on the deployed platform. `SET LOCAL` is
+    TRANSACTION-scoped, and several services commit the caller's session
+    partway through a request — `record_run` does, on the success path every
+    ordinary generate takes. The commit takes the binding with it, and the
+    request's next write lands in a new, UNBOUND transaction: the row carries
+    a real tenant, `current_setting` is empty, and WITH CHECK refuses it.
+
+    The hazard was known and handled twice — both of `record_run`'s exception
+    paths rebind after their rollback — which is exactly why fixing it there
+    again would be wrong. A rule that every future `commit()` on a borrowed
+    session must remember to rebind is a rule someone will forget, and the
+    failure is invisible to SQLite and to any superuser run.
+
+    So the session remembers, and the transaction asks. Binding here rather
+    than at each call site makes the whole class impossible instead of making
+    this one instance fixed.
+
+    Sync by necessity: SQLAlchemy's transaction events are synchronous, and
+    for an async session they run inside the greenlet that owns the
+    connection, so ordinary `connection.execute` is correct here.
+    """
+    binding = session.info.get(_BINDING_KEY)
+    if binding is None:
+        return
+    tenant_value, bypass_value = binding
+    connection.execute(
+        text("SELECT set_config(:name, :value, true)"),
+        {"name": TENANT_SETTING, "value": tenant_value},
+    )
+    connection.execute(
+        text("SELECT set_config(:name, :value, true)"),
+        {"name": BYPASS_SETTING, "value": bypass_value},
+    )
+
+
+def _remember(session: AsyncSession, tenant_value: str, bypass_value: str) -> None:
+    """Record what this session is bound to, for the next transaction."""
+    session.info[_BINDING_KEY] = (tenant_value, bypass_value)
+
+
 async def bind_tenant(session: AsyncSession, tenant_id: uuid.UUID | None) -> None:
     """Bind the request's tenant to this transaction.
 
     `SET LOCAL` is transaction-scoped: when the transaction ends the setting
     is gone, so a pooled connection can never carry one request's tenant into
-    the next request's query.
+    the next request's query. The session REMEMBERS the binding so that its
+    own next transaction is bound the same way — see
+    `_rebind_on_new_transaction` — which is a different thing from a pooled
+    connection inheriting somebody else's.
     """
     if not is_postgres() or not get_settings().rls_enabled:
         return
@@ -227,9 +280,11 @@ async def bind_tenant(session: AsyncSession, tenant_id: uuid.UUID | None) -> Non
     # parameters, and `is_local = true` gives exactly `SET LOCAL` semantics —
     # transaction-scoped, so a pooled connection cannot carry one request's
     # tenant into the next.
+    value = str(tenant_id) if tenant_id else ""
+    _remember(session, value, "off")
     await session.execute(
         text("SELECT set_config(:name, :value, true)"),
-        {"name": TENANT_SETTING, "value": str(tenant_id) if tenant_id else ""},
+        {"name": TENANT_SETTING, "value": value},
     )
     await session.execute(text("SELECT set_config(:name, 'off', true)"), {"name": BYPASS_SETTING})
 
@@ -263,6 +318,18 @@ async def bind_platform_context(session: AsyncSession, *, reason: str) -> None:
     """
     if not is_postgres() or not get_settings().rls_enabled:
         return
+    # Remembered for the same reason a tenant binding is (LACTEVA-BACKEND-006):
+    # this grant is `SET LOCAL` too, and the machinery that holds it — the
+    # relay, consumers, projection rebuilds — commits repeatedly on one
+    # session. Without this, the bypass survives exactly one transaction and
+    # the second batch reads nothing, which would look like an empty queue
+    # rather than a lost grant.
+    #
+    # The tenant half is carried through unchanged, and a later `bind_tenant`
+    # overwrites both — it remembers "off" — so a session cannot keep a
+    # bypass it was granted for something else.
+    existing = session.info.get(_BINDING_KEY)
+    _remember(session, existing[0] if existing else "", "on")
     await session.execute(text("SELECT set_config(:name, 'on', true)"), {"name": BYPASS_SETTING})
     log.debug("rls_bypass_granted", reason=reason)
 

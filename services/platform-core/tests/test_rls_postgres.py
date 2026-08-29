@@ -1122,16 +1122,61 @@ async def test_the_tenant_binding_is_valid_sql_and_takes_effect(live):
         assert (await s.scalar(text(f"SELECT current_setting('{BYPASS_SETTING}', true)"))) == "off"
 
 
-async def test_the_binding_does_not_survive_the_transaction(live):
-    """Transaction scope is what makes a pooled connection safe."""
+async def test_a_new_session_inherits_no_binding(live):
+    """Transaction scope is what makes a pooled connection safe.
+
+    LACTEVA-BACKEND-006 changed HOW this is achieved, and this test with it.
+    It used to assert the raw setting was empty after a commit on the SAME
+    session. That was a proxy for the property that matters, and the proxy
+    stopped being true: a session now re-applies its OWN binding when it opens
+    its next transaction, because `record_run` and friends commit the caller's
+    session mid-request and the request's remaining writes were landing
+    unbound — a P0 found on the deployed platform.
+
+    The property itself is unchanged and is what is asserted now, directly: a
+    DIFFERENT session, on the same pooled connection, inherits nothing. That
+    is the leak this test exists to prevent — one request running as the
+    previous request's tenant — and it is tested here rather than inferred
+    from the setting's lifetime.
+
+    The pool is pinned to ONE connection so the second session is guaranteed
+    to reuse the first one's, rather than passing because it happened to get a
+    fresh one.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
     tenant = uuid.uuid4()
-    async with live() as s:
-        await bind_tenant(s, tenant)
-        await s.commit()
-        after = await s.scalar(text(f"SELECT current_setting('{TENANT_SETTING}', true)"))
-    assert after in (None, ""), (
-        f"the tenant binding outlived its transaction ({after!r}) — the next request "
-        "on this pooled connection would run as the previous request's tenant"
+    engine = create_async_engine(POSTGRES_URL, pool_size=1, max_overflow=0)
+    try:
+        maker = async_sessionmaker(engine, expire_on_commit=False)
+        async with maker() as first:
+            await bind_tenant(first, tenant)
+            await first.commit()
+            # Its own next transaction IS bound again — that is the fix.
+            assert (
+                await first.scalar(
+                    text(f"SELECT current_setting('{TENANT_SETTING}', true)")
+                )
+            ) == str(tenant)
+            await first.commit()
+
+        async with maker() as second:
+            carried = await second.scalar(
+                text(f"SELECT current_setting('{TENANT_SETTING}', true)")
+            )
+            bypass = await second.scalar(
+                text(f"SELECT current_setting('{BYPASS_SETTING}', true)")
+            )
+    finally:
+        await engine.dispose()
+
+    assert carried in (None, ""), (
+        f"a new session inherited {carried!r} from the previous one — the next "
+        "request on this pooled connection would run as the previous "
+        "request's tenant"
+    )
+    assert bypass in (None, "", "off"), (
+        f"a new session inherited bypass={bypass!r} — it would read every tenant"
     )
 
 
