@@ -90,6 +90,17 @@ The script is not in the API image (it copies `src`, `migrations`,
 `alembic.ini` and `pyproject.toml`, and there is no `/app/infra`), so it is
 copied in for the run. See the WO-38 report for the exact commands.
 
+`DEMO_PASSWORD` is **not** set in `/etc/lacteva/.env.production`, deliberately
+and confirmed by inspection — a demo password stored beside the production
+secrets is a production secret. It is supplied to the `reset` that builds the
+dataset, so the password in force is whichever value that run was given. If it
+has been lost, the answer is another `reset` with a known one, not a lookup.
+
+The five India accounts above were confirmed present and active on the live
+host on 2026-08-29, immediately after a deployment that recreated every
+container — which is the restart-survival evidence in §3, observed rather
+than argued.
+
 ---
 
 ## 5 · Rules

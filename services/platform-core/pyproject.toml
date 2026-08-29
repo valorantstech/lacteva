@@ -86,6 +86,9 @@ ignore = ["S101"]  # assert is fine in tests; S101 scoped below
 # The verification tooling is a set of CLIs: printing is their output, and the
 # temporary directory holds a throwaway database cluster on purpose.
 "../../infra/ci/*.py" = ["T20", "S108"]
+# The load harness is a reporting CLI too: a latency table nobody can read is
+# not a measurement. Its fixture read happens once, before any concurrency.
+"../../infra/perf/*.py" = ["T20", "ASYNC240"]
 # The model registry keeps one deliberately "unused" import block (CI-001);
 # removing it would make a backup silently capture one table.
 "src/platform_core/core/model_registry.py" = ["F401"]
