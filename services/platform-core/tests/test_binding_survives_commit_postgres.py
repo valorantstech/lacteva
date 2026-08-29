@@ -93,9 +93,7 @@ async def _write_audit(session) -> None:
 
 
 async def _bound(session) -> str:
-    row = await session.scalar(
-        text("SELECT current_setting('lacteva.tenant_id', true)")
-    )
+    row = await session.scalar(text("SELECT current_setting('lacteva.tenant_id', true)"))
     return row or ""
 
 

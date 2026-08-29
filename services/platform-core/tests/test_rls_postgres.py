@@ -1154,19 +1154,13 @@ async def test_a_new_session_inherits_no_binding(live):
             await first.commit()
             # Its own next transaction IS bound again — that is the fix.
             assert (
-                await first.scalar(
-                    text(f"SELECT current_setting('{TENANT_SETTING}', true)")
-                )
+                await first.scalar(text(f"SELECT current_setting('{TENANT_SETTING}', true)"))
             ) == str(tenant)
             await first.commit()
 
         async with maker() as second:
-            carried = await second.scalar(
-                text(f"SELECT current_setting('{TENANT_SETTING}', true)")
-            )
-            bypass = await second.scalar(
-                text(f"SELECT current_setting('{BYPASS_SETTING}', true)")
-            )
+            carried = await second.scalar(text(f"SELECT current_setting('{TENANT_SETTING}', true)"))
+            bypass = await second.scalar(text(f"SELECT current_setting('{BYPASS_SETTING}', true)"))
     finally:
         await engine.dispose()
 
