@@ -289,7 +289,110 @@ def test_the_example_environment_contains_no_real_secret():
 def test_nginx_configures_what_the_runbook_promises(directive):
     conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
     base = (REPO / "infra/nginx/nginx.conf").read_text()
-    assert directive in conf + base, f"nginx is missing {directive}"
+    inc = (REPO / "infra/nginx/conf.d/security-headers.inc").read_text()
+    assert directive in conf + base + inc, f"nginx is missing {directive}"
+
+
+# --- the headers have to REACH the browser (WO-42) -------------------------
+#
+# The test above passed for the whole life of the deployed platform while
+# `curl -I https://dev.phoenixsoft.in/login` returned no HSTS, no nosniff and
+# no X-Frame-Options at all. Presence in the file is not service on the wire:
+# nginx inherits `add_header` from the enclosing level "if and only if there
+# are no add_header directives defined on the current level", so any location
+# that sets a header of its own silently discards every inherited one — which
+# `location /`, the location that serves the entire portal, does.
+#
+# So this asserts the property that was actually broken, and it is the reason
+# the headers now live in an included snippet: a location may add whatever it
+# likes, as long as it re-states the security headers with it.
+
+_HEADERS_INCLUDE = "include /etc/nginx/conf.d/security-headers.inc;"
+
+
+def _location_blocks(conf: str) -> list[tuple[str, str]]:
+    """Every `location …{ }` block in the file, as (header line, body)."""
+    blocks, i = [], 0
+    while (start := conf.find("location ", i)) != -1:
+        brace = conf.find("{", start)
+        depth, j = 0, brace
+        while j < len(conf):
+            if conf[j] == "{":
+                depth += 1
+            elif conf[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        blocks.append((conf[start:brace].strip(), conf[brace : j + 1]))
+        i = brace + 1
+    return blocks
+
+
+def test_every_location_that_adds_a_header_restates_the_security_headers():
+    conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
+    offenders = [
+        name
+        for name, body in _location_blocks(conf)
+        if "add_header" in body and _HEADERS_INCLUDE not in body
+    ]
+    assert not offenders, (
+        "these locations set a header of their own, which discards every "
+        f"inherited security header, and do not re-state them: {offenders}"
+    )
+
+
+def test_the_server_level_still_sets_them_for_everything_else():
+    conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
+    outside = conf
+    for _, body in _location_blocks(conf):
+        outside = outside.replace(body, "")
+    assert _HEADERS_INCLUDE in outside, (
+        "no location-free level includes the security headers, so a location "
+        "that adds nothing of its own would inherit nothing"
+    )
+
+
+def test_the_credential_endpoints_are_rate_limited_more_tightly_than_the_rest():
+    # The application's limiter is the precise one, but it needs Redis and it
+    # needs a worker. This is the floor beneath it, and it is only a floor if
+    # it is actually tighter than the budget every other route gets.
+    conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
+    base = (REPO / "infra/nginx/nginx.conf").read_text()
+
+    blocks = dict(_location_blocks(conf))
+    assert "location /v1/auth/" in blocks, "the credential endpoints share the general budget"
+    assert "limit_req zone=auth" in blocks["location /v1/auth/"]
+
+    rates = {
+        name: float(rate)
+        for line in base.splitlines()
+        if "limit_req_zone" in line and "zone=" in line
+        for name, rate in [
+            (
+                line.split("zone=")[1].split(":")[0],
+                line.split("rate=")[1].split("r/s")[0],
+            )
+        ]
+    }
+    assert rates["auth"] < rates["api"], f"auth is not the tighter budget: {rates}"
+
+
+def test_the_longest_prefix_wins_so_the_auth_budget_is_the_one_that_applies():
+    # nginx matches the LONGEST prefix, so /v1/auth/ must be a strictly longer
+    # prefix of the same shape as /v1/ — not a regex, which would lose to it.
+    conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
+    names = [name for name, _ in _location_blocks(conf)]
+    assert "location /v1/auth/" in names and "location /v1/" in names
+    assert len("/v1/auth/") > len("/v1/")
+
+
+def test_the_snippet_is_not_loaded_twice_as_a_server_block():
+    # `nginx.conf` includes `conf.d/*.conf`. A snippet named `.conf` would be
+    # parsed as a second top-level context and nginx would refuse to start.
+    base = (REPO / "infra/nginx/nginx.conf").read_text()
+    assert "conf.d/*.conf" in base
+    assert (REPO / "infra/nginx/conf.d/security-headers.inc").exists()
 
 
 # --- infrastructure as code (INF-001) --------------------------------------
