@@ -62,6 +62,43 @@ fi
 echo "==> 3/7 configuring recovery"
 # Start from the backup's own config, minus any inherited overrides.
 rm -f "${RESTORE_PGDATA}/postgresql.auto.conf"
+
+# WO-40: the settings the WAL was WRITTEN with, taken from the backup itself.
+#
+# PostgreSQL refuses to replay WAL on an instance whose `max_connections` (and
+# four relatives) are lower than the primary's — the WAL contains lock and
+# transaction slots the smaller instance cannot represent, so it aborts:
+#
+#   FATAL: recovery aborted because of insufficient parameter settings
+#   DETAIL: max_connections = 100 is a lower setting than on the primary
+#           server, where its value was 200.
+#
+# The live primary is tuned (200 connections); the restore was starting on the
+# image default (100), so point-in-time recovery of the real database did not
+# work AT ALL — and could not be seen from the proof, whose own primary ran on
+# defaults where the two happened to match. `pitr-proof.sh` now tunes its
+# primary for exactly this reason.
+#
+# `pg_controldata` records each value as of the base backup, which is the only
+# honest source: it describes the cluster the WAL came from, not whatever the
+# primary happens to be set to today.
+echo "    carrying over the primary's parameter settings"
+_control="$(pg_controldata "${RESTORE_PGDATA}")"
+_setting() { # control-file label, GUC name
+  local value
+  value="$(printf '%s\n' "${_control}" | sed -n "s/^$1 setting: *//p" | tr -d '[:space:]')"
+  [ -n "${value}" ] || return 0
+  echo "$2 = ${value}"
+  echo "      $2 = ${value}" >&2
+}
+{
+  _setting "max_connections"      "max_connections"
+  _setting "max_worker_processes" "max_worker_processes"
+  _setting "max_wal_senders"      "max_wal_senders"
+  _setting "max_prepared_xacts"   "max_prepared_transactions"
+  _setting "max_locks_per_xact"   "max_locks_per_transaction"
+} >> "${RESTORE_PGDATA}/postgresql.conf"
+
 {
   echo "port = ${RESTORE_PORT}"
   echo "restore_command = 'cp ${WAL_ARCHIVE}/%f %p'"

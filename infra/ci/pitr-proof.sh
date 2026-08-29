@@ -117,7 +117,28 @@ max_wal_senders = 4
 wal_keep_size = 64MB
 CONF
 
-pg_ctl -D "${PRIMARY}" -l "${WORKDIR}/primary.log" -w -t 60 start >/dev/null \
+# WO-40: the primary is TUNED, and tuned THE WAY PRODUCTION IS — on the
+# command line, not in the data directory's postgresql.conf.
+#
+# PostgreSQL refuses to replay WAL on an instance whose max_connections (and
+# four relatives) are lower than the primary's, and aborts recovery with
+# "insufficient parameter settings". This proof ran for months against a
+# primary on stock defaults, so its restores — also on stock defaults —
+# always matched, and it certified a point-in-time recovery that could not
+# actually recover the deployed database, whose max_connections is 200.
+#
+# The MECHANISM matters as much as the value. Production's compose file runs
+# `postgres -c max_connections=200 -c ...`, so those settings live outside
+# PGDATA and do NOT travel inside a base backup. Writing them into the
+# primary's postgresql.conf here would put them in the backup, the restore
+# would inherit them, and the proof would go green while production stayed
+# broken — which is precisely how this defect survived. So they go on the
+# command line, and the restore has to recover them from the control file.
+PRIMARY_TUNING="-c max_connections=200 -c max_worker_processes=12"
+PRIMARY_TUNING="${PRIMARY_TUNING} -c max_locks_per_transaction=96"
+PRIMARY_TUNING="${PRIMARY_TUNING} -c max_prepared_transactions=4"
+
+pg_ctl -D "${PRIMARY}" -l "${WORKDIR}/primary.log" -o "${PRIMARY_TUNING}" -w -t 60 start >/dev/null \
   || fail "the primary did not start"
 psql -h "${PRIMARY}" -p "${PGPORT_PRIMARY}" -U postgres -d postgres -tAc \
   "CREATE DATABASE ${DB}" >/dev/null
@@ -293,6 +314,21 @@ recover() {
     echo "port = ${PGPORT_RESTORE}"
     echo "unix_socket_directories = '${dir}'"
     echo "listen_addresses = ''"
+    # The settings the WAL was WRITTEN with, read from the base backup's own
+    # control file — the only honest source, because it describes the cluster
+    # the WAL came from rather than whatever a primary is set to today (and by
+    # step 7 there is no primary left to ask).
+    control="$(pg_controldata "${dir}")"
+    for pair in \
+      "max_connections:max_connections" \
+      "max_worker_processes:max_worker_processes" \
+      "max_wal_senders:max_wal_senders" \
+      "max_prepared_xacts:max_prepared_transactions" \
+      "max_locks_per_xact:max_locks_per_transaction"; do
+      label="${pair%%:*}"; guc="${pair##*:}"
+      value="$(printf '%s\n' "${control}" | sed -n "s/^${label} setting: *//p" | tr -d '[:space:]')"
+      [ -n "${value}" ] && echo "${guc} = ${value}"
+    done
     echo "restore_command = 'cp ${ARCHIVE}/%f %p'"
     # A recovered cluster MUST NOT archive into the same archive. Promotion
     # creates a new timeline, and archiving it back would let a later
