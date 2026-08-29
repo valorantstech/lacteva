@@ -3005,8 +3005,31 @@ def main() -> int:
         print(json.dumps(asyncio.run(purge()), indent=2))
         return 0
     if command == "reset":
-        print(json.dumps(asyncio.run(purge()), indent=2))
-        print(json.dumps(asyncio.run(seed()), indent=2))
+        # ONE event loop, not two (LACTEVA-DEMO-002, found on the deployed
+        # platform). This was `asyncio.run(purge())` followed by
+        # `asyncio.run(seed())`, and the second call died with
+        #
+        #   got Future <...> attached to a different loop
+        #
+        # because the engine these coroutines share is created on first use
+        # and bound to the loop that created it. `asyncio.run` closes its loop
+        # when it returns, so the seed inherited a connection pool belonging
+        # to a loop that no longer existed.
+        #
+        # It was never caught because every other command is a single
+        # `asyncio.run`, and the failure needs a real database: on SQLite the
+        # pool is not a socket and does not care. `reset` is the one command
+        # that runs two of them, and it is the one a demo host uses.
+        #
+        # The purge half had already committed by the time it failed, so the
+        # cost of this defect was a deployment with its demo data deleted and
+        # not rebuilt.
+        async def _reset() -> tuple[dict, dict]:
+            return await purge(), await seed()
+
+        removed, built = asyncio.run(_reset())
+        print(json.dumps(removed, indent=2))
+        print(json.dumps(built, indent=2))
         return 0
     if command == "adopt-routes":
         # DEMO-037: rounds over an already-seeded dairy's existing customers.
