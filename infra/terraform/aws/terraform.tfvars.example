@@ -1,0 +1,35 @@
+# Every input this deployment needs (WO-48). Copy to `terraform.tfvars`, which
+# is gitignored, and fill in.
+#
+# WHY THIS FILE EXISTS. There was none, and no `terraform.tfvars` either, so
+# the values the production deployment was applied with lived nowhere: not in
+# the repository, not in the state, not in anyone's notes. Reconstructing them
+# meant reading resource attributes out of `terraform.tfstate` and guessing,
+# and one guess — the key of the `ssh_public_keys` map — produced a plan that
+# would have REPLACED the running instance. An input nobody recorded is an
+# input the next person gets wrong.
+
+# The region is deliberately not defaulted; see variables.tf.
+region            = "ap-south-1"
+aws_profile       = "ibs"
+
+vpc_id            = "vpc-0000000000000000"
+subnet_id         = "subnet-0000000000000000"
+availability_zone = "ap-south-1a"
+
+# Must match the LIVE instance. The variable's own default is smaller, and an
+# apply that changes this stops and restarts the host — which D-13 forbids for
+# the demo platform.
+instance_type     = "c7i-flex.large"
+
+# Keyed by a short name; the key becomes part of the AWS key-pair name
+# (`lacteva-<environment>-<key>`), and the INSTANCE is bound to that name, so
+# renaming a key here replaces the instance. The live deployment uses `aws001`.
+ssh_public_keys = {
+  "aws001" = "ssh-ed25519 AAAA... comment"
+}
+
+# Every address that may reach port 22, /32 each. Reconcile this with the live
+# security group before any apply: a rule added by hand and not written here is
+# a rule the next apply removes. `0.0.0.0/0` is refused by a validation rule.
+ssh_allowed_cidrs = ["203.0.113.4/32"]

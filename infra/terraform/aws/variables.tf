@@ -5,8 +5,16 @@ variable "aws_profile" {
 }
 
 variable "region" {
-  type    = string
-  default = "eu-west-1"
+  # WO-48: NO DEFAULT, deliberately. It used to default to `eu-west-1` while
+  # the platform runs in `ap-south-1`, so `terraform plan` in this directory
+  # looked in Ireland, found nothing, and reported that every resource —
+  # instance, EIP, security group, data volume — "has been deleted". Applying
+  # that would have written an empty state and then built a second, parallel
+  # deployment in the wrong continent, leaving production running and
+  # unmanaged. A default that is wrong everywhere it is used is worse than no
+  # default: no default is a question, and this was a confident wrong answer.
+  description = "The region this deployment lives in. Stated, never inherited."
+  type        = string
 }
 
 variable "environment" {
@@ -72,6 +80,10 @@ variable "ssh_public_keys" {
 }
 
 variable "ssh_allowed_cidrs" {
+  # WO-48. These are reconciled with the live security group; a rule added by
+  # hand and not recorded here is a rule the next `apply` deletes. The values
+  # live in `terraform.tfvars`, which is gitignored, because they are the
+  # operators' own addresses and do not belong in a repository.
   description = "NOT 0.0.0.0/0. Use a VPN, a bastion, or an office range."
   type        = list(string)
   validation {

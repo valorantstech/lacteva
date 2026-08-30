@@ -16,11 +16,23 @@ baseline: ARCH-BASELINE-V1
 Who to sign in as when showing Lacteva, what each one is meant to prove, and
 where the data comes from.
 
-**No password is written in this repository.** The seeder reads
-`DEMO_PASSWORD` from the environment and falls back to a documented
-development default; the value in use on a given deployment is held by the
-owner. Everything below is a demo tenant on a demo host — none of it is a
-customer, and none of it may ever be reused for one.
+**How the demo password is set, exactly.** It is supplied as `DEMO_PASSWORD`
+in the environment of the `seed_demo.py` run that builds the dataset, and
+nowhere else. It is **not** stored in this repository, and it is **not** in
+`/etc/lacteva/.env.production` on the host — a demo credential filed beside the
+production secrets becomes a production secret. So the password in force on a
+deployment is whichever value that run was given; there is no place to look it
+up, by design, and the owner holds it.
+
+If it is unknown, the answer is another `reset` under a password you choose.
+That is safe now and was not always: the seeder purges before it seeds, and it
+used to authenticate as a demo admin account created by the *previous* run, so
+a reset under a different `DEMO_PASSWORD` deleted the dairy and then could not
+rebuild it. LACTEVA-DEMO-003 fixed that — the seeder adopts its own admin under
+the current password and says so in its output.
+
+Everything below is a demo tenant on a demo host — none of it is a customer,
+and none of it may ever be reused for one.
 
 ---
 

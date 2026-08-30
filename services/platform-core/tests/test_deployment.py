@@ -666,6 +666,52 @@ def test_aws_volumes_are_encrypted():
     )
 
 
+# --- the terraform inputs are recorded, not remembered (WO-48) -------------
+
+
+def test_the_region_is_stated_rather_than_inherited():
+    """`region` defaulted to eu-west-1 while the platform runs in ap-south-1.
+
+    A plan in this directory therefore looked in Ireland, found nothing, and
+    reported that the instance, the elastic IP, the security group and the data
+    volume had all "been deleted". Applying that writes an empty state and then
+    builds a second deployment in the wrong continent, with production still
+    running and no longer managed by anything.
+    """
+    variables = _tf("aws", "variables.tf")
+    # Comments explain the absence of a default and say the word; assert on the
+    # directives, as the nginx checks learned to.
+    block = _directives(variables.split('variable "region"')[1].split("\n}")[0])
+    assert "default" not in block, (
+        "region has a default again — a wrong one points terraform at an empty "
+        "region and reports production as deleted"
+    )
+
+
+def test_every_required_input_is_documented_with_an_example():
+    """The deployment was applied with values recorded nowhere.
+
+    Reconstructing them meant reading attributes out of the state file, and one
+    wrong guess produced a plan that would have replaced the running instance.
+    """
+    variables = _tf("aws", "variables.tf")
+    required = [
+        name
+        for name in re.findall(r'variable "([a-z_]+)"', variables)
+        if "default" not in _directives(variables.split(f'variable "{name}"')[1].split("\n}")[0])
+    ]
+    example = _tf("aws", "terraform.tfvars.example")
+    missing = [name for name in required if f"{name} " not in example and f"{name}=" not in example]
+    assert not missing, f"terraform.tfvars.example does not show how to set: {missing}"
+
+
+def test_the_real_tfvars_can_never_be_committed():
+    # It holds the operators' own addresses.
+    ignore = (REPO / ".gitignore").read_text()
+    assert "*.tfvars" in ignore
+    assert "!*.tfvars.example" in ignore
+
+
 # --- systemd ---------------------------------------------------------------
 
 
