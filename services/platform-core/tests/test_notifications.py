@@ -822,3 +822,222 @@ async def test_tenant_isolation_of_history(client, provider_guard):
         await client.get("/v1/notifications?template_key=supplier_registered", headers=other)
     ).json()
     assert page["total"] == 0  # the other tenant's supplier notification is invisible
+
+
+# --- what a notification is allowed to write down (WO-47) --------------------
+#
+# The platform's mail carries password-reset codes and invitation tokens. Both
+# are bearer secrets: whoever holds one can take the account. Logs are shipped
+# to Loki, read by operators, and kept — so a body in a log line is a
+# credential in a place nobody treats as a credential store.
+#
+# The stand-in notifier has always logged only metadata. Nothing asserted it,
+# so nothing would have noticed a `body=` added in a debugging session and left
+# there. These assert the property against a REAL secret rather than against a
+# list of field names, which is the version that still works when somebody adds
+# a field.
+
+_SECRET = "tok-b3d9f17a2c4e8615-do-not-log"
+
+
+class _Recorder:
+    """Stands in for the module logger and keeps every value it was given."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict]] = []
+
+    def info(self, event, **kw):
+        self.events.append((event, kw))
+
+    def warning(self, event, **kw):
+        self.events.append((event, kw))
+
+    def error(self, event, **kw):
+        self.events.append((event, kw))
+
+    def everything_written(self) -> str:
+        return " ".join(
+            f"{event} " + " ".join(f"{k}={v!r}" for k, v in kw.items()) for event, kw in self.events
+        )
+
+
+async def test_the_stand_in_notifier_writes_metadata_and_never_the_message(monkeypatch):
+    from platform_core.infrastructure import notifications
+
+    recorder = _Recorder()
+    monkeypatch.setattr(notifications, "log", recorder)
+
+    await notifications.LoggingNotifier().send(
+        notifications.Notification(
+            channel="email",
+            recipient="operator@example.com",
+            template_key="notification.password_reset",
+            locale="en",
+            data={"code": _SECRET, "reset_url": f"https://x.example/r/{_SECRET}"},
+        )
+    )
+
+    written = recorder.everything_written()
+    assert _SECRET not in written, "a reset code reached the log"
+    assert "operator@example.com" in written  # recipient IS metadata, and is kept
+    assert "notification.password_reset" in written
+
+    (_event, fields) = recorder.events[0]
+    assert set(fields) == {"channel", "recipient", "template", "locale", "subject"}, (
+        "the stand-in notifier grew a field; if it can carry a body or a token, "
+        f"say why here rather than widening this set: {sorted(fields)}"
+    )
+
+
+async def test_the_smtp_provider_never_logs_the_body_it_sends(monkeypatch):
+    from platform_core.modules.notification import providers
+
+    recorder = _Recorder()
+    monkeypatch.setattr(providers, "log", recorder)
+    monkeypatch.setattr(providers, "assert_may_reach_the_network", lambda name: None)
+
+    settings = providers.get_settings()
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.invalid", raising=False)
+    monkeypatch.setattr(settings, "smtp_from_address", "no-reply@example.com", raising=False)
+
+    sent: dict = {}
+
+    def _capture(self, mail, sender, recipient, _settings):
+        sent["body"] = mail.get_content()
+
+    monkeypatch.setattr(providers.SmtpEmailProvider, "_deliver", _capture)
+
+    await providers.SmtpEmailProvider().send(
+        providers.OutboundMessage(
+            channel="email",
+            recipient="operator@example.com",
+            title="Reset your password",
+            body=f"Your code is {_SECRET}",
+            language="en",
+            template_key="notification.password_reset",
+            notification_id=uuid.uuid4(),
+        )
+    )
+
+    assert _SECRET in sent["body"], "the secret must reach the MESSAGE"
+    assert _SECRET not in recorder.everything_written(), "…and never the log"
+
+
+# --- the channel is proven at startup, not at the first send (WO-47) ---------
+
+
+async def _preflight(monkeypatch, **settings_overrides):
+    from platform_core.modules.notification import providers
+
+    settings = providers.get_settings()
+    for key, value in settings_overrides.items():
+        monkeypatch.setattr(settings, key, value, raising=False)
+    return providers
+
+
+async def test_an_unreachable_mail_server_stops_the_platform_starting(monkeypatch):
+    """The refusal, watched. A guard that cannot refuse is decoration."""
+    providers = await _preflight(
+        monkeypatch,
+        env="prod",
+        notification_email_provider="smtp",
+        messaging_mode="production",
+        smtp_host="smtp.nowhere.invalid",
+        smtp_port=465,
+        smtp_security="ssl",
+        smtp_timeout_seconds=1.0,
+    )
+    with pytest.raises(providers.EmailChannelUnreachable) as refused:
+        await providers.assert_email_channel_is_deliverable()
+    # The message has to name the host and say why it matters, because whoever
+    # reads it is looking at a platform that will not boot.
+    assert "smtp.nowhere.invalid:465" in str(refused.value)
+    assert "password reset" in str(refused.value)
+
+
+async def test_the_probe_authenticates_rather_than_merely_connecting(monkeypatch):
+    # A TCP connection proves nothing: a rotated password answers on port 465
+    # exactly as a working one does, and then every message fails.
+    providers = await _preflight(
+        monkeypatch,
+        env="prod",
+        notification_email_provider="smtp",
+        messaging_mode="production",
+        smtp_host="smtp.example.com",
+        smtp_username="postmaster@example.com",
+        smtp_password="a-password",
+        smtp_security="ssl",
+    )
+    steps: list[str] = []
+
+    class _Client:
+        def __init__(self, host, port, timeout=None):
+            steps.append(f"connect {host}:{port}")
+
+        def ehlo(self):
+            steps.append("ehlo")
+
+        def login(self, user, _password):
+            steps.append(f"login {user}")
+
+        def quit(self):
+            steps.append("quit")
+
+    monkeypatch.setattr(providers.smtplib, "SMTP_SSL", _Client)
+    await providers.assert_email_channel_is_deliverable()
+    assert "login postmaster@example.com" in steps, f"the probe never authenticated: {steps}"
+    assert "quit" in steps, "the probe left a connection open on the mail server"
+
+
+async def test_the_probe_sends_nothing(monkeypatch):
+    # Otherwise every container restart puts a message in somebody's mailbox.
+    providers = await _preflight(
+        monkeypatch,
+        env="prod",
+        notification_email_provider="smtp",
+        messaging_mode="production",
+        smtp_host="smtp.example.com",
+        smtp_username="",
+        smtp_security="ssl",
+    )
+
+    class _Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        def ehlo(self):
+            pass
+
+        def send_message(self, *a, **kw):  # pragma: no cover - must never run
+            raise AssertionError("the startup probe sent a real message")
+
+        def quit(self):
+            pass
+
+    monkeypatch.setattr(providers.smtplib, "SMTP_SSL", _Client)
+    await providers.assert_email_channel_is_deliverable()
+
+
+@pytest.mark.parametrize(
+    ("overrides", "why"),
+    [
+        ({"env": "dev"}, "a laptop has no mail server and needs none"),
+        ({"notification_email_provider": "disabled"}, "not sending is a choice, and it was made"),
+        ({"messaging_mode": "test"}, "nothing would be sent, so nothing is proven"),
+    ],
+)
+async def test_the_probe_stays_out_of_the_way_where_it_would_teach_nothing(
+    monkeypatch, overrides, why
+):
+    base = dict(
+        env="prod",
+        notification_email_provider="smtp",
+        messaging_mode="production",
+        smtp_host="smtp.nowhere.invalid",
+        smtp_port=465,
+        smtp_security="ssl",
+        smtp_timeout_seconds=1.0,
+    )
+    base.update(overrides)
+    providers = await _preflight(monkeypatch, **base)
+    await providers.assert_email_channel_is_deliverable()  # must not raise: {why}

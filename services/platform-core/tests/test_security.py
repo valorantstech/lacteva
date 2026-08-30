@@ -746,6 +746,10 @@ def _safe_prod(**overrides):
         rate_limit_backend="redis",
         notification_sms_provider="disabled",
         notification_email_provider="disabled",
+        # WO-47: a reference PRODUCTION configuration has to say what it does
+        # with real messages. `test` is the inherited default and sends
+        # nothing, which is the state the deployed platform was actually in.
+        messaging_mode="production",
         receipt_pdf_renderer="builtin",
         # BKP-003: a production deployment with nowhere independent to put a
         # backup has backups that die with the volume they protect, so the
@@ -773,6 +777,13 @@ def test_the_reference_production_configuration_is_accepted():
         # PROD-001: each of these lets production look healthy while doing
         # nothing, or run on a credential that was never meant to leave a
         # laptop. Every one is now a startup failure.
+        #
+        # WO-47 adds the two below. Both were live on dev.phoenixsoft.in: a
+        # fully configured SMTP account that never sent a message, because the
+        # messaging mode was the inherited `test`.
+        ({"messaging_mode": "test"}, "MESSAGING_MODE"),
+        ({"notification_email_provider": "logging"}, "EMAIL_PROVIDER"),
+        ({"notification_email_provider": "placeholder"}, "EMAIL_PROVIDER"),
         ({"database_url": "postgresql+asyncpg://lacteva:lacteva@db:5432/lacteva"}, "DATABASE_URL"),
         ({"database_url": "sqlite+aiosqlite:///./dev.db"}, "DATABASE_URL"),
         ({"event_bus": "memory"}, "EVENT_BUS"),

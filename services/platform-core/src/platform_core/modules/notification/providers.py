@@ -878,6 +878,91 @@ class SmtpEmailProvider:
                 client.close()
 
 
+class EmailChannelUnreachable(RuntimeError):
+    """The deployment says it sends email, and the server will not have it."""
+
+
+async def assert_email_channel_is_deliverable() -> None:
+    """Prove at STARTUP that the configured mail channel can actually send.
+
+    WO-47. The platform had every SMTP setting a working deployment needs —
+    host, port, SSL, username, password, From address — and delivered nothing,
+    because one unrelated variable was absent and the mode defaulted to
+    `test`. Nothing failed. `/health/ready` was green, the deploy verified,
+    and the first person to discover that password reset does not work would
+    have been a pilot user locked out of their account.
+
+    Configuration checks cannot catch the rest of that class: a wrong port, a
+    rotated password, a firewall, an expired certificate, a host that no
+    longer resolves. Each is a complete, silent loss of the only channel a
+    pilot has for invitations and password resets, and each is invisible until
+    somebody needs a message that never comes. So this connects, negotiates
+    TLS and AUTHENTICATES, exactly as a send does, and refuses to start
+    otherwise — the same shape as `assert_rls_is_enforceable`, and for the
+    same reason: a guarantee nobody executes is a guarantee nobody has.
+
+    It does NOT send a message. Authenticating proves the credential and the
+    route; delivering a real email on every boot would put a message in
+    somebody's mailbox each time a container restarts.
+
+    Deliberately skipped where a failure would teach nothing: outside
+    prod/staging, when the provider is not SMTP (`disabled` and `dry_run` are
+    choices, and `logging`/`placeholder` are refused by the settings), and in
+    `test` messaging mode, where no send would be attempted anyway — the
+    settings refuse that combination in production, so reaching here means
+    somebody chose it.
+    """
+    settings = get_settings()
+    if settings.env not in ("prod", "staging"):
+        return
+    if settings.notification_email_provider != "smtp":
+        return
+    if settings.messaging_mode == "test":
+        return
+
+    def _probe() -> None:
+        timeout = settings.smtp_timeout_seconds
+        if settings.smtp_security == "ssl":
+            client: smtplib.SMTP = smtplib.SMTP_SSL(
+                settings.smtp_host, settings.smtp_port, timeout=timeout
+            )
+        else:
+            client = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=timeout)
+        try:
+            client.ehlo()
+            if settings.smtp_security == "starttls":
+                client.starttls()
+                client.ehlo()
+            if settings.smtp_username:
+                client.login(settings.smtp_username, settings.smtp_password)
+        finally:
+            try:
+                client.quit()
+            except smtplib.SMTPException:  # pragma: no cover - probe already done
+                client.close()
+
+    try:
+        await asyncio.to_thread(_probe)
+    except Exception as exc:
+        # The host and port are operational facts worth naming; the exception
+        # text is trimmed by `_safe_detail` because SMTP servers echo the
+        # login in their rejections often enough to matter.
+        raise EmailChannelUnreachable(
+            f"the email channel is configured but unreachable: "
+            f"{settings.smtp_host}:{settings.smtp_port} ({settings.smtp_security}) "
+            f"refused — {type(exc).__name__}: {_safe_detail(str(exc))}. "
+            "Email carries the password reset and the staff invitation, so the "
+            "platform refuses to start pretending it can send them."
+        ) from exc
+
+    log.info(
+        "email_channel_verified",
+        host=settings.smtp_host,
+        port=settings.smtp_port,
+        security=settings.smtp_security,
+    )
+
+
 class HttpPushProvider:
     """A generic HTTP push gateway (DEMO-012 §10).
 

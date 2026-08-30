@@ -522,6 +522,19 @@ class Settings(BaseSettings):
             problems.append(
                 "LACTEVA_NOTIFICATION_EMAIL_PROVIDER is 'smtp' but LACTEVA_SMTP_HOST is not set"
             )
+        # WO-47. Email is the channel a pilot cannot do without: it carries the
+        # password reset and the staff invitation, and without it nobody can
+        # join the platform or get back into it. The logging and placeholder
+        # adapters write a line and return success, so a production deployment
+        # left on either is a platform that reports every message delivered and
+        # delivers none. `dry_run` and `disabled` stay allowed, because both
+        # are somebody CHOOSING not to send; these two are somebody forgetting.
+        if self.notification_email_provider in ("logging", "placeholder"):
+            problems.append(
+                f"LACTEVA_NOTIFICATION_EMAIL_PROVIDER is "
+                f"'{self.notification_email_provider}', which records a line and reaches "
+                "nobody — use 'smtp', or say 'dry_run' or 'disabled' deliberately"
+            )
 
         # DEMO-031. Messaging mode, in production.
         #
@@ -534,6 +547,20 @@ class Settings(BaseSettings):
             problems.append(
                 "LACTEVA_MESSAGING_MODE must not be 'sandbox' in prod — the sandbox "
                 "gateway reaches nobody while reporting success"
+            )
+        # WO-47. The paragraph above already said `test` "means nothing is ever
+        # sent, which a production deployment should have to say out loud
+        # rather than inherit from a default" — and then nothing enforced it.
+        # The deployed platform ran for weeks with a fully configured SMTP
+        # account, a real host, real credentials, a real From address, and
+        # `LACTEVA_MESSAGING_MODE` absent, so the mode was the inherited
+        # `test`, every send raised `MessagingModeError`, and no farmer or
+        # operator ever received anything. An intent recorded in a comment is
+        # not an intent the platform holds.
+        if self.messaging_mode == "test":
+            problems.append(
+                "LACTEVA_MESSAGING_MODE is 'test' (the inherited default), which sends "
+                "nothing at all. A production deployment must say 'production' out loud"
             )
         # And the sandbox ADAPTER, whatever the mode says.
         for channel, configured in (

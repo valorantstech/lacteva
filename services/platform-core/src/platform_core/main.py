@@ -170,6 +170,15 @@ async def lifespan(app: FastAPI):
         await assert_rls_is_enforceable(session)
         await AuthzService(session).ensure_system_roles()
         await session.commit()
+    # WO-47: and prove the platform can actually send the two messages a pilot
+    # cannot run without — the password reset and the staff invitation. The
+    # deployed platform held a complete SMTP configuration and delivered
+    # nothing for weeks, with every health check green.
+    from platform_core.modules.notification.providers import (
+        assert_email_channel_is_deliverable,
+    )
+
+    await assert_email_channel_is_deliverable()
     relay_task = None
     consumer_task = None
     if settings.outbox_mode == "background" and settings.env != "test":
