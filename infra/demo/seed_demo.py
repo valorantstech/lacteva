@@ -784,6 +784,41 @@ async def refresh_admin(client, admin: dict) -> dict:
     return admin
 
 
+async def adopt_demo_admin(email: str) -> None:
+    """Make the demo admin's password the CURRENT `DEMO_PASSWORD` (WO-46 tail).
+
+    Why this exists, and why it is not a shortcut around authentication.
+
+    `platform_admin` registers this account and tolerates a 409 — "reused
+    across runs if it already exists" — and then logs in with whatever
+    `DEMO_PASSWORD` says today. Those are the same value only if nobody has
+    changed it since the first run. When they differ the login returns 401 and
+    the seed stops, which would be a merely annoying failure except for the
+    order `reset` runs in: it PURGES first and seeds second. So a run with the
+    wrong password deletes the demo dairy and then cannot rebuild it, and
+    there is no way back, because the purge and the rebuild both need this
+    account. That happened on the live host, and the dairy had to be rebuilt
+    from this fix.
+
+    The password is set through the platform session factory, exactly as
+    `grant_platform_admin` attaches the platform role — the same out-of-band
+    class, in the same demo-only script, on an account whose entire purpose is
+    to seed demonstrations. It never touches a tenant member: those accounts
+    are created by this run and already carry the current password.
+    """
+    from platform_core.core.rls import platform_factory
+    from platform_core.core.security import hash_password
+    from platform_core.modules.identity.models import User
+    from sqlalchemy import select
+
+    async with platform_factory("demo seed: adopt the demo admin")() as session:
+        user = await session.scalar(select(User).where(User.email == email))
+        if user is None:
+            raise SeedError(f"cannot adopt {email}: no such account")
+        user.password_hash = hash_password(PASSWORD)
+        await session.commit()
+
+
 async def platform_admin(client) -> dict:
     """A platform administrator, reused across runs if it already exists."""
     email = ADMIN_EMAIL
@@ -796,12 +831,25 @@ async def platform_admin(client) -> dict:
             f"demo seed failed at register admin: {r.status_code} {r.text[:300]}"
         )
     await grant_platform_admin(email)
-    tokens = await retrying(
-        lambda: client.post(
-            "/v1/auth/token", json={"email": email, "password": PASSWORD}
-        ),
-        200,
-        what="admin login",
+
+    def login():
+        return client.post("/v1/auth/token", json={"email": email, "password": PASSWORD})
+
+    first = await login()
+    if first.status_code == 401:
+        # The account survives from an earlier run under a different
+        # DEMO_PASSWORD. Say so loudly — silently changing a credential is
+        # not something a script should do quietly, even a demo one.
+        print(
+            f"  {email} exists with a different password; adopting it under "
+            "the current DEMO_PASSWORD"
+        )
+        await adopt_demo_admin(email)
+        first = None
+    tokens = (
+        first.json()
+        if first is not None and first.status_code == 200
+        else await retrying(login, 200, what="admin login")
     )
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
