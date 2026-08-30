@@ -604,30 +604,45 @@ async def test_rate_limit_scopes_do_not_collide(client):
     )
 
 
-# --- security headers --------------------------------------------------------
+# --- security headers: what the APPLICATION owns (WO-46) ---------------------
+#
+# The transport headers moved to nginx, which is the only layer that sees both
+# the API and the portal — and the portal was serving none of them. Asserting
+# them here would now assert a duplicate, which is the defect WO-46 removed.
+# The edge's set is asserted in `test_deployment.py`, against the config that
+# actually serves them.
 
 
-async def test_security_headers_are_present_on_every_response(client):
+async def test_the_application_sets_no_transport_header_of_its_own(client):
+    # If one of these comes back, the app and nginx are both setting it again
+    # and a response carries two values for one policy, as `/v1/auth/me` did
+    # on the live host: `Referrer-Policy: no-referrer` from here and
+    # `strict-origin-when-cross-origin` from the edge.
+    owned_by_the_edge = (
+        "Strict-Transport-Security",
+        "X-Frame-Options",
+        "X-Content-Type-Options",
+        "Referrer-Policy",
+        "Permissions-Policy",
+        "Content-Security-Policy",
+    )
     for response in (
         await client.get("/health/live"),
         await client.get("/v1/auth/me"),  # 401 path
     ):
-        assert response.headers["X-Content-Type-Options"] == "nosniff"
-        assert response.headers["X-Frame-Options"] == "DENY"
-        assert response.headers["Referrer-Policy"] == "no-referrer"
-        assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
-        assert "camera=()" in response.headers["Permissions-Policy"]
+        present = [h for h in owned_by_the_edge if h in response.headers]
+        assert not present, f"the application is setting edge-owned headers again: {present}"
+
+
+async def test_every_response_is_still_unstorable(client):
+    # This one IS the application's, and stays: it is a tenancy guard, not
+    # transport hardening. A shared proxy that caches one organization's data
+    # and serves it to another is a cross-tenant leak.
+    for response in (
+        await client.get("/health/live"),
+        await client.get("/v1/auth/me"),
+    ):
         assert response.headers["Cache-Control"] == "no-store"
-
-
-async def test_hsts_is_absent_without_tls_and_present_when_enabled(client, monkeypatch):
-    from platform_core.core.config import get_settings
-
-    assert "Strict-Transport-Security" not in (await client.get("/health/live")).headers
-    monkeypatch.setattr(get_settings(), "hsts_enabled", True)
-    headers = (await client.get("/health/live")).headers
-    assert "max-age=31536000" in headers["Strict-Transport-Security"]
-    assert "includeSubDomains" in headers["Strict-Transport-Security"]
 
 
 async def test_cors_grants_only_configured_origins(client):

@@ -63,14 +63,10 @@ class Settings(BaseSettings):
     #: also stops its own operators logging in.
     rate_limit_failure_policy: Literal["degrade", "fail_open", "fail_closed"] = "degrade"
 
-    # Security headers. HSTS is only meaningful behind TLS, so it is opt-in
-    # and off by default in dev.
-    security_headers_enabled: bool = True
-    hsts_enabled: bool = False
-    hsts_max_age_seconds: int = 31536000
-    content_security_policy: str = (
-        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
-    )
+    # WO-46: the security headers moved to the edge, which is the only layer
+    # that sees both the API and the portal, so the four settings that
+    # configured them here are gone rather than left as dials wired to
+    # nothing. `infra/nginx/conf.d/security-headers.inc` is the single source.
 
     # OBS-001: how often the platform samples its own component health into
     # the `component_health` gauge. Every Prometheus alert rule reads that

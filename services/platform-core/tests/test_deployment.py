@@ -309,12 +309,20 @@ def test_nginx_configures_what_the_runbook_promises(directive):
 # likes, as long as it re-states the security headers with it.
 
 _HEADERS_INCLUDE = "include /etc/nginx/conf.d/security-headers.inc;"
+_API_HEADERS_INCLUDE = "include /etc/nginx/conf.d/security-headers-api.inc;"
 
 
 def _location_blocks(conf: str) -> list[tuple[str, str]]:
-    """Every `location …{ }` block in the file, as (header line, body)."""
-    blocks, i = [], 0
-    while (start := conf.find("location ", i)) != -1:
+    """Every `location …{ }` block in the file, as (header line, body).
+
+    Anchored to the start of a line, because the word "location" also appears
+    in the prose of this config's comments — and matching one of those
+    swallowed the real block that followed it, which quietly excused three
+    API locations from a check they were failing.
+    """
+    blocks = []
+    for match in re.finditer(r"^[ \t]*location\s", conf, re.MULTILINE):
+        start = match.start()
         brace = conf.find("{", start)
         depth, j = 0, brace
         while j < len(conf):
@@ -326,16 +334,18 @@ def _location_blocks(conf: str) -> list[tuple[str, str]]:
                     break
             j += 1
         blocks.append((conf[start:brace].strip(), conf[brace : j + 1]))
-        i = brace + 1
     return blocks
 
 
 def test_every_location_that_adds_a_header_restates_the_security_headers():
     conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
+    # The API variant includes the shared snippet, so either satisfies this.
     offenders = [
         name
         for name, body in _location_blocks(conf)
-        if "add_header" in body and _HEADERS_INCLUDE not in body
+        if "add_header" in body
+        and _HEADERS_INCLUDE not in body
+        and _API_HEADERS_INCLUDE not in body
     ]
     assert not offenders, (
         "these locations set a header of their own, which discards every "
@@ -394,6 +404,81 @@ def test_the_snippet_is_not_loaded_twice_as_a_server_block():
     base = (REPO / "infra/nginx/nginx.conf").read_text()
     assert "conf.d/*.conf" in base
     assert (REPO / "infra/nginx/conf.d/security-headers.inc").exists()
+
+
+# --- one owner for the transport headers (WO-46) ---------------------------
+#
+# The live platform served `Referrer-Policy` and `Permissions-Policy` TWICE on
+# every API response, with different values, because the application and the
+# edge both set them — while the portal served neither, because `location /`
+# discards inherited headers. These assert the ruling: the edge owns them, it
+# is the only owner, and every surface gets the same set.
+
+_EDGE_OWNED = (
+    "Strict-Transport-Security",
+    "X-Content-Type-Options",
+    "X-Frame-Options",
+    "Referrer-Policy",
+    "Permissions-Policy",
+)
+
+
+def test_the_application_no_longer_sets_any_edge_owned_header():
+    source = (REPO / "services/platform-core/src/platform_core/core/http_security.py").read_text()
+    code = "\n".join(
+        line for line in source.splitlines() if not line.lstrip().startswith(("#", "-", "*"))
+    )
+    code = code.split('"""')[-1]  # past the module docstring, which names them
+    for header in (*_EDGE_OWNED, "Content-Security-Policy"):
+        assert header not in code, f"the application still sets {header}"
+
+
+def test_the_edge_defines_each_header_exactly_once():
+    inc = (REPO / "infra/nginx/conf.d/security-headers.inc").read_text()
+    for header in _EDGE_OWNED:
+        assert inc.count(f"add_header {header} ") == 1, f"{header} is not defined exactly once"
+
+
+def test_api_and_portal_receive_the_same_set():
+    # Portal responses inherit the snippet; API responses include the API
+    # variant, which includes the same snippet and adds only CSP. So the five
+    # are identical on both surfaces by construction — this asserts the
+    # construction, since nothing else can.
+    api = (REPO / "infra/nginx/conf.d/security-headers-api.inc").read_text()
+    assert "include /etc/nginx/conf.d/security-headers.inc;" in api, (
+        "the API set does not derive from the shared one, so the two can drift"
+    )
+    for header in _EDGE_OWNED:
+        assert f"add_header {header} " not in api, (
+            f"{header} is restated in the API set — that is a second definition, "
+            "and a second definition is how the values diverged before"
+        )
+    assert api.count("add_header Content-Security-Policy") == 1
+
+
+def test_every_api_location_carries_the_api_header_set():
+    conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
+    api_include = "include /etc/nginx/conf.d/security-headers-api.inc;"
+    missing = [
+        name
+        for name, body in _location_blocks(conf)
+        if ("proxy_pass http://lacteva_api" in body) and api_include not in body
+    ]
+    assert not missing, f"these API locations get no Content-Security-Policy: {missing}"
+
+
+def _directives(text: str) -> str:
+    """The config without its prose — comments name what they rule out."""
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
+def test_the_api_policy_is_the_one_an_api_can_have():
+    api = _directives((REPO / "infra/nginx/conf.d/security-headers-api.inc").read_text())
+    assert "default-src 'none'" in api
+    assert "frame-ancestors 'none'" in api
+    # The Swagger relaxation must not come back at the edge: `/openapi.json`
+    # is served in production and is data, not a page.
+    assert "unsafe-inline" not in api
 
 
 # --- releases come from the registry (WO-44) -------------------------------
@@ -459,7 +544,12 @@ def test_the_deploy_prefers_the_registry_over_the_host_tree():
 
 def test_an_incomplete_release_is_refused_rather_than_deployed():
     deploy = (REPO / "infra/deploy/deploy.sh").read_text()
-    for required in ("docker-compose.production.yml", "infra/nginx/nginx.conf", "infra/nginx/conf.d"):
+    required_paths = (
+        "docker-compose.production.yml",
+        "infra/nginx/nginx.conf",
+        "infra/nginx/conf.d",
+    )
+    for required in required_paths:
         assert required in deploy.split("refusing to deploy an incomplete release")[0][-900:]
 
 
