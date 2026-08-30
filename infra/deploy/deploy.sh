@@ -197,11 +197,52 @@ fi
 # --- 3. record the release -------------------------------------------------
 step "3/6  staging release ${TAG}"
 RELEASE="${RELEASES}/${TAG}"
+rm -rf "${RELEASE}"
 mkdir -p "${RELEASE}"
-# The repository at this tag IS the release: compose files, nginx config,
-# deploy scripts. Copying rather than symlinking the checkout means a
-# `git checkout` on the host cannot change what a deployed release contains.
-rsync -a --delete --exclude '.git' "${SOURCE_TREE}/" "${RELEASE}/"
+
+# WO-44: the release tree comes from the REGISTRY, at this tag.
+#
+# It used to come from `rsync "${SOURCE_TREE}/"` — the host's own current
+# release. The code was pinned to a commit and everything it runs beside was
+# not, so "the repository at this tag IS the release" was a claim the script
+# could not keep: whatever was last placed on that disk by hand was the
+# release, no matter which tag was named. `fe86d8c` fixed nginx's security
+# headers, published its images, deployed green, and changed nothing on the
+# live site, because no step carried the file. There was no route in but a
+# manual rsync from an allow-listed address.
+#
+# Now the same CI run that builds the API publishes the tree as
+# `<image>:release-<tag>`, and this pulls it and copies it out. Nothing on the
+# host is a source of truth any more.
+#
+# The rsync remains as a FALLBACK, and deliberately so: tags published before
+# this change have no release image, and a rollback to one of them must still
+# work. A deploy that silently fell back would be the old bug wearing a new
+# hat, so it says which path it took, every time.
+RELEASE_IMAGE="${IMAGE}:release-${TAG}"
+if docker pull "${RELEASE_IMAGE}" > /dev/null 2>&1; then
+  log "release tree from ${RELEASE_IMAGE}"
+  EXTRACT="lacteva-release-extract-$$"
+  docker rm -f "${EXTRACT}" > /dev/null 2>&1 || true
+  docker create --name "${EXTRACT}" "${RELEASE_IMAGE}" > /dev/null \
+    || die "could not create a container from ${RELEASE_IMAGE}"
+  # `/release/.` copies the CONTENTS: `docker cp /release` would nest it.
+  if ! docker cp "${EXTRACT}:/release/." "${RELEASE}/"; then
+    docker rm -f "${EXTRACT}" > /dev/null 2>&1 || true
+    die "could not extract the release tree from ${RELEASE_IMAGE}"
+  fi
+  docker rm -f "${EXTRACT}" > /dev/null 2>&1 || true
+  # An empty or partial extraction would leave compose bind-mounting missing
+  # files, which surfaces much later as an unexplained nginx failure.
+  for required in docker-compose.production.yml infra/nginx/nginx.conf \
+                  infra/nginx/conf.d infra/deploy/verify-deployment.sh; do
+    [ -e "${RELEASE}/${required}" ] \
+      || die "the release image is missing ${required} — refusing to deploy an incomplete release"
+  done
+else
+  log "no ${RELEASE_IMAGE} — falling back to the host tree at ${SOURCE_TREE} (pre-WO-44 tag)"
+  rsync -a --delete --exclude '.git' "${SOURCE_TREE}/" "${RELEASE}/"
+fi
 echo "${PREVIOUS}" > "${RELEASE}/.deployed-tag"   # what to go BACK to
 ln -sfn "${RELEASE}" "${CURRENT}"
 cd "${CURRENT}"

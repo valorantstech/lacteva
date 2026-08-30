@@ -1,0 +1,57 @@
+# The release tree, as a versioned artifact (WO-44 · LACTEVA-DEPLOY-003).
+#
+# WHAT PROBLEM THIS SOLVES. `deploy.sh` used to build a new release by
+# rsyncing the host's OWN current release into it. The code came from ECR at
+# an exact tag, but everything the code runs BESIDE — the nginx configuration,
+# the compose file, the backup and restore scripts, the deploy script itself —
+# came from whatever happened to be on that disk. A pushed commit was
+# therefore not deployable: `fe86d8c` fixed nginx's security headers, passed
+# every gate, published both images, deployed cleanly, and the headers stayed
+# missing on the live site, because nothing carried the file. The only route
+# was a manual rsync over SSH from an allow-listed address.
+#
+# So the release tree becomes an artifact like the code: built once in CI from
+# the commit, pushed to the registry the host already pulls from, addressed by
+# the same tag. `main-abc1234` now names three images, and deploying that tag
+# deploys that commit — configuration included.
+#
+# WHY AN IMAGE RATHER THAN GIT ON THE HOST. Fetching the commit on the host
+# would be the shorter sentence, and it was rejected for two reasons. It needs
+# a long-lived deploy key ON the host, when the pipeline's stated direction is
+# the opposite — "no AWS secret is stored in GitHub", OIDC instead of keys,
+# "the EC2 now only ever pulls". And it puts GitHub in the deploy path, so an
+# outage there would block a deploy the registry could otherwise serve. ECR is
+# already reachable with the instance profile and no secret at all.
+#
+# WHY THIS BASE. `python:3.13-slim-bookworm` is what the API image's runtime
+# stage is built on, so the host has already pulled every one of these layers
+# and the incremental download is the release tree itself — a few hundred
+# kilobytes. A smaller base with different layers would cost MORE to pull.
+FROM python:3.13-slim-bookworm
+
+# CURATED, not the whole repository — which is what the rsync copied, and is
+# the wrong default for an artifact that leaves this machine:
+#
+#   * `infra/terraform/` holds `terraform.tfstate`, and a state file carries
+#     real values. It must not be baked into an image that anyone who can pull
+#     from the registry can read. `.dockerignore` excludes it; this comment
+#     exists so nobody "fixes" that later.
+#   * `node_modules/` and `.venv/` are 1.7 GB of build output that the running
+#     stack never reads.
+#
+# Everything the deployed platform actually touches is here: every path the
+# compose file bind-mounts, every script `deploy.sh` and the systemd units
+# invoke, and the seeder and restore tooling the operator runs by hand.
+WORKDIR /release
+COPY docker-compose.production.yml ./
+COPY infra ./infra
+
+# The compose file falls back to `./infra/nginx/certs` when TLS_CERT_DIR is
+# unset. It is set on every real host (`/etc/lacteva/certs`), but the mount
+# point has to exist for the fallback not to have Docker create it root-owned.
+RUN mkdir -p /release/infra/nginx/certs
+
+# Nothing runs. This image is a container to copy OUT of — `docker create`
+# followed by `docker cp`, which is why it needs no entrypoint of its own but
+# does need a command that `docker create` will accept.
+CMD ["/bin/false"]

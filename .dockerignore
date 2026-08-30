@@ -1,0 +1,27 @@
+# Build context for the RELEASE artifact (infra/deploy/Dockerfile.release).
+#
+# The other two images build from their own directories and are unaffected by
+# this file; it exists for the repo-root context, and it is the one thing
+# standing between the registry and a terraform state file.
+.git
+**/node_modules
+**/.venv
+**/__pycache__
+**/.next
+**/.pytest_cache
+**/*.pyc
+
+# Secrets and machine state. `terraform.tfstate` carries real values.
+infra/terraform
+**/*.pem
+**/*.key
+**/.env
+**/.env.*
+!**/.env.example
+
+# Nothing the deployed platform reads.
+apps
+docs
+libs
+tools
+services

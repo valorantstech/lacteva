@@ -28,6 +28,13 @@ on:
       - "services/platform-core/**"
       - "apps/admin-portal/**"
       - ".github/workflows/images.yml"
+      # WO-44: the release tree is an image now, so a commit that changes only
+      # nginx config or a deploy script has to publish a tag as well. Before
+      # this, such a commit produced NOTHING deployable — there was no
+      # `main-<sha>` to hand to deploy.sh, which is half of why configuration
+      # only ever reached the host by hand.
+      - "infra/**"
+      - "docker-compose.production.yml"
   workflow_dispatch:
     inputs:
       tag:
@@ -84,11 +91,32 @@ jobs:
         include:
           - name: platform-core
             context: services/platform-core
+            dockerfile: services/platform-core/Dockerfile
             repository: lacteva/platform-core
+            tag_prefix: ""
+            build-args: ""
+          # WO-44. The release tree — compose file, nginx config, deploy and
+          # backup scripts — published as an artifact addressed by the same
+          # tag as the code, so `deploy.sh <tag>` can materialise a release
+          # from the registry instead of from the host's own disk.
+          #
+          # It goes into the EXISTING platform-core repository under a
+          # `release-` prefix rather than a third ECR repository, because the
+          # OIDC role's policy reaches exactly these two repositories: a new
+          # one would need an IAM change made outside this repo, which is a
+          # worse trade than a tag prefix for an artifact that is versioned in
+          # lockstep with the code anyway.
+          - name: release
+            context: .
+            dockerfile: infra/deploy/Dockerfile.release
+            repository: lacteva/platform-core
+            tag_prefix: "release-"
             build-args: ""
           - name: admin-portal
             context: apps/admin-portal
+            dockerfile: apps/admin-portal/Dockerfile
             repository: lacteva/admin-portal
+            tag_prefix: ""
             # The 768 MB cap exists because the HOST could not fork a bigger
             # worker. A GitHub runner has 16 GB and no strict overcommit, so
             # the build is given room here rather than inheriting a constraint
@@ -144,8 +172,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: true
-          tags: ${{ env.REGISTRY }}/${{ matrix.repository }}:${{ needs.tag.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ matrix.repository }}:${{ matrix.tag_prefix }}${{ needs.tag.outputs.tag }}
           build-args: ${{ matrix.build-args }}
           provenance: false # ECR shows an untagged attestation manifest otherwise
           # Layer cache lives with GitHub, not on the host, and is capped by
@@ -158,17 +187,19 @@ jobs:
           {
             echo "### ${{ matrix.repository }}"
             echo '```'
-            echo "${{ env.REGISTRY }}/${{ matrix.repository }}:${{ needs.tag.outputs.tag }}"
+            echo "${{ env.REGISTRY }}/${{ matrix.repository }}:${{ matrix.tag_prefix }}${{ needs.tag.outputs.tag }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
   deployable:
-    name: Both images published
+    name: All three images published
     needs: [tag, build]
     runs-on: ubuntu-latest
     steps:
-      # A deploy needs BOTH images at the same tag. Saying so in one place
-      # stops someone deploying a tag where only one of them exists.
+      # A deploy needs ALL THREE at the same tag — the API, the portal, and
+      # since WO-44 the release tree that carries the configuration they run
+      # beside. Saying so in one place stops someone deploying a tag where
+      # only some of them exist.
       - run: |
           {
             echo "## Deployable"

@@ -16,6 +16,7 @@ import pathlib
 import re
 
 import pytest
+import yaml
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 
@@ -393,6 +394,73 @@ def test_the_snippet_is_not_loaded_twice_as_a_server_block():
     base = (REPO / "infra/nginx/nginx.conf").read_text()
     assert "conf.d/*.conf" in base
     assert (REPO / "infra/nginx/conf.d/security-headers.inc").exists()
+
+
+# --- releases come from the registry (WO-44) -------------------------------
+#
+# The reproducibility gap these pin shut: `deploy.sh` built a release by
+# rsyncing the host's own current tree, so a pushed commit's configuration
+# reached production only if a person copied it there. These assert the three
+# halves of the fix — the artifact is built, it is published at the tag, and
+# the deploy prefers it.
+
+
+def _release_dockerfile() -> str:
+    return (REPO / "infra/deploy/Dockerfile.release").read_text()
+
+
+def test_the_release_tree_is_built_as_an_artifact():
+    df = _release_dockerfile()
+    assert "COPY docker-compose.production.yml" in df
+    assert "COPY infra" in df
+
+
+def test_the_release_artifact_cannot_carry_terraform_state():
+    # A state file holds real values, and this image is readable by anyone who
+    # can pull from the registry.
+    ignore = (REPO / ".dockerignore").read_text()
+    assert "infra/terraform" in ignore, "terraform state would be baked into a pullable image"
+    for secret in ("**/*.pem", "**/*.key"):
+        assert secret in ignore
+
+
+def test_the_release_image_is_published_at_the_same_tag_as_the_code():
+    workflow = yaml.safe_load((REPO / ".github/workflows/images.yml").read_text())
+    entries = workflow["jobs"]["build"]["strategy"]["matrix"]["include"]
+    release = [e for e in entries if e["name"] == "release"]
+    assert release, "no release artifact is built — a commit's config is not deployable"
+    assert release[0]["dockerfile"] == "infra/deploy/Dockerfile.release"
+    assert release[0]["tag_prefix"] == "release-"
+    # Every entry must set a prefix, or the build step's expression silently
+    # publishes one image over another's tag.
+    assert all("tag_prefix" in e and "dockerfile" in e for e in entries)
+
+
+def test_a_config_only_commit_still_publishes_a_deployable_tag():
+    # Before WO-44 the Images workflow ignored infra/, so a commit that fixed
+    # only nginx produced no tag to deploy at all.
+    raw = (REPO / ".github/workflows/images.yml").read_text()
+    workflow = yaml.safe_load(raw)
+    paths = workflow[True]["push"]["paths"] if True in workflow else workflow["on"]["push"]["paths"]
+    assert "infra/**" in paths
+    assert "docker-compose.production.yml" in paths
+
+
+def test_the_deploy_prefers_the_registry_over_the_host_tree():
+    deploy = (REPO / "infra/deploy/deploy.sh").read_text()
+    assert 'RELEASE_IMAGE="${IMAGE}:release-${TAG}"' in deploy
+    assert "docker cp" in deploy
+    # The fallback stays — a rollback to a pre-WO-44 tag has no release image
+    # — but it must ANNOUNCE itself, or this defect returns silently.
+    fallback = deploy.split("falling back")[1][:400]
+    assert "rsync" in fallback
+    assert "log " in deploy.split('RELEASE_IMAGE="')[0][-2000:] or "log " in deploy
+
+
+def test_an_incomplete_release_is_refused_rather_than_deployed():
+    deploy = (REPO / "infra/deploy/deploy.sh").read_text()
+    for required in ("docker-compose.production.yml", "infra/nginx/nginx.conf", "infra/nginx/conf.d"):
+        assert required in deploy.split("refusing to deploy an incomplete release")[0][-900:]
 
 
 # --- infrastructure as code (INF-001) --------------------------------------
