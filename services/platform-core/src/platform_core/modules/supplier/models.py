@@ -54,7 +54,7 @@ class SupplierProfile(Base, IdMixin):
     # notification directory has always been able to carry an address that
     # nothing populated. Email is the only channel this platform can actually
     # send on today; SMS and WhatsApp remain in the Coming-Soon register.
-    email: Mapped[str] = mapped_column(String(200), default="")
+    email: Mapped[str] = mapped_column(String(200), default="", server_default="")
     national_id: Mapped[str] = mapped_column(String(60), default="")
     village: Mapped[str] = mapped_column(String(120), default="")
     locale: Mapped[str] = mapped_column(String(8), default="en")
