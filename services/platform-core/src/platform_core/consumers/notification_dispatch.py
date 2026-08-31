@@ -32,6 +32,7 @@ from platform_core.modules.notification.service import (
 SUPPLIER_REGISTERED = "supplier.supplier-registered.v1"
 SUPPLIER_STATUS_CHANGED = "supplier.supplier-status-changed.v1"
 SETTLEMENT_FINALIZED = "settlement.finalized.v1"
+COLLECTION_COMPLETED = "collection.transaction-completed.v1"
 PAYMENT_COMPLETED = "payment.completed.v1"  # emitted by PAY-001
 RECEIPT_GENERATED = "receipt.generated.v1"  # emitted by RCP-001
 PASSWORD_RESET_REQUESTED = "identity.password-reset-requested.v1"  # noqa: S105
@@ -231,11 +232,52 @@ def _customer_payment_recorded(envelope: EventEnvelope) -> dict | None:
     }
 
 
+def _collection_completed(envelope: EventEnvelope) -> dict | None:
+    """The farmer's copy of what just happened at the counter (WO-52; D-15).
+
+    Only for an ACCEPTED collection with a slip: a rejection has its own
+    message (`milk_rejected`), and a collection still waiting for a rate has
+    no amount to report — telling a farmer their milk is worth nothing while
+    a rate card is published is worse than telling them later.
+    """
+    data = envelope.data
+    if data.get("rejected") or not data.get("slip_number"):
+        return None
+    if data.get("gross_amount") in (None, ""):
+        return None
+    return {
+        "recipient_ref": _uuid(data.get("supplier_id")),
+        "source_type": "milk_transaction",
+        "source_id": _uuid(data.get("transaction_id")) or envelope.aggregate_id,
+        "variables": {
+            "slip_number": data.get("slip_number", ""),
+            "quantity": data.get("net_weight", ""),
+            "quantity_unit": data.get("quantity_unit", "") or "kg",
+            "fat": data.get("fat", ""),
+            "snf": data.get("snf", ""),
+            "unit_price": data.get("unit_price", ""),
+            # BR-0029. Optional in the template: present only when a person
+            # changed the rate, and then the farmer's copy says so — the same
+            # rule the parchi follows. Never silent.
+            "base_unit_price": data.get("base_unit_price") or "",
+            "gross_amount": data.get("gross_amount", ""),
+            "currency": data.get("currency", ""),
+        },
+    }
+
+
 MAPPINGS: dict[str, EventMapping] = {
     SUPPLIER_REGISTERED: EventMapping("supplier_registered", "sms", _supplier_registered),
     SUPPLIER_STATUS_CHANGED: EventMapping("supplier_archived", "sms", _supplier_archived),
     SETTLEMENT_FINALIZED: EventMapping(
         "settlement_finalized", "sms", _settlement_finalized, selectable=True
+    ),
+    # WO-52. Email, because it is the only channel this platform can actually
+    # send on today; SMS and WhatsApp stay in the Coming-Soon register with
+    # their guards intact, and `selectable` lets a tenant move this the moment
+    # one is contracted.
+    COLLECTION_COMPLETED: EventMapping(
+        "collection_completed", "email", _collection_completed, selectable=True
     ),
     PAYMENT_COMPLETED: EventMapping("payment_completed", "sms", _payment_completed),
     RECEIPT_GENERATED: EventMapping("receipt_available", "sms", _receipt_generated),

@@ -1135,6 +1135,20 @@ class MilkCollectionService:
                 "currency": tx.currency,
                 "rejected": tx.rejected_reason is not None,
                 "slip_number": tx.slip_number,
+                # WO-52. What the farmer's message says. Carried on the EVENT
+                # because a consumer reads facts from the log and never from a
+                # table (SPRINT-008B) — and because a message about a
+                # collection must say what that collection was, not what the
+                # row looks like whenever the consumer happens to run.
+                "fat": tx.fat,
+                "snf": tx.snf,
+                "unit_price": str(tx.unit_price) if tx.unit_price is not None else None,
+                # BR-0029: whether a person changed the rate. The farmer's copy
+                # says so, exactly as the parchi does.
+                "base_unit_price": (
+                    str(tx.base_unit_price) if tx.base_unit_price is not None else None
+                ),
+                "quantity_unit": tx.weight_unit,
             },
             actor_id,
         )

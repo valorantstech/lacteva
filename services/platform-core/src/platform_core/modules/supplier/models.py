@@ -48,6 +48,13 @@ class SupplierProfile(Base, IdMixin):
     supplier_id: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(200), index=True)
     phone: Mapped[str] = mapped_column(String(30), default="", index=True)
+    # WO-52. Optional, and empty for most: a smallholder dairy farmer is
+    # reachable by phone, not by mail. It exists because some suppliers are
+    # institutions — a chilling centre, a co-operative — and because the
+    # notification directory has always been able to carry an address that
+    # nothing populated. Email is the only channel this platform can actually
+    # send on today; SMS and WhatsApp remain in the Coming-Soon register.
+    email: Mapped[str] = mapped_column(String(200), default="")
     national_id: Mapped[str] = mapped_column(String(60), default="")
     village: Mapped[str] = mapped_column(String(120), default="")
     locale: Mapped[str] = mapped_column(String(8), default="en")

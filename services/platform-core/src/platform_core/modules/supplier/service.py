@@ -64,6 +64,7 @@ def _changed_fields(profile: SupplierProfile, target: dict[str, str]) -> dict[st
 class SupplierProfileInput(BaseModel):
     full_name: str = Field(min_length=2, max_length=200)
     phone: str = Field(default="", max_length=30)
+    email: str = Field(default="", max_length=200)
     national_id: str = Field(default="", max_length=60)
     village: str = Field(default="", max_length=120)
     locale: str = "en"
@@ -236,6 +237,7 @@ class SupplierService:
                 supplier_id=supplier.id,
                 full_name=cmd.full_name,
                 phone=cmd.phone,
+                email=cmd.email,
                 national_id=cmd.national_id,
                 village=cmd.village,
                 locale=cmd.locale,
@@ -259,6 +261,7 @@ class SupplierService:
                     # (NOT-001) — consumers must never query this module.
                     "full_name": cmd.full_name,
                     "phone": cmd.phone,
+                    "email": cmd.email,
                     "locale": cmd.locale,
                 },
                 actor_id=actor_id,
@@ -390,6 +393,7 @@ class SupplierService:
                     # clearing a wrong number actually clears it.
                     "full_name": profile.full_name,
                     "phone": profile.phone,
+                    "email": profile.email,
                     "locale": profile.locale,
                     "changed": sorted(changes),
                 },
@@ -645,6 +649,7 @@ class SupplierService:
             profile=SupplierProfileInput(
                 full_name=profile.full_name,
                 phone=profile.phone,
+                email=profile.email,
                 national_id=profile.national_id,
                 village=profile.village,
                 locale=profile.locale,

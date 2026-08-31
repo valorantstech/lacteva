@@ -89,6 +89,9 @@ PURPOSES: dict[str, str] = {
     "customer_payment_recorded": "Tells a customer a payment against their account was recorded",
     "supplier_registered": "Welcomes a farmer and gives them their supplier code",
     "supplier_archived": "Tells a farmer their supplier account was closed",
+    "collection_completed": (
+        "Tells a farmer what was collected, at what quality and rate, and what it is worth"
+    ),
     "milk_rejected": "Tells a farmer a collection was rejected, and why",
     "price_unavailable": "Tells an operator no rate could be resolved for a collection",
     "invitation": "Sends a new user their one-time invitation link",
@@ -104,6 +107,9 @@ PURPOSES: dict[str, str] = {
 #: between "transactional/service" and everything else.
 BUSINESS_PURPOSE_KEYS = frozenset(
     {
+        # WO-52: the most business-y fact there is — what a farmer delivered
+        # and what they will be paid for it.
+        "collection_completed",
         "settlement_finalized",
         "settlement_finalized_base",
         "settlement_finalized_with_quantity",
@@ -319,6 +325,26 @@ TEMPLATES: tuple[Template, ...] = (
         "Pricing pending",
         "Hello {name}, your delivery on {date} was recorded but pricing is pending. "
         "The amount will follow once rates are published.",
+    ),
+    _t(
+        "collection_completed",
+        "email",
+        "en",
+        "Milk collected - {slip_number}",
+        "Dear {name}, we received {quantity} {quantity_unit} of milk on {date}. "
+        "Fat {fat}, SNF {snf}. Rate {unit_price} per {quantity_unit}. "
+        "[[Rate changed from {base_unit_price}. ]]"
+        "Amount {currency} {gross_amount}. Slip {slip_number}.",
+    ),
+    _t(
+        "collection_completed",
+        "email",
+        "hi",
+        "दूध संग्रह - {slip_number}",
+        "प्रिय {name}, {date} को आपका {quantity} {quantity_unit} दूध प्राप्त हुआ। "
+        "फैट {fat}, एसएनएफ {snf}। दर {unit_price} प्रति {quantity_unit}। "
+        "[[दर {base_unit_price} से बदली गई। ]]"
+        "राशि {currency} {gross_amount}। पर्ची {slip_number}।",
     ),
     _t(
         "password_reset",
