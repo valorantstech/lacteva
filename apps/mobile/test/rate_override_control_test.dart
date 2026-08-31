@@ -50,8 +50,6 @@ class _Fake extends ApiClient {
     return _tx;
   }
 
-  @override
-  Future<Map<String, dynamic>> getMilkTransaction(String id) async => _tx;
 }
 
 /// An offline client that has already concluded it cannot reach the platform.
