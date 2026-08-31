@@ -146,6 +146,13 @@ class SyncQueue {
   static const _version = 1;
 
   final OfflineStore _store;
+
+  /// The same durable store the queue writes to (WO-54).
+  ///
+  /// Exposed so device bindings live beside a morning's collections rather
+  /// than in a second file with its own atomicity story — one place that
+  /// survives a crash, not two.
+  OfflineStore get store => _store;
   final int maxAttempts;
 
   final List<QueuedOperation> _operations = [];

@@ -1037,6 +1037,18 @@ class ApiClient {
           )
           as Map<String, dynamic>;
 
+  /// The instruments registered at a centre (WO-54).
+  ///
+  /// The hardware registry, not the push-notification devices below — the two
+  /// share a word and nothing else.
+  Future<List<dynamic>> listCenterDevices(String centerId) async {
+    final page = await _send(
+      'GET',
+      '/v1/devices?center_id=$centerId&limit=100&offset=0',
+    ) as Map<String, dynamic>;
+    return (page['items'] as List<dynamic>? ?? const []);
+  }
+
   /// This principal's own devices. The response never carries the token.
   Future<List<dynamic>> listDevices() async =>
       await _send('GET', '/v1/notification-devices') as List<dynamic>;

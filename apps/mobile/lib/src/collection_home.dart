@@ -38,6 +38,9 @@ import 'brand/motion.dart';
 import 'center_summary.dart';
 import 'centers.dart';
 import 'collection_wizard.dart';
+import 'devices/binding_store.dart';
+import 'devices/device_settings.dart';
+import 'devices/instruments_screen.dart';
 import 'l10n.dart';
 import 'offline/offline_client.dart';
 import 'offline/sync_screen.dart';
@@ -99,12 +102,30 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
   bool _resolving = true;
   String? _error;
 
+  /// WO-54: which instruments this handset can reach, loaded once. Empty is
+  /// the ordinary case — a centre with no bound device captures by hand, and
+  /// the wizard shows nothing extra.
+  DeviceSettings _bindings = const DeviceSettings();
+
   bool get _isManagerView => widget.session.can('reporting.read');
 
   @override
   void initState() {
     super.initState();
     _resolve();
+    _loadBindings();
+  }
+
+  Future<void> _loadBindings() async {
+    // A binding that cannot be read is not a reason to fail the screen: the
+    // consequence is only that read-assist is not offered, and typing works.
+    try {
+      final store = BindingStore(widget.client.queue.store);
+      final loaded = await store.load();
+      if (mounted) setState(() => _bindings = loaded);
+    } catch (_) {
+      // Left empty, deliberately.
+    }
   }
 
   /// Which centre, then everything about it.
@@ -228,6 +249,10 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
             client: widget.client,
             sessionId: session['id'] as String,
             session: widget.session,
+            // WO-54: the instruments this handset is bound to, if any. Empty
+            // is the ordinary case and the wizard offers nothing extra —
+            // manual capture is the first-class path and needs no hardware.
+            devices: _bindings,
           ),
         ),
       );
@@ -257,7 +282,28 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Lacteva'),
-          actions: [SignOutButton(client: widget.client)],
+          actions: [
+            // WO-54. The registry says a machine exists at this centre; this
+            // is where this handset says how it reaches it.
+            if (_centre != null)
+              IconButton(
+                icon: const Icon(Icons.sensors),
+                tooltip: 'Instruments',
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => InstrumentsScreen(
+                        client: widget.client,
+                        centerId: _centre!.id,
+                        bindings: BindingStore(widget.client.queue.store),
+                      ),
+                    ),
+                  );
+                  await _loadBindings();
+                },
+              ),
+            SignOutButton(client: widget.client),
+          ],
         ),
         body: Center(
           child: Padding(
