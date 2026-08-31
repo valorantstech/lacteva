@@ -11,7 +11,7 @@ to the ordered transaction event log, audited, and published on the bus.
 
 import uuid
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from statistics import fmean, pstdev
 from typing import TYPE_CHECKING, Any
 
@@ -147,6 +147,9 @@ BUS_EVENTS = {
     "TransactionAccepted": "collection.transaction-accepted.v1",
     "TransactionRejected": "collection.transaction-rejected.v1",
     "TransactionCompleted": "collection.transaction-completed.v1",
+    # BR-0029. A rate a person changed is a fact other modules may need to
+    # know about, so it goes on the bus like every other decision.
+    "RateOverridden": "collection.rate-overridden.v1",
     "TransactionCancelled": "collection.transaction-cancelled.v1",
     # LACTEVA-BACKEND-001. A rate-pending collection priced after the fact,
     # once the rate card that was missing exists. Named for what happened,
@@ -215,6 +218,15 @@ class MilkInfoCommand(BaseModel):
     container_identifier: str = Field(min_length=1, max_length=80)
     temperature_c: float | None = Field(default=None, ge=0, le=50)
     arrived_at: datetime | None = None
+
+
+class RateOverrideCommand(BaseModel):
+    """An authorized departure from the resolved rate (BR-0029)."""
+
+    unit_price: Decimal = Field(gt=0)
+    #: Mandatory, and not merely non-empty: an override with no reason is an
+    #: unexplained payment difference, which is what an auditor asks about.
+    reason: str = Field(min_length=3, max_length=300)
 
 
 class InstrumentProvenance(BaseModel):
@@ -286,6 +298,12 @@ class TransactionView(BaseModel):
     pricing_status: str | None
     unit_price: Decimal | None
     gross_amount: Decimal | None
+    # BR-0029. Null unless a rate was overridden — so a client can show BOTH
+    # numbers, which is what "never silent" means at the point of reading.
+    base_unit_price: Decimal | None = None
+    override_reason: str | None = None
+    overridden_by: uuid.UUID | None = None
+    overridden_at: datetime | None = None
     currency: str | None
     calculation_id: uuid.UUID | None
     pricing_detail: str | None
@@ -366,6 +384,10 @@ class SlipView(BaseModel):
     unit_price: Decimal | None
     gross_amount: Decimal | None
     currency: str | None
+    # BR-0029. The farmer sees BOTH numbers and why, or the override is
+    # silent to the one person it costs money.
+    base_unit_price: Decimal | None = None
+    override_reason: str | None = None
     #: The shareable plain-text parchi — WhatsApp-pasteable, printer-plain.
     text: str
 
@@ -408,6 +430,12 @@ def render_slip_text(slip: SlipView, *, language: str, timezone_name: str | None
     elif slip.unit_price is not None and slip.gross_amount is not None:
         per = f"/{slip.weight_unit}" if slip.weight_unit else ""
         lines.append(f"{label('Rate', 'दर')}: {slip.unit_price}{per}")
+        # BR-0029 / D-3: an override the farmer cannot see on their own copy
+        # is a silent one. Both numbers, and the reason, on the parchi.
+        if slip.base_unit_price is not None:
+            lines.append(f"{label('Card rate', 'कार्ड दर')}: {slip.base_unit_price}{per}")
+            if slip.override_reason:
+                lines.append(f"{label('Rate changed', 'दर बदली')}: {slip.override_reason}")
         amount = f"{slip.currency or ''} {slip.gross_amount}".strip()
         lines.append(f"{label('Amount', 'राशि')}: {amount}")
     else:
@@ -875,6 +903,13 @@ class MilkCollectionService:
                 ),
                 actor_id=actor_id,
             )
+            # BR-0029. A collection whose rate a person overrode is not
+            # repriceable by a rate card that showed up afterwards. Silently
+            # replacing it would erase a decision somebody signed for, and the
+            # farmer was already paid — or told they would be — on that number.
+            # Replacing an override takes the same authorized path that made it.
+            if tx.base_unit_price is not None:
+                return None
             tx.pricing_status = "priced"
             tx.unit_price = calculation.unit_price.amount
             tx.gross_amount = calculation.gross_amount.amount
@@ -891,6 +926,58 @@ class MilkCollectionService:
             tx.pricing_status = "pricing_unavailable"
             tx.pricing_detail = str(detail.get("reason", ""))[:300]
             return {"stage": detail.get("stage"), "reason": tx.pricing_detail}
+
+    async def override_rate(
+        self, tx_id: uuid.UUID, cmd: RateOverrideCommand, *, actor_id: uuid.UUID
+    ) -> MilkCollectionTransaction:
+        """Pay a collection at a rate a person chose (BR-0029; D-15).
+
+        Authorization is the ROUTE's job (`pricing.rate.override`), the way
+        every other permission works here. What this owns is everything that
+        makes the departure legible afterwards: the resolved rate is preserved
+        rather than overwritten, the amount is recomputed from the effective
+        rate so the books stay internally consistent, and the who/when/why land
+        on the transaction and in its event log.
+
+        Only before the decision. Once a collection is accepted the farmer has
+        been told what they are getting, and once it is completed the record is
+        immutable — a rate that can change after either is not a rate, it is a
+        negotiation the farmer is not present for.
+        """
+        tx = await self._get_mutable(tx_id, expected="PRICED")
+        if tx.unit_price is None or tx.net_weight is None:
+            raise ConflictError("nothing to override: this collection has no resolved rate yet")
+
+        # The FIRST override preserves the resolved rate; a second one must not
+        # overwrite that with the first override's number, or the base becomes
+        # a previous decision rather than what the rate card said.
+        if tx.base_unit_price is None:
+            tx.base_unit_price = tx.unit_price
+
+        previous = tx.unit_price
+        tx.unit_price = cmd.unit_price
+        # BR-0005: Decimal end to end, and the amount is recomputed rather than
+        # scaled, so no rounding drifts between the rate and the total.
+        tx.gross_amount = (cmd.unit_price * Decimal(str(tx.net_weight))).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        tx.override_reason = cmd.reason.strip()
+        tx.overridden_by = actor_id
+        tx.overridden_at = utcnow()
+
+        await self._record(
+            tx,
+            "RateOverridden",
+            {
+                "base_unit_price": str(tx.base_unit_price),
+                "previous_unit_price": str(previous),
+                "unit_price": str(cmd.unit_price),
+                "gross_amount": str(tx.gross_amount),
+                "reason": tx.override_reason,
+            },
+            actor_id,
+        )
+        return tx
 
     async def reprice(self, tx_id: uuid.UUID, *, actor_id: uuid.UUID) -> MilkCollectionTransaction:
         """Price a collection the platform could not price at the time
@@ -1206,6 +1293,8 @@ class MilkCollectionService:
             rejected_reason=tx.rejected_reason,
             pricing_status=tx.pricing_status,
             unit_price=tx.unit_price,
+            base_unit_price=tx.base_unit_price,
+            override_reason=tx.override_reason,
             gross_amount=tx.gross_amount,
             currency=tx.currency,
             text="",

@@ -120,6 +120,19 @@ class MilkCollectionTransaction(Base, IdMixin):
     calculation_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
     pricing_detail: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
+    # BR-0029. An authorized rate override.
+    #
+    # `unit_price` stays the EFFECTIVE rate — the number the dairy agreed to
+    # pay — so settlement, the parchi and every report consume the override
+    # without knowing one happened, and no consumer can accidentally settle on
+    # a rate that was superseded. The resolved rate moves here instead of being
+    # overwritten, because a departure that erases what it departed from is
+    # indistinguishable from an error.
+    base_unit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    override_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    overridden_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    overridden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Decision (ACCEPTED / REJECTED)
     rejected_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)

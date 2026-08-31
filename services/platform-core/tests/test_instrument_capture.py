@@ -92,7 +92,7 @@ async def test_a_scale_reading_is_accepted_and_says_which_scale(client):
     # schema does not change for read-assist, and it did not need to.
     events = (await client.get(f"/v1/milk-transactions/{tx['id']}/events", headers=headers)).json()
     rows = events["items"] if isinstance(events, dict) else events
-    captured = [e for e in rows if e["event_type"] == "WeightCaptured"][0]
+    captured = next(e for e in rows if e["event_type"] == "WeightCaptured")
     assert captured["data"]["source"] == "scale"
     assert captured["data"]["device_id"] == scale["id"]
     assert captured["data"]["frame_hash"].startswith("sha256:")
@@ -130,7 +130,7 @@ async def test_an_analyzer_reading_is_accepted_and_says_which_analyzer(client):
 async def test_an_instrument_reading_without_a_device_is_refused(client):
     """The whole point. `source=scale` with no device is a hand-typed number
     wearing a machine's name."""
-    headers, center, supplier, session = await _procurement_env(client)
+    headers, _center, supplier, session = await _procurement_env(client)
     tx = await _to_weight_step(client, headers, session["id"], supplier)
 
     r = await client.post(
@@ -143,7 +143,7 @@ async def test_an_instrument_reading_without_a_device_is_refused(client):
 
 
 async def test_an_unregistered_device_is_refused(client):
-    headers, center, supplier, session = await _procurement_env(client)
+    headers, _center, supplier, session = await _procurement_env(client)
     tx = await _to_weight_step(client, headers, session["id"], supplier)
 
     r = await client.post(
@@ -209,7 +209,7 @@ async def test_a_retired_device_can_no_longer_report(client):
 async def test_manual_capture_is_untouched_and_needs_no_device(client):
     """Spec §26: manual is permanent and first-class. The instrument path must
     not have made the ordinary one harder."""
-    headers, center, supplier, session = await _procurement_env(client)
+    headers, _center, supplier, session = await _procurement_env(client)
     tx = await _to_weight_step(client, headers, session["id"], supplier)
 
     r = await client.post(

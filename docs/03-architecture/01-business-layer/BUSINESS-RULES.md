@@ -363,6 +363,22 @@ baseline: ARCH-BASELINE-V1
 
 ---
 
+## BR-0029 — A collection's rate may be overridden only by an authorized operator, with a reason, and never silently.
+
+**Clarification.** The rate a collection is priced at comes from the resolution engine and a published rate card ([BR-0003]). A dairy sometimes needs to depart from it at the counter — a quality dispute settled on the spot, a negotiated rate for a farmer whose card has not yet been published — and D-15 makes that an explicit product capability rather than a workaround. Three things follow, and all three are guards rather than intentions.
+
+First, the override is **authorized**: it requires `pricing.rate.override`, which is not held by an operator by default, because a rate a collector can change at will is not a rate. Second, it is **attributed and explained**: who overrode it, when, and a mandatory free-text reason are stored with the transaction and appear on the parchi and in the portal beside the base rate — the farmer and the auditor see both numbers, never only the one that was paid. The base rate is preserved rather than overwritten, so the departure remains legible after the fact; this is what makes an override different from an error. Third, and this is the rule that makes it safe, **an override is a pricing resolution like any other**: a later reprice does not silently replace it. The reprice path (LACTEVA-BACKEND-001, a rate-pending collection priced once a card exists) refuses to overwrite an overridden rate, because a card published after the fact would otherwise erase a decision a human made and signed for. Replacing an override requires the same authorized path that created it.
+
+Settlement consumes the effective rate — the override where one exists — because that is the number the dairy agreed to pay. It does so without knowing an override happened: the effective price stays in `unit_price`, the resolved one moves to `base_unit_price`, so no consumer can accidentally settle on a rate that was superseded. [D-3] holds: never silent, always attributed.
+
+**Enforcement.** `milk_collection/service.py` — `override_rate()` requires `pricing.rate.override` at the route (`api/deps.py: require_permission`), refuses an empty reason, refuses a transaction past `PRICED`, writes `base_unit_price` before `unit_price`, recomputes `gross_amount` from the effective rate, and records a `RateOverridden` transaction event; `_price()` refuses to overwrite a transaction carrying an override.
+
+**Verification.** `test_rate_override.py` — the authorization refusal, the empty-reason refusal, the base-rate preservation, the recomputed amount, the audit event, the reprice refusal, and the settlement consuming the override. Each guard was mutation-checked.
+
+**Status:** Active (since LACTEVA-PRICING-002).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -376,6 +392,7 @@ baseline: ARCH-BASELINE-V1
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.19 | 2026-08-31 | Architecture Board | LACTEVA-PRICING-002: BR-0029 (an authorized, attributed rate override; a reprice never silently replaces one). |
 | 1.18 | 2026-08-17 | Architecture Board | DEMO-034: BR-0028 (a run needs a driver and a vehicle to start; completing one creates no financial record). |
 | 1.17 | 2026-08-11 | Architecture Board | PILOT-F03: BR-0027 (a late collection is carried forward; a closed period is never reopened). BR-0011's "adjustments fixed at 0" restated in code as a named rule rather than a placeholder literal. |
 | 1.16 | 2026-08-07 | Architecture Board | MSG-001: BR-0017 extended — retry only what a retry can fix; permanence is claimed, and unknown means retryable. |

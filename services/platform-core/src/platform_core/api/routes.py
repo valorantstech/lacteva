@@ -151,6 +151,7 @@ from platform_core.modules.milk_collection.service import (
     MilkCollectionService,
     MilkInfoCommand,
     QualityCommand,
+    RateOverrideCommand,
     RejectCommand,
     SessionPage,
     SessionView,
@@ -1889,6 +1890,25 @@ async def reprice_milk_transaction(
     quiet recalculation of settled money.
     """
     return await service.reprice(tx_id, actor_id=p.id)
+
+
+@milk_router.post("/milk-transactions/{tx_id}/override-rate", response_model=TransactionView)
+async def override_transaction_rate(
+    tx_id: uuid.UUID,
+    cmd: RateOverrideCommand,
+    service: MilkSvc,
+    # BR-0029. Its OWN permission, not `collection.transaction.record`: the
+    # person who records milk and the person who may change what it is worth
+    # are deliberately different authorities, and an operator does not hold
+    # this one. A rate a collector can change at will is not a rate.
+    p: Annotated[Principal, Depends(require_permission("pricing.rate.override"))],
+) -> Any:
+    """Pay a collection at an authorized, attributed rate (D-15).
+
+    The resolved rate is preserved beside the override, both appear on the
+    parchi and in the portal, and a later reprice will not silently replace it.
+    """
+    return await service.override_rate(tx_id, cmd, actor_id=p.id)
 
 
 class CancelTransactionRequest(BaseModel):

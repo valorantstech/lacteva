@@ -72,6 +72,9 @@ PERMISSIONS: dict[str, str] = {
     "pricing.ratecard.read": "Read rate cards and their assignments",
     "pricing.ratecard.manage": "Create, edit, submit, version, and archive rate cards",
     "pricing.ratecard.approve": "Approve and publish rate cards",
+    # BR-0029. Deliberately NOT granted to a collection operator by default: a
+    # rate a collector can change at will is not a rate.
+    "pricing.rate.override": "Override the resolved rate on a collection, with a reason",
     "reporting.read": "Read operational reports and summaries",
     "notification.read": "Read notification history and templates",
     "notification.manage": "Retry notifications and operate the notification engine",
@@ -178,6 +181,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "pricing.ratecard.read",
         "pricing.ratecard.manage",
         "pricing.ratecard.approve",
+        "pricing.rate.override",
         "settlement.read",
         "settlement.manage",
         "settlement.finalize",
@@ -376,6 +380,9 @@ NAMED_ROLES: dict[str, list[str]] = {
     # a permission set cannot say "only centre A". It is enforced separately,
     # against `operator_assignment`, by `require_center_access`.
     "CENTRE_MANAGER": [
+        # BR-0029. The manager, not the operator: someone who can be asked
+        # afterwards why a farmer was paid a different rate.
+        "pricing.rate.override",
         "collection.center.read",
         "operations.device.read",
         "operations.readiness.read",
