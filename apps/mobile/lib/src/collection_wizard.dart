@@ -10,6 +10,8 @@ import 'theme.dart';
 import 'devices/device_bridge.dart';
 import 'devices/device_settings.dart';
 import 'devices/device_transport.dart';
+import 'printing/escpos.dart';
+import 'printing/printer_transport.dart';
 
 /// The platform's own capture bounds, mirrored for the OFFLINE path
 /// (P1-MOBILE-COUNTER-001; audit D-8). Online, the server refuses garbage
@@ -75,6 +77,8 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
   _AssistedReading? _assistedQuality;
   _AssistedReading? _assistedWeight;
   String? _deviceNote;
+  String? _printNote;
+  bool _printing = false;
   bool _reading = false;
 
   L10n get _l => L10n.of(widget.session);
@@ -202,6 +206,34 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
   /// types into, and the operator confirms them. A failure is not an error
   /// state — it is the ordinary case at a centre whose analyzer is off, so it
   /// leaves a note beside fields that stay perfectly usable.
+  /// Send the parchi to the centre's printer (WO-50).
+  ///
+  /// A failure is reported and nothing else changes: the slip is already
+  /// minted and durable, the text is on screen, and copying it is one tap
+  /// away. Spec §10 — "printer down: fall back"; the record does not depend
+  /// on the paper.
+  Future<void> _printSlip() async {
+    final printer = widget.devices.printer;
+    final slip = _slip;
+    if (printer == null || slip == null) return;
+    setState(() {
+      _printNote = null;
+      _printing = true;
+    });
+    try {
+      final bytes = renderSlip(
+        slip,
+        width: printer.narrowPaper ? PaperWidth.mm58 : PaperWidth.mm80,
+      );
+      await TcpPrinterTransport(host: printer.host, port: printer.port).send(bytes);
+      setState(() => _printNote = 'Sent to ${printer.label}.');
+    } on PrinterError catch (e) {
+      setState(() => _printNote = '${e.message}. Copy the parchi instead.');
+    } finally {
+      if (mounted) setState(() => _printing = false);
+    }
+  }
+
   /// The read-assist control, above the fields it fills.
   ///
   /// Present only when this handset actually has a binding for the
@@ -700,6 +732,20 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                     ),
                   ),
                 ),
+                // WO-50: offered only where a printer is registered. Copying
+                // the parchi sits beside it and always works — the farmer's
+                // copy must never depend on a machine being switched on.
+                if (widget.devices.hasPrinter)
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.print_outlined),
+                    label: Text(_printing ? 'Printing…' : 'Print parchi'),
+                    onPressed: _printing ? null : _printSlip,
+                  ),
+                if (_printNote != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(_printNote!, style: Theme.of(context).textTheme.bodySmall),
+                  ),
                 TextButton.icon(
                   icon: const Icon(Icons.copy),
                   label: Text(t.t('wizard.copyParchi')),

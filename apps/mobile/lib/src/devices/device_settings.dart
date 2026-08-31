@@ -36,16 +36,42 @@ class DeviceBinding {
   final int port;
 }
 
+/// A registered printer this handset can reach (WO-50).
+class PrinterBinding {
+  const PrinterBinding({
+    required this.deviceId,
+    required this.label,
+    required this.host,
+    this.port = 9100,
+    this.narrowPaper = false,
+  });
+
+  final String deviceId;
+  final String label;
+  final String host;
+  final int port;
+
+  /// 58 mm roll (32 columns) rather than 80 mm. A property of the paper in the
+  /// machine, which nothing on the network can detect — so it is configured.
+  final bool narrowPaper;
+}
+
 /// The bindings this handset holds, by device category.
 ///
 /// In-memory and injected, so the wizard has no opinion about where they come
 /// from and a test can supply one without a device.
 class DeviceSettings {
-  const DeviceSettings({this.analyzer, this.scale});
+  const DeviceSettings({this.analyzer, this.scale, this.printer});
 
   final DeviceBinding? analyzer;
   final DeviceBinding? scale;
+  final PrinterBinding? printer;
 
   bool get hasAnalyzer => analyzer != null;
   bool get hasScale => scale != null;
+
+  /// Whether to OFFER printing. A centre with no registered printer should not
+  /// see a button that can only fail — the parchi is already complete without
+  /// one (spec §10), and copying the text needs no hardware at all.
+  bool get hasPrinter => printer != null;
 }

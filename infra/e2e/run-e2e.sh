@@ -179,6 +179,15 @@ if [ "$WHAT" = "probe" ]; then
   exit "$FAILED"
 fi
 
+if [ "$WHAT" = "all" ] || [ "$WHAT" = "devices" ]; then
+  # WO-49b. An analyzer reading becoming a priced, completed collection —
+  # against the real API, as lacteva_app with RLS forced, reading the frames
+  # the Dart simulator actually emits rather than a payload this script made
+  # up. The other suites prove the halves; this proves the counter.
+  echo "── instruments → real API ──"
+  (cd "$CORE" && PYTHONPATH="$CORE/src" "$PY" "$ROOT/infra/e2e/device_journey.py") || FAILED=1
+fi
+
 if [ "$WHAT" = "all" ] || [ "$WHAT" = "mobile" ]; then
   echo "── mobile client → real API ──"
   if command -v flutter > /dev/null 2>&1; then
