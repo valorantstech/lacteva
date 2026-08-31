@@ -23,3 +23,19 @@ const bool kMockHardwareEnabled = bool.fromEnvironment(
   'LACTEVA_ALLOW_MOCK_HARDWARE',
   defaultValue: !kReleaseMode,
 );
+
+/// Whether this build may talk to the development device SIMULATOR (WO-49).
+///
+/// The simulator serves invented frames over TCP so the read-assist path can
+/// be exercised without hardware. Its readings are as fabricated as the mock
+/// adapters' — a fat value chosen by a tool, priced and settled like a
+/// measured one — so it is gated exactly the same way, as a compile-time
+/// const that a release build does not contain.
+///
+/// The distinction from a REAL device on TCP is the profile, not the
+/// transport: an RS-232→WiFi bridge in a collection centre is a legitimate
+/// production path, and this flag gates only the simulator's own profiles.
+const bool kDeviceSimulatorEnabled = bool.fromEnvironment(
+  'LACTEVA_ALLOW_DEVICE_SIMULATOR',
+  defaultValue: !kReleaseMode,
+);

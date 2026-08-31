@@ -7,6 +7,9 @@ import 'build_flags.dart';
 import 'l10n.dart';
 import 'session.dart';
 import 'theme.dart';
+import 'devices/device_bridge.dart';
+import 'devices/device_settings.dart';
+import 'devices/device_transport.dart';
 
 /// The platform's own capture bounds, mirrored for the OFFLINE path
 /// (P1-MOBILE-COUNTER-001; audit D-8). Online, the server refuses garbage
@@ -22,6 +25,21 @@ const kClrRange = (20.0, 40.0);
 
 /// Milk Collection Transaction Wizard (SPRINT-007).
 /// Steps: supplier -> milk -> weight -> quality -> review -> completion.
+/// A reading taken from an instrument, and still untouched by the operator.
+///
+/// The moment a device-filled value is EDITED it stops being the device's
+/// reading, so the provenance is dropped and the capture goes up as manual.
+/// Anything else would attribute a hand-corrected number to a machine, which
+/// is the fabrication spec §7 exists to make visible.
+class _AssistedReading {
+  const _AssistedReading(this.reading, this.filled);
+  final DeviceReading reading;
+  final Map<String, String> filled;
+
+  bool stillMatches(Map<String, TextEditingController> fields) =>
+      filled.entries.every((e) => fields[e.key]?.text.trim() == e.value);
+}
+
 class CollectionWizardScreen extends StatefulWidget {
   const CollectionWizardScreen({
     super.key,
@@ -29,6 +47,7 @@ class CollectionWizardScreen extends StatefulWidget {
     required this.sessionId,
     this.session,
     this.initialStep = 0,
+    this.devices = const DeviceSettings(),
   });
 
   final ApiClient client;
@@ -43,11 +62,21 @@ class CollectionWizardScreen extends StatefulWidget {
   /// always starts at 0.
   final int initialStep;
 
+  /// WO-49: which instruments this handset can reach. Empty by default —
+  /// manual capture is the first-class path and needs nothing.
+  final DeviceSettings devices;
+
   @override
   State<CollectionWizardScreen> createState() => _CollectionWizardScreenState();
 }
 
 class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
+  /// The last analyzer/scale reading, while it is still the device's.
+  _AssistedReading? _assistedQuality;
+  _AssistedReading? _assistedWeight;
+  String? _deviceNote;
+  bool _reading = false;
+
   L10n get _l => L10n.of(widget.session);
 
   late int _step = widget.initialStep;
@@ -167,6 +196,101 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
     return null;
   }
 
+  /// Ask an instrument for a reading and pre-fill the operator's fields.
+  ///
+  /// Read-assist (spec §5): the numbers land in the same boxes the operator
+  /// types into, and the operator confirms them. A failure is not an error
+  /// state — it is the ordinary case at a centre whose analyzer is off, so it
+  /// leaves a note beside fields that stay perfectly usable.
+  /// The read-assist control, above the fields it fills.
+  ///
+  /// Present only when this handset actually has a binding for the
+  /// instrument: an operator at a centre with no analyzer should not see a
+  /// button that can only disappoint them.
+  Widget _readAssist({required bool quality}) {
+    final binding = quality ? widget.devices.analyzer : widget.devices.scale;
+    if (binding == null) return const SizedBox.shrink();
+    final note = _deviceNote;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        OutlinedButton.icon(
+          onPressed: (_busy || _reading) ? null : () => _readFromDevice(quality: quality),
+          icon: const Icon(Icons.sensors),
+          label: Text(_reading ? 'Reading…' : 'Read from ${binding.label}'),
+        ),
+        if (note != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(note, style: Theme.of(context).textTheme.bodySmall),
+          ),
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  Future<void> _readFromDevice({required bool quality}) async {
+    final binding = quality ? widget.devices.analyzer : widget.devices.scale;
+    if (binding == null) return;
+    setState(() {
+      _reading = true;
+      _deviceNote = null;
+      _error = null;
+    });
+    try {
+      final bridge = DeviceBridge(
+        deviceId: binding.deviceId,
+        profile: binding.profile,
+        transport: TcpDeviceTransport(host: binding.host, port: binding.port),
+      );
+      final reading = await bridge.read();
+      final filled = <String, String>{};
+      void put(String field, TextEditingController controller) {
+        final value = reading.values[field];
+        if (value == null) return;
+        controller.text = value.toString();
+        filled[field] = controller.text.trim();
+      }
+
+      if (quality) {
+        put('fat', _fat);
+        put('snf', _snf);
+        put('clr', _clr);
+      } else {
+        put('gross', _gross);
+        put('tare', _tare);
+      }
+      setState(() {
+        final assisted = _AssistedReading(reading, filled);
+        if (quality) {
+          _assistedQuality = assisted;
+        } else {
+          _assistedWeight = assisted;
+        }
+        _deviceNote = 'Read from ${binding.label}. Check the numbers before you continue.';
+      });
+    } on DeviceTransportError catch (e) {
+      // Never blocking: the manual fields are right there.
+      setState(() => _deviceNote = '${e.message}. Enter the reading by hand.');
+    } finally {
+      if (mounted) setState(() => _reading = false);
+    }
+  }
+
+  /// The provenance to send, if the device's numbers are still the device's.
+  Map<String, Object?> _provenanceFor(
+    _AssistedReading? assisted,
+    Map<String, TextEditingController> fields,
+    String instrumentSource,
+  ) {
+    return provenanceFor(
+      reading: assisted?.reading,
+      filled: assisted?.filled ?? const {},
+      current: {for (final e in fields.entries) e.key: e.value.text},
+      instrumentSource: instrumentSource,
+    );
+  }
+
   Future<void> _weight({required bool mock}) async {
     if (!mock) {
       final problem = _weightProblem();
@@ -179,7 +303,8 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
       () => widget.client.txStep(
         '/v1/milk-transactions/$_txId/weight',
         body: {
-          'source': mock ? 'mock_scale' : 'manual',
+          if (mock) 'source': 'mock_scale',
+          if (!mock) ..._provenanceFor(_assistedWeight, {'gross': _gross, 'tare': _tare}, 'scale'),
           if (!mock) 'gross': double.tryParse(_gross.text),
           if (!mock) 'tare': double.tryParse(_tare.text),
         },
@@ -200,7 +325,13 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
       () => widget.client.txStep(
         '/v1/milk-transactions/$_txId/quality',
         body: {
-          'source': mock ? 'mock_analyzer' : 'manual',
+          if (mock) 'source': 'mock_analyzer',
+          if (!mock)
+            ..._provenanceFor(
+              _assistedQuality,
+              {'fat': _fat, 'snf': _snf, 'clr': _clr},
+              'analyzer',
+            ),
           if (!mock) 'fat': double.tryParse(_fat.text),
           if (!mock) 'snf': double.tryParse(_snf.text),
           if (!mock) 'clr': double.tryParse(_clr.text),
@@ -337,6 +468,7 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 12),
+              _readAssist(quality: false),
               TextField(
                 controller: _gross,
                 decoration: InputDecoration(labelText: t.t('wizard.grossKg')),
@@ -366,6 +498,7 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 12),
+              _readAssist(quality: true),
               TextField(
                 controller: _fat,
                 decoration: InputDecoration(labelText: t.t('wizard.fatLabel')),

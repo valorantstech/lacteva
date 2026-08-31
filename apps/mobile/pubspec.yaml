@@ -40,6 +40,10 @@ dependencies:
   # crashed every offline write on the first physical handset.
   path_provider: ^2.1.4
   qr_flutter: ^4.1.0
+  # WO-49: the raw frame is hashed, never stored — a digest ties a disputed
+  # reading back to the bytes without the platform holding a device serial or
+  # a calibration record it has no business keeping.
+  crypto: ^3.0.6
 
 dev_dependencies:
   flutter_test:

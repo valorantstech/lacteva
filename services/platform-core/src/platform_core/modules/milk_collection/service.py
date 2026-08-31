@@ -60,6 +60,57 @@ if TYPE_CHECKING:
 MAX_GROSS_KG = 200.0
 
 
+async def _resolve_instrument(readiness, source: str, cmd, *, center_id: uuid.UUID) -> uuid.UUID:
+    """The device behind an instrument reading, or a refusal (WO-49).
+
+    Spec §7 makes provenance a SECURITY control — "it is what makes a
+    fabricated reading distinguishable after the fact". That only holds if the
+    attribution is checked, so every clause below is a way of fabricating one:
+
+    * no `device_id` — a reading that claims an instrument and names none
+    * an unregistered id — a device that exists only in the caller's request
+    * the wrong category — a printer reporting fat
+    * a device that is not `active` — retired kills access (spec §9), and a
+      device in maintenance is exactly the one whose numbers to distrust
+    * another centre's device — the reading did not happen where it says
+    """
+    from platform_core.modules.milk_collection.models import INSTRUMENT_SOURCES
+
+    expected_category = INSTRUMENT_SOURCES[source]
+    if cmd.device_id is None:
+        raise ConflictError(f"source '{source}' requires the device_id that produced the reading")
+    device = await readiness.get_device(cmd.device_id)
+    if device.category != expected_category:
+        raise ConflictError(
+            f"device {cmd.device_id} is a {device.category}, which cannot produce a "
+            f"'{source}' reading"
+        )
+    if device.status != "active":
+        raise ConflictError(f"device {cmd.device_id} is {device.status}, not active")
+    if device.center_id != center_id:
+        # Another centre's device is invisible rather than forbidden, the same
+        # answer another tenant's resource gets.
+        raise ConflictError(f"device {cmd.device_id} is not assigned to this centre")
+    return device.id
+
+
+def _provenance(cmd, source: str, device_id: uuid.UUID | None) -> dict[str, Any]:
+    """What the event log records about where a reading came from.
+
+    Spec §14 says no schema change for read-assist, and none is needed: the
+    `WeightCaptured`/`QualityCaptured` events already carry the source, and the
+    device and frame digest ride with them. The columns, states and downstream
+    flow are untouched — pricing and settlement stay byte-for-byte indifferent
+    to where a number came from, which is the whole point of the seam.
+    """
+    provenance: dict[str, Any] = {"source": source}
+    if device_id is not None:
+        provenance["device_id"] = str(device_id)
+    if cmd.frame_hash:
+        provenance["frame_hash"] = cmd.frame_hash
+    return provenance
+
+
 def _refuse_mock_source(source: str) -> None:
     """SEC-003 / F-01: refuse a fabricated measurement where it is not allowed.
 
@@ -166,15 +217,30 @@ class MilkInfoCommand(BaseModel):
     arrived_at: datetime | None = None
 
 
-class WeightCommand(BaseModel):
-    source: str = "manual"  # manual | mock_scale
+class InstrumentProvenance(BaseModel):
+    """Which registered device produced a reading, and what it actually said.
+
+    WO-49. `device_id` is not decoration: an instrument source with no device
+    behind it is an unattributed claim wearing a device's name, so the capture
+    refuses it. `frame_hash` is a digest of the raw bytes the instrument sent,
+    kept so a disputed reading can be tied back to the frame the operator's
+    handset parsed — the platform never stores the frame itself, which may
+    carry a serial or a calibration record it has no business holding.
+    """
+
+    device_id: uuid.UUID | None = None
+    frame_hash: str | None = Field(default=None, max_length=128)
+
+
+class WeightCommand(InstrumentProvenance):
+    source: str = "manual"  # manual | scale | mock_scale
     unit: str = "kg"
     gross: float | None = None
     tare: float | None = None
 
 
-class QualityCommand(BaseModel):
-    source: str = "manual"  # manual | mock_analyzer
+class QualityCommand(InstrumentProvenance):
+    source: str = "manual"  # manual | analyzer | mock_analyzer
     fat: float | None = None
     snf: float | None = None
     clr: float | None = None
@@ -560,18 +626,27 @@ class MilkCollectionService:
         self, tx_id: uuid.UUID, cmd: WeightCommand, *, actor_id: uuid.UUID
     ) -> MilkCollectionTransaction:
         tx = await self._get_mutable(tx_id, expected="MILK_RECEIVED")
+        device_id: uuid.UUID | None = None
         if cmd.unit != "kg":
             raise ConflictError("only kg is supported in this sprint")
         if cmd.source == "mock_scale":
             _refuse_mock_source("mock_scale")
             reading = mock_scale.read(tx.container_identifier or str(tx.id))
             gross, tare = reading.gross_kg, reading.tare_kg
-        elif cmd.source == "manual":
+        elif cmd.source in ("manual", "scale"):
+            # Read-assist (spec §5): the instrument pre-fills the operator's
+            # screen and the operator confirms, so the numbers arrive by the
+            # same field, through the same endpoint, with the same validation.
+            # Only the attribution differs — which is the entire design.
             if cmd.gross is None or cmd.tare is None:
-                raise ConflictError("manual weight requires gross and tare")
+                raise ConflictError(f"{cmd.source} weight requires gross and tare")
             gross, tare = cmd.gross, cmd.tare
+            if cmd.source == "scale":
+                device_id = await _resolve_instrument(
+                    self._readiness, "scale", cmd, center_id=tx.center_id
+                )
         else:
-            raise ConflictError("weight source must be manual or mock_scale")
+            raise ConflictError("weight source must be manual, scale or mock_scale")
         if gross <= 0 or tare < 0:
             raise ConflictError("gross must be > 0 and tare >= 0")
         if gross > MAX_GROSS_KG:
@@ -587,7 +662,12 @@ class MilkCollectionService:
         await self._record(
             tx,
             "WeightCaptured",
-            {"gross": tx.gross_weight, "tare": tx.tare_weight, "net": tx.net_weight},
+            {
+                "gross": tx.gross_weight,
+                "tare": tx.tare_weight,
+                "net": tx.net_weight,
+                **_provenance(cmd, cmd.source, device_id),
+            },
             actor_id,
         )
         tx.state = "QUALITY_PENDING"  # automatic hand-off to the quality step
@@ -597,6 +677,7 @@ class MilkCollectionService:
         self, tx_id: uuid.UUID, cmd: QualityCommand, *, actor_id: uuid.UUID
     ) -> MilkCollectionTransaction:
         tx = await self._get_mutable(tx_id, expected="QUALITY_PENDING")
+        device_id: uuid.UUID | None = None
         if cmd.source == "mock_analyzer":
             _refuse_mock_source("mock_analyzer")
             r = mock_analyzer.read(tx.container_identifier or str(tx.id))
@@ -607,9 +688,13 @@ class MilkCollectionService:
                 "density": r.density,
                 "temperature_c": r.temperature_c,
             }
-        elif cmd.source == "manual":
+        elif cmd.source in ("manual", "analyzer"):
+            # Read-assist again: the analyzer fills the operator's fields and
+            # the operator confirms. Identical validation, identical bounds —
+            # an instrument is not trusted more than a person, it is simply
+            # attributed differently.
             if cmd.fat is None or cmd.snf is None or cmd.clr is None:
-                raise ConflictError("manual quality requires fat, snf, and clr")
+                raise ConflictError(f"{cmd.source} quality requires fat, snf, and clr")
             values = {
                 "fat": cmd.fat,
                 "snf": cmd.snf,
@@ -617,8 +702,12 @@ class MilkCollectionService:
                 "density": cmd.density,
                 "temperature_c": cmd.temperature_c,
             }
+            if cmd.source == "analyzer":
+                device_id = await _resolve_instrument(
+                    self._readiness, "analyzer", cmd, center_id=tx.center_id
+                )
         else:
-            raise ConflictError("quality source must be manual or mock_analyzer")
+            raise ConflictError("quality source must be manual, analyzer or mock_analyzer")
         for key, value in values.items():
             if value is None:
                 continue
@@ -636,7 +725,12 @@ class MilkCollectionService:
         await self._record(
             tx,
             "QualityCaptured",
-            {"fat": tx.fat, "snf": tx.snf, "clr": tx.clr},
+            {
+                "fat": tx.fat,
+                "snf": tx.snf,
+                "clr": tx.clr,
+                **_provenance(cmd, cmd.source, device_id),
+            },
             actor_id,
         )
         deviation = await self._quality_deviation(tx)

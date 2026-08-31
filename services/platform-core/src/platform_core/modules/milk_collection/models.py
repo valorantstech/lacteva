@@ -39,7 +39,24 @@ TRANSACTION_STATES = (
 )
 TERMINAL_STATES = ("COMPLETED", "CANCELLED")
 MILK_TYPES = ("cow", "buffalo", "goat", "mixed", "custom")
-CAPTURE_SOURCES = ("manual", "mock_scale", "mock_analyzer")
+#: How a measurement was obtained (WO-49; hardware spec §5, §7).
+#:
+#: `scale` and `analyzer` are REAL instruments reporting through a registered
+#: device. They sit beside `manual`, which stays first-class and is the default
+#: — a manual reading at an instrumented centre is not an error, it is recorded
+#: as manual so the shift record shows it (spec §7).
+#:
+#: The `mock_*` values are NOT joined by these. A mock stays production-refused
+#: by two independent guards, permanently, and a real adapter never reuses a
+#: mock name (spec §14). FINAL-001 is why: a SHA-256 of a container id was
+#: priced, settled and paid.
+CAPTURE_SOURCES = ("manual", "scale", "analyzer", "mock_scale", "mock_analyzer")
+
+#: An instrument source names the device CATEGORY that may produce it. A
+#: reading attributed to an instrument with no registered device behind it is
+#: an unattributed claim wearing a device's name, which is the failure
+#: provenance exists to prevent — so the mapping is also the guard.
+INSTRUMENT_SOURCES = {"scale": "scale", "analyzer": "milk_analyzer"}
 
 
 class CollectionSession(Base, IdMixin):
