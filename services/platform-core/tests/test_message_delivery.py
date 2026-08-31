@@ -18,7 +18,7 @@ a configured provider and is verified separately.
 """
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -31,6 +31,18 @@ from tests.test_notifications import (  # reuse the existing seams, do not build
     provider_guard,  # noqa: F401 — fixture
 )
 from tests.test_org_structure import _tenant_admin
+
+
+def _month_start() -> str:
+    """The first of the month the collection lands in."""
+    return date.today().replace(day=1).isoformat()
+
+
+def _month_end() -> str:
+    """The last day of that month, without a calendar dependency."""
+    first = date.today().replace(day=1)
+    next_month = (first + timedelta(days=32)).replace(day=1)
+    return (next_month - timedelta(days=1)).isoformat()
 
 
 class _FailingProvider:
@@ -227,8 +239,13 @@ async def _settlement_env(client):
         headers,
         supplier["id"],
         center["id"],
-        period_from="2026-08-01",
-        period_to="2026-08-31",
+        # The period must CONTAIN the collection this settles, and the
+        # collection happens today. Hard-coded August dates passed for as long
+        # as it was August and began failing on 1 September in every suite that
+        # used this fixture — a settlement whose period excludes its own
+        # collection has no lines, and cannot be finalized.
+        period_from=_month_start(),
+        period_to=_month_end(),
     )
     # collect -> calculate -> finalize is the domain's own sequence, and a
     # settlement with no lines cannot be finalized at all.
@@ -256,7 +273,10 @@ async def test_a_farmer_settlement_slip_carries_the_financial_truth(client, prov
     assert finalized["settlement_number"] in body
     assert str(finalized["net_amount"]) in body, "the net must be the settlement's own"
     assert finalized["currency"] in body, "the tenant's currency, never converted"
-    assert "2026-08-01" in body and "2026-08-31" in body, "the settlement's business dates"
+    # Derived, not hard-coded: the period follows the collection's own month,
+    # so this assertion is about the slip carrying the settlement's dates
+    # rather than about which month the suite happens to run in.
+    assert _month_start() in body and _month_end() in body, "the settlement's business dates"
     assert "{" not in body, "every variable must be substituted"
 
 

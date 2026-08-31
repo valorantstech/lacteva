@@ -2,7 +2,7 @@
 history, consumer integration, idempotency, permissions, replay."""
 
 import uuid
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -10,6 +10,19 @@ from sqlalchemy import select
 from tests.conftest import invite, register_and_login
 from tests.test_org_structure import _tenant_admin
 from tests.test_procurement_e2e import _accept_complete, _procurement_env, _run_collection
+
+
+def _month_start() -> str:
+    """The first of the month the collection lands in."""
+    return date.today().replace(day=1).isoformat()
+
+
+def _month_end() -> str:
+    """The last day of that month, without a calendar dependency."""
+    first = date.today().replace(day=1)
+    next_month = (first + timedelta(days=32)).replace(day=1)
+    return (next_month - timedelta(days=1)).isoformat()
+
 
 SUPPLIER_REGISTERED = "supplier.supplier-registered.v1"
 
@@ -363,8 +376,13 @@ async def test_settlement_finalized_notification(client, provider_guard):
         headers,
         supplier["id"],
         center["id"],
-        period_from="2026-08-01",
-        period_to="2026-08-31",
+        # The period must CONTAIN the collection this settles, and the
+        # collection happens today. Hard-coded August dates passed for as long
+        # as it was August and began failing on 1 September in every suite that
+        # used this fixture — a settlement whose period excludes its own
+        # collection has no lines, and cannot be finalized.
+        period_from=_month_start(),
+        period_to=_month_end(),
     )
     await client.post(f"/v1/settlements/{settlement['id']}/collect", headers=headers)
     await client.post(f"/v1/settlements/{settlement['id']}/calculate", headers=headers)
@@ -393,8 +411,13 @@ async def test_payment_completion_notifies_the_supplier(client, provider_guard):
         headers,
         supplier["id"],
         center["id"],
-        period_from="2026-08-01",
-        period_to="2026-08-31",
+        # The period must CONTAIN the collection this settles, and the
+        # collection happens today. Hard-coded August dates passed for as long
+        # as it was August and began failing on 1 September in every suite that
+        # used this fixture — a settlement whose period excludes its own
+        # collection has no lines, and cannot be finalized.
+        period_from=_month_start(),
+        period_to=_month_end(),
     )
     for action in ("collect", "calculate", "finalize"):
         r = await client.post(f"/v1/settlements/{settlement['id']}/{action}", headers=headers)
