@@ -42,6 +42,8 @@ class RegisterDeviceCommand(BaseModel):
     category: str
     name: str = Field(min_length=2, max_length=200)
     serial_number: str = Field(min_length=2, max_length=80)
+    make: str = Field(default="", max_length=80)
+    model: str = Field(default="", max_length=80)
 
     @field_validator("category")
     @classmethod
@@ -58,6 +60,10 @@ class DeviceView(BaseModel):
     name: str
     serial_number: str
     status: str
+    # WO-53: what the label says, for the operator reading a list and for the
+    # per-model driver that will one day be chosen by it.
+    make: str = ""
+    model: str = ""
 
     model_config = {"from_attributes": True}
 
@@ -148,6 +154,8 @@ class OperationalReadinessService:
         device = Device(
             tenant_id=tenant_id,
             category=cmd.category,
+            make=cmd.make,
+            model=cmd.model,
             name=cmd.name,
             serial_number=cmd.serial_number,
         )

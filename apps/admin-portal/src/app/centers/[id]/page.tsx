@@ -9,6 +9,7 @@ import {
   type CollectionTrend,
   type DailyCollectionSummary,
   type MilkTransactionPage,
+  type Me,
   type ReadinessResult,
   type ReportPage,
   type SettlementReport,
@@ -16,6 +17,7 @@ import {
   getCenterDetail,
   getCollectionTrend,
   getDailyReport,
+  getMe,
   getReadiness,
   getSettlementReport,
   getSupplierReport,
@@ -45,6 +47,7 @@ import {
   TableSkeleton,
 } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
+import { CenterDevices } from "@/components/center-devices";
 import { useLocale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -116,6 +119,10 @@ export default function CenterDetailPage({
   // first render still corrects the window (DEMO-019).
   const [range, setRange] = useDefaultRange("30d");
 
+  // WO-53: whether to offer the device controls at all. Absent, not disabled,
+  // for anyone without `operations.device.manage` — the same rule the wizard's
+  // rate control follows, and for the same reason.
+  const [me, setMe] = useState<Me | null>(null);
   const [detail, setDetail] = useState<Load<CenterDetail>>(LOADING);
   const [readiness, setReadiness] = useState<Load<ReadinessResult>>(LOADING);
   const [summary, setSummary] = useState<Load<DailyCollectionSummary>>(LOADING);
@@ -168,6 +175,15 @@ export default function CenterDetailPage({
     const t = setTimeout(() => void load(range), 0);
     return () => clearTimeout(t);
   }, [load, range]);
+
+  // Who is reading. A failure here means the controls are not offered, which
+  // is the safe direction: the platform refuses the call regardless, so the
+  // worst case is a manager who has to reload, never an unauthorized write.
+  useEffect(() => {
+    void getMe()
+      .then(setMe)
+      .catch(() => setMe(null));
+  }, []);
 
   const center = detail.state === "ready" ? detail.data.center : null;
   const stats = summary.state === "ready" ? summary.data : null;
@@ -387,6 +403,15 @@ export default function CenterDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      <CenterDevices
+        centerId={id}
+        canManage={
+          me?.permissions.includes("*") ||
+          me?.permissions.includes("operations.device.manage") ||
+          false
+        }
+      />
 
       <Card>
         <CardHeader>

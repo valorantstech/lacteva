@@ -343,7 +343,39 @@ export type Device = {
   name: string;
   serial_number: string;
   status: string;
+  // WO-53: what the label on the machine says. Optional on older rows.
+  make?: string;
+  model?: string;
 };
+
+/// The categories the platform knows. `scale` is the one that BLOCKS a
+/// session; the rest are warnings — the readiness rules, not a UI choice.
+export const DEVICE_CATEGORIES = [
+  "scale",
+  "milk_analyzer",
+  "printer",
+  "qr_scanner",
+] as const;
+
+export const registerDevice = (body: {
+  category: string;
+  name: string;
+  serial_number: string;
+  make?: string;
+  model?: string;
+}) => api<Device>("/v1/devices", { method: "POST", body: JSON.stringify(body) });
+
+export const assignDevice = (deviceId: string, centerId: string) =>
+  api<Device>(`/v1/devices/${deviceId}/assign`, {
+    method: "POST",
+    body: JSON.stringify({ center_id: centerId }),
+  });
+
+export const setDeviceStatus = (deviceId: string, status: string) =>
+  api<Device>(`/v1/devices/${deviceId}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
 
 export const getReadiness = (centerId: string) =>
   api<ReadinessResult>(`/v1/collection-centers/${centerId}/readiness`);

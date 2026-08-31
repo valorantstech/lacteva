@@ -35,6 +35,14 @@ class Device(Base, IdMixin):
     category: Mapped[str] = mapped_column(String(30), index=True)
     name: Mapped[str] = mapped_column(String(200))
     serial_number: Mapped[str] = mapped_column(String(80))
+    # WO-53. What the label on the machine says. The hardware discovery
+    # checklist (§10) collects make and model for every instrument, and a
+    # per-model driver (D-16) is selected by exactly this pair — so a registry
+    # that cannot record them is one a connector cannot be built on. Optional,
+    # because a dairy registering a device it has not yet photographed should
+    # not be blocked from registering it.
+    make: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    model: Mapped[str] = mapped_column(String(80), default="", server_default="")
     status: Mapped[str] = mapped_column(String(20), default="registered", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
