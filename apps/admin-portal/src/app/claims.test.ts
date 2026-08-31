@@ -42,8 +42,15 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
   { pattern: /location track|geofenc/i, why: "no location tracking exists" },
   // -- Hardware: capture is manual-first; mock readings are refused in prod.
   { pattern: /automatically (reads?|captures?|weighs?|measures?)/i, why: "capture is manual; automated read-assist is discovery-gated roadmap" },
-  { pattern: /(scale|analyzer) (is )?(connected|integrated|online)/i, why: "no device integration is shipped" },
-  { pattern: /reads? the (scale|analyzer)/i, why: "no device integration is shipped" },
+  // B5: the capture FRAMEWORK ships — the app reads an instrument over a
+  // network bridge, attributes it to a registered device, and falls back to
+  // typing. What still cannot be claimed is a working link to any PARTICULAR
+  // instrument, because no per-model driver exists and none can until one is
+  // written from a real device's captured output and proven on a bench (D-16).
+  // So "the analyzer is connected" stays forbidden and "reads the analyzer"
+  // is relaxed to the framework's own honest vocabulary.
+  { pattern: /(scale|analyzer) (is )?(connected|integrated|online)/i, why: "no per-model driver is proven on hardware (D-16)" },
+  { pattern: /(supports?|works with|compatible with) (the )?(Ekomilk|Lactoscan|Essae)/i, why: "no vendor's protocol has been captured or proven" },
   { pattern: /\bIoT\b/i, why: "no IoT capability exists" },
   // -- QR: the supplier QR is rendered (real); scanning it is roadmap.
   { pattern: /scan (a|the|your) (QR|code|barcode)|tap to scan/i, why: "QR scanning is not built; only rendering a QR is real" },

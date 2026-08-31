@@ -95,9 +95,15 @@ const COMING_SOON: Item[] = [
     phase: "V1",
   },
   {
-    name: "Automated scale & analyzer capture",
+    name: "Instrument capture — per-model drivers",
     detail:
-      "Reading weight and quality directly from a centre's scale/analyzer instead of typing them. Discovery-gated on a device visit; capture is manual-first today, and mock readings are refused in production.",
+      "The capture framework ships: the app can read a weight or a quality reading from an instrument over a network bridge, attribute it to a registered device, and fall back to typing. What is NOT shipped is a driver for any particular analyzer or scale — those are written from captured output of the real device and proven on a bench, and none has been. Capture is manual-first today.",
+    phase: "V1",
+  },
+  {
+    name: "Receipt printing — proven on hardware",
+    detail:
+      "The parchi renders to ESC/POS at both paper widths and sends over a network printer port. No physical printer has printed one yet, so the honest claim is that the document is correct, not that printing works. Copying the parchi needs no hardware and always works.",
     phase: "V1",
   },
   {
