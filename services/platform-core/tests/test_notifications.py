@@ -903,7 +903,8 @@ async def test_the_smtp_provider_never_logs_the_body_it_sends(monkeypatch):
     sent: dict = {}
 
     def _capture(self, mail, sender, recipient, _settings):
-        sent["body"] = mail.get_content()
+        # multipart since WO-49: the text part is the one to check here.
+        sent["body"] = mail.get_body(("plain",)).get_content()
 
     monkeypatch.setattr(providers.SmtpEmailProvider, "_deliver", _capture)
 
@@ -1041,3 +1042,157 @@ async def test_the_probe_stays_out_of_the_way_where_it_would_teach_nothing(
     base.update(overrides)
     providers = await _preflight(monkeypatch, **base)
     await providers.assert_email_channel_is_deliverable()  # must not raise: {why}
+
+
+# --- the message has a page, and the page is the same message (WO-49) --------
+#
+# The first real password-reset mail the platform ever sent arrived as an
+# unstyled paragraph with a 40-character token in the middle of a sentence.
+# It was correct and it did not look like a product. These pin the fix, and —
+# more importantly — pin the parts of it that are easy to break later.
+
+
+def _built_email(monkeypatch, **message_kw):
+    """Send one message and return the MIME object the provider handed smtplib."""
+    from platform_core.modules.notification import providers
+
+    monkeypatch.setattr(providers, "assert_may_reach_the_network", lambda name: None)
+    settings = providers.get_settings()
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.invalid", raising=False)
+    monkeypatch.setattr(settings, "smtp_from_address", "no-reply@example.com", raising=False)
+
+    captured: dict = {}
+
+    def _capture(self, mail, sender, recipient, _settings):
+        captured["mail"] = mail
+
+    monkeypatch.setattr(providers.SmtpEmailProvider, "_deliver", _capture)
+
+    base = dict(
+        channel="email",
+        recipient="operator@example.com",
+        title="Reset your Lacteva password",
+        body="A password reset was requested. Use this code: ABC-123. It expires in 2 hours.",
+        language="en",
+        template_key="password_reset",
+        notification_id=uuid.uuid4(),
+        highlight="ABC-123",
+    )
+    base.update(message_kw)
+    return providers, providers.OutboundMessage(**base), captured
+
+
+async def test_the_mail_carries_both_a_text_part_and_a_page(monkeypatch):
+    providers, message, captured = _built_email(monkeypatch)
+    await providers.SmtpEmailProvider().send(message)
+    mail = captured["mail"]
+
+    assert mail.get_content_type() == "multipart/alternative"
+    subtypes = [part.get_content_subtype() for part in mail.iter_parts()]
+    # Text FIRST: multipart/alternative means "last one the client can render
+    # wins", so the order is the fallback order, not a detail.
+    assert subtypes == ["plain", "html"], subtypes
+
+
+async def test_the_text_part_is_the_template_untouched(monkeypatch):
+    """The E2E harness and the demo seeder read the token out of this with a
+    regular expression. Reformatting it silently breaks the only proof that
+    email works at all."""
+    providers, message, captured = _built_email(monkeypatch)
+    await providers.SmtpEmailProvider().send(message)
+    text = captured["mail"].get_body(("plain",)).get_content()
+    assert text.strip() == message.body.strip()
+
+
+async def test_the_page_sets_the_code_apart_and_names_it(monkeypatch):
+    providers, message, captured = _built_email(monkeypatch)
+    await providers.SmtpEmailProvider().send(message)
+    html = captured["mail"].get_body(("html",)).get_content()
+
+    assert "ABC-123" in html
+    assert "Password reset code" in html, "the boxed value is an unexplained blob"
+    assert "monospace" in html, "a code that is not monospaced is a code that is misread"
+    # A token wraps mid-string on a phone; without this it overflows the card.
+    assert "word-break:break-all" in html
+
+
+async def test_a_tenant_cannot_put_markup_in_somebody_else_s_mail(monkeypatch):
+    """Organization names are chosen by whoever creates the tenant, and they
+    reach this page. A dairy called `<script>` is a strange name, not an
+    exploit."""
+    providers, message, captured = _built_email(
+        monkeypatch,
+        body='Welcome to <script>alert(1)</script> & "Sons"',
+        title="<img src=x onerror=alert(1)>",
+        highlight="<b>not-bold</b>",
+    )
+    await providers.SmtpEmailProvider().send(message)
+    html = captured["mail"].get_body(("html",)).get_content()
+
+    # The test is not "the dangerous words are gone" — they are the tenant's
+    # own text and must still be READABLE. It is that none of them survives as
+    # markup: every angle bracket that came from a value is escaped, so the
+    # browser renders characters rather than elements.
+    assert "<script>" not in html
+    assert "<img" not in html
+    assert "<b>not-bold</b>" not in html
+    assert "&lt;script&gt;" in html  # escaped, and still legible
+    assert "&lt;img src=x onerror=alert(1)&gt;" in html
+    assert "&lt;b&gt;not-bold&lt;/b&gt;" in html
+
+
+async def test_arabic_is_laid_out_right_to_left(monkeypatch):
+    """The catalog ships Arabic. A message laid out left-to-right in Arabic is
+    not a style problem; it is unreadable."""
+    providers, message, captured = _built_email(monkeypatch, language="ar")
+    await providers.SmtpEmailProvider().send(message)
+    html = captured["mail"].get_body(("html",)).get_content()
+
+    assert 'dir="rtl"' in html
+    assert 'lang="ar"' in html
+    # …but the CODE stays left-to-right, or its characters reorder on screen
+    # and the reader copies a token that is not the token.
+    assert "direction:ltr" in html
+
+
+async def test_the_page_needs_nothing_the_recipient_has_to_fetch(monkeypatch):
+    """Remote images are blocked by default in most clients, `<svg>` is
+    stripped by Gmail, and script never runs. A page that depends on any of
+    them is a page most recipients never see."""
+    providers, message, captured = _built_email(monkeypatch)
+    await providers.SmtpEmailProvider().send(message)
+    html = captured["mail"].get_body(("html",)).get_content()
+
+    for forbidden in ("<script", "<svg", "<img", "http://", "https://", "<link"):
+        assert forbidden not in html, f"the page depends on {forbidden}"
+
+
+async def test_a_message_with_no_single_secret_gets_no_code_box(monkeypatch):
+    providers, message, captured = _built_email(
+        monkeypatch, highlight=None, template_key="settlement_finalized"
+    )
+    await providers.SmtpEmailProvider().send(message)
+    html = captured["mail"].get_body(("html",)).get_content()
+    assert "Code" not in html
+
+
+async def test_the_code_appears_once_and_stands_where_the_sentence_put_it(monkeypatch):
+    """The first mail this platform ever sent showed a forty-character token
+    mid-paragraph and then again in a box below it. The box takes the token's
+    place in the sentence; it does not repeat it."""
+    providers, message, captured = _built_email(monkeypatch)
+    await providers.SmtpEmailProvider().send(message)
+    html = captured["mail"].get_body(("html",)).get_content()
+
+    assert html.count("ABC-123") == 1, "the code is shown twice"
+    # The words either side of it survive, in the order the template wrote
+    # them — no template needed a second, HTML-shaped version.
+    before = html.index("Use this code")
+    box = html.index("ABC-123")
+    after = html.index("It expires in 2 hours")
+    assert before < box < after, "the sentence was reordered around the code"
+
+    # And the text part still carries it inline, because that is what the
+    # harness parses and what a text-only client reads.
+    text = captured["mail"].get_body(("plain",)).get_content()
+    assert "Use this code: ABC-123. It expires" in text

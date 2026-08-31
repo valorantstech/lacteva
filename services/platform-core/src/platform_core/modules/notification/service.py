@@ -591,6 +591,16 @@ class NotificationService:
                         # no new concept and no vendor appears anywhere here.
                         parameters=fixed_parameters(template, {**variables, **secrets_in_play}),
                         vendor_template=vendor_template_for(template.key, notification.channel),
+                        # Exactly one secret means there is exactly one thing
+                        # the reader must act on, and an adapter that can lay
+                        # a page out should show it as such. Two or none, and
+                        # there is nothing unambiguous to point at, so it
+                        # passes nothing rather than guessing.
+                        highlight=(
+                            next(iter(secrets_in_play.values()))
+                            if len(secrets_in_play) == 1
+                            else None
+                        ),
                     )
                 )
         except PermanentSendError as exc:

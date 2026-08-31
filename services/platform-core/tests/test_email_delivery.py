@@ -88,7 +88,10 @@ async def test_a_message_is_delivered_and_reports_the_gateway_id(smtp_settings, 
     assert captured.sender == "receipts@lacteva.example"
     assert captured.recipient == "grace@example.com"
     assert captured.mail["Subject"] == message.title
-    assert message.body in captured.mail.get_content()
+    # multipart/alternative since WO-49. The TEXT part is the one that must
+    # still carry the body verbatim — the harness and the seeder parse it.
+    assert captured.mail.get_content_type() == "multipart/alternative"
+    assert message.body in captured.mail.get_body(("plain",)).get_content()
 
 
 async def test_the_message_id_is_stable_across_retries(smtp_settings, monkeypatch):

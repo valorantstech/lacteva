@@ -86,6 +86,17 @@ class OutboundMessage:
     #: vendor's registry into Lacteva's source.
     vendor_template: str | None = None
 
+    #: The one value the recipient has to ACT on — a reset code, an invitation
+    #: token — when the template has exactly one.
+    #:
+    #: Presentation, not domain: an adapter that renders a page (email) sets it
+    #: apart so it can be read off a phone and copied without selecting half a
+    #: sentence, and an adapter that cannot (SMS) ignores it. The body already
+    #: carries the same value inside its sentence, so this reveals nothing the
+    #: message did not already contain, and the text part stays exactly as the
+    #: template wrote it.
+    highlight: str | None = None
+
     @property
     def idempotency_key(self) -> str:
         """What the gateway should deduplicate on (MSG-001).
@@ -755,6 +766,153 @@ class HttpWhatsAppProvider(HttpSmsProvider):
             )
 
 
+#: The brand, as email can actually render it (WO-49).
+#:
+#: No image and no SVG. Gmail strips `<svg>`, most clients block remote images
+#: by default, and a CID attachment makes every message heavier and trips spam
+#: heuristics — so a logo delivered as artwork is a logo most recipients never
+#: see. A wordmark set in the brand colour renders identically everywhere,
+#: including in a text-only preview pane.
+_DAIRY = "#1B5E20"  # tools/brand/mark.json
+_MILK = "#FDFBF4"
+_INK = "#1A1C19"
+_MUTED = "#5B6159"
+_RULE = "#DCE5DA"
+#: One stack, so the message reads the same in every block of it.
+_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif"
+
+#: Right-to-left markets. The catalog ships Arabic; a message laid out
+#: left-to-right in Arabic is not a style problem, it is unreadable.
+_RTL_LANGUAGES = frozenset({"ar", "fa", "he", "ur"})
+
+
+def _html_document(message: "OutboundMessage") -> str:
+    """The same message, laid out (WO-49).
+
+    WHY THE TRANSPORT BUILDS THIS AND NOT THE TEMPLATE CATALOG. The catalog
+    renders one string per template per language, and that string is what SMS
+    and WhatsApp send; giving it a second, HTML rendering would double every
+    entry in four languages and put markup where translators work. The plain
+    text stays the single source of the words. This wraps it — the domain says
+    what the message means, the adapter decides what it looks like in a medium
+    that has a page.
+
+    The text part is sent UNCHANGED beside it. That is not politeness: the E2E
+    harness and the demo seeder both read the token out of the plain body with
+    a regular expression, so rewording it would break the proof that this
+    channel works at all. It is also what text-only clients, screen readers and
+    every spam filter that prefers multipart/alternative will read.
+
+    Written to the constraints email actually has rather than the ones a
+    browser has: tables for structure, every style inline, no external asset,
+    no JavaScript, one column, 600px. `dir` follows the message's language.
+    """
+    import html as _html
+
+    rtl = message.language.split("-")[0].lower() in _RTL_LANGUAGES
+    direction = "rtl" if rtl else "ltr"
+    align = "right" if rtl else "left"
+
+    title = _html.escape(message.title)
+
+    # Every value here reaches the page through a tenant-controlled string —
+    # an organization is named by whoever created it — so it is escaped, not
+    # trusted. A dairy called `<script>` is a strange name, not an exploit.
+    def _paragraphs(text: str) -> str:
+        return "".join(
+            f'<p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:{_INK};">'
+            f"{_html.escape(part)}</p>"
+            for part in text.split("\n\n")
+            if part.strip()
+        )
+
+    # The code takes its own place IN the sentence rather than appearing twice.
+    #
+    # The template writes it inline — "Use this code to complete your reset:
+    # Wc1T3hn…-mvUg. The code expires in 2 hours." — which is right for SMS and
+    # for the text part, and wrong for a page: the first mail this platform
+    # sent showed a forty-character token mid-paragraph AND again in a box
+    # below it. Splitting the body at the token keeps the sentence the
+    # translators wrote, in whatever language they wrote it, and lets the box
+    # stand where the token stood. No template needs a second version.
+    before, after = message.body, ""
+    if message.highlight and message.highlight in message.body:
+        before, _, after = message.body.partition(message.highlight)
+        # The punctuation that followed the token belonged to the token, not
+        # to the sentence after it.
+        after = after.lstrip(".,;:،。 \t\n")
+    paragraphs = _paragraphs(before.rstrip())
+    trailing = _paragraphs(after)
+
+    code_block = ""
+    if message.highlight:
+        code_block = f"""
+              <tr><td style="padding:8px 0 24px;">
+                <div style="border:1px solid {_RULE};border-radius:8px;background:{_MILK};
+                            padding:18px 20px;text-align:center;">
+                  <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+                              color:{_MUTED};margin-bottom:8px;">
+                    {_html.escape(_code_label(message))}</div>
+                  <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+                              font-size:18px;line-height:1.45;color:{_INK};word-break:break-all;
+                              direction:ltr;unicode-bidi:embed;">
+                    {_html.escape(message.highlight)}</div>
+                </div>
+              </td></tr>"""
+
+    return f'''<!doctype html>
+<html lang="{_html.escape(message.language)}" dir="{direction}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>{title}</title>
+</head>
+<body style="margin:0;padding:0;background:#F1F4F0;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background:#F1F4F0;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
+             style="width:100%;max-width:600px;background:#FFFFFF;
+                    border:1px solid {_RULE};
+                    border-radius:12px;overflow:hidden;">
+        <tr><td style="background:{_DAIRY};padding:20px 28px;">
+          <span style="font-size:20px;font-weight:700;letter-spacing:.02em;color:{_MILK};
+                       font-family:{_FONT};">
+            Lacteva</span>
+        </td></tr>
+        <tr><td dir="{direction}" align="{align}"
+                style="padding:28px;text-align:{align};
+                       font-family:{_FONT};">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr><td style="padding-bottom:4px;">
+              <h1 style="margin:0 0 16px;font-size:20px;line-height:1.35;color:{_INK};
+                         font-weight:600;">{title}</h1>
+            </td></tr>
+            <tr><td>{paragraphs}</td></tr>{code_block}
+            <tr><td>{trailing}</td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="border-top:1px solid {_RULE};padding:18px 28px;">
+          <p style="margin:0;font-size:12px;line-height:1.5;color:{_MUTED};
+                    font-family:{_FONT};">
+            This is an automated message from Lacteva. Please do not reply.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>'''
+
+
+def _code_label(message: "OutboundMessage") -> str:
+    """What the boxed value IS, so the box is not an unexplained blob."""
+    return {
+        "password_reset": "Password reset code",
+        "invitation": "Invitation code",
+    }.get(message.template_key, "Code")
+
+
 class SmtpEmailProvider:
     """The production email transport (PROD-001).
 
@@ -818,7 +976,15 @@ class SmtpEmailProvider:
         mail["Message-ID"] = f"<{message.idempotency_key}@{domain or 'lacteva.local'}>"
         mail["Auto-Submitted"] = "auto-generated"  # RFC 3834: never auto-reply
         mail["Content-Language"] = message.language
+        # multipart/alternative: the SAME message twice, text first.
+        #
+        # The text part is the template's own words, byte for byte. It is what
+        # a text-only client shows, what a screen reader reads, what the E2E
+        # harness and the demo seeder parse the token out of, and what spam
+        # filters prefer to see present. The HTML part is the same words laid
+        # out; if a client cannot render it, nothing is lost but the layout.
         mail.set_content(message.body)
+        mail.add_alternative(_html_document(message), subtype="html")
 
         try:
             await asyncio.to_thread(self._deliver, mail, sender, message.recipient, settings)
