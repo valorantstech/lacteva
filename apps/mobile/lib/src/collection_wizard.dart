@@ -10,6 +10,7 @@ import 'theme.dart';
 import 'devices/device_bridge.dart';
 import 'devices/device_settings.dart';
 import 'devices/device_transport.dart';
+import 'offline/offline_client.dart';
 import 'printing/escpos.dart';
 import 'printing/printer_transport.dart';
 
@@ -50,6 +51,7 @@ class CollectionWizardScreen extends StatefulWidget {
     this.session,
     this.initialStep = 0,
     this.devices = const DeviceSettings(),
+    this.initialTransaction,
   });
 
   final ApiClient client;
@@ -68,6 +70,10 @@ class CollectionWizardScreen extends StatefulWidget {
   /// manual capture is the first-class path and needs nothing.
   final DeviceSettings devices;
 
+  /// A transaction to open on, so a test can reach a late step without
+  /// driving every earlier one. The same seam `initialStep` already is.
+  final Map<String, dynamic>? initialTransaction;
+
   @override
   State<CollectionWizardScreen> createState() => _CollectionWizardScreenState();
 }
@@ -85,7 +91,7 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
 
   late int _step = widget.initialStep;
   String? _txId;
-  Map<String, dynamic>? _tx;
+  late Map<String, dynamic>? _tx = widget.initialTransaction;
   String? _error;
   bool _busy = false;
 
@@ -206,6 +212,127 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
   /// types into, and the operator confirms them. A failure is not an error
   /// state — it is the ordinary case at a centre whose analyzer is off, so it
   /// leaves a note beside fields that stay perfectly usable.
+  /// Whether this operator may change what the milk is worth (BR-0029).
+  ///
+  /// The permission list from `/v1/auth/me` is the authority. A control that
+  /// is merely DISABLED still tells the person at the counter that the
+  /// capability exists and they are not trusted with it, which is a different
+  /// and worse message than a screen that simply does not offer it.
+  bool get _mayOverrideRate => widget.session?.can('pricing.rate.override') ?? false;
+
+  /// Why a rate override cannot be captured without a connection (WO-51b).
+  ///
+  /// Not a limitation to apologise for — a consequence of where pricing
+  /// happens. The rate is resolved by the platform when quality is captured,
+  /// so a collection queued offline has no resolved rate yet, and an
+  /// "override" of a number that does not exist is not an override. The
+  /// offline queue also carries no kind for it, deliberately: every kind maps
+  /// one-to-one onto an online endpoint (OFF-001), and adding one that
+  /// decided a price on the handset would put pricing in the client, which is
+  /// the one thing capture must never do.
+  ///
+  /// So the screen says this, and refuses. It does not queue something that
+  /// will fail later, and it does not pretend the rate changed.
+  static const _offlineOverrideReason =
+      'A rate change needs a connection: the rate is resolved by the platform '
+      'when quality is captured, so there is nothing to override until this '
+      'collection has synced.';
+
+  bool get _offline {
+    final client = widget.client;
+    return client is OfflineApiClient && !client.isOnline;
+  }
+
+  Future<void> _editRate(Map<String, dynamic> tx) async {
+    final rateController = TextEditingController(text: '${tx['unit_price'] ?? ''}');
+    final reasonController = TextEditingController();
+    final base = '${tx['base_unit_price'] ?? tx['unit_price'] ?? ''}';
+    final currency = '${tx['currency'] ?? ''}';
+    String? problem;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Edit rate'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_offline)
+                Text(_offlineOverrideReason, style: Theme.of(context).textTheme.bodyMedium)
+              else ...[
+                // Both numbers, before anything is confirmed: whoever changes
+                // a farmer's rate should see what they are changing it FROM.
+                Text('Card rate: $base $currency/kg'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: rateController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(labelText: 'New rate ($currency/kg)'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: reasonController,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Reason (required)',
+                    helperText: 'Shown on the parchi and in the audit trail',
+                  ),
+                ),
+                if (problem != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      problem!,
+                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    ),
+                  ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            if (!_offline)
+              FilledButton(
+                onPressed: () {
+                  final rate = double.tryParse(rateController.text.trim());
+                  final reason = reasonController.text.trim();
+                  // The same two refusals the platform makes, made here first
+                  // so the operator is told before a round trip — never
+                  // INSTEAD of the platform, which refuses them regardless.
+                  if (rate == null || rate <= 0) {
+                    setDialogState(() => problem = 'Enter a rate greater than zero');
+                    return;
+                  }
+                  if (reason.length < 3) {
+                    setDialogState(() => problem = 'A reason is required');
+                    return;
+                  }
+                  Navigator.of(dialogContext).pop(true);
+                },
+                child: const Text('Change rate'),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+    await _run(
+      () => widget.client.txStep(
+        '/v1/milk-transactions/$_txId/override-rate',
+        body: {
+          'unit_price': rateController.text.trim(),
+          'reason': reasonController.text.trim(),
+        },
+      ),
+    );
+  }
+
   /// Send the parchi to the centre's printer (WO-50).
   ///
   /// A failure is reported and nothing else changes: the slip is already
@@ -591,6 +718,29 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                           '${tx['unit_price']} ${tx['currency']}/kg · '
                           '${tx['pricing_detail']}',
                         ),
+                        // BR-0029 / D-3. Once a rate has been changed, this
+                        // screen shows BOTH numbers and the reason — the same
+                        // thing the parchi and the portal show, because an
+                        // override that is only visible in one place is one
+                        // somebody can miss.
+                        if (tx['base_unit_price'] != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Card rate ${tx['base_unit_price']} ${tx['currency']}/kg '
+                            '· changed: ${tx['override_reason'] ?? ''}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                        // Absent, not disabled, for anyone without the
+                        // permission: a greyed-out control still tells the
+                        // person at the counter that the capability exists
+                        // and they are not trusted with it.
+                        if (_mayOverrideRate)
+                          TextButton.icon(
+                            icon: const Icon(Icons.edit_outlined),
+                            label: const Text('Edit rate'),
+                            onPressed: _busy ? null : () => _editRate(tx),
+                          ),
                       ] else ...[
                         Text(
                           t.t('wizard.pricingLine', {

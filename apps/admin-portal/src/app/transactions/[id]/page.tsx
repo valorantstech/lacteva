@@ -962,6 +962,31 @@ function PricingBreakdown({ tx }: { tx: MilkTransaction }) {
                   </span>
                 </span>
               </Row>
+              {/* BR-0029 / D-3. An override is never silent, so the rate the
+                  card resolved sits directly under the rate that was paid —
+                  not in a history tab somebody has to think to open. Absent
+                  entirely on an ordinary collection. */}
+              {tx.base_unit_price != null && (
+                <>
+                  <Row label={t9n("txDetail.cardRate")}>
+                    <span className="tabular-nums text-muted-foreground line-through">
+                      {String(tx.base_unit_price)}
+                      <span className="ms-1 text-xs">
+                        {tx.currency}/{tx.weight_unit ?? "kg"}
+                      </span>
+                    </span>
+                  </Row>
+                  <Row label={t9n("txDetail.rateChangedBy")}>
+                    <span className="text-end text-muted-foreground">
+                      {tx.overridden_by_name ?? tx.overridden_by ?? "—"}
+                      {tx.overridden_at ? ` · ${formatStamp(tx.overridden_at)}` : ""}
+                    </span>
+                  </Row>
+                  <Row label={t9n("txDetail.rateChangedWhy")}>
+                    <span className="text-end">{tx.override_reason ?? "—"}</span>
+                  </Row>
+                </>
+              )}
             </dl>
 
             <div className="rounded-lg border border-border bg-muted/40 p-3">

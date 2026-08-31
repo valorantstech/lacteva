@@ -1217,6 +1217,13 @@ export type MilkTransaction = {
   currency: string | null;
   calculation_id: string | null;
   pricing_detail: string | null;
+  // BR-0029. Null unless a person changed the rate; `unit_price` above stays
+  // the EFFECTIVE one, so nothing that reads it can show a superseded number.
+  base_unit_price?: string | number | null;
+  override_reason?: string | null;
+  overridden_by?: string | null;
+  overridden_by_name?: string | null;
+  overridden_at?: string | null;
   rejected_reason: string | null;
   decided_by: string | null;
   decided_at: string | null;

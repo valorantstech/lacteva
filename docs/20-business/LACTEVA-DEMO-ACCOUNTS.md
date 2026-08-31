@@ -65,6 +65,28 @@ Same password for all of them, from `DEMO_PASSWORD`.
 
 The Kenyan tenant carries the same five at `@lacteva-demo.example.com`.
 
+### Demonstrating the rate override (BR-0029)
+
+`pricing.rate.override` is the permission behind D-15's "the owner may edit
+the rate". Of the demo logins, **only `manager@` holds it** — it is a
+tenant-admin, and the permission is otherwise granted to `CENTRE_MANAGER`,
+which none of these five is.
+
+That makes the pair worth showing together, in this order:
+
+1. Sign in as **`manager@`**, open a priced collection in the wizard's review
+   step, and use **Edit rate**. It shows the card rate, requires a reason, and
+   the parchi then carries both numbers and the reason. The portal's
+   transaction detail shows the same, with who changed it and when.
+2. Sign in as **`operator@`** and open the same step. **There is no Edit rate
+   control** — not a greyed-out one. A disabled button would tell the person
+   at the counter that the capability exists and they are not trusted with it,
+   which is a different and worse message than not offering it.
+
+`operations@`, `sales@` and `viewer@` behave like the operator here: the
+control is absent. If a demonstration needs a second holder, grant a user the
+`CENTRE_MANAGER` role rather than widening the operator's.
+
 **Roles, not people, decide what is visible.** Signing in as the viewer and
 finding the settlement actions absent is a demonstration, not a limitation —
 the platform gates on capabilities, and a dairy that renames a role keeps the

@@ -587,6 +587,10 @@ const en: Catalog = {
   "txDetail.notPricedHint":
     "A price is resolved once quality has been captured.",
   "txDetail.rateCard": "Rate card",
+  // BR-0029: an authorized rate override, shown beside the rate it replaced.
+  "txDetail.cardRate": "Card rate",
+  "txDetail.rateChangedBy": "Rate changed by",
+  "txDetail.rateChangedWhy": "Reason",
   "txDetail.calculation": "Calculation",
   "txDetail.collectionValue": "Collection value",
   "txDetail.lifecycle": "Lifecycle",
@@ -1250,6 +1254,9 @@ const hi: Catalog = {
   "txDetail.notPriced": "मूल्य निर्धारित नहीं",
   "txDetail.notPricedHint": "गुणवत्ता दर्ज होते ही मूल्य निर्धारित होता है।",
   "txDetail.rateCard": "दर कार्ड",
+  "txDetail.cardRate": "कार्ड दर",
+  "txDetail.rateChangedBy": "दर बदली",
+  "txDetail.rateChangedWhy": "कारण",
   "txDetail.calculation": "गणना",
   "txDetail.collectionValue": "संग्रह मूल्य",
   "txDetail.lifecycle": "जीवनचक्र",

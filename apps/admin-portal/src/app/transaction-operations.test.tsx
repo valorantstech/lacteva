@@ -377,6 +377,48 @@ describe("transaction detail", () => {
     expect(screen.getAllByText("entered by an operator").length).toBe(2);
   });
 
+  it("shows an overridden rate beside the one it replaced, with who and why", async () => {
+    // BR-0029 / D-3. An override that is only legible in a history tab is one
+    // somebody can miss; it sits under the rate that was actually paid.
+    routeAll({
+      // `routeAll` matches on `includes`, and this prefix also covers
+      // `/events` and `/chain` — so the handler discriminates rather than
+      // swallowing them.
+      "/v1/milk-transactions/tx-1": (url: string) => {
+        if (url.includes("/events")) return json(EVENTS);
+        if (url.includes("/chain")) return json(CHAIN);
+        return json({
+          ...TX,
+          unit_price: "52.5000",
+          base_unit_price: "45.0000",
+          override_reason: "quality re-tested at the counter",
+          overridden_by_name: "Priya Nair",
+          overridden_at: "2026-08-31T07:45:00Z",
+        });
+      },
+    });
+    await renderDetail(<TransactionDetailPage params={params()} />);
+
+    expect(await screen.findByText("Card rate")).toBeInTheDocument();
+    // The card rate appears once, struck through, under the rate that was
+    // paid; the effective rate appears in the rate row AND the calculation,
+    // which is the point — nothing downstream shows the superseded number.
+    expect(screen.getAllByText(/45\.0000/).length).toBe(1);
+    expect(screen.getAllByText(/52\.5000/).length).toBeGreaterThan(1);
+    expect(screen.getByText(/Priya Nair/)).toBeInTheDocument();
+    expect(
+      screen.getByText("quality re-tested at the counter"),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about overrides on an ordinary collection", async () => {
+    routeAll();
+    await renderDetail(<TransactionDetailPage params={params()} />);
+    await screen.findByText("Rate card");
+    expect(screen.queryByText("Card rate")).not.toBeInTheDocument();
+    expect(screen.queryByText("Rate changed by")).not.toBeInTheDocument();
+  });
+
   it("follows the money and states that the two figures agree", async () => {
     routeAll();
     await renderDetail(<TransactionDetailPage params={params()} />);
