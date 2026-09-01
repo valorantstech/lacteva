@@ -38,7 +38,11 @@ TRANSACTION_STATES = (
     "CANCELLED",
 )
 TERMINAL_STATES = ("COMPLETED", "CANCELLED")
-MILK_TYPES = ("cow", "buffalo", "goat", "mixed", "custom")
+#: WO-55. `sheep` joins the list: it was the one common Indian dairy animal
+#: the vocabulary omitted, and a dairy that takes sheep milk had to record it
+#: as `custom` with the name typed by hand — which prices and reports as
+#: "custom" rather than as itself.
+MILK_TYPES = ("cow", "buffalo", "goat", "sheep", "mixed", "custom")
 #: How a measurement was obtained (WO-49; hardware spec §5, §7).
 #:
 #: `scale` and `analyzer` are REAL instruments reporting through a registered

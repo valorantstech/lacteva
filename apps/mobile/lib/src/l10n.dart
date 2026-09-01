@@ -138,6 +138,7 @@ const Catalog _en = {
   'milk.cow': 'cow',
   'milk.buffalo': 'buffalo',
   'milk.goat': 'goat',
+  'milk.sheep': 'sheep',
   'milk.mixed': 'mixed',
 
   'login.queuedSafe':
@@ -570,6 +571,7 @@ const Catalog _hi = {
   'milk.cow': 'गाय',
   'milk.buffalo': 'भैंस',
   'milk.goat': 'बकरी',
+  'milk.sheep': 'भेड़',
   'milk.mixed': 'मिश्रित',
 
   'login.queuedSafe':
@@ -986,6 +988,7 @@ const Catalog _ar = {
   'milk.cow': 'بقر',
   'milk.buffalo': 'جاموس',
   'milk.goat': 'ماعز',
+  'milk.sheep': 'أغنام',
   'milk.mixed': 'مخلوط',
 
   'login.queuedSafe':

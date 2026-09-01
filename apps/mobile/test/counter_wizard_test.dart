@@ -121,6 +121,36 @@ Future<void> _driveToReview(WidgetTester tester, _Fake client) async {
 }
 
 void main() {
+  group('the animals the counter can take (WO-55)', () {
+    testWidgets('sheep is on the list, and the code travels to the platform', (
+      tester,
+    ) async {
+      // The vocabulary omitted the one common Indian dairy animal it had no
+      // reason to omit. The label is translated; the VALUE sent stays the raw
+      // code the platform stores.
+      final client = _Fake();
+      await _pump(tester, client, step: 1);
+
+      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.pumpAndSettle();
+      for (final animal in ['cow', 'buffalo', 'goat', 'sheep', 'mixed']) {
+        expect(
+          find.text(animal),
+          findsWidgets,
+          reason: '$animal must be offered at the counter',
+        );
+      }
+
+      await tester.tap(find.text('sheep').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Receive milk'));
+      await tester.pumpAndSettle();
+
+      final milk = client.steps.singleWhere((s) => s.$1.endsWith('/milk'));
+      expect(milk.$2['milk_type'], 'sheep');
+    });
+  });
+
   group('offline input bounds — the platform’s own rules, checked first', () {
     Future<_Fake> tryWeight(WidgetTester tester, String g, String t) async {
       final client = _Fake();

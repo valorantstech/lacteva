@@ -70,9 +70,14 @@ void main() {
     for (final code in ['morning', 'evening']) {
       expect(L10n(en).t('slot.$code'), isNot('slot.$code'));
     }
-    // The milk types the collection wizard offers.
-    for (final code in ['cow', 'buffalo', 'goat', 'mixed']) {
-      expect(L10n(en).t('milk.$code'), isNot('milk.$code'));
+    // The milk types the collection wizard offers. WO-55 added `sheep`, and
+    // the label must exist in every language the app ships, not only English:
+    // an operator on the Hindi build seeing `milk.sheep` in the dropdown is
+    // the same defect as no translation at all.
+    for (final code in ['cow', 'buffalo', 'goat', 'sheep', 'mixed']) {
+      for (final locale in ['en', 'hi', 'ar']) {
+        expect(L10n(locale).t('milk.$code'), isNot('milk.$code'));
+      }
     }
     // LACTEVA-MOBILE-006: every run status the platform can send
     // (`modules/logistics/models.py: RUN_STATUSES`). The driver header shows

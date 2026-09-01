@@ -110,6 +110,22 @@ def _litres(total) -> Decimal:
 # --- DTOs ------------------------------------------------------------------
 
 
+class MilkTypeRow(BaseModel):
+    """What one kind of milk contributed (WO-55).
+
+    `milk_type` has been on every transaction since the beginning and the
+    pricing engine has always resolved a rate per type — a buffalo litre and a
+    cow litre are different money. Nothing REPORTED by type, so a dairy taking
+    both could see what it paid in total and never what it paid for which.
+    """
+
+    milk_type: str
+    transactions: int
+    net_weight_kg: float
+    weighted_avg_fat: float | None
+    amount_by_currency: dict[str, Decimal]
+
+
 class DailyCollectionSummary(BaseModel):
     date_from: date
     date_to: date
@@ -124,6 +140,10 @@ class DailyCollectionSummary(BaseModel):
     unpriced_accepted: int
     weighted_avg_fat: float | None
     weighted_avg_snf: float | None
+    #: WO-55. Accepted collections split by what animal the milk came from,
+    #: heaviest first. Empty for a dairy that takes one kind, which is most of
+    #: them — the breakdown appears when there is something to break down.
+    by_milk_type: list[MilkTypeRow] = []
 
 
 class CenterSummaryRow(BaseModel):
@@ -538,6 +558,7 @@ class ReportingService:
             snf_weight,
         ) = row
         payable = await self._payable_by_currency(conditions, branch_id)
+        by_type = await self._by_milk_type(conditions, branch_id)
         return DailyCollectionSummary(
             date_from=date_from,
             date_to=date_to,
@@ -552,6 +573,75 @@ class ReportingService:
             unpriced_accepted=unpriced or 0,
             weighted_avg_fat=self._weighted(fat_sum, fat_weight),
             weighted_avg_snf=self._weighted(snf_sum, snf_weight),
+            by_milk_type=by_type,
+        )
+
+    async def _by_milk_type(self, conditions, branch_id) -> list["MilkTypeRow"]:
+        """Accepted collections, split by the animal (WO-55).
+
+        Grouped on `milk_type` and NOT on `milk_type_custom`: a dairy may type
+        anything into the custom field, and grouping on free text would invent
+        a category per spelling. A custom type reports as `custom`, honestly,
+        and the transaction still carries what was typed.
+
+        Amounts are per currency for the same reason the total is: a summary
+        that added two currencies together would be a number meaning nothing.
+        """
+        stmt = (
+            select(
+                Tx.milk_type,
+                Tx.currency,
+                func.count(),
+                func.coalesce(func.sum(_exact(Tx.net_weight)), _EXACT_ZERO),
+                func.sum(case((Tx.fat.is_not(None), _exact(Tx.fat) * _exact(Tx.net_weight)))),
+                func.sum(case((Tx.fat.is_not(None), _exact(Tx.net_weight)))),
+                func.coalesce(func.sum(_exact(Tx.gross_amount)), _EXACT_ZERO),
+            )
+            .where(*conditions, ACCEPTED)
+            .group_by(Tx.milk_type, Tx.currency)
+        )
+        if branch_id is not None:
+            stmt = stmt.join(CollectionCenter, CollectionCenter.id == Tx.center_id).where(
+                CollectionCenter.branch_id == branch_id
+            )
+
+        merged: dict[str, dict] = {}
+        for milk_type, currency, count, weight, fat_sum, fat_weight, amount in (
+            await self._session.execute(stmt)
+        ).all():
+            key = milk_type or "unspecified"
+            row = merged.setdefault(
+                key,
+                {
+                    "transactions": 0,
+                    "weight": Decimal(0),
+                    "fat_sum": Decimal(0),
+                    "fat_weight": Decimal(0),
+                    "amounts": {},
+                },
+            )
+            row["transactions"] += count or 0
+            row["weight"] += Decimal(weight or 0)
+            row["fat_sum"] += Decimal(fat_sum or 0)
+            row["fat_weight"] += Decimal(fat_weight or 0)
+            if currency and amount:
+                row["amounts"][currency] = row["amounts"].get(currency, Decimal(0)) + Decimal(
+                    amount
+                )
+
+        return sorted(
+            (
+                MilkTypeRow(
+                    milk_type=key,
+                    transactions=row["transactions"],
+                    net_weight_kg=_kg(row["weight"]),
+                    weighted_avg_fat=self._weighted(row["fat_sum"], row["fat_weight"]),
+                    amount_by_currency={c: quantize_money(a, c) for c, a in row["amounts"].items()},
+                )
+                for key, row in merged.items()
+            ),
+            key=lambda r: r.net_weight_kg,
+            reverse=True,
         )
 
     async def _payable_by_currency(self, conditions, branch_id) -> dict[str, Decimal]:

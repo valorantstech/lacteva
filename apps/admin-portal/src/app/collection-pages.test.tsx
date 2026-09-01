@@ -172,6 +172,23 @@ const DAILY = {
   unpriced_accepted: 0,
   weighted_avg_fat: 4.3,
   weighted_avg_snf: 8.5,
+  // WO-55: the same litres, split by animal. The parts sum to the whole.
+  by_milk_type: [
+    {
+      milk_type: "cow",
+      transactions: 280,
+      net_weight_kg: 5000,
+      weighted_avg_fat: 4.1,
+      amount_by_currency: { KES: "220000.00" },
+    },
+    {
+      milk_type: "buffalo",
+      transactions: 70,
+      net_weight_kg: 2868,
+      weighted_avg_fat: 6.4,
+      amount_by_currency: { KES: "133234.00" },
+    },
+  ],
 };
 
 function routeAll(overrides: Record<string, () => Response> = {}) {
@@ -280,6 +297,10 @@ describe("collections list", () => {
     await screen.findByText("2026-08-10");
 
     await userEvent.selectOptions(screen.getByLabelText("Status"), "COMPLETED");
+    await userEvent.selectOptions(
+      screen.getByLabelText("Milk type"),
+      "buffalo",
+    );
     await userEvent.selectOptions(screen.getByLabelText("Centre"), "c1");
     await userEvent.click(screen.getByLabelText("Supplier"));
     await userEvent.click(
@@ -293,12 +314,50 @@ describe("collections list", () => {
       const last = asked[asked.length - 1];
       const q = new URL(last, "http://x").searchParams;
       expect(q.get("state")).toBe("COMPLETED");
+      // WO-55: the type narrows in the database too, not in the browser.
+      expect(q.get("milk_type")).toBe("buffalo");
       expect(q.get("center_id")).toBe("c1");
       expect(q.get("supplier_id")).toBe("s1");
       // The window is a query parameter — the database narrows, not the browser.
       expect(q.get("date_from")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(q.get("date_to")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });
+  });
+
+  it("shows the day's litres BY TYPE beside the total", async () => {
+    // WO-55: a dairy taking cow and buffalo saw 7,868 kg and could not tell
+    // which animal brought it. The two are different milk at different money.
+    routeAll();
+    render(<TransactionsPage />);
+    await screen.findByText("2026-08-10");
+    const split = await screen.findByText(/Cow 5000 kg/);
+    expect(split).toHaveTextContent(/Buffalo 2868 kg/);
+    // The total is still stated: the split is beside it, not instead of it.
+    expect(screen.getByText("7,868")).toBeInTheDocument();
+  });
+
+  it("names no animal the platform did not report", async () => {
+    // The breakdown is printed, never inferred: a single-type dairy gets one
+    // name, and the page invents no second one to fill the line.
+    routeAll({
+      "/reports/collection/daily": () =>
+        json({
+          ...DAILY,
+          by_milk_type: [
+            {
+              milk_type: "cow",
+              transactions: 350,
+              net_weight_kg: 7868,
+              weighted_avg_fat: 4.3,
+              amount_by_currency: { KES: "353234.00" },
+            },
+          ],
+        }),
+    });
+    render(<TransactionsPage />);
+    await screen.findByText("2026-08-10");
+    const split = await screen.findByText(/Cow 7868 kg/);
+    expect(split).not.toHaveTextContent(/Buffalo/);
   });
 
   it("offers a way back once filters are applied", async () => {

@@ -62,6 +62,10 @@ import { useLocale } from "@/lib/i18n";
 const PAGE_SIZE = 15;
 
 /** The real lifecycle, in order. No invented states. */
+/** WO-55: the platform's own MILK_TYPES, plus "all". Kept in this order
+ *  because it is the order the wizard offers them in. */
+const MILK_TYPES = ["", "cow", "buffalo", "goat", "sheep", "mixed", "custom"] as const;
+
 const STATES = [
   "",
   "NEW",
@@ -128,19 +132,21 @@ export default function TransactionsPage() {
   // first render still corrects the window (DEMO-019).
   const [range, setRange] = useDefaultRange("30d");
   const [state, setState] = useState<(typeof STATES)[number]>("");
+  const [milkType, setMilkType] = useState<(typeof MILK_TYPES)[number]>("");
   const [centerId, setCenterId] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const filtered = Boolean(state || centerId || supplierId);
+  const filtered = Boolean(state || milkType || centerId || supplierId);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     const params = {
       state: state || undefined,
+      milk_type: milkType || undefined,
       center_id: centerId || undefined,
       supplier_id: supplierId || undefined,
       date_from: range.from,
@@ -180,7 +186,7 @@ export default function TransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [centerId, offset, range.from, range.to, state, supplierId, t]);
+  }, [centerId, offset, range.from, range.to, state, milkType, supplierId, t]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);
@@ -439,8 +445,16 @@ export default function TransactionsPage() {
               )
             }
             caption={
+              // WO-55: the day split by animal, beside the total. A dairy
+              // taking two kinds could see what it took altogether and never
+              // what it took of which — and the two are different money.
               summary
-                ? t("tx.suppliersCount", { count: summary.suppliers_served })
+                ? [
+                    t("tx.suppliersCount", { count: summary.suppliers_served }),
+                    ...(summary.by_milk_type ?? [])
+                      .filter((row) => row.net_weight_kg > 0)
+                      .map((row) => `${t(`milk.${row.milk_type}`)} ${row.net_weight_kg} kg`),
+                  ].join(" · ")
                 : undefined
             }
           />
@@ -520,6 +534,23 @@ export default function TransactionsPage() {
                         {s
                           ? s.toLowerCase().replace(/_/g, " ")
                           : t("tx.allStatuses")}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="tx-milk-type">{t("field.milkType")}</Label>
+                  <Select
+                    id="tx-milk-type"
+                    value={milkType}
+                    onChange={(e) => {
+                      setMilkType(e.target.value as (typeof MILK_TYPES)[number]);
+                      setOffset(0);
+                    }}
+                  >
+                    {MILK_TYPES.map((m) => (
+                      <option key={m || "all"} value={m}>
+                        {m ? t(`milk.${m}`) : t("tx.allMilkTypes")}
                       </option>
                     ))}
                   </Select>

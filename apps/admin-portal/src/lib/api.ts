@@ -982,6 +982,17 @@ export type DailyCollectionSummary = {
   unpriced_accepted: number;
   weighted_avg_fat: number | null;
   weighted_avg_snf: number | null;
+  /** WO-55: accepted milk split by the animal it came from, heaviest first. */
+  by_milk_type?: MilkTypeRow[];
+};
+
+/** One kind of milk's share of a day (WO-55). */
+export type MilkTypeRow = {
+  milk_type: string;
+  transactions: number;
+  net_weight_kg: number;
+  weighted_avg_fat: number | null;
+  amount_by_currency: Record<string, string | number>;
 };
 
 export type CenterSummaryRow = {
@@ -1319,6 +1330,7 @@ export type TransactionEvent = {
 
 export function listMilkTransactions(params: {
   state?: string;
+  milk_type?: string;
   center_id?: string;
   supplier_id?: string;
   // DEMO-004: the window the DATABASE filters on.
@@ -1329,6 +1341,7 @@ export function listMilkTransactions(params: {
 }): Promise<MilkTransactionPage> {
   const search = new URLSearchParams();
   if (params.state) search.set("state", params.state);
+  if (params.milk_type) search.set("milk_type", params.milk_type);
   if (params.center_id) search.set("center_id", params.center_id);
   if (params.supplier_id) search.set("supplier_id", params.supplier_id);
   if (params.date_from) search.set("date_from", params.date_from);

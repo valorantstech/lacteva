@@ -1178,6 +1178,7 @@ class MilkCollectionService:
         center_id: uuid.UUID | None = None,
         supplier_id: uuid.UUID | None = None,
         state: str | None = None,
+        milk_type: str | None = None,
         date_from: date | None = None,
         date_to: date | None = None,
         center_scope: set[uuid.UUID] | None = None,
@@ -1221,6 +1222,11 @@ class MilkCollectionService:
             stmt = stmt.where(MilkCollectionTransaction.supplier_id == supplier_id)
         if state:
             stmt = stmt.where(MilkCollectionTransaction.state == state)
+        # WO-55. Filtered in SQL beside the rest: a dairy taking two kinds
+        # needs to look at one of them, and filtering a fetched page would
+        # show "12 results" over a page that holds three.
+        if milk_type:
+            stmt = stmt.where(MilkCollectionTransaction.milk_type == milk_type)
         total = await self._session.scalar(select(func.count()).select_from(stmt.subquery()))
         rows = await self._session.scalars(
             stmt.order_by(MilkCollectionTransaction.created_at.desc()).limit(limit).offset(offset)

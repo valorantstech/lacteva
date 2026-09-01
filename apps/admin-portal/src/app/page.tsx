@@ -333,8 +333,19 @@ export default function Home() {
               "—"
             )
           } caption={
+            // WO-55: today's litres split by animal, beside the total. Cow and
+            // buffalo are different milk at different money, and a total alone
+            // hides which of them the morning actually brought in.
             collection
-              ? `${collection.suppliers_served} suppliers served`
+              ? [
+                  `${collection.suppliers_served} suppliers served`,
+                  ...(collection.by_milk_type ?? [])
+                    .filter((row) => row.net_weight_kg > 0)
+                    .map(
+                      (row) =>
+                        `${t(`milk.${row.milk_type}`)} ${row.net_weight_kg} kg`,
+                    ),
+                ].join(" · ")
               : undefined
           } /><span aria-hidden className="text-muted-foreground"><Droplets className="size-4" /></span></Surface>
         <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.collectionValue")} value={

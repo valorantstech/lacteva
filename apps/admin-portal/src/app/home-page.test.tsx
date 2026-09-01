@@ -62,6 +62,23 @@ const DASHBOARD = {
     unpriced_accepted: 0,
     weighted_avg_fat: 4.21,
     weighted_avg_snf: 8.6,
+    // WO-55: the same litres, split by animal.
+    by_milk_type: [
+      {
+        milk_type: "cow",
+        transactions: 30,
+        net_weight_kg: 900.5,
+        weighted_avg_fat: 4.1,
+        amount_by_currency: { KES: "40000.00" },
+      },
+      {
+        milk_type: "buffalo",
+        transactions: 10,
+        net_weight_kg: 334,
+        weighted_avg_fat: 6.3,
+        amount_by_currency: { KES: "16789.50" },
+      },
+    ],
   },
   settlements: {
     by_status: [{ status: "finalized", count: 5, net_amount: "12345.00" }],
@@ -278,6 +295,19 @@ describe("dashboard", () => {
     const asked = spy.mock.calls.map(([u]) => String(u));
     expect(asked.some((u) => u.includes("/reports/"))).toBe(false);
     expect(asked.some((u) => u.includes("/v1/audit"))).toBe(false);
+  });
+
+  it("splits today's litres by animal beside the total", async () => {
+    // WO-55: the owner's first screen showed 1,234.5 kg and no way to tell
+    // whether the buffalo shed had turned up. The split is beside the total,
+    // never instead of it, and it names only the animals the platform sent.
+    routeAll();
+    render(<Home />);
+
+    const split = await screen.findByText(/Cow 900.5 kg/);
+    expect(split).toHaveTextContent(/Buffalo 334 kg/);
+    expect(split).toHaveTextContent(/18 suppliers served/);
+    expect(await screen.findAllByText("1,234.5")).toHaveLength(2);
   });
 
   it("renders every aggregate from the platform's own figures", async () => {

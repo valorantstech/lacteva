@@ -593,7 +593,8 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                 decoration: InputDecoration(labelText: t.t('wizard.milkType')),
                 // The LABEL comes from the catalog; the VALUE sent to the API
                 // stays the raw code (P1-LOCALE-I18N-001).
-                items: const ['cow', 'buffalo', 'goat', 'mixed']
+                // WO-55: the platform's own MILK_TYPES, in full.
+                items: const ['cow', 'buffalo', 'goat', 'sheep', 'mixed']
                     .map(
                       (m) =>
                           DropdownMenuItem(value: m, child: Text(t.t('milk.$m'))),
