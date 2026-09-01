@@ -271,6 +271,20 @@ async def test_a_hindi_dairy_gets_a_bilingual_parchi(client):
     assert "भैंस" in slip["text"]  # buffalo, named in the farmer's language
 
 
+async def test_every_milk_type_the_platform_knows_has_a_hindi_name(client):
+    """WO-55 added `sheep` to the vocabulary, and a farmer handed a parchi in
+    Hindi should not be the one person who reads the animal in English.
+
+    `custom` is deliberately absent: its name is whatever the operator typed,
+    and the slip prints that rather than a translation of the word "custom".
+    """
+    from platform_core.core.milk import MILK_TYPES
+    from platform_core.modules.milk_collection.service import _SLIP_MILK_HI
+
+    missing = [m for m in MILK_TYPES if m != "custom" and m not in _SLIP_MILK_HI]
+    assert not missing, f"no Hindi name on the parchi for: {missing}"
+
+
 # --- P0-BIZ-001: cow and buffalo price differently ---------------------------
 
 

@@ -188,7 +188,16 @@ SLIP_PREFIX = "SLP"
 #: Hindi names for the fixed milk vocabulary, used on the shareable text when
 #: the organization's default language is Hindi. `custom` renders its own
 #: free-text name and needs no entry.
-_SLIP_MILK_HI = {"cow": "गाय", "buffalo": "भैंस", "goat": "बकरी", "mixed": "मिश्रित"}
+_SLIP_MILK_HI = {
+    "cow": "गाय",
+    "buffalo": "भैंस",
+    "goat": "बकरी",
+    # WO-55 added `sheep` to the vocabulary and this map is keyed by it: a
+    # farmer handed a parchi in Hindi should not be the one person who reads
+    # the animal in English.
+    "sheep": "भेड़",
+    "mixed": "मिश्रित",
+}
 
 
 # --- DTOs ------------------------------------------------------------------
