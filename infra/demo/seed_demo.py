@@ -468,6 +468,33 @@ DEMO_SLUGS = [m.org_slug for m in MARKETS.values()] + [ISOLATION_ORG_SLUG]
 
 PRODUCT = "RAW-COW-MILK"
 
+#: WO-57. The second animal, and its own product code — `product_code_for()`
+#: in `milk_collection/service.py` derives it from the milk type, so buffalo
+#: milk priced against a cow card is not a thing that can happen: without a
+#: card of its own it simply arrives rate-pending.
+BUFFALO_PRODUCT = "RAW-BUFFALO-MILK"
+
+#: Buffalo milk is fatter — 6 to 8% where cow milk is 3.5 to 5 — and worth
+#: more per litre for exactly that reason. A demo that priced both off one
+#: chart would be showing a dairy something no dairy does.
+BUFFALO_FAT_BANDS = [
+    (5.5, 6.0, 52.0),
+    (6.0, 6.5, 56.0),
+    (6.5, 7.0, 60.0),
+    (7.0, 7.5, 64.0),
+    (7.5, 8.0, 68.0),
+]
+
+#: Readings that land inside those bands, cycled like the cow list beside it.
+BUFFALO_FAT_BY_SUPPLIER = [6.2, 7.1, 5.8, 6.8, 7.4, 6.4, 5.9, 7.0]
+
+#: Which of a day's collections are buffalo. Deterministic, and about two in
+#: five, because a mixed dairy is the normal case in India and a demo with one
+#: buffalo collection in it demonstrates nothing.
+def is_buffalo(index: int, day_offset: int) -> bool:
+    return (index * 3 + day_offset) % 5 < 2
+
+
 # Gross/tare pairs, cycled by index. Net weights land between 8 and 42 kg,
 # which is the range a smallholder actually delivers.
 WEIGHTS = [
@@ -1072,6 +1099,7 @@ async def make_rate_card(
     bands,
     publish: bool,
     snf_bands=None,
+    product: str = PRODUCT,
 ) -> dict:
     card = await expect(
         await client.post(
@@ -1081,7 +1109,7 @@ async def make_rate_card(
                 "name": name,
                 "effective_from": effective_from,
                 "effective_until": effective_until,
-                "description": "Quality-banded rate for raw cow milk",
+                "description": f"Quality-banded rate for {product.lower().replace('-', ' ')}",
             },
             headers=h,
         ),
@@ -1101,7 +1129,7 @@ async def make_rate_card(
     await expect(
         await client.post(
             f"/v1/rate-cards/{card['id']}/products",
-            json={"product_code": PRODUCT},
+            json={"product_code": product},
             headers=h,
         ),
         201,
@@ -1113,7 +1141,7 @@ async def make_rate_card(
             json={
                 "rate_card_id": card["id"],
                 "name": f"{name} — FAT bands",
-                "product_code": PRODUCT,
+                "product_code": product,
                 "dimension_code": "FAT",
             },
             headers=h,
@@ -1166,7 +1194,7 @@ async def make_rate_card(
                 json={
                     "rate_card_id": card["id"],
                     "name": f"{name} — SNF bands",
-                    "product_code": PRODUCT,
+                    "product_code": product,
                     "dimension_code": "SNF",
                 },
                 headers=h,
@@ -1244,6 +1272,7 @@ async def collect_one(
     index: int,
     when: date,
     container: str,
+    milk_type: str = "cow",
 ) -> dict:
     """One collection, walked through the real state machine on a real date.
 
@@ -1268,13 +1297,19 @@ async def collect_one(
     )
 
     gross, tare = WEIGHTS[index % len(WEIGHTS)]
-    fat = FAT_BY_SUPPLIER[index % len(FAT_BY_SUPPLIER)]
+    # A buffalo reading on the cow chart would match no band and arrive
+    # rate-pending — the fat ranges genuinely do not overlap.
+    fat = (
+        BUFFALO_FAT_BY_SUPPLIER[index % len(BUFFALO_FAT_BY_SUPPLIER)]
+        if milk_type == "buffalo"
+        else FAT_BY_SUPPLIER[index % len(FAT_BY_SUPPLIER)]
+    )
     steps = [
         ("identify", {"method": "manual", "supplier_id": supplier["id"]}),
         (
             "milk",
             {
-                "milk_type": "cow",
+                "milk_type": milk_type,
                 "container_type": "can",
                 "container_identifier": container,
                 "temperature_c": 4.0,
@@ -1456,6 +1491,12 @@ async def pay(
 # window unswept so `Collect period` has real collections to find.
 HISTORY_DAYS = 21
 
+#: How far back the day book has dispatches. Shorter than the collection
+#: history on purpose: a dairy that starts recording what leaves does so from
+#: a day, and a demo where every day since the beginning of time is complete
+#: is a demo nobody believes. Seven days is a week of gate passes to read.
+DISPATCH_DAYS = 7
+
 # How many suppliers get an open (calculated, not finalized) settlement for
 # period C. Three is enough to demonstrate finalization without turning the
 # settlement list into a wall of drafts.
@@ -1588,7 +1629,27 @@ async def build_demo_org(client, admin: dict, org: dict, market: Market) -> dict
         bands=[(lo, hi, round(rate + 2.0, 2)) for lo, hi, rate in market.fat_bands],
         publish=False,
     )
-    summary["rate_cards"] = ["RC-2025-LEGACY", "RC-2026-MAIN", "RC-2027-DRAFT"]
+    # WO-57. Buffalo milk has its own card, because it has its own product
+    # code and its own fat range: a buffalo collection resolves against this
+    # card or against nothing at all.
+    await make_rate_card(
+        client,
+        h,
+        code="RC-2026-BUFFALO",
+        name="2026 Buffalo Rates",
+        effective_from=(today - timedelta(days=HISTORY_DAYS)).isoformat(),
+        effective_until=None,
+        center_ids=[c["id"] for c in centers],
+        bands=BUFFALO_FAT_BANDS,
+        publish=True,
+        product=BUFFALO_PRODUCT,
+    )
+    summary["rate_cards"] = [
+        "RC-2025-LEGACY",
+        "RC-2026-MAIN",
+        "RC-2026-BUFFALO",
+        "RC-2027-DRAFT",
+    ]
 
     suppliers = []
     for i, name in enumerate(market.supplier_names):
@@ -1628,6 +1689,7 @@ async def build_demo_org(client, admin: dict, org: dict, market: Market) -> dict
             )
             for n, supplier in enumerate(delivering):
                 idx = suppliers.index(supplier)
+                milk_type = "buffalo" if is_buffalo(idx, day_offset) else "cow"
                 tid = await collect_one(
                     client,
                     h,
@@ -1636,6 +1698,7 @@ async def build_demo_org(client, admin: dict, org: dict, market: Market) -> dict
                     index=idx,
                     when=day,
                     container=f"CAN-{center['code']}-{n + 1:02d}",
+                    milk_type=milk_type,
                 )
                 # One rejection in the whole history, on a single day, so the
                 # rejection path is demonstrable without implying a quality crisis.
@@ -1903,6 +1966,94 @@ async def build_money(client, built: dict) -> dict:
     return built
 
 
+#: What share of a day's intake a centre sends on to the plant. Not all of it:
+#: a centre keeps some back for the local round and for the next morning's
+#: chilling, and a day book whose remainder is always zero would demonstrate
+#: nothing (WO-56 · BR-0030).
+DISPATCH_SHARE = Decimal("0.65")
+
+#: Where the tankers go. One per centre, by position, so the demo's gate
+#: passes read like a real route rather than like one destination repeated.
+DESTINATIONS = [
+    "Central Chilling Plant",
+    "District Dairy Union",
+    "City Processing Unit",
+]
+
+
+async def build_dispatches(client, built: dict) -> dict:
+    """What left each centre, so the day book has both halves (WO-56/WO-57).
+
+    The seeder chooses the SHARE; every quantity it sends is derived from the
+    platform's own day book for that centre and date, not from arithmetic over
+    what the seeder thinks it collected. One dispatch is cancelled on purpose:
+    a demo that never shows a correction cannot show that a correction leaves
+    both versions behind (BR-0030).
+    """
+    h, today, centers = built["headers"], built["today"], built["centers"]
+    summary = built["summary"]
+    recorded = 0
+    cancelled = 0
+
+    for day_offset in range(DISPATCH_DAYS, -1, -1):
+        day = today - timedelta(days=day_offset)
+        for position, center in enumerate(centers):
+            book = await expect(
+                await client.get(
+                    f"/v1/reports/day-book?business_date={day.isoformat()}"
+                    f"&center_id={center['id']}",
+                    headers=h,
+                ),
+                200,
+                what="day book",
+            )
+            for row in book["rows"]:
+                collected = Decimal(str(row["collected_kg"]))
+                if collected <= 0:
+                    continue
+                quantity = (collected * DISPATCH_SHARE).quantize(Decimal("0.001"))
+                if quantity <= 0:
+                    continue
+                dispatch = await expect(
+                    await client.post(
+                        "/v1/dispatches",
+                        json={
+                            "center_id": center["id"],
+                            "business_date": day.isoformat(),
+                            "milk_type": row["milk_type"],
+                            "quantity": str(quantity),
+                            "destination": DESTINATIONS[position % len(DESTINATIONS)],
+                            "reference": (
+                                f"GP-{day:%Y%m%d}-{center['code']}-"
+                                f"{row['milk_type'][:3].upper()}"
+                            ),
+                        },
+                        headers=h,
+                    ),
+                    201,
+                    what="record dispatch",
+                )
+                recorded += 1
+                # One correction in the whole history, on one day, at one
+                # centre — the same restraint the single rejected collection
+                # above shows.
+                if day_offset == 3 and position == 0 and row["milk_type"] == "cow":
+                    await expect(
+                        await client.post(
+                            f"/v1/dispatches/{dispatch['id']}/cancel",
+                            json={"reason": "tanker turned back at the gate; re-entered"},
+                            headers=h,
+                        ),
+                        200,
+                        what="cancel dispatch",
+                    )
+                    cancelled += 1
+
+    summary["dispatches_recorded"] = recorded
+    summary["dispatches_cancelled"] = cancelled
+    return built
+
+
 async def build_sales(client, built: dict) -> dict:
     """Customers, a month of deliveries, bills, payments and receipts.
 
@@ -1929,6 +2080,18 @@ async def build_sales(client, built: dict) -> dict:
     for index, (name, kind, phone, address, litres, rate, pattern, evening) in enumerate(
         market.customers
     ):
+        # WO-57. Some households take buffalo milk, which is a different
+        # product at a different price — the sales side prices a PRODUCT, and
+        # a demo where every plan is cow milk cannot show that. The showcase
+        # customer stays on cow: its ledger is the one a demonstration is
+        # walked through, and it should not change shape for this.
+        takes_buffalo = index % 4 == 1 and pattern != "showcase"
+        product = BUFFALO_PRODUCT if takes_buffalo else PRODUCT
+        sale_rate = (
+            str((Decimal(rate) * Decimal("1.25")).quantize(Decimal("0.01")))
+            if takes_buffalo
+            else rate
+        )
         customer = await expect(
             await client.post(
                 "/v1/customers",
@@ -1940,10 +2103,10 @@ async def build_sales(client, built: dict) -> dict:
                     "billing_mode": "credit",
                     "billing_day": 1,
                     "plan": {
-                        "product": "RAW-COW-MILK",
+                        "product": product,
                         "default_quantity": litres,
                         "quantity_unit": "L",
-                        "unit_price": rate,
+                        "unit_price": sale_rate,
                         # DEMO-016 §15: a demo where every plan says "every
                         # day" cannot demonstrate a schedule. The mix below is
                         # the one the work order asks for and the one a real
@@ -1975,6 +2138,10 @@ async def build_sales(client, built: dict) -> dict:
                     "delivery_date": day.isoformat(),
                     "slot": slot,
                     "status": "skipped" if skipped else "delivered",
+                    # The product the plan was agreed for. A delivery that
+                    # named the wrong one would find no plan and be refused,
+                    # which is the platform being right.
+                    "product": product,
                 }
                 # Households vary a little day to day; institutions do not.
                 if not skipped and kind == "household" and day_offset % 5 == 0:
@@ -2923,6 +3090,72 @@ async def verify() -> dict:
                     f"{r.receipt_number}: net {r.net_amount} != payment {source.amount}"
                 )
 
+        # WO-57: the second animal, and the movement out. A demo dairy that
+        # takes only cow milk cannot show the per-type reporting the platform
+        # now does, and a day book with nothing dispatched shows one column.
+        from platform_core.modules.dispatch.models import MilkDispatch
+
+        checks["buffalo_transactions"] = await session.scalar(
+            select(func.count())
+            .select_from(MilkCollectionTransaction)
+            .where(
+                MilkCollectionTransaction.tenant_id.in_(ids),
+                MilkCollectionTransaction.milk_type == "buffalo",
+            )
+        )
+        checks["cow_transactions"] = await session.scalar(
+            select(func.count())
+            .select_from(MilkCollectionTransaction)
+            .where(
+                MilkCollectionTransaction.tenant_id.in_(ids),
+                MilkCollectionTransaction.milk_type == "cow",
+            )
+        )
+        checks["dispatches"] = await session.scalar(
+            select(func.count())
+            .select_from(MilkDispatch)
+            .where(MilkDispatch.tenant_id.in_(ids), MilkDispatch.status == "recorded")
+        )
+        checks["cancelled_dispatches"] = await session.scalar(
+            select(func.count())
+            .select_from(MilkDispatch)
+            .where(MilkDispatch.tenant_id.in_(ids), MilkDispatch.status == "cancelled")
+        )
+        # Buffalo milk priced against no card would sit rate-pending forever,
+        # which is a demo showing a defect rather than a dairy.
+        unpriced_buffalo = await session.scalar(
+            select(func.count())
+            .select_from(MilkCollectionTransaction)
+            .where(
+                MilkCollectionTransaction.tenant_id.in_(ids),
+                MilkCollectionTransaction.milk_type == "buffalo",
+                MilkCollectionTransaction.state.in_(("ACCEPTED", "COMPLETED")),
+                MilkCollectionTransaction.rejected_reason.is_(None),
+                MilkCollectionTransaction.gross_amount.is_(None),
+            )
+        )
+        if unpriced_buffalo:
+            problems.append(
+                f"{unpriced_buffalo} buffalo collection(s) were never priced — "
+                "the buffalo rate card is missing or out of scope"
+            )
+        # A dispatch at a centre that is not this dairy's would make the day
+        # book unexplainable.
+        from platform_core.modules.collection_center.models import CollectionCenter
+
+        orphan_dispatches = await session.scalar(
+            select(func.count())
+            .select_from(MilkDispatch)
+            .where(
+                MilkDispatch.tenant_id.in_(ids),
+                ~MilkDispatch.center_id.in_(
+                    select(CollectionCenter.id).where(CollectionCenter.tenant_id.in_(ids))
+                ),
+            )
+        )
+        if orphan_dispatches:
+            problems.append(f"{orphan_dispatches} dispatch(es) point at no centre of this dairy")
+
     for label, minimum in (
         ("organizations", 2),
         ("suppliers", 20),
@@ -2938,6 +3171,11 @@ async def verify() -> dict:
         ("deliveries", 50),
         ("customer_invoices", 3),
         ("customer_payments", 2),
+        # WO-57. Both animals, and a week of gate passes.
+        ("cow_transactions", 20),
+        ("buffalo_transactions", 20),
+        ("dispatches", 10),
+        ("cancelled_dispatches", 1),
     ):
         if (checks.get(label) or 0) < minimum:
             problems.append(
@@ -2990,6 +3228,9 @@ async def seed(markets: tuple[Market, ...] = (KENYA, INDIA)) -> dict:
         # platform could not price.
         built = await build_rate_pending(client, built)
         built = await demonstrate_br_0027(client, built)
+        # WO-57: what LEFT each centre, after the collections it is derived
+        # from and before the sales phase's long walk.
+        built = await build_dispatches(client, built)
         # The sales phase is the last and longest thing the manager does, and
         # it starts a long way from their login.
         await refresh_member(
