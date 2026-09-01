@@ -428,6 +428,24 @@ labels only** on the existing nav registry: *Hardware Connector — Discovery* �
 Soon* · *Printer Integration — Optional*. **No fake buttons, APIs, readings, or
 demo data.**
 
+### What the Milk Day Book is, and is not (D-17; BATCH B7.2)
+
+The Day Book answers "where did the day's milk go" as a **flow ledger**:
+collected minus sold minus dispatched leaves a remainder. It is arithmetic over
+records the platform already holds, and it is labelled as such on the screen.
+
+It is **not tank metering, and not stock**. Nothing here measures what is
+physically in a vessel, accounts for evaporation, spillage, sampling or
+transfer loss, or reconciles a dip reading. A remainder is what the books say
+should be left, not what a tank contains, and the difference between those two
+numbers is a real quantity this platform does not know.
+
+Chilling-centre and BMC stock modelling therefore **stays parked**, exactly as
+§28 leaves it. Building the Day Book does not unpark it: a flow ledger is the
+honest thing that can be built from collections, deliveries and dispatches,
+and a stock model needs vessels, capacities and physical measurements that no
+part of this platform records.
+
 ---
 
 ## Change Log
