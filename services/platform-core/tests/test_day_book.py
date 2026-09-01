@@ -13,23 +13,10 @@ scope as the milk it would be taken from.
 
 import pytest
 
-from tests.clock import TODAY
 from tests.test_milk_type_reporting import _collect
 from tests.test_procurement_e2e import _procurement_env
 
 pytestmark = pytest.mark.asyncio
-
-
-async def _dispatch(client, headers, center_id, *, milk_type="cow", quantity="10.000", **over):
-    body = {
-        "center_id": center_id,
-        "business_date": str(TODAY),
-        "milk_type": milk_type,
-        "quantity": quantity,
-        "destination": "Anand Chilling Plant",
-        **over,
-    }
-    return await client.post("/v1/dispatches", json=body, headers=headers)
 
 
 async def _book(client, headers, center_id=None):
@@ -37,6 +24,29 @@ async def _book(client, headers, center_id=None):
     r = await client.get("/v1/reports/day-book", params=params, headers=headers)
     assert r.status_code == 200, r.text
     return r.json()
+
+
+async def _today(client, headers) -> str:
+    """The date the platform is on, asked of the platform.
+
+    NOT the suite's UTC date: a business date is the DAIRY's day, and for a
+    Nairobi cooperative after 21:00 UTC the two are different — which is
+    exactly how a dispatch dated in UTC came to sit outside the day book that
+    contained its own collections.
+    """
+    return (await _book(client, headers))["business_date"]
+
+
+async def _dispatch(client, headers, center_id, *, milk_type="cow", quantity="10.000", **over):
+    body = {
+        "center_id": center_id,
+        "business_date": await _today(client, headers),
+        "milk_type": milk_type,
+        "quantity": quantity,
+        "destination": "Anand Chilling Plant",
+        **over,
+    }
+    return await client.post("/v1/dispatches", json=body, headers=headers)
 
 
 def _row(book, milk_type):
@@ -220,7 +230,7 @@ async def test_the_day_book_downloads_as_a_file_that_states_its_scope(client):
     assert "attachment" in r.headers["content-disposition"]
     body = r.text
     assert "Milk day book" in body
-    assert str(TODAY) in body
+    assert await _today(client, headers) in body
     assert center["name"] in body, "a forwarded file does not say which centre it is about"
     assert "cow,1,50.0,1,20.0,30.0" in body
     assert "TOTAL,1,50.0,1,20.0,30.0" in body

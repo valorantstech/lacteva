@@ -33,7 +33,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tests import postgres_support
-from tests.clock import month_end, month_start
+from tests.clock import TODAY, month_end, month_start
 
 POSTGRES_URL = postgres_support.POSTGRES_URL
 pytestmark = postgres_support.requires_postgres
@@ -184,7 +184,9 @@ def _invoice_variables(*, currency: str, previous_balance: str = "") -> dict:
         "previous_balance": previous_balance,
         "period_from": month_start().isoformat(),
         "period_to": month_end().isoformat(),
-        "period": "2026-08-01 - 2026-08-31",
+        # WO-58: derived like the two bounds above it, or this string names a
+        # different month from the variables beside it every month but one.
+        "period": f"{month_start().isoformat()} - {month_end().isoformat()}",
     }
 
 
@@ -612,10 +614,17 @@ async def test_a_statement_sent_after_local_midnight_still_names_the_period_it_s
             variables=_settlement_variables(currency="INR"),
         )
         slip = (await _rows(factory, tenant_id))[0]
-        assert "2026-08-01" in slip.rendered_text
-        assert "2026-08-31" in slip.rendered_text
-        # Whatever day the dispatch happened, it is not on the slip.
-        assert str(date.today()) not in slip.rendered_text or date.today() == date(2026, 8, 31)
+        # The settlement's OWN period, whichever month the suite runs in.
+        assert month_start().isoformat() in slip.rendered_text
+        assert month_end().isoformat() in slip.rendered_text
+        # Whatever day the dispatch happened, it is not on the slip — unless
+        # it happens to be one of the period's own bounds, which is the first
+        # and the last day of the month.
+        dispatched_on = str(TODAY)
+        assert dispatched_on not in slip.rendered_text or dispatched_on in (
+            month_start().isoformat(),
+            month_end().isoformat(),
+        )
     finally:
         await _cleanup(factory, tenant_id)
 
