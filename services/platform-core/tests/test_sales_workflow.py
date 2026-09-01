@@ -13,14 +13,17 @@ same milk cannot be billed twice.
 """
 
 import uuid
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
+from tests.clock import reference_date
 from tests.conftest import register_and_login
 from tests.test_org_structure import _tenant_admin
 from tests.test_payments import _second_tenant
 
-TODAY = date(2026, 8, 12)
+# WO-58: the reference clock, not a literal. A date written here in
+# August is a suite that only works in August.
+TODAY = reference_date()
 
 
 async def _sales_env(client):

@@ -17,9 +17,15 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from platform_core.modules.billing.month_end import draft_month_end, previous_month
+from tests.clock import TODAY
 from tests.test_org_structure import _tenant_admin
 
 AUGUST = (date(2026, 8, 1), date(2026, 8, 31))
+
+# WO-58. The month this fixture bills: the one before today, whichever that
+# is. `AUGUST` above stays a literal because the `previous_month()` assertions
+# are ABOUT specific dates; the data below must simply land in last month.
+BILLED_MONTH = previous_month(TODAY)
 
 
 def test_the_month_that_just_ended_is_the_one_billed():
@@ -41,7 +47,7 @@ async def _dairy(client, *, customers: int = 2, days: int = 3):
                 "plan": {
                     "unit_price": "56.0000",
                     "default_quantity": "2.000",
-                    "effective_from": "2026-08-01",
+                    "effective_from": BILLED_MONTH[0].isoformat(),
                 },
             },
             headers=admin,
@@ -49,7 +55,7 @@ async def _dairy(client, *, customers: int = 2, days: int = 3):
         assert r.status_code == 201, r.text
         ids.append(r.json()["id"])
         for offset in range(days):
-            day = AUGUST[0] + timedelta(days=offset)
+            day = BILLED_MONTH[0] + timedelta(days=offset)
             d = await client.post(
                 "/v1/deliveries",
                 json={
@@ -63,7 +69,7 @@ async def _dairy(client, *, customers: int = 2, days: int = 3):
     return org, admin, ids
 
 
-async def _draft(client, org, period=AUGUST):
+async def _draft(client, org, period=BILLED_MONTH):
     from platform_core.core.db import get_session_factory
     from platform_core.core.rls import rebind_tenant
 
@@ -103,7 +109,16 @@ async def test_a_drafted_bill_is_not_money_owed(client):
     assert Decimal(balance["invoiced"]) == Decimal("0.00")
     assert balance["open_invoices"] == 0
 
-    statement = (await client.get(f"/v1/customers/{ids[0]}/statement", headers=admin)).json()
+    statement = (
+        await client.get(
+            f"/v1/customers/{ids[0]}/statement",
+            params={
+                "date_from": str(BILLED_MONTH[0]),
+                "date_to": str(BILLED_MONTH[1]),
+            },
+            headers=admin,
+        )
+    ).json()
     assert statement["entries"] == [], "a draft appeared on a customer's statement"
     assert Decimal(statement["closing_balance"]) == Decimal("0.00")
 
@@ -173,7 +188,11 @@ async def test_a_drafted_bill_still_reconciles_with_its_deliveries(client):
     deliveries = (
         await client.get(
             "/v1/deliveries",
-            params={"customer_id": ids[0], "date_from": "2026-08-01", "date_to": "2026-08-31"},
+            params={
+                "customer_id": ids[0],
+                "date_from": str(BILLED_MONTH[0]),
+                "date_to": str(BILLED_MONTH[1]),
+            },
             headers=admin,
         )
     ).json()
@@ -200,7 +219,16 @@ async def test_the_drafted_bill_becomes_the_ordinary_chain(client):
     balance = (await client.get(f"/v1/customers/{ids[0]}/balance", headers=admin)).json()
     assert Decimal(balance["outstanding"]) == Decimal("136.00")  # 336.00 - 200.00
 
-    statement = (await client.get(f"/v1/customers/{ids[0]}/statement", headers=admin)).json()
+    statement = (
+        await client.get(
+            f"/v1/customers/{ids[0]}/statement",
+            # From the milk to the money: the deliveries are last month's and
+            # the invoice and payment are today's, so the window has to span
+            # both or the statement shows one without the other.
+            params={"date_from": str(BILLED_MONTH[0]), "date_to": str(TODAY)},
+            headers=admin,
+        )
+    ).json()
     assert Decimal(statement["closing_balance"]) == Decimal(balance["outstanding"])
     assert Decimal(statement["delivered_quantity"]) == Decimal("6.000")
 

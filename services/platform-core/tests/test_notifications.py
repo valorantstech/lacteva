@@ -7,6 +7,7 @@ from datetime import date, timedelta
 import pytest
 from sqlalchemy import select
 
+from tests.clock import month_end, month_start
 from tests.conftest import invite, register_and_login
 from tests.test_org_structure import _tenant_admin
 from tests.test_procurement_e2e import _accept_complete, _procurement_env, _run_collection
@@ -135,8 +136,8 @@ def test_variable_substitution():
         {
             "name": "Amina",
             "number": "STL-AB12",
-            "period_from": "2026-08-01",
-            "period_to": "2026-08-31",
+            "period_from": month_start().isoformat(),
+            "period_to": month_end().isoformat(),
             "gross_amount": "7897.50",
             "net_amount": "7897.50",
             "currency": "KES",
@@ -145,7 +146,11 @@ def test_variable_substitution():
     )
     assert "Amina" in message.body and "STL-AB12" in message.body
     assert "7897.50 KES" in message.body and "{" not in message.body
-    assert "2026-08-01" in message.body and "2026-08-31" in message.body
+    # Derived: the message echoes the settlement's own period, and the period
+    # follows the reference clock. The assertion is that the dates REACH the
+    # farmer's message, not which month the suite ran in.
+    assert month_start().isoformat() in message.body
+    assert month_end().isoformat() in message.body
     assert message.title == "Settlement STL-AB12 ready"
 
 

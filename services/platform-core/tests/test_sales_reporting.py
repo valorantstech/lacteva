@@ -17,13 +17,16 @@ tests below deliberately create more customers than the page size and assert
 on the figure the manager reads first.
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
+from tests.clock import reference_date
 from tests.test_org_structure import _tenant_admin
 from tests.test_payments import _second_tenant
 
-TODAY = date(2026, 8, 12)
+# WO-58: the reference clock, not a literal. A date written here in
+# August is a suite that only works in August.
+TODAY = reference_date()
 
 
 async def _customer(client, admin, name, rate="60.0000", quantity="2.000"):

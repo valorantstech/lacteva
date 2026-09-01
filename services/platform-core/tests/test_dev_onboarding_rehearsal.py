@@ -15,6 +15,7 @@ genuine defect (milestone Phase 8/11).
 
 import uuid
 
+from tests.clock import month_end, month_start
 from tests.conftest import invite, register_and_login
 
 # --- synthetic organisation, clearly marked -----------------------------------
@@ -200,8 +201,9 @@ async def test_access_matrix_is_authorization_not_credentials(client):
     denied = await client.post(
         "/v1/settlements",
         json={
-            "period_from": "2026-08-01",
-            "period_to": "2026-08-10",
+            # WO-58: derived, or it stops containing today.
+            "period_from": month_start().isoformat(),
+            "period_to": month_end().isoformat(),
             "supplier_id": str(uuid.uuid4()),
         },
         headers=operator,

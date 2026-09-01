@@ -25,6 +25,7 @@ from sqlalchemy import select
 
 from platform_core.core import db
 from platform_core.modules.notification.models import Notification, NotificationRecipient
+from tests.clock import month_end, month_start
 from tests.test_notifications import (  # reuse the existing seams, do not build new ones
     _RecordingProvider,
     _runner,
@@ -294,8 +295,8 @@ def test_the_settlement_slip_exists_in_every_supported_language(language, marker
         {
             "name": "Farmer",
             "number": "STL-2026-000001",
-            "period_from": "2026-08-01",
-            "period_to": "2026-08-31",
+            "period_from": month_start().isoformat(),
+            "period_to": month_end().isoformat(),
             "gross_amount": "5647.50",
             "net_amount": "5647.50",
             "currency": "KES",
@@ -327,8 +328,8 @@ def test_the_invoice_message_exists_in_every_supported_language(language):
                 "number": "INV-2026-000001",
                 "amount": "1250.00",
                 "currency": "INR",
-                "period_from": "2026-08-01",
-                "period_to": "2026-08-31",
+                "period_from": month_start().isoformat(),
+                "period_to": month_end().isoformat(),
             },
         )
         assert "1250.00" in message.body and "INR" in message.body
@@ -347,8 +348,8 @@ def test_currency_is_never_converted_only_carried():
                 "number": "INV-1",
                 "amount": "100.00",
                 "currency": currency,
-                "period_from": "2026-08-01",
-                "period_to": "2026-08-31",
+                "period_from": month_start().isoformat(),
+                "period_to": month_end().isoformat(),
             },
         )
         assert currency in message.body

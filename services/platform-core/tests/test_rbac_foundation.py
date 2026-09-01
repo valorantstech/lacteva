@@ -18,6 +18,7 @@ import uuid
 
 import pytest
 
+from tests.clock import month_end, month_start
 from tests.conftest import invite, register_and_login
 from tests.test_org_structure import _tenant_admin
 
@@ -153,8 +154,9 @@ async def test_an_organization_manager_cannot_do_finance_manager_work(client):
         json={
             "supplier_id": str(uuid.uuid4()),
             "center_id": str(uuid.uuid4()),
-            "period_from": "2026-09-01",
-            "period_to": "2026-09-07",
+            # WO-58: derived, or it stops containing today.
+            "period_from": month_start().isoformat(),
+            "period_to": month_end().isoformat(),
             "currency": "KES",
         },
         headers=manager,

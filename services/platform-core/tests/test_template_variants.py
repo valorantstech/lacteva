@@ -31,6 +31,7 @@ from platform_core.modules.notification.templates import (
     render,
     select_template_key,
 )
+from tests.clock import month_end, month_start
 
 APPROVAL = "/v1/notification-templates/approval"
 REGISTRY = "/v1/notification-templates/registry"
@@ -38,8 +39,8 @@ REGISTRY = "/v1/notification-templates/registry"
 SETTLEMENT = {
     "name": "Ramesh",
     "number": "STL-1",
-    "period_from": "2026-08-01",
-    "period_to": "2026-08-31",
+    "period_from": month_start().isoformat(),
+    "period_to": month_end().isoformat(),
     "line_count": "31",
     "gross_amount": "18562.50",
     "net_amount": "18562.50",
@@ -50,8 +51,8 @@ INVOICE = {
     "number": "INV-1",
     "amount": "1250.00",
     "currency": "INR",
-    "period_from": "2026-08-01",
-    "period_to": "2026-08-31",
+    "period_from": month_start().isoformat(),
+    "period_to": month_end().isoformat(),
 }
 
 

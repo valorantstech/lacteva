@@ -2,16 +2,19 @@
 boundaries, pagination, permissions, tenant isolation, query bounds."""
 
 import uuid
-from datetime import UTC, date, timedelta
+from datetime import UTC, timedelta
 from decimal import Decimal
 
 from sqlalchemy import update
 
+from tests.clock import month_end, month_start, reference_date
 from tests.conftest import count_statements, invite, register_and_login
 from tests.test_org_structure import _tenant_admin
 from tests.test_procurement_e2e import _accept_complete, _procurement_env, _run_collection
 
-TODAY = date(2026, 8, 4)  # matches utcnow().date() in this test run window
+# WO-58: the reference clock, not a literal. A date written here in
+# August is a suite that only works in August.
+TODAY = reference_date()
 
 
 async def _reported_env(client):
@@ -283,8 +286,10 @@ async def test_settlement_summary(client):
                 "supplier_id": supplier["id"],
                 "center_id": center["id"],
                 "currency": "KES",
-                "period_from": "2026-08-01",
-                "period_to": "2026-08-31",
+                # WO-58: the period must contain the collections it settles,
+                # and those happen on the reference date.
+                "period_from": month_start().isoformat(),
+                "period_to": month_end().isoformat(),
             },
             headers=headers,
         )

@@ -9,6 +9,7 @@ os.environ["LACTEVA_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["LACTEVA_EVENT_BUS"] = "memory"
 os.environ["LACTEVA_OUTBOX_MODE"] = "inline"
 os.environ["LACTEVA_JWT_SECRET"] = "test-secret-0123456789abcdef0123456789abcdef"
+
 # SEC-001: tests run the in-process rate limiter (no Redis) and reset it
 # between tests, so a limit is only ever exercised by the test that asks for
 # one — otherwise 600+ logins would exhaust the login budget.

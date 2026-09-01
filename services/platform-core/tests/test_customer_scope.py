@@ -20,12 +20,15 @@ ever removes rows, so a scope that fails to apply cannot widen access.
 """
 
 import uuid
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
+from tests.clock import reference_date
 from tests.test_org_structure import _tenant_admin
 
-TODAY = date(2026, 8, 12)
+# WO-58: the reference clock, not a literal. A date written here in
+# August is a suite that only works in August.
+TODAY = reference_date()
 
 
 async def _customer(client, admin, name, rate="60.0000"):

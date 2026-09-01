@@ -18,6 +18,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tests import postgres_support
+from tests.clock import month_end, month_start
 
 POSTGRES_URL = postgres_support.POSTGRES_URL
 pytestmark = postgres_support.requires_postgres
@@ -28,8 +29,8 @@ PROVIDER = "example-gateway"
 SETTLEMENT = {
     "name": "Ramesh",
     "number": "STL-1",
-    "period_from": "2026-08-01",
-    "period_to": "2026-08-31",
+    "period_from": month_start().isoformat(),
+    "period_to": month_end().isoformat(),
     "line_count": "31",
     "gross_amount": "18562.50",
     "net_amount": "18562.50",

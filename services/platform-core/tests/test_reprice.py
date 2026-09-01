@@ -25,6 +25,7 @@ What these tests defend is that closing that gap did not open a worse one:
 import uuid
 from decimal import Decimal
 
+from tests.clock import month_end, month_start
 from tests.test_milk_collection import _engine_fixture
 from tests.test_pricing_matrix import _create_matrix, _publish_card
 from tests.test_pricing_resolution import _add_bands
@@ -148,8 +149,9 @@ async def test_a_repriced_collection_becomes_settleable(client):
             json={
                 "supplier_id": supplier["id"],
                 "center_id": center["id"],
-                "period_from": "2026-08-01",
-                "period_to": "2026-12-31",
+                # WO-58: derived; this window must contain a collection made now.
+                "period_from": month_start().isoformat(),
+                "period_to": month_end().isoformat(),
             },
             headers=headers,
         )

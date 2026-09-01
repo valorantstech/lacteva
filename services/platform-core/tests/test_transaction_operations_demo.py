@@ -18,6 +18,7 @@ the absence of a settlement is asserted as an absence rather than as a zero.
 import uuid
 from decimal import Decimal
 
+from tests.clock import month_end, month_start
 from tests.test_payments import _action, _pay, _second_tenant
 from tests.test_procurement_e2e import _procurement_env, _run_collection
 
@@ -44,8 +45,8 @@ async def _settled_and_paid(client):
             json={
                 "supplier_id": supplier["id"],
                 "center_id": center["id"],
-                "period_from": "2026-08-01",
-                "period_to": "2026-08-31",
+                "period_from": month_start().isoformat(),
+                "period_to": month_end().isoformat(),
                 "currency": "KES",
             },
             headers=headers,
@@ -176,8 +177,8 @@ async def test_a_cancelled_settlement_does_not_count_as_settled(client):
             json={
                 "supplier_id": supplier["id"],
                 "center_id": center["id"],
-                "period_from": "2026-08-01",
-                "period_to": "2026-08-31",
+                "period_from": month_start().isoformat(),
+                "period_to": month_end().isoformat(),
                 "currency": "KES",
             },
             headers=headers,

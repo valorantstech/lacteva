@@ -30,6 +30,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tests import postgres_support
+from tests.clock import month_end, month_start
 
 POSTGRES_URL = postgres_support.POSTGRES_URL
 pytestmark = postgres_support.requires_postgres
@@ -134,8 +135,8 @@ def _settlement_variables() -> dict:
         "line_count": 31,
         "quantity": "412.500",
         "quantity_unit": "kg",
-        "period_from": "2026-08-01",
-        "period_to": "2026-08-31",
+        "period_from": month_start().isoformat(),
+        "period_to": month_end().isoformat(),
     }
 
 
@@ -148,8 +149,8 @@ def _invoice_variables() -> dict:
         "quantity": "62.000",
         "quantity_unit": "L",
         "previous_balance": "",
-        "period_from": "2026-08-01",
-        "period_to": "2026-08-31",
+        "period_from": month_start().isoformat(),
+        "period_to": month_end().isoformat(),
         "period": "2026-08-01 - 2026-08-31",
     }
 

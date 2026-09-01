@@ -10,12 +10,21 @@ verified across every module boundary.
 import uuid
 from decimal import Decimal
 
+from tests.clock import month_end, month_start
 from tests.test_milk_collection import _engine_fixture
 from tests.test_pricing_matrix import _create_matrix, _publish_card
 from tests.test_pricing_resolution import _add_bands
 from tests.test_rate_cards import _assign_scope, _create_card
 
-OCTOBER = {"period_from": "2026-08-01", "period_to": "2026-08-31"}  # covers "today" in tests
+# WO-58. This was `THIS_MONTH = {"period_from": "2026-08-01", ...}` — named for
+# one month, holding another's dates, with a comment saying it was chosen to
+# "cover today". It covered today for exactly as long as today was in August.
+# The period a settlement collects into must contain the collections it
+# settles, and those happen on the reference date.
+THIS_MONTH = {
+    "period_from": month_start().isoformat(),
+    "period_to": month_end().isoformat(),
+}
 
 
 async def _procurement_env(client, *, with_pricing=True):
@@ -106,7 +115,7 @@ async def test_full_procurement_journey(client, bus):
                 "supplier_id": supplier["id"],
                 "center_id": center["id"],
                 "currency": "KES",
-                **OCTOBER,
+                **THIS_MONTH,
             },
             headers=headers,
         )
@@ -191,7 +200,7 @@ async def test_pricing_unavailable_never_blocks_collection(client, bus):
                 "supplier_id": supplier["id"],
                 "center_id": center["id"],
                 "currency": "KES",
-                **OCTOBER,
+                **THIS_MONTH,
             },
             headers=headers,
         )
@@ -228,7 +237,7 @@ async def test_rejected_milk_is_never_settled(client):
                 "supplier_id": supplier["id"],
                 "center_id": center["id"],
                 "currency": "KES",
-                **OCTOBER,
+                **THIS_MONTH,
             },
             headers=headers,
         )
@@ -255,7 +264,7 @@ async def test_add_single_transaction_and_guards(client):
                 "supplier_id": supplier["id"],
                 "center_id": center["id"],
                 "currency": "KES",
-                **OCTOBER,
+                **THIS_MONTH,
             },
             headers=headers,
         )
@@ -298,7 +307,7 @@ async def test_collect_period_is_idempotent(client):
                 "supplier_id": supplier["id"],
                 "center_id": center["id"],
                 "currency": "KES",
-                **OCTOBER,
+                **THIS_MONTH,
             },
             headers=headers,
         )

@@ -24,9 +24,12 @@ import io
 from datetime import date, timedelta
 from decimal import Decimal
 
+from tests.clock import reference_date
 from tests.test_org_structure import _tenant_admin
 
-TODAY = date(2026, 8, 12)
+# WO-58: the reference clock, not a literal. A date written here in
+# August is a suite that only works in August.
+TODAY = reference_date()
 
 
 async def _customer(client, admin, *, name, quantity, price, code=None):
@@ -202,7 +205,9 @@ async def test_the_export_is_a_file_a_spreadsheet_can_read(client):
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("text/csv")
     assert "attachment" in r.headers["content-disposition"]
-    assert "deliveries-2026-08-10-to-2026-08-12.csv" in r.headers["content-disposition"]
+    # The filename carries the range that was ASKED for, whatever it is.
+    expected = f"deliveries-{TODAY - timedelta(days=2)}-to-{TODAY}.csv"
+    assert expected in r.headers["content-disposition"]
 
     rows = list(csv.reader(io.StringIO(r.text)))
     assert rows[0][0] == "customer_code"
@@ -281,13 +286,34 @@ async def test_exporting_needs_the_read_grant(client):
 # --- the statement ------------------------------------------------------------
 
 
+def _billed_period_start() -> date:
+    """The first day `_billed_customer` delivers on.
+
+    A week back, but never before the first of the month: the statement's
+    default window is the current month by design, so a week that reaches into
+    the previous one is invisible to it. This is the WO-58 defect in one line.
+    """
+    return max(TODAY - timedelta(days=6), TODAY.replace(day=1))
+
+
+def _billed_days() -> int:
+    """How many days of milk that is — seven, or as many as the month has had."""
+    return (TODAY - _billed_period_start()).days + 1
+
+
 async def _billed_customer(client, admin):
-    """One customer, a week of milk, one issued invoice."""
+    """One customer, a week of milk (or as much of it as this month has had),
+    one issued invoice. Returns the day count so a caller can assert on it."""
     customer = await _customer(
         client, admin, name="Statement Household", quantity="2.000", price="50.0000"
     )
-    period_from = TODAY - timedelta(days=6)
-    for offset in range(7):
+    # WO-58. A week of milk, INSIDE the month the statement defaults to.
+    # This used to be a flat seven days back, which on the first of a month
+    # puts six of them in the previous one — where the statement's default
+    # window (this month, by design) cannot see them. The window is not wrong;
+    # the fixture was assuming a month always has seven days behind it.
+    period_from = _billed_period_start()
+    for offset in range(_billed_days()):
         await _deliver(client, admin, customer["id"], period_from + timedelta(days=offset))
     invoice = (
         await client.post(
@@ -308,8 +334,10 @@ async def _billed_customer(client, admin):
 async def test_the_statement_shows_the_bill_and_the_money_against_it(client):
     _org, admin = await _tenant_admin(client)
     customer, invoice = await _billed_customer(client, admin)
-    total = Decimal(invoice["total"])  # 7 x 2L x 50.00 = 700.00
-    assert total == Decimal("700.00")
+    # days x 2 L x 50.00. Derived, because the number of days is however many
+    # this month has had — see `_billed_customer`.
+    total = Decimal(invoice["total"])
+    assert total == Decimal(_billed_days()) * Decimal("2") * Decimal("50.00")
 
     await client.post(
         "/v1/customer-payments",
@@ -324,7 +352,8 @@ async def test_the_statement_shows_the_bill_and_the_money_against_it(client):
     assert kinds == ["invoice", "payment"]
     assert Decimal(statement["billed"]) == total
     assert Decimal(statement["paid"]) == Decimal("300.00")
-    assert Decimal(statement["closing_balance"]) == Decimal("400.00")
+    # Billed minus paid, derived from the same day count the invoice was.
+    assert Decimal(statement["closing_balance"]) == total - Decimal("300.00")
     assert statement["currency"] == "KES"
     assert statement["name"] == "Statement Household"
 
@@ -584,6 +613,9 @@ async def test_the_statement_says_how_much_milk_the_money_is_for(client):
     statement = (
         await client.get(f"/v1/customers/{customer['id']}/statement", headers=admin)
     ).json()
-    assert Decimal(statement["delivered_quantity"]) == Decimal("14.000")  # 7 x 2L
+    # 2 L a day, for exactly the days the fixture delivered. Derived rather
+    # than the old literal 14.000, which assumed a month always has seven days
+    # behind it — and asserted just as strictly.
+    assert Decimal(statement["delivered_quantity"]) == Decimal(_billed_days()) * Decimal("2.000")
     assert statement["quantity_unit"] == "L"
     assert Decimal(statement["billed"]) == Decimal(invoice["total"])
