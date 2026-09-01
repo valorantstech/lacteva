@@ -922,7 +922,8 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
 
     And once more in DEMO-034, on the five logistics tables — same shape, same
     outcome: the migration installed the policies from its own snapshotted
-    list, and this union is where a human has to agree that it did.
+    list, and this union is where a human has to agree that it did. And again
+    in LACTEVA-STOCK-001, on `milk_dispatch`.
     """
     from migrations.versions.a1c7f3b90e22_row_level_security import TENANT_TABLES
     from migrations.versions.a4f7c19d8b52_demo_020_business_calendar import (
@@ -930,6 +931,9 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
     )
     from migrations.versions.b5d1e07a4c39_demo_034_logistics import (
         POLICY_TABLES as DEMO034_TABLES,
+    )
+    from migrations.versions.b7c41d29e5af_lacteva_stock_001_milk_dispatch import (
+        POLICY_TABLES as STOCK001_TABLES,
     )
     from migrations.versions.c7e4a2f19b83_demo_026_subscription import (
         POLICY_TABLES as DEMO026_TABLES,
@@ -970,6 +974,7 @@ def test_every_tenant_owned_table_is_covered_by_a_policy():
         | set(DEMO026_TABLES)
         | set(DEMO027_TABLES)
         | set(DEMO029_TABLES)
+        | set(STOCK001_TABLES)
     )
     uncovered = set(tenant_tables()) - covered
     assert not uncovered, (

@@ -105,6 +105,13 @@ from platform_core.modules.delivery.service import (
     RecordDeliveryCommand,
     RouteMembership,
 )
+from platform_core.modules.dispatch.service import (
+    CancelDispatchCommand,
+    DispatchPage,
+    DispatchService,
+    DispatchView,
+    RecordDispatchCommand,
+)
 from platform_core.modules.event_relay.consumers import (
     ConsumerRunner,
     ConsumersHealth,
@@ -256,11 +263,14 @@ from platform_core.modules.receipt.service import (
     ReceiptView,
     RenderedReceiptView,
 )
+from platform_core.modules.reporting.export import filename as day_book_filename
+from platform_core.modules.reporting.export import to_csv as day_book_csv
 from platform_core.modules.reporting.service import (
     CollectionChain,
     CollectionTrend,
     DailyCollectionSummary,
     DashboardSummary,
+    DayBook,
     OperationalStatusPage,
     PaymentSummary,
     PricingSummary,
@@ -3069,6 +3079,65 @@ async def system_overview(_: OpsRead) -> OverviewView:
     )
 
 
+# --- Dispatch (bulk milk leaving a centre — BR-0030) -------------------------
+dispatch_router = APIRouter(tags=["dispatch"], route_class=IdempotentRoute)
+DispatchRead = Annotated[Principal, Depends(require_permission("operations.dispatch.read"))]
+DispatchRecord = Annotated[Principal, Depends(require_permission("operations.dispatch.record"))]
+DispatchSvc = Annotated[DispatchService, Depends(deps.get_dispatch_service)]
+
+
+@dispatch_router.post("/dispatches", response_model=DispatchView, status_code=201)
+async def record_dispatch(
+    cmd: RecordDispatchCommand, service: DispatchSvc, p: DispatchRecord
+) -> Any:
+    """Record milk that left a centre in bulk.
+
+    There is deliberately no PATCH beside this: a dispatch is immutable
+    (BR-0030), and a wrong one is cancelled and re-entered so that both
+    versions survive.
+    """
+    return await service.record(cmd, actor_id=p.id)
+
+
+@dispatch_router.get("/dispatches", response_model=DispatchPage)
+async def list_dispatches(
+    service: DispatchSvc,
+    _: DispatchRead,
+    center_id: uuid.UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    milk_type: str | None = None,
+    status: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> Any:
+    return await service.list(
+        center_id=center_id,
+        date_from=date_from,
+        date_to=date_to,
+        milk_type=milk_type,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@dispatch_router.post("/dispatches/{dispatch_id}/cancel", response_model=DispatchView)
+async def cancel_dispatch(
+    dispatch_id: uuid.UUID,
+    cmd: CancelDispatchCommand,
+    service: DispatchSvc,
+    p: DispatchRecord,
+) -> Any:
+    """Withdraw a dispatch recorded in error, with a reason (BR-0030)."""
+    return await service.cancel(dispatch_id, cmd, actor_id=p.id)
+
+
+@dispatch_router.get("/dispatches/{dispatch_id}", response_model=DispatchView)
+async def get_dispatch(dispatch_id: uuid.UUID, service: DispatchSvc, _: DispatchRead) -> Any:
+    return await service.view(dispatch_id)
+
+
 # --- Reports (read-only operational summaries — REP-001) --------------------
 report_router = APIRouter(prefix="/reports", tags=["reporting"], route_class=IdempotentRoute)
 ReportRead = Annotated[Principal, Depends(require_permission("reporting.read"))]
@@ -3093,6 +3162,38 @@ async def report_daily_collection(
         center_id=center_id,
         branch_id=branch_id,
         supplier_id=supplier_id,
+    )
+
+
+@report_router.get("/day-book", response_model=DayBook)
+async def report_day_book(
+    service: ReportSvc,
+    _: ReportRead,
+    business_date: date | None = None,
+    center_id: uuid.UUID | None = None,
+) -> DayBook:
+    """The milk day book: what came in, what went out, what that leaves.
+
+    A FLOW ledger over recorded movements, not a measurement of a tank — see
+    `DayBook` for what it cannot see, and `DayBookSales` for why the day's
+    sales sit beside the arithmetic rather than inside it.
+    """
+    return await service.day_book(business_date=business_date, center_id=center_id)
+
+
+@report_router.get("/day-book.csv")
+async def report_day_book_csv(
+    service: ReportSvc,
+    _: ReportRead,
+    business_date: date | None = None,
+    center_id: uuid.UUID | None = None,
+) -> Response:
+    """The same day book, as a file somebody can open."""
+    book = await service.day_book(business_date=business_date, center_id=center_id)
+    return Response(
+        content=day_book_csv(book),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{day_book_filename(book)}"'},
     )
 
 
@@ -4475,6 +4576,7 @@ for sub in (
     tenant_data_router,
     customer_router,
     delivery_router,
+    dispatch_router,
     logistics_router,
     billing_router,
     locale_router,

@@ -1446,6 +1446,24 @@ class MatrixDetailResult {
   final bool editable;
 }
 
+/// One kind of milk, and what it contributed today (WO-55/WO-56).
+///
+/// The handset shows this beside the total because a manager standing at the
+/// centre is the person who can still do something about it: cow and buffalo
+/// are different milk at different money, and one total says nothing about
+/// which shed turned up.
+class MilkTypeShare {
+  const MilkTypeShare({required this.milkType, required this.netWeightKg});
+
+  factory MilkTypeShare.fromJson(Map<String, dynamic> json) => MilkTypeShare(
+    milkType: json['milk_type'] as String,
+    netWeightKg: (json['net_weight_kg'] as num).toDouble(),
+  );
+
+  final String milkType;
+  final double netWeightKg;
+}
+
 class DailySummaryView {
   DailySummaryView({
     required this.transactions,
@@ -1457,6 +1475,7 @@ class DailySummaryView {
     required this.unpricedAccepted,
     required this.avgFat,
     required this.avgSnf,
+    this.byMilkType = const [],
   });
 
   factory DailySummaryView.fromJson(Map<String, dynamic> json) {
@@ -1471,6 +1490,11 @@ class DailySummaryView {
       unpricedAccepted: json['unpriced_accepted'] as int,
       avgFat: (json['weighted_avg_fat'] as num?)?.toDouble(),
       avgSnf: (json['weighted_avg_snf'] as num?)?.toDouble(),
+      // Absent on an older platform, which is not the same as a dairy with
+      // one kind of milk: an empty list renders nothing rather than a zero.
+      byMilkType: ((json['by_milk_type'] as List<dynamic>?) ?? const [])
+          .map((row) => MilkTypeShare.fromJson(row as Map<String, dynamic>))
+          .toList(),
     );
   }
 
@@ -1483,6 +1507,7 @@ class DailySummaryView {
   final int unpricedAccepted;
   final double? avgFat;
   final double? avgSnf;
+  final List<MilkTypeShare> byMilkType;
 }
 
 class SettlementSummary {

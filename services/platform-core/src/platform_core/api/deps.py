@@ -37,6 +37,7 @@ from platform_core.modules.collection_center.service import CollectionCenterServ
 from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.customer.service import CustomerService
 from platform_core.modules.delivery.service import DeliveryService
+from platform_core.modules.dispatch.service import DispatchService
 from platform_core.modules.event_relay.consumers import ConsumerRunner
 from platform_core.modules.event_relay.projections import ProjectionRebuilder
 from platform_core.modules.event_relay.service import OutboxEventBus, RelayService
@@ -210,6 +211,12 @@ def get_customer_service(session: Session, audit: Audit) -> CustomerService:
 
 def get_delivery_service(session: Session, bus: Bus, audit: Audit) -> DeliveryService:
     return DeliveryService(session, bus, audit)
+
+
+def get_dispatch_service(session: Session, bus: Bus, audit: Audit) -> DispatchService:
+    """BR-0030. Bus and audit both: a dispatch is an audited fact that other
+    modules may one day want to hear about, and neither is optional."""
+    return DispatchService(session, bus, audit)
 
 
 def get_logistics_service(session: Session, bus: Bus, audit: Audit) -> LogisticsService:

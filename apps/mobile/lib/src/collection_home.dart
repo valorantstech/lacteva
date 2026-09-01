@@ -476,6 +476,10 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
         litres: _litres(_summary?.totalNetWeightKg),
         window: _todayWindow(),
         farmers: _summary?.suppliersServed,
+        // WO-56: the day split by animal, beside the total. A manager
+        // standing at the centre is the person who can still do something
+        // about a shed that has not turned up.
+        byType: _summary?.byMilkType ?? const [],
         // The board's six bars carry no axis and no hour labels, and the
         // platform exposes no hourly bucket for a centre — so these are the
         // last six collections by quantity, newest last and highlighted.
@@ -1243,6 +1247,7 @@ class _MorningCard extends StatelessWidget {
     required this.window,
     required this.farmers,
     required this.bars,
+    this.byType = const [],
   });
 
   final L10n l;
@@ -1250,6 +1255,11 @@ class _MorningCard extends StatelessWidget {
   final String? window;
   final int? farmers;
   final List<double> bars;
+  final List<MilkTypeShare> byType;
+
+  /// The platform's own figure, with its unit. Formatting a weight is a
+  /// decision the column already made — the app states it, it does not round.
+  static String _kg(double weight) => '$weight kg';
 
   @override
   Widget build(BuildContext context) {
@@ -1318,14 +1328,39 @@ class _MorningCard extends StatelessWidget {
                 top: BorderSide(color: LactevaColors.divider),
               ),
             ),
-            child: Text(
-              farmers == null
-                  ? l.t('manager.noFigures')
-                  : l.t('manager.farmersServed', {'count': farmers}),
-              style: const TextStyle(
-                fontSize: 12.5,
-                color: LactevaColors.muted,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  farmers == null
+                      ? l.t('manager.noFigures')
+                      : l.t('manager.farmersServed', {'count': farmers}),
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: LactevaColors.muted,
+                  ),
+                ),
+                // Only the kinds the platform reported. A dairy taking one
+                // kind gets one name, and no line invents a second.
+                if (byType.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      byType
+                          .where((share) => share.netWeightKg > 0)
+                          .map(
+                            (share) =>
+                                '${l.t('milk.${share.milkType}')} '
+                                '${_kg(share.netWeightKg)}',
+                          )
+                          .join(' · '),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: LactevaColors.muted,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],

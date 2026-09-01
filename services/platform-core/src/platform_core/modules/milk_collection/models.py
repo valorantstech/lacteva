@@ -21,6 +21,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.core.db import Base, IdMixin, utcnow
 
+# The platform's milk vocabulary, which `dispatch` now shares — see
+# `core/milk.py` for why it stopped living here. Re-exported deliberately, so
+# this module's existing callers keep importing it from the module that owns
+# the collection.
+from platform_core.core.milk import MILK_TYPES as MILK_TYPES
+
 SESSION_STATUSES = ("open", "closed")
 
 TRANSACTION_STATES = (
@@ -38,11 +44,6 @@ TRANSACTION_STATES = (
     "CANCELLED",
 )
 TERMINAL_STATES = ("COMPLETED", "CANCELLED")
-#: WO-55. `sheep` joins the list: it was the one common Indian dairy animal
-#: the vocabulary omitted, and a dairy that takes sheep milk had to record it
-#: as `custom` with the name typed by hand — which prices and reports as
-#: "custom" rather than as itself.
-MILK_TYPES = ("cow", "buffalo", "goat", "sheep", "mixed", "custom")
 #: How a measurement was obtained (WO-49; hardware spec §5, §7).
 #:
 #: `scale` and `analyzer` are REAL instruments reporting through a registered

@@ -2985,6 +2985,113 @@ export function deliveryReportCsvUrl(params: {
   return `${PROXY_PREFIX}/v1/deliveries/report.csv?${search.toString()}`;
 }
 
+// --- the milk day book (WO-56 · BR-0030) ------------------------------------
+
+export type DayBookRow = {
+  milk_type: string;
+  collected_kg: number;
+  dispatched_kg: number;
+  /** collected minus dispatched, negative included — see `DayBook`. */
+  remainder_kg: number;
+  collections: number;
+  dispatches: number;
+};
+
+/** The day's deliveries, reported BESIDE the ledger and never subtracted from
+ *  it: a sale has no centre and no milk type on this platform, and is measured
+ *  in litres rather than weighed. The flags are the platform's own. */
+export type DayBookSales = {
+  deliveries: number;
+  quantity: string | number;
+  quantity_unit: string;
+  attributable_to_centre: boolean;
+  attributable_to_milk_type: boolean;
+};
+
+export type DayBook = {
+  business_date: string;
+  center_id: string | null;
+  center_name: string | null;
+  rows: DayBookRow[];
+  total_collected_kg: number;
+  total_dispatched_kg: number;
+  total_remainder_kg: number;
+  sales: DayBookSales;
+};
+
+export const getDayBook = (params: {
+  business_date?: string;
+  center_id?: string;
+}) => {
+  const search = new URLSearchParams();
+  if (params.business_date) search.set("business_date", params.business_date);
+  if (params.center_id) search.set("center_id", params.center_id);
+  return api<DayBook>(`/v1/reports/day-book?${search.toString()}`);
+};
+
+/** The same day book as a file, streamed through the proxy with its
+ *  `Content-Disposition` intact. Nothing is assembled in JavaScript. */
+export function dayBookCsvUrl(params: {
+  business_date?: string;
+  center_id?: string;
+}): string {
+  const search = new URLSearchParams();
+  if (params.business_date) search.set("business_date", params.business_date);
+  if (params.center_id) search.set("center_id", params.center_id);
+  return `${PROXY_PREFIX}/v1/reports/day-book.csv?${search.toString()}`;
+}
+
+export type Dispatch = {
+  id: string;
+  center_id: string;
+  business_date: string;
+  milk_type: string;
+  quantity: string | number;
+  quantity_unit: string;
+  destination: string;
+  reference: string;
+  notes: string;
+  status: string;
+  recorded_by: string | null;
+  created_at: string;
+  cancelled_by: string | null;
+  cancelled_at: string | null;
+  cancel_reason: string;
+};
+
+export const listDispatches = (params: {
+  center_id?: string;
+  date_from?: string;
+  date_to?: string;
+  milk_type?: string;
+  status?: string;
+}) => {
+  const search = new URLSearchParams({ limit: "100", offset: "0" });
+  for (const [key, value] of Object.entries(params))
+    if (value) search.set(key, value);
+  return api<{ items: Dispatch[]; total: number }>(
+    `/v1/dispatches?${search.toString()}`,
+  );
+};
+
+export const recordDispatch = (body: {
+  center_id: string;
+  business_date: string;
+  milk_type: string;
+  quantity: string;
+  destination: string;
+  reference?: string;
+  notes?: string;
+}) => api<Dispatch>("/v1/dispatches", { method: "POST", body: JSON.stringify(body) });
+
+/** A dispatch is immutable (BR-0030): there is no amend, and a wrong one is
+ *  withdrawn with a reason and re-entered. */
+export const cancelDispatch = (dispatchId: string, reason: string) =>
+  api<Dispatch>(`/v1/dispatches/${dispatchId}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+
 export type Invoice = {
   id: string;
   customer_id: string;

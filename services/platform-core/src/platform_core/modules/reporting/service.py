@@ -37,6 +37,7 @@ from platform_core.modules.billing.models import (
 from platform_core.modules.collection_center.models import CollectionCenter
 from platform_core.modules.customer.models import Customer
 from platform_core.modules.delivery.models import BILLABLE_STATUSES, MilkDelivery
+from platform_core.modules.dispatch.models import MilkDispatch
 from platform_core.modules.milk_collection.models import MilkCollectionTransaction as Tx
 from platform_core.modules.milk_collection.models import TransactionEvent
 from platform_core.modules.payment.models import Payment, PaymentLine
@@ -124,6 +125,79 @@ class MilkTypeRow(BaseModel):
     net_weight_kg: float
     weighted_avg_fat: float | None
     amount_by_currency: dict[str, Decimal]
+
+
+# --- the milk day book (BR-0030) ---------------------------------------------
+
+
+class DayBookRow(BaseModel):
+    """One kind of milk, at one centre, on one day.
+
+    A FLOW ledger: what came in, what went out in bulk, and the difference.
+    It is not a measurement of a tank — see `DayBook` for what it cannot see.
+    """
+
+    milk_type: str
+    collected_kg: float
+    dispatched_kg: float
+    #: collected minus dispatched. Shown as it falls out, negative included: a
+    #: centre that dispatched more than it collected has recorded something
+    #: wrong, and clamping it to zero would hide exactly that.
+    remainder_kg: float
+    collections: int
+    dispatches: int
+
+
+class DayBookSales(BaseModel):
+    """What the dairy sold that day — reported BESIDE the ledger, not inside it.
+
+    Two honest reasons it is not a column in `DayBookRow`, and both are
+    properties of the platform's data rather than of this report:
+
+    **A sale has no centre.** `milk_delivery` records a customer, a date and a
+    product; the round visits households, and nothing ties a delivery back to
+    the centre whose milk it was. Attributing sales to a centre would be a
+    guess, and a guess subtracted from a real figure produces a remainder that
+    looks precise and is not.
+
+    **A sale has no milk type.** The sales side prices a *product* — a free
+    text string, `RAW-COW-MILK` by default — and the platform holds no mapping
+    from a product to an animal. Splitting sales by type would mean parsing
+    that string, which is inventing data.
+
+    So the day's deliveries are reported as their own figure, in their own
+    unit (the sales side measures in litres; intake and dispatch are weighed
+    in kilograms), and the ledger's remainder does not subtract them. Making
+    sales attributable is a change to the sales model, not to this report.
+    """
+
+    deliveries: int
+    quantity: Decimal
+    quantity_unit: str
+    attributable_to_centre: bool = False
+    attributable_to_milk_type: bool = False
+
+
+class DayBook(BaseModel):
+    """One centre's day, or the whole organization's.
+
+    What this ledger CANNOT see, stated once here rather than implied by a
+    number: evaporation, spillage, a sample drawn for testing, milk carried
+    over from yesterday, and anything a chilling tank knows about itself.
+    Modelling actual stock needs BMC telemetry the platform does not have and
+    is deliberately parked (D-17). This is arithmetic over recorded
+    movements — which is a thing a dairy can check against its own gate pass,
+    and therefore worth more than a number nobody can verify.
+    """
+
+    business_date: date
+    center_id: uuid.UUID | None
+    center_name: str | None
+    rows: list[DayBookRow]
+    total_collected_kg: float
+    total_dispatched_kg: float
+    total_remainder_kg: float
+    sales: DayBookSales
 
 
 class DailyCollectionSummary(BaseModel):
@@ -497,6 +571,119 @@ class ReportingService:
         from platform_core.core.org_context import tenant_timezone
 
         return business_today(await tenant_timezone(self._session))
+
+    # --- the milk day book -------------------------------------------------
+
+    async def day_book(
+        self, *, business_date: date | None = None, center_id: uuid.UUID | None = None
+    ) -> DayBook:
+        """What happened to the milk at a centre on one day (BR-0030).
+
+        Three queries and no loops: collections by type, dispatches by type,
+        and the day's deliveries. A cancelled dispatch is excluded — it is
+        withdrawn, and a withdrawn movement moved nothing.
+        """
+        tenant_id = require_current_tenant()
+        day = business_date or await self._today()
+        timezone = await self._timezone()
+
+        conditions = self._tx_conditions(
+            tenant_id, day, day, timezone=timezone, center_id=center_id
+        )
+        collected = (
+            await self._session.execute(
+                select(
+                    Tx.milk_type,
+                    func.count(),
+                    func.coalesce(
+                        func.sum(case((ACCEPTED, _exact(Tx.net_weight)), else_=_EXACT_ZERO)),
+                        _EXACT_ZERO,
+                    ),
+                )
+                .where(*conditions, ACCEPTED)
+                .group_by(Tx.milk_type)
+            )
+        ).all()
+
+        dispatch_conditions = [
+            MilkDispatch.tenant_id == tenant_id,
+            MilkDispatch.business_date == day,
+            MilkDispatch.status == "recorded",
+        ]
+        if center_id is not None:
+            dispatch_conditions.append(MilkDispatch.center_id == center_id)
+        dispatched = (
+            await self._session.execute(
+                select(
+                    MilkDispatch.milk_type,
+                    func.count(),
+                    func.coalesce(func.sum(cast(MilkDispatch.quantity, Numeric)), _EXACT_ZERO),
+                )
+                .where(*dispatch_conditions)
+                .group_by(MilkDispatch.milk_type)
+            )
+        ).all()
+
+        sold = (
+            await self._session.execute(
+                select(
+                    func.count(),
+                    func.coalesce(func.sum(cast(MilkDelivery.quantity, Numeric)), _EXACT_ZERO),
+                    func.max(MilkDelivery.quantity_unit),
+                ).where(
+                    MilkDelivery.tenant_id == tenant_id,
+                    MilkDelivery.delivery_date == day,
+                    MilkDelivery.status.in_(BILLABLE_STATUSES),
+                )
+            )
+        ).one()
+
+        centre_name: str | None = None
+        if center_id is not None:
+            centre_name = await self._session.scalar(
+                select(CollectionCenter.name).where(
+                    CollectionCenter.id == center_id, CollectionCenter.tenant_id == tenant_id
+                )
+            )
+
+        in_by_type = {row[0]: (int(row[1]), row[2]) for row in collected}
+        out_by_type = {row[0]: (int(row[1]), row[2]) for row in dispatched}
+        rows: list[DayBookRow] = []
+        for milk_type in sorted(set(in_by_type) | set(out_by_type)):
+            count_in, weight_in = in_by_type.get(milk_type, (0, _EXACT_ZERO))
+            count_out, weight_out = out_by_type.get(milk_type, (0, _EXACT_ZERO))
+            rows.append(
+                DayBookRow(
+                    milk_type=milk_type,
+                    collected_kg=_kg(weight_in),
+                    dispatched_kg=_kg(weight_out),
+                    # Rounded once, from the exact sums, rather than from the
+                    # two rounded figures above it: the column a manager
+                    # checks must be the difference of the columns beside it.
+                    remainder_kg=_kg(Decimal(weight_in or 0) - Decimal(weight_out or 0)),
+                    collections=count_in,
+                    dispatches=count_out,
+                )
+            )
+        # Heaviest intake first, the same order the daily breakdown uses.
+        rows.sort(key=lambda r: r.collected_kg, reverse=True)
+
+        total_in = sum((Decimal(w or 0) for _, w in in_by_type.values()), _EXACT_ZERO)
+        total_out = sum((Decimal(w or 0) for _, w in out_by_type.values()), _EXACT_ZERO)
+        return DayBook(
+            business_date=day,
+            center_id=center_id,
+            center_name=centre_name,
+            rows=rows,
+            total_collected_kg=_kg(total_in),
+            total_dispatched_kg=_kg(total_out),
+            total_remainder_kg=_kg(total_in - total_out),
+            sales=DayBookSales(
+                deliveries=int(sold[0] or 0),
+                quantity=Decimal(sold[1] or 0).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
+                quantity_unit=sold[2] or "L",
+            ),
+        )
 
     # --- daily collection summary -----------------------------------------
 

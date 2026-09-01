@@ -46,6 +46,12 @@ class _Platform extends ApiClient {
     this.unpriced = 0,
     this.centres = 1,
     this.panelDelay = Duration.zero,
+    this.byMilkType = const [
+      {'milk_type': 'cow', 'transactions': 30, 'net_weight_kg': 300.0,
+        'weighted_avg_fat': 4.1, 'amount_by_currency': {'INR': '13000.00'}},
+      {'milk_type': 'buffalo', 'transactions': 10, 'net_weight_kg': 112.5,
+        'weighted_avg_fat': 6.2, 'amount_by_currency': {'INR': '5450.00'}},
+    ],
   });
 
   final bool sessionsOpen;
@@ -54,6 +60,10 @@ class _Platform extends ApiClient {
   final int readinessFailed;
   final int unpriced;
   final int centres;
+
+  /// WO-56. The day split by animal, as the platform reports it — empty for
+  /// the test that asks what an older platform's answer looks like.
+  final List<Map<String, dynamic>> byMilkType;
 
   /// How long the summary takes. Zero for every test but the one that has to
   /// observe the screen BEFORE its figures arrive.
@@ -126,6 +136,8 @@ class _Platform extends ApiClient {
       'unpriced_accepted': unpriced,
       'weighted_avg_fat': 4.3,
       'weighted_avg_snf': 8.4,
+      // WO-56: the same litres, split by animal. The parts sum to the whole.
+      'by_milk_type': byMilkType,
     });
   }
 
@@ -472,11 +484,24 @@ void main() {
       expect(find.text('THIS MORNING'), findsOneWidget);
       expect(find.text('412.5'), findsOneWidget);
       expect(find.text('38 farmers served'), findsOneWidget);
+      // WO-56: the total, split by the animal that brought it.
+      expect(find.text('cow 300.0 kg · buffalo 112.5 kg'), findsOneWidget);
       expect(find.text('NEEDS A LOOK'), findsOneWidget);
       expect(find.text('Nothing needs a look right now'), findsOneWidget);
       // The organization, not a role name — the house rule forbids printing
       // one as firmly as it forbids branching on one.
       expect(find.text('Sitara Dairy'), findsOneWidget);
+    });
+
+    testWidgets('invents no split when the platform reported none', (
+      tester,
+    ) async {
+      // An older platform answers without `by_milk_type`, which is not the
+      // same as a dairy taking one kind of milk. The line is absent, and no
+      // zero stands in for it.
+      await _pump(tester, _manager, platform: _Platform(byMilkType: const []));
+      expect(find.text('412.5'), findsOneWidget);
+      expect(find.textContaining('kg'), findsNothing);
     });
 
     testWidgets('the manager grid opens what a manager can actually open', (

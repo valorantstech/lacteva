@@ -3,10 +3,10 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.18"
+version: "1.20"
 owner: Architecture Board
 created: 2026-08-03
-last-updated: 2026-08-11
+last-updated: 2026-09-01
 related: [STD-0003, CAP-0001]
 baseline: ARCH-BASELINE-V1
 ---
@@ -379,6 +379,30 @@ Settlement consumes the effective rate — the override where one exists — bec
 
 ---
 
+## BR-0030 — Milk leaving a centre in bulk is recorded once, carries no money, and is never edited: a dispatch is cancelled and re-entered.
+
+**Clarification.** A centre takes milk in from farmers and it leaves again — some of it sold to named customers on the round, the rest sent out in bulk to a plant, a chilling centre or a bulk buyer. The second movement had no record at all, so the only honest answer to *"what is left at the centre?"* was a shrug. A **dispatch** is that record: a centre, a business date, a milk type, a quantity, where it went and who sent it.
+
+Three things follow, and each is a guard rather than a description.
+
+First, **a dispatch is not a sale.** It carries no customer, no rate, no amount and no currency; the `dispatch` module imports no customer, billing or pricing model, so it cannot acquire one by accident. Milk sold to a named customer is a `milk_delivery`; milk moved out in bulk is a dispatch. That separation is what keeps the day book's arithmetic from counting the same milk twice, and it is the same reasoning as [BR-0028] — a movement is not a financial document. A dispatch is weighed in **kilograms**, the unit the collection side records, because the ledger subtracts one from the other and a ledger that took kilograms in and gave litres out would be wrong by about 3% while looking entirely reasonable.
+
+Second, **a dispatch is immutable.** There is no edit path. A quantity typed wrong is corrected by cancelling the dispatch, with a reason, and recording the correct one — so the day book of a day already read by a manager cannot change shape without leaving both versions behind. This is the platform's standing treatment of records people act on ([BR-0010], [BR-0012]): corrections are new records, never overwrites. A cancelled dispatch stays in the table and leaves every flow figure it once fed.
+
+Third, **it is authorized and attributed.** Recording or cancelling requires `operations.dispatch.record`, which a collection operator does not hold by default: the operator's authority is over what arrives, and what leaves a centre is a claim someone must be able to be asked about afterwards. Who recorded it, when, and — on a cancellation — why, are stored and audited.
+
+**The day book is a flow ledger, and says so.** COLLECTED minus DISPATCHED = REMAINDER, per centre, per day, per milk type, is arithmetic over the day's *recorded movements* and not a measurement of a tank. It cannot see evaporation, spillage, a sample drawn for testing, or milk carried over from yesterday, and a negative remainder is shown as it falls out rather than clamped to zero — it means something was recorded wrong, and hiding it would hide exactly that. Modelling actual stock in a chilling unit needs BMC telemetry the platform does not have and is deliberately parked (D-17).
+
+**SOLD is reported beside that arithmetic and is not subtracted from it**, which is a deviation from the shape this rule was first drafted in and is stated here rather than left for a reader to discover. Two properties of the platform's data force it, and both are about the sales side rather than this one. A delivery records a customer, a date and a *product* — it has **no centre**, so attributing a sale to the centre whose milk it was would be a guess; and it has **no milk type**, because the sales side prices a free-text product string (`RAW-COW-MILK` by default) and the platform holds no mapping from a product to an animal. It is also measured in litres rather than weighed. A figure that is neither the same scope nor the same unit, subtracted from a real one, produces a remainder that looks precise and is wrong twice over. So the day's deliveries appear as their own line, flagged `attributable_to_centre: false` and `attributable_to_milk_type: false`, and both the page and the CSV say in a sentence that they are not subtracted. Making sales attributable is a change to the sales model — a centre on a delivery, and a product catalogue that knows its animal — not a change to this report.
+
+**Enforcement.** `dispatch/service.py` — `record()` validates the milk type against the platform vocabulary (`core/milk.py`) and a positive quantity, `cancel()` requires a reason and refuses an already-cancelled dispatch by CAS, and no method mutates a recorded dispatch; `api/routes.py` exposes no update endpoint; `require_permission("operations.dispatch.record")` guards both writes; `reporting/service.py: day_book()` excludes cancelled dispatches, derives REMAINDER from the exact sums rather than from the rounded figures beside it, and reports sales outside the subtraction.
+
+**Verification.** `test_dispatch.py` — the operator refusal, the missing-reason refusal, the double-cancel refusal, the absence of any edit path, a cancelled dispatch leaving the day book, the module importing no financial model, the remainder arithmetic including the negative case, and the sales line staying outside it. `test_day_book.py`, twelve tests.
+
+**Status:** Active (since LACTEVA-STOCK-001).
+
+---
+
 ## Adding a Rule
 
 1. Take the next free `BR-NNNN` (this register is the reservation; see STD-0003 §4).
@@ -392,6 +416,7 @@ Settlement consumes the effective rate — the override where one exists — bec
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.20 | 2026-09-01 | Architecture Board | LACTEVA-STOCK-001: BR-0030 (bulk milk out is recorded once, carries no money, and is cancelled rather than edited; the day book is a flow ledger). |
 | 1.19 | 2026-08-31 | Architecture Board | LACTEVA-PRICING-002: BR-0029 (an authorized, attributed rate override; a reprice never silently replaces one). |
 | 1.18 | 2026-08-17 | Architecture Board | DEMO-034: BR-0028 (a run needs a driver and a vehicle to start; completing one creates no financial record). |
 | 1.17 | 2026-08-11 | Architecture Board | PILOT-F03: BR-0027 (a late collection is carried forward; a closed period is never reopened). BR-0011's "adjustments fixed at 0" restated in code as a named rule rather than a placeholder literal. |

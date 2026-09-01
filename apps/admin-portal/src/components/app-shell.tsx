@@ -33,6 +33,7 @@ import {
   Boxes,
   Building2,
   ChevronDown,
+  BookOpen,
   ClipboardList,
   Map,
   Cog,
@@ -109,6 +110,15 @@ const OPERATIONS: Entry[] = [
     labelKey: "nav.transactions",
     permission: "collection.transaction.read",
     icon: ClipboardList,
+  },
+  // WO-56 — what came in, what went out, what that leaves. Gated on the
+  // dispatch READ grant, which the person at the intake bay holds: seeing the
+  // centre's own day is not the same authority as recording what left it.
+  {
+    href: "/day-book",
+    labelKey: "nav.dayBook",
+    permission: "operations.dispatch.read",
+    icon: BookOpen,
   },
 ];
 

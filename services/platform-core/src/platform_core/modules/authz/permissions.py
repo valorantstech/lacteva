@@ -64,6 +64,14 @@ PERMISSIONS: dict[str, str] = {
     "operations.device.read": "Read the device registry and device health",
     "operations.device.manage": "Register, assign, and administer devices; assign operators",
     "operations.readiness.read": "Evaluate and read collection center readiness",
+    # BR-0030. Recording what LEFT a centre in bulk. Deliberately not held by a
+    # collection operator by default: the operator's authority is over what
+    # arrives, and a dispatch is a claim about milk nobody at the centre can
+    # show you afterwards.
+    "operations.dispatch.record": (
+        "Record bulk milk leaving a centre, and cancel one recorded in error"
+    ),
+    "operations.dispatch.read": "Read dispatch records and the milk day book",
     "supplier.read": "Read suppliers, documents, and placements",
     "supplier.manage": "Register, import, and administer suppliers",
     "collection.session.manage": "Open and close collection sessions",
@@ -173,6 +181,8 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "operations.device.read",
         "operations.device.manage",
         "operations.readiness.read",
+        "operations.dispatch.read",
+        "operations.dispatch.record",
         "supplier.read",
         "supplier.manage",
         "collection.session.manage",
@@ -232,6 +242,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "collection.center.read",
         "operations.device.read",
         "operations.readiness.read",
+        "operations.dispatch.read",
         "supplier.read",
         "collection.transaction.read",
         "pricing.ratecard.read",
@@ -315,6 +326,7 @@ _AUDITOR_READS = [
     "collection.center.read",
     "operations.device.read",
     "operations.readiness.read",
+    "operations.dispatch.read",
     "supplier.read",
     "collection.transaction.read",
     "pricing.ratecard.read",
@@ -346,6 +358,9 @@ NAMED_ROLES: dict[str, list[str]] = {
         "collection.center.read",
         "operations.device.read",
         "operations.readiness.read",
+        # BR-0030. Runs the centre's day: what came in, and what went out.
+        "operations.dispatch.read",
+        "operations.dispatch.record",
         "supplier.read",
         "collection.session.manage",
         "collection.transaction.read",
@@ -386,6 +401,9 @@ NAMED_ROLES: dict[str, list[str]] = {
         "collection.center.read",
         "operations.device.read",
         "operations.readiness.read",
+        # BR-0030. The person who answers for what left this centre.
+        "operations.dispatch.read",
+        "operations.dispatch.record",
         "supplier.read",
         "collection.session.manage",
         "collection.transaction.read",
@@ -397,6 +415,8 @@ NAMED_ROLES: dict[str, list[str]] = {
     "COLLECTION_OPERATOR": [
         "collection.center.read",
         "operations.readiness.read",
+        # Sees what left the centre; records none of it (BR-0030).
+        "operations.dispatch.read",
         "supplier.read",
         "collection.session.manage",
         "collection.transaction.record",
