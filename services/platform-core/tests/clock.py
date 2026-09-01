@@ -26,7 +26,7 @@ process believes is not a clock. Derivation needs no such fiction.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 
 def reference_date() -> date:
@@ -35,8 +35,19 @@ def reference_date() -> date:
     Deliberately the real date: fixtures and the product must agree, and the
     product reads the wall clock. Anything else reintroduces the drift this
     module exists to remove.
+
+    It is the platform's clock, which is UTC, and NOT `date.today()`. That
+    distinction is not pedantry: this suite is written at UTC+05:30, where for
+    five and a half hours every evening the local date is already tomorrow.
+    `date.today()` made the whole suite date-dependent again in that window —
+    a statement window a day wider than the deliveries the platform had
+    recorded, so the quantity came up short. A month boundary breaks eight
+    suites once a month; a day boundary breaks them every night.
     """
-    return date.today()
+    # Spelled out rather than imported from `core.db`, so that
+    # `test_the_clock_helper_follows_the_platform` stays a comparison of two
+    # independent expressions instead of a tautology.
+    return datetime.now(UTC).date()
 
 
 #: Import this instead of writing a date literal in a fixture.
