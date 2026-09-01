@@ -54,6 +54,23 @@ def reference_date() -> date:
 TODAY = reference_date()
 
 
+def through_today() -> date:
+    """A window end that contains the ORGANIZATION's current business date.
+
+    The platform windows statements and reports in the organization's own
+    calendar, not in UTC (`core/business_time.py`, DEMO-019) — and the two are
+    a different date for part of every day. A Kenyan dairy at 21:49 UTC is
+    already on tomorrow; an American one at 02:00 UTC is still on yesterday.
+    A window ending at the suite's UTC today therefore excludes an invoice
+    raised seconds ago, which is how `test_month_end_billing` came to read a
+    closing balance of 0.00 against an outstanding of 136.00.
+
+    One day further contains the organization's today at every offset from
+    UTC-12 to UTC+14, and admits nothing else: there are no rows after now.
+    """
+    return reference_date() + timedelta(days=1)
+
+
 def month_start(day: date | None = None) -> date:
     """The first of the month `day` falls in — today's, by default."""
     return (day or reference_date()).replace(day=1)

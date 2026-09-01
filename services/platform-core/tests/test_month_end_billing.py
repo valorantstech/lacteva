@@ -17,7 +17,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from platform_core.modules.billing.month_end import draft_month_end, previous_month
-from tests.clock import TODAY
+from tests.clock import TODAY, through_today
 from tests.test_org_structure import _tenant_admin
 
 AUGUST = (date(2026, 8, 1), date(2026, 8, 31))
@@ -224,8 +224,14 @@ async def test_the_drafted_bill_becomes_the_ordinary_chain(client):
             f"/v1/customers/{ids[0]}/statement",
             # From the milk to the money: the deliveries are last month's and
             # the invoice and payment are today's, so the window has to span
-            # both or the statement shows one without the other.
-            params={"date_from": str(BILLED_MONTH[0]), "date_to": str(TODAY)},
+            # both or the statement shows one without the other. The end comes
+            # from `through_today()` because the platform reads this window in
+            # the ORGANIZATION's calendar, which is already tomorrow for a
+            # Kenyan dairy after 21:00 UTC.
+            params={
+                "date_from": str(BILLED_MONTH[0]),
+                "date_to": str(through_today()),
+            },
             headers=admin,
         )
     ).json()
