@@ -158,7 +158,7 @@ function routeAll(overrides: Record<string, () => Response> = {}) {
     if (url.includes("/reports/settlements"))
       return json({
         by_status: [],
-        finalized_net_total: "0",
+        finalized_by_currency: {},
         total_settlements: 0,
         total_lines: 0,
       });
@@ -170,9 +170,9 @@ function routeAll(overrides: Record<string, () => Response> = {}) {
         processing_count: 0,
         pending_count: 0,
         failed_count: 0,
-        completed_amount: "0",
-        outstanding_amount: "0",
-        failed_amount: "0",
+        completed_by_currency: {},
+        outstanding_by_currency: {},
+        failed_by_currency: {},
         total_by_currency: {},
       });
     if (url.includes("/collection-centers/c1/readiness"))

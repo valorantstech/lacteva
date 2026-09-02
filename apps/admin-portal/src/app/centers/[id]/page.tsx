@@ -36,7 +36,7 @@ import {
   useDefaultRange,
 } from "@/components/date-range";
 import { BarBreakdown, TrendChart } from "@/components/trend-chart";
-import { Money, Quantity } from "@/components/money";
+import { CurrencyTotals, Money, Quantity } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
 import { Metric, Surface } from "@/components/surface";
@@ -512,8 +512,8 @@ export default function CenterDetailPage({
                       Finalized net total
                     </dt>
                     <dd className="mt-0.5">
-                      <Money
-                        amount={settlements.data.finalized_net_total}
+                      <CurrencyTotals
+                        totals={settlements.data.finalized_by_currency}
                         emphasis
                       />
                     </dd>

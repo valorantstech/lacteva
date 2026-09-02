@@ -1028,9 +1028,55 @@ export type ReportPage<T> = {
   offset: number;
 };
 
+/**
+ * The one currency a set of per-currency totals is in, or null (WO-61).
+ *
+ * The platform now answers money aggregates as `{ "KES": "10147.50" }` — a
+ * figure per currency, because a tenant holding two currencies has no single
+ * total and adding them is a category error rather than an arithmetic one.
+ *
+ * This says what to LABEL a single rendered figure with: the currency when
+ * there is exactly one, and `null` when there are none or several. Null is the
+ * honest answer, and `Money` renders an unlabelled number for it rather than
+ * guessing — which is precisely what labelling it from the organization was.
+ */
+export function soleCurrency(
+  totals: Record<string, string | number> | null | undefined,
+): string | null {
+  const keys = Object.keys(totals ?? {});
+  return keys.length === 1 ? keys[0] : null;
+}
+
+/** The single amount in a per-currency map, or null when it is not single. */
+export function soleAmount(
+  totals: Record<string, string | number> | null | undefined,
+): string | null {
+  const entries = Object.entries(totals ?? {});
+  return entries.length === 1 ? String(entries[0][1]) : null;
+}
+
+/** Every figure in a per-currency map, for the rare tenant holding two. */
+export function currencyTotals(
+  totals: Record<string, string | number> | null | undefined,
+): { currency: string; amount: string }[] {
+  return Object.entries(totals ?? {}).map(([currency, amount]) => ({
+    currency,
+    amount: String(amount),
+  }));
+}
+
 export type SettlementReport = {
-  by_status: { status: string; count: number; net_amount: string | number }[];
-  finalized_net_total: string | number;
+  by_status: {
+    status: string;
+    count: number;
+    net_amount: string | number;
+    /** "MIX" when the status holds more than one currency. */
+    currency: string | null;
+  }[];
+  /** WO-61: the finalized net PER CURRENCY. It was a bare total, which left
+   *  this client denominating it from the organization — and an organization's
+   *  currency is not a property of the rows it happens to contain. */
+  finalized_by_currency: Record<string, string | number>;
   total_settlements: number;
   total_lines: number;
 };
@@ -1066,9 +1112,10 @@ export type PaymentReport = {
   processing_count: number;
   pending_count: number;
   failed_count: number;
-  completed_amount: string | number;
-  outstanding_amount: string | number;
-  failed_amount: string | number;
+  /** WO-61: each keyed by the currency of the payments summed. */
+  completed_by_currency: Record<string, string | number>;
+  outstanding_by_currency: Record<string, string | number>;
+  failed_by_currency: Record<string, string | number>;
   total_by_currency: Record<string, string | number>;
 };
 
@@ -1293,6 +1340,8 @@ export type OperationalStatus = {
   settlement_number: string | null;
   settlement_status: string | null;
   settled_amount: string | number | null;
+  /** The settlement's own currency (WO-61). */
+  currency: string | null;
   payment_id: string | null;
   payment_number: string | null;
   payment_status: string | null;
@@ -2833,6 +2882,9 @@ export type DeliveryPageResult = {
   /** Totals for the WHOLE filtered set, computed by the database. */
   total_quantity: string | number;
   total_amount: string | number;
+  /** What `total_amount` is in (WO-61): the deliveries' own currency, "MIX"
+   *  across several, null when there are none. */
+  currency: string | null;
 };
 
 export function listDeliveries(params: {

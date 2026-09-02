@@ -260,11 +260,30 @@ class SettlementStatusRow(BaseModel):
     status: str
     count: int
     net_amount: Decimal
+    #: WO-61. "MIX" when one status holds settlements in more than one
+    #: currency, the convention `PaymentStatusRow` and `CenterSummaryRow`
+    #: already use. Without it this row is a number a client has to
+    #: denominate for itself, and the only thing it has to hand is the
+    #: organization — which is how a total in shillings came to be labelled
+    #: in rupees on the live portal.
+    currency: str | None
 
 
 class SettlementSummary(BaseModel):
+    """Settlement money, always denominated (WO-61 · BR-0031).
+
+    `finalized_net_total` used to be a bare `Decimal` here: the platform
+    summed money and did not say what money it was. It is now a figure PER
+    CURRENCY, because a tenant holding both shillings and rupees has no single
+    finalized value, and inventing one by addition is a category error rather
+    than an arithmetic one.
+    """
+
     by_status: list[SettlementStatusRow]
-    finalized_net_total: Decimal
+    #: Finalized net, keyed by the currency of the settlements summed. Empty
+    #: when nothing is finalized — which is not the same as zero in some
+    #: currency nobody has used.
+    finalized_by_currency: dict[str, Decimal]
     total_settlements: int
     total_lines: int
 
@@ -346,6 +365,9 @@ class OperationalStatus(BaseModel):
     settlement_number: str | None
     settlement_status: str | None
     settled_amount: Decimal | None
+    #: WO-61: the settlement's own currency, so a row's money is never
+    #: denominated from the organization by whoever renders it.
+    currency: str | None
     payment_id: uuid.UUID | None
     payment_number: str | None
     payment_status: str | None
@@ -383,9 +405,14 @@ class PaymentSummary(BaseModel):
     processing_count: int
     pending_count: int
     failed_count: int
-    completed_amount: Decimal
-    outstanding_amount: Decimal  #: draft + pending + processing — money not yet delivered
-    failed_amount: Decimal
+    #: WO-61: each of these keyed by the currency of the payments summed. They
+    #: were bare `Decimal`s, which left the portal denominating them from the
+    #: organization — right until an organization's currency and its payments'
+    #: currency disagreed.
+    completed_by_currency: dict[str, Decimal]
+    #: draft + pending + processing — money not yet delivered.
+    outstanding_by_currency: dict[str, Decimal]
+    failed_by_currency: dict[str, Decimal]
     total_by_currency: dict[str, Decimal]
 
 
@@ -433,6 +460,9 @@ class InvoiceStatusRow(BaseModel):
     status: str
     count: int
     total: Decimal
+    #: WO-61, the row convention: "MIX" when one status holds invoices in more
+    #: than one currency, `None` when none of them says.
+    currency: str | None
 
 
 class SalesSummary(BaseModel):
@@ -1017,16 +1047,45 @@ class ReportingService:
             conditions.append(Settlement.supplier_id == supplier_id)
         if center_id is not None:
             conditions.append(Settlement.center_id == center_id)
+        # WO-61: grouped by currency as well as status, because the currency
+        # of a total is a property of the rows summed and of nothing else.
         rows = await self._session.execute(
             select(
-                Settlement.status, func.count(), func.coalesce(func.sum(Settlement.net_amount), 0)
+                Settlement.status,
+                Settlement.currency,
+                func.count(),
+                func.coalesce(func.sum(Settlement.net_amount), 0),
             )
             .where(*conditions)
-            .group_by(Settlement.status)
+            .group_by(Settlement.status, Settlement.currency)
         )
+        per_status: dict[str, dict] = {}
+        finalized_by_currency: dict[str, Decimal] = {}
+        for status, currency, count, net in rows.all():
+            net = Decimal(str(net))
+            slot = per_status.setdefault(
+                status, {"count": 0, "net": Decimal("0"), "currencies": set()}
+            )
+            slot["count"] += count
+            slot["net"] += net
+            if currency:
+                slot["currencies"].add(currency)
+                if status == "finalized":
+                    finalized_by_currency[currency] = (
+                        finalized_by_currency.get(currency, Decimal("0")) + net
+                    )
         by_status = [
-            SettlementStatusRow(status=status, count=count, net_amount=Decimal(str(net)))
-            for status, count, net in rows.all()
+            SettlementStatusRow(
+                status=status,
+                count=slot["count"],
+                net_amount=slot["net"],
+                currency=(
+                    next(iter(slot["currencies"]))
+                    if len(slot["currencies"]) == 1
+                    else ("MIX" if slot["currencies"] else None)
+                ),
+            )
+            for status, slot in per_status.items()
         ]
         total_lines = (
             await self._session.scalar(
@@ -1037,10 +1096,9 @@ class ReportingService:
             )
             or 0
         )
-        finalized = next((r.net_amount for r in by_status if r.status == "finalized"), Decimal("0"))
         return SettlementSummary(
             by_status=sorted(by_status, key=lambda r: r.status),
-            finalized_net_total=finalized,
+            finalized_by_currency=finalized_by_currency,
             total_settlements=sum(r.count for r in by_status),
             total_lines=total_lines,
         )
@@ -1254,6 +1312,7 @@ class ReportingService:
                     settlement_number=settlement.settlement_number if settlement else None,
                     settlement_status=settlement.status if settlement else None,
                     settled_amount=Decimal(line.gross_amount) if line else None,
+                    currency=settlement.currency if settlement else None,
                     payment_id=payment.id if payment else None,
                     payment_number=payment.payment_number if payment else None,
                     payment_status=payment.status if payment else None,
@@ -1308,6 +1367,10 @@ class ReportingService:
 
         per_status: dict[str, dict] = {}
         by_currency: dict[str, Decimal] = {}
+        #: WO-61: the same rows again, kept per (status, currency) so a total
+        #: for a group of statuses can be reported in the currencies it is
+        #: actually made of rather than in the organization's.
+        per_status_currency: dict[tuple[str, str], Decimal] = {}
         for status, currency, count, amount in rows:
             amount = Decimal(str(amount))
             slot = per_status.setdefault(
@@ -1318,6 +1381,8 @@ class ReportingService:
             if currency:
                 slot["currencies"].add(currency)
                 by_currency[currency] = by_currency.get(currency, Decimal("0")) + amount
+                key = (status, currency)
+                per_status_currency[key] = per_status_currency.get(key, Decimal("0")) + amount
 
         by_status = [
             PaymentStatusRow(
@@ -1336,8 +1401,14 @@ class ReportingService:
         def count_of(*statuses: str) -> int:
             return sum(r.count for r in by_status if r.status in statuses)
 
-        def amount_of(*statuses: str) -> Decimal:
-            return sum((r.amount for r in by_status if r.status in statuses), Decimal("0"))
+        def amount_of(*statuses: str) -> dict[str, Decimal]:
+            """The money in those statuses, per currency. Never one number:
+            a tenant with payments in two currencies has two answers."""
+            out: dict[str, Decimal] = {}
+            for (status, currency), amount in per_status_currency.items():
+                if status in statuses:
+                    out[currency] = out.get(currency, Decimal("0")) + amount
+            return out
 
         return PaymentSummary(
             by_status=by_status,
@@ -1346,9 +1417,9 @@ class ReportingService:
             processing_count=count_of("processing"),
             pending_count=count_of("pending", "draft"),
             failed_count=count_of("failed"),
-            completed_amount=amount_of("completed"),
-            outstanding_amount=amount_of("draft", "pending", "processing"),
-            failed_amount=amount_of("failed"),
+            completed_by_currency=amount_of("completed"),
+            outstanding_by_currency=amount_of("draft", "pending", "processing"),
+            failed_by_currency=amount_of("failed"),
             total_by_currency=by_currency,
         )
 
@@ -1523,11 +1594,12 @@ class ReportingService:
             await self._session.execute(
                 select(
                     CustomerInvoice.status,
+                    CustomerInvoice.currency,
                     func.count(),
                     func.coalesce(func.sum(cast(CustomerInvoice.total, Numeric)), _EXACT_ZERO),
                 )
                 .where(CustomerInvoice.tenant_id == tenant_id)
-                .group_by(CustomerInvoice.status)
+                .group_by(CustomerInvoice.status, CustomerInvoice.currency)
                 .order_by(CustomerInvoice.status)
             )
         ).all()
@@ -1623,9 +1695,27 @@ class ReportingService:
             )
         ) or 0
 
+        per_invoice_status: dict[str, dict] = {}
+        for status, currency, count, total in status_rows:
+            slot = per_invoice_status.setdefault(
+                status, {"count": 0, "total": Decimal("0"), "currencies": set()}
+            )
+            slot["count"] += count
+            slot["total"] += Decimal(str(total))
+            if currency:
+                slot["currencies"].add(currency)
         by_status = [
-            InvoiceStatusRow(status=status, count=count, total=_money(total))
-            for status, count, total in status_rows
+            InvoiceStatusRow(
+                status=status,
+                count=slot["count"],
+                total=_money(slot["total"]),
+                currency=(
+                    next(iter(slot["currencies"]))
+                    if len(slot["currencies"]) == 1
+                    else ("MIX" if slot["currencies"] else None)
+                ),
+            )
+            for status, slot in sorted(per_invoice_status.items())
         ]
         return SalesSummary(
             date_from=date_from,

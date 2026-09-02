@@ -20,7 +20,7 @@ import {
 import { PageContainer } from "@/components/page-container";
 import { PageHeader } from "@/components/page-header";
 import { Input } from "@/components/ui/input";
-import { Money, formatAmount } from "@/components/money";
+import { CurrencyTotals, Money, formatAmount } from "@/components/money";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -473,13 +473,17 @@ export default function ReportsPage() {
                   <div key={row.status} className="flex justify-between">
                     <Badge variant="outline">{row.status}</Badge>
                     <span>
-                      {row.count} · <Money amount={row.net_amount} />
+                      {row.count} ·{" "}
+                      <Money amount={row.net_amount} currency={row.currency} />
                     </span>
                   </div>
                 ))}
                 <div className="flex justify-between border-t border-border pt-2 font-medium">
                   <span>Finalized total</span>
-                  <Money amount={settlements.finalized_net_total} emphasis />
+                  <CurrencyTotals
+                    totals={settlements.finalized_by_currency}
+                    emphasis
+                  />
                 </div>
                 <p className="text-muted-foreground">
                   {settlements.total_settlements} settlement(s),{" "}

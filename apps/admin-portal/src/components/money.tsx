@@ -95,6 +95,53 @@ export function Money({
 }
 
 /**
+ * A money aggregate, in the currencies it is actually made of (WO-61).
+ *
+ * The platform answers every money aggregate as a figure PER CURRENCY —
+ * `{ "KES": "10147.50" }` — because a tenant holding two currencies has no
+ * single total, and adding shillings to rupees is a category error rather
+ * than an arithmetic one. This renders what it is given and nothing else:
+ * one labelled figure for one currency, a line each for more than one, and a
+ * dash for none.
+ *
+ * It exists because the alternative was a bare number labelled from the
+ * ORGANIZATION, which is how the settlements page came to show 10,147.50 INR
+ * over four rows of KES on the live host.
+ */
+export function CurrencyTotals({
+  totals,
+  className,
+  emphasis = false,
+}: {
+  totals: Record<string, string | number> | null | undefined;
+  className?: string;
+  emphasis?: boolean;
+}) {
+  const entries = Object.entries(totals ?? {});
+  if (entries.length === 0) return <span className={className}>—</span>;
+  if (entries.length === 1) {
+    const [currency, amount] = entries[0];
+    return (
+      <Money
+        amount={amount}
+        currency={currency}
+        className={className}
+        emphasis={emphasis}
+      />
+    );
+  }
+  // A dairy that genuinely holds two currencies gets two figures. One number
+  // here would have to be a sum across currencies, which is not a number.
+  return (
+    <span className={cn("flex flex-col items-start", className)}>
+      {entries.map(([currency, amount]) => (
+        <Money key={currency} amount={amount} currency={currency} emphasis={emphasis} />
+      ))}
+    </span>
+  );
+}
+
+/**
  * A quantity with its unit. Same rule: the value arrives formatted by the
  * domain (`40.000`), and the trailing zeros are significant — they say the
  * scale reads to three decimal places.

@@ -522,6 +522,8 @@ function RateCardForm({
   const [description, setDescription] = useState(card?.description ?? "");
   // DEMO-013: a new rate card starts in the ORGANIZATION's currency.
   const { currency: orgCurrency } = useLocale();
+  // WO-61: not an aggregate — the default currency for a NEW rate card, which
+  // is the organization's money by definition. The card's own wins on edit.
   const [currency, setCurrency] = useState(card?.currency ?? orgCurrency ?? "");
   const [effectiveFrom, setEffectiveFrom] = useState(
     card?.effective_from ?? "",

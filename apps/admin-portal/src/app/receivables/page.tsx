@@ -20,7 +20,6 @@ import { Money } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
 import { Metric, Surface } from "@/components/surface";
-import { useLocale } from "@/lib/i18n";
 
 /**
  * Who owes money (DEMO-010).
@@ -50,7 +49,6 @@ const day = (iso: string | null) => (iso ? String(iso).slice(0, 10) : null);
 
 export default function ReceivablesPage_() {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency } = useLocale();
   const [page, setPage] = useState<ReceivablesPage | null>(null);
   const [q, setQ] = useState("");
   const [owingOnly, setOwingOnly] = useState(true);
@@ -205,7 +203,7 @@ export default function ReceivablesPage_() {
               page ? (
                 <Money
                   amount={page.total_outstanding}
-                  currency={page.currency ?? orgCurrency}
+                  currency={page.currency}
                 />
               ) : (
                 "—"

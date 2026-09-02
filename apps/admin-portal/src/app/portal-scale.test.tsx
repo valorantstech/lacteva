@@ -177,7 +177,7 @@ describe("reports page pagination", () => {
       if (path.endsWith("/v1/reports/settlements"))
         return json({
           by_status: [],
-          finalized_net_total: "0.00",
+          finalized_by_currency: {},
           total_settlements: 0,
           total_lines: 0,
         });

@@ -30,12 +30,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
-import { Money } from "@/components/money";
+import { CurrencyTotals, Money } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
 import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
-import { useLocale } from "@/lib/i18n";
 
 /**
  * Settlements (DEMO-006).
@@ -68,7 +67,6 @@ const describe = (e: unknown) => describeError(e);
 
 export default function SettlementsPage() {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency } = useLocale();
   const [page, setPage] = useState<SettlementPageResult | null>(null);
   const [report, setReport] = useState<SettlementReport | null>(null);
   const [centers, setCenters] = useState<Center[]>([]);
@@ -290,10 +288,10 @@ export default function SettlementsPage() {
             label="Finalized value"
             value={
               report ? (
-                <Money
-                  amount={report.finalized_net_total}
-                  currency={orgCurrency}
-                />
+                // WO-61: the currency comes from the settlements summed, not
+                // from the organization. This tile once read 10,147.50 INR
+                // over four rows of KES, on live, in front of the owner.
+                <CurrencyTotals totals={report.finalized_by_currency} />
               ) : (
                 "—"
               )

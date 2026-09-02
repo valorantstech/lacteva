@@ -59,8 +59,9 @@ async def test_payment_summary_counts_and_sums_each_status(client):
     assert body["total_payments"] == 1
     assert body["completed_count"] == 1
     assert body["failed_count"] == 0
-    assert Decimal(body["completed_amount"]) == expected
-    assert Decimal(body["outstanding_amount"]) == Decimal("0")
+    # WO-61: totals are keyed by the currency of the payments summed.
+    assert body["completed_by_currency"] == {"KES": str(expected)}
+    assert body["outstanding_by_currency"] == {}
     assert body["total_by_currency"] == {"KES": str(expected)}
 
     rows = {r["status"]: r for r in body["by_status"]}
@@ -80,9 +81,9 @@ async def test_payment_summary_separates_failed_from_outstanding(client):
     body = await _get(client, headers, "/v1/reports/payments")
     assert body["failed_count"] == 1
     assert body["completed_count"] == 0
-    assert Decimal(body["failed_amount"]) == amount
-    assert Decimal(body["completed_amount"]) == Decimal("0")
-    assert Decimal(body["outstanding_amount"]) == Decimal("0")
+    assert body["failed_by_currency"] == {"KES": str(amount)}
+    assert body["completed_by_currency"] == {}
+    assert body["outstanding_by_currency"] == {}
 
 
 async def test_payment_summary_counts_money_still_in_flight(client):
@@ -95,8 +96,8 @@ async def test_payment_summary_counts_money_still_in_flight(client):
 
     body = await _get(client, headers, "/v1/reports/payments")
     assert body["pending_count"] == 1
-    assert Decimal(body["outstanding_amount"]) == amount
-    assert Decimal(body["completed_amount"]) == Decimal("0")
+    assert body["outstanding_by_currency"] == {"KES": str(amount)}
+    assert body["completed_by_currency"] == {}
 
 
 async def test_payment_summary_is_empty_and_exact_with_no_payments(client):
@@ -104,7 +105,7 @@ async def test_payment_summary_is_empty_and_exact_with_no_payments(client):
     body = await _get(client, headers, "/v1/reports/payments")
     assert body["total_payments"] == 0
     assert body["by_status"] == []
-    assert Decimal(body["completed_amount"]) == Decimal("0")
+    assert body["completed_by_currency"] == {}
     assert body["total_by_currency"] == {}
 
 
@@ -295,7 +296,7 @@ async def test_every_dashboard_aggregate_is_scoped_to_the_signed_in_tenant(clien
 
     assert mine["payments"]["total_payments"] == 1
     assert theirs["payments"]["total_payments"] == 0
-    assert Decimal(theirs["payments"]["completed_amount"]) == Decimal("0")
+    assert theirs["payments"]["completed_by_currency"] == {}
     assert theirs["collection"]["transactions"] == 0
     assert theirs["active_suppliers"] == 0
     assert theirs["rate_bands"] == []

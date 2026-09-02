@@ -817,6 +817,9 @@ function MoneyTrail({
     );
 
   const links = chain.data;
+  // WO-61: the ROW's own currency first, then the settlement it sits in.
+  // The organization is the last resort and reaches only an unpriced
+  // collection, which carries no amount for it to mislabel.
   const currency = tx.currency ?? links.settlement?.currency ?? orgCurrency;
   const collected = tx.gross_amount == null ? null : String(tx.gross_amount);
   const contributed = links.settlement

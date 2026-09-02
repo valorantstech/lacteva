@@ -49,7 +49,7 @@ import {
   useDefaultRange,
 } from "@/components/date-range";
 import { BarBreakdown, TrendChart } from "@/components/trend-chart";
-import { Money, Quantity } from "@/components/money";
+import { CurrencyTotals, Money, Quantity } from "@/components/money";
 import { SectionHeading } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
 import { Metric, Surface } from "@/components/surface";
@@ -253,9 +253,9 @@ export default function Home() {
         fill={vesselFill}
         farmers={collection ? collection.suppliers_served : null}
         payable={primary ? String(primary[1]) : collection ? "0.00" : null}
-        payableCurrency={primary ? primary[0] : orgCurrency}
+        payableCurrency={primary ? primary[0] : null}
         received={sales ? sales.received : null}
-        receivedCurrency={sales?.currency ?? orgCurrency}
+        receivedCurrency={sales?.currency ?? null}
       />
 
       {/*
@@ -349,6 +349,9 @@ export default function Home() {
               : undefined
           } /><span aria-hidden className="text-muted-foreground"><Droplets className="size-4" /></span></Surface>
         <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.collectionValue")} value={
+            // WO-61: the platform's own currency for the figure it summed. The
+            // organization's is used only for the EMPTY case below, where there
+            // are no rows to contradict it and "0.00" still needs a name.
             primary ? (
               <Money amount={primary[1]} currency={primary[0]} />
             ) : collection ? (
@@ -404,7 +407,7 @@ export default function Home() {
             sales ? (
               <Money
                 amount={sales.sales_value_in_period}
-                currency={sales.currency ?? orgCurrency}
+                currency={sales.currency}
               />
             ) : (
               "—"
@@ -414,7 +417,7 @@ export default function Home() {
             sales ? (
               <Money
                 amount={sales.receivable}
-                currency={sales.currency ?? orgCurrency}
+                currency={sales.currency}
               />
             ) : (
               "—"
@@ -431,7 +434,7 @@ export default function Home() {
                 worth{" "}
                 <Money
                   amount={sales.unbilled_amount}
-                  currency={sales.currency ?? orgCurrency}
+                  currency={sales.currency}
                 />
               </>
             ) : undefined
@@ -613,8 +616,9 @@ export default function Home() {
                         Finalized net total
                       </dt>
                       <dd className="mt-0.5">
-                        <Money
-                          amount={report.settlements?.finalized_net_total}
+                        {/* WO-61: the settlements' own currency. */}
+                        <CurrencyTotals
+                          totals={report.settlements?.finalized_by_currency}
                           emphasis
                         />
                       </dd>
@@ -655,13 +659,16 @@ export default function Home() {
                     <div>
                       <dt className="text-muted-foreground">Paid</dt>
                       <dd className="mt-0.5">
-                        <Money amount={payments.completed_amount} emphasis />
+                        <CurrencyTotals
+                          totals={payments.completed_by_currency}
+                          emphasis
+                        />
                       </dd>
                     </div>
                     <div>
                       <dt className="text-muted-foreground">Outstanding</dt>
                       <dd className="mt-0.5">
-                        <Money amount={payments.outstanding_amount} />
+                        <CurrencyTotals totals={payments.outstanding_by_currency} />
                       </dd>
                     </div>
                   </dl>
@@ -731,7 +738,7 @@ export default function Home() {
               <p className="text-lg font-semibold">
                 <Money
                   amount={owing.data.total_outstanding}
-                  currency={owing.data.currency ?? orgCurrency}
+                  currency={owing.data.currency}
                 />
               </p>
               <p className="text-xs text-muted-foreground">

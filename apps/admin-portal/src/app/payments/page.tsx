@@ -38,12 +38,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
-import { Money } from "@/components/money";
+import { CurrencyTotals, Money } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
 import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
-import { useLocale } from "@/lib/i18n";
 
 /**
  * Payments (DEMO-006).
@@ -81,7 +80,6 @@ const stamp = (iso: string | null | undefined) =>
 
 export default function PaymentsPage() {
   // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency } = useLocale();
   const [page, setPage] = useState<PaymentPageResult | null>(null);
   const [report, setReport] = useState<PaymentReport | null>(null);
   const [balances, setBalances] = useState<BalancePageResult | null>(null);
@@ -240,10 +238,7 @@ export default function PaymentsPage() {
             caption={
               report ? (
                 <>
-                  <Money
-                    amount={report.completed_amount}
-                    currency={orgCurrency}
-                  />{" "}
+                  <CurrencyTotals totals={report.completed_by_currency} />{" "}
                   paid
                 </>
               ) : undefined
@@ -282,7 +277,7 @@ export default function PaymentsPage() {
             caption={
               report ? (
                 <>
-                  <Money amount={report.failed_amount} currency={orgCurrency} />{" "}
+                  <CurrencyTotals totals={report.failed_by_currency} />{" "}
                   to retry
                 </>
               ) : undefined
@@ -300,10 +295,7 @@ export default function PaymentsPage() {
             label="Outstanding"
             value={
               report ? (
-                <Money
-                  amount={report.outstanding_amount}
-                  currency={orgCurrency}
-                />
+                <CurrencyTotals totals={report.outstanding_by_currency} />
               ) : (
                 "—"
               )

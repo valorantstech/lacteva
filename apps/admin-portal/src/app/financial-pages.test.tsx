@@ -89,7 +89,7 @@ const SETTLEMENT_REPORT = {
     { status: "calculated", count: 3, net_amount: "9000.00" },
     { status: "finalized", count: 7, net_amount: "42000.00" },
   ],
-  finalized_net_total: "42000.00",
+  finalized_by_currency: { KES: "42000.00" },
   total_settlements: 12,
   total_lines: 354,
 };
@@ -133,9 +133,9 @@ const PAYMENT_REPORT = {
   processing_count: 1,
   pending_count: 1,
   failed_count: 1,
-  completed_amount: "21600.00",
-  outstanding_amount: "18400.00",
-  failed_amount: "3600.00",
+  completed_by_currency: { KES: "21600.00" },
+  outstanding_by_currency: { KES: "18400.00" },
+  failed_by_currency: { KES: "3600.00" },
   total_by_currency: { KES: "43600.00" },
 };
 

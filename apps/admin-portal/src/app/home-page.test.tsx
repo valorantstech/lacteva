@@ -82,7 +82,7 @@ const DASHBOARD = {
   },
   settlements: {
     by_status: [{ status: "finalized", count: 5, net_amount: "12345.00" }],
-    finalized_net_total: "12345.00",
+    finalized_by_currency: { KES: "12345.00" },
     total_settlements: 5,
     total_lines: 40,
   },
@@ -95,9 +95,9 @@ const DASHBOARD = {
     processing_count: 0,
     pending_count: 0,
     failed_count: 1,
-    completed_amount: "9000.00",
-    outstanding_amount: "0.00",
-    failed_amount: "1500.00",
+    completed_by_currency: { KES: "9000.00" },
+    outstanding_by_currency: {},
+    failed_by_currency: { KES: "1500.00" },
     total_by_currency: { KES: "10500.00" },
   },
   rate_bands: [

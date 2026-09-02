@@ -170,6 +170,11 @@ class DeliveryPage(BaseModel):
     #: the database, because a report that adds up one page is not a report.
     total_quantity: Decimal
     total_amount: Decimal
+    #: WO-61: what `total_amount` is denominated in — the currency of the
+    #: deliveries summed, "MIX" when the filter spans more than one, and null
+    #: when there are none. A total that does not say this leaves the client
+    #: to name it from the organization, which is not a property of these rows.
+    currency: str | None
 
 
 class DeliveryDayRow(BaseModel):
@@ -785,6 +790,8 @@ class DeliveryService:
                 select(
                     func.coalesce(func.sum(cast(MilkDelivery.quantity, Numeric)), 0),
                     func.coalesce(func.sum(cast(MilkDelivery.amount, Numeric)), 0),
+                    func.min(MilkDelivery.currency),
+                    func.count(func.distinct(MilkDelivery.currency)),
                 ).where(*conditions)
             )
         ).one()
@@ -804,6 +811,7 @@ class DeliveryService:
             offset=offset,
             total_quantity=litres(sums[0]),
             total_amount=money(Decimal(sums[1] or 0)),
+            currency=("MIX" if (sums[3] or 0) > 1 else sums[2]),
         )
 
     async def report(
@@ -850,6 +858,13 @@ class DeliveryService:
                     # platform says litres; the day one says kilograms, the
                     # report says kilograms too.
                     func.min(MilkDelivery.quantity_unit),
+                    # WO-61: and the CURRENCY these deliveries are in, for
+                    # exactly the same reason as the unit above. This figure
+                    # used to be denominated from the tenant, which is a
+                    # property of the organization and not of the rows summed
+                    # — and the two agree right up until they do not.
+                    func.min(MilkDelivery.currency),
+                    func.count(func.distinct(MilkDelivery.currency)),
                 ).where(*billable, MilkDelivery.status.in_(BILLABLE_STATUSES))
             )
         ).one()
@@ -1011,7 +1026,15 @@ class DeliveryService:
         return DeliveryReport(
             date_from=date_from,
             date_to=date_to,
-            currency=await tenant_currency(self._session),
+            # The currency of the deliveries summed. "MIX" when the window
+            # holds more than one, and the organization's own only when there
+            # is nothing to contradict it — an empty report still has to say
+            # what an empty total would be in.
+            currency=(
+                "MIX"
+                if (headline[6] or 0) > 1
+                else (headline[5] or await tenant_currency(self._session))
+            ),
             quantity_unit=headline[4] or DEFAULT_QUANTITY_UNIT,
             deliveries=headline[0] or 0,
             customers_served=headline[1] or 0,

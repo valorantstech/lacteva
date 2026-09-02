@@ -301,7 +301,8 @@ async def test_settlement_summary(client):
     body = (await client.get("/v1/reports/settlements", headers=headers)).json()
     assert body["total_settlements"] == 1
     assert body["total_lines"] == 2
-    assert Decimal(str(body["finalized_net_total"])) == Decimal("1725.00")
+    # WO-61: the finalized total says what money it is, per currency.
+    assert body["finalized_by_currency"] == {"KES": "1725.00"}
     finalized = next(r for r in body["by_status"] if r["status"] == "finalized")
     assert finalized["count"] == 1
 

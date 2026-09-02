@@ -86,8 +86,10 @@ export default function DeliveriesPage() {
 }
 
 function DeliveriesView() {
-  // DEMO-013: the ORGANIZATION's currency, not a Kenyan default.
-  const { currency: orgCurrency, t } = useLocale();
+  // WO-61: this page no longer denominates anything from the organization —
+  // the delivery report says what currency it summed, and the rows carry
+  // their own. Only the translator is needed here now.
+  const { t } = useLocale();
 
   const searchParams = useSearchParams();
   const [page, setPage] = useState<DeliveryPageResult | null>(null);
@@ -856,7 +858,7 @@ function DeliveriesView() {
               </span>
               <Quantity value={page.total_quantity} unit="L" />
               <span className="text-muted-foreground"> · </span>
-              <Money amount={page.total_amount} currency={orgCurrency} />
+              <Money amount={page.total_amount} currency={page.currency} />
             </p>
           ) : null}
         </CardContent>

@@ -34,7 +34,7 @@ import {
   useDefaultRange,
 } from "@/components/date-range";
 import { TrendChart } from "@/components/trend-chart";
-import { Money, Quantity } from "@/components/money";
+import { CurrencyTotals, Money, Quantity } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
 import { Metric, Surface } from "@/components/surface";
@@ -429,8 +429,8 @@ export default function SupplierDetailPage({
                       Finalized net total
                     </dt>
                     <dd className="mt-0.5">
-                      <Money
-                        amount={settlements.data.finalized_net_total}
+                      <CurrencyTotals
+                        totals={settlements.data.finalized_by_currency}
                         emphasis
                       />
                     </dd>
@@ -488,13 +488,16 @@ export default function SupplierDetailPage({
                   <div>
                     <dt className="text-muted-foreground">Paid</dt>
                     <dd className="mt-0.5">
-                      <Money amount={payments.data.completed_amount} emphasis />
+                      <CurrencyTotals
+                        totals={payments.data.completed_by_currency}
+                        emphasis
+                      />
                     </dd>
                   </div>
                   <div>
                     <dt className="text-muted-foreground">Outstanding</dt>
                     <dd className="mt-0.5">
-                      <Money amount={payments.data.outstanding_amount} />
+                      <CurrencyTotals totals={payments.data.outstanding_by_currency} />
                     </dd>
                   </div>
                 </dl>
