@@ -30,6 +30,39 @@ async function fillIn(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
 }
 
+describe("signing in returns the visitor to what they asked for (WO-59)", () => {
+  const at = (search: string) =>
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, search, assign },
+    });
+
+  it("lands on the page the guard interrupted", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    at("?next=%2Fsettlements%3Fstatus%3Dfinalized");
+    const user = userEvent.setup();
+    render(<LoginPage />);
+    await fillIn(user);
+    await user.click(screen.getByRole("button", { name: /sign in/i }));
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith("/settlements?status=finalized"),
+    );
+  });
+
+  it("lands on the dashboard when the next= is one somebody tampered with", async () => {
+    // The other half of the open-redirect refusal: the FORM does the
+    // navigating, so it re-checks rather than trusting the query string.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    at("?next=https%3A%2F%2Fevil.example%2Fsteal");
+    const user = userEvent.setup();
+    render(<LoginPage />);
+    await fillIn(user);
+    await user.click(screen.getByRole("button", { name: /sign in/i }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
+    expect(assign).not.toHaveBeenCalledWith(expect.stringContaining("evil.example"));
+  });
+});
+
 describe("login page", () => {
   it("signs in and moves on", async () => {
     const fetchSpy = vi

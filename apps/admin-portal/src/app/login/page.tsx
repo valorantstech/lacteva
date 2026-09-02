@@ -15,6 +15,7 @@ import { ApiError, login,
   describeError,
 } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { safeNext } from "@/proxy";
 import { LactevaLockup } from "@/components/lockup";
 
 /**
@@ -52,6 +53,14 @@ export default function LoginPage() {
       ? new URLSearchParams(window.location.search).get("notice")
       : null;
   const notice = noticeKey && NOTICES[noticeKey] ? t(NOTICES[noticeKey]) : null;
+  // WO-59: where the guard was sending them before it asked them to sign in.
+  // Run through the SAME `safeNext` the guard used, because this half of the
+  // round trip is the half that actually navigates — a check on the way out
+  // that is not repeated on the way in is not a check.
+  const next =
+    typeof window !== "undefined"
+      ? safeNext(new URLSearchParams(window.location.search).get("next"))
+      : null;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [tenantId, setTenantId] = useState("");
@@ -76,7 +85,7 @@ export default function LoginPage() {
       //
       // Sign-out does not need this because it can call `setSession` on the
       // shell directly; a separate page cannot.
-      window.location.assign("/");
+      window.location.assign(next ?? "/");
     } catch (err) {
       if (err instanceof ApiError && err.title === "ambiguous_tenant") {
         setNeedsTenant(true);
