@@ -13,6 +13,7 @@ it bills, not the day somebody pressed the button.
 
 from datetime import date, timedelta
 
+from platform_core.modules.billing.month_end import previous_month
 from tests.test_daily_operations import TODAY, _billed_customer, _customer, _deliver
 from tests.test_org_structure import _tenant_admin
 
@@ -118,7 +119,12 @@ async def test_a_bill_for_an_OPEN_month_is_unaffected_by_another_closed_one(clie
     customer = await _customer(
         client, admin, name="Two Months Household", quantity="2.000", price="45.0000"
     )
-    old_from, old_to = date(2026, 6, 1), date(2026, 6, 30)
+    # WO-62: LAST month, derived — not a literal June. The frozen-date proof
+    # ran this suite on 15 June 2026 and the literal WAS the current month, so
+    # closing "the other month" correctly refused today's bill and the test
+    # read as a product defect. The rule this test is about needs a month that
+    # is definitely not this one, and only arithmetic can promise that.
+    old_from, old_to = previous_month(TODAY)
     for offset in range(3):
         await _deliver(client, admin, customer["id"], TODAY - timedelta(days=offset))
 

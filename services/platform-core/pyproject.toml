@@ -40,6 +40,13 @@ dev = [
     # It was already present transitively; declared here because a test that
     # depends on somebody else's dependency breaks for reasons nobody can see.
     "pyyaml>=6.0",
+    # WO-62: the frozen-date proof. Shifting the platform's own `utcnow()`
+    # does not move PyJWT, which validates `exp`/`iat` against the real system
+    # clock — so WO-58's attempt 401'd every token it minted. `time-machine`
+    # patches the clock at the INTERPRETER level (CPython's `datetime` and
+    # `time` C hooks), so the platform and every library it uses read the same
+    # frozen day and agree about it.
+    "time-machine>=2.15",
 ]
 
 [build-system]

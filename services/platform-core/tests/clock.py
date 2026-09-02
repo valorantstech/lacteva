@@ -22,6 +22,16 @@ every request 401s. Widening the JWT leeway hides that one symptom and the
 failures simply move — 5 at a two-week shift, 85 at nine months, each one
 something comparing a shifted time to a real one. A clock that half the
 process believes is not a clock. Derivation needs no such fiction.
+
+WHAT CHANGED (WO-62). The conclusion above was too narrow: shifting a HELPER
+cannot move PyJWT, but a library that patches the clock at the INTERPRETER
+level can, because CPython's `datetime` and `time` hooks are what both read.
+`LACTEVA_TEST_FREEZE_DATE` now runs this suite on a chosen day through
+`time-machine` (see `tests/conftest.py` and `infra/ci/date-proof.sh`), and
+derivation and the frozen proof are complementary rather than alternatives:
+derivation keeps every fixture honest, the proof finds the fixtures that were
+not. It found one on its first run — a literal June that WAS the current month
+on 15 June, which the guard's exemption list had allowed through.
 """
 
 from __future__ import annotations

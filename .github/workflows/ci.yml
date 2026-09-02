@@ -41,6 +41,15 @@ jobs:
         run: uv run pytest
       - name: Migrations apply cleanly
         run: LACTEVA_DATABASE_URL=sqlite+aiosqlite:///./ci-migrate.db uv run alembic upgrade head
+      # WO-62: the date guarantee, executed rather than argued for. The
+      # date-sensitive suites are run again on five awkward days — month
+      # start, month end, both sides of New Year, a leap day — with the
+      # interpreter's own clock moved, so PyJWT and the platform agree about
+      # what day it is. WO-58's tail is why this is a gate and not a comment:
+      # three further date defects surfaced inside a single batch, each
+      # visible only in a particular hour or month.
+      - name: Date proof (the suite on five awkward days)
+        run: PYTHON="uv run python" ../../infra/ci/date-proof.sh
 
   # PostgreSQL verification lives in its own workflow (OPS-001):
   # .github/workflows/postgres.yml — a version matrix, a service container,

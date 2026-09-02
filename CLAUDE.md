@@ -66,14 +66,20 @@ LACTEVA_TEST_POSTGRES_URL=postgresql+asyncpg://…  # makes them run
 LACTEVA_REQUIRE_POSTGRES=1                        # makes a missing URL a collection ERROR
 ```
 
-The four proofs — all run with no Docker and no root, because real PostgreSQL
-comes from the `pgserver` wheel:
+The suite runs on whatever day it is, and `LACTEVA_TEST_FREEZE_DATE=2026-12-31`
+runs it on a day of your choosing — `time-machine` moves the INTERPRETER's
+clock, so the platform and PyJWT agree about it (WO-62). Freezing
+`utcnow()` alone does not work and the attempt is recorded in `tests/clock.py`.
+
+The five proofs — all run with no Docker and no root; real PostgreSQL comes
+from the `pgserver` wheel, and the frozen clock from `time-machine`:
 
 ```bash
 ./infra/ci/verify-postgres.sh    # migrations from empty, RLS, backup, restore
 ./infra/ci/dr-proof.sh           # recovery into a separate instance
 ./infra/ci/pitr-proof.sh         # point-in-time recovery, 4 targets
 ./infra/ci/postgres-proof.sh     # the nine-step CI proof (KEEP_DATABASES=1 to inspect)
+./infra/ci/date-proof.sh         # the date-sensitive suites on five awkward days
 ```
 
 Clients and docs:

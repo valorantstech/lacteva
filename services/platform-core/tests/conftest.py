@@ -16,6 +16,7 @@ os.environ["LACTEVA_JWT_SECRET"] = "test-secret-0123456789abcdef0123456789abcdef
 os.environ["LACTEVA_RATE_LIMIT_BACKEND"] = "memory"
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -23,6 +24,58 @@ from httpx import ASGITransport, AsyncClient
 from platform_core.core import db
 from platform_core.infrastructure import events
 from platform_core.main import create_app
+
+# --- WO-62: the frozen-date proof -------------------------------------------
+#
+# `LACTEVA_TEST_FREEZE_DATE=YYYY-MM-DD[THH:MM]` runs the suite as if it were
+# that day.
+#
+# WO-58 tried this by shifting the platform's own `utcnow()` and it does not
+# work: `utcnow()` is the platform's clock but not the PROCESS's, so PyJWT
+# went on validating `exp`/`iat` against the real system clock and every token
+# minted under the shifted clock read as expired — 5 failures at a two-week
+# shift, 85 at nine months, each one something comparing a shifted time to a
+# real one.
+#
+# `time-machine` patches CPython's own `datetime` and `time` hooks, so
+# `datetime.now()`, `time.time()` and therefore PyJWT all read the SAME frozen
+# clock and agree about it. That is the difference between shifting a helper
+# and moving the interpreter's day.
+#
+# STARTED AT IMPORT, not in a fixture. pytest imports every test module during
+# COLLECTION, which happens before any session fixture runs — and several
+# modules compute a window at import time (`THIS_MONTH = month_start()`). A
+# fixture would have frozen the clock after those constants were already built
+# from the real date, so the fixtures would settle June collections into a
+# September period and the failures would look like product defects. This file
+# already pins `os.environ` at import for the same class of reason.
+#
+# `tick=False` deliberately: the clock STANDS for the whole run. Letting it
+# tick meant a suite started late on 31 December crossed into 1 January while
+# it executed, and tests that created data in one month asserted about it in
+# the next. That is a stopwatch, not a date defect: a suite is entitled to
+# assume the day did not change underneath it, and code that genuinely
+# straddles midnight is the business calendar's problem (DEMO-019). So the
+# proof asks the honest question — does this suite pass ON that day? — and
+# asks it of 31 December and 1 January separately.
+_FREEZE = os.environ.get("LACTEVA_TEST_FREEZE_DATE")
+_TRAVELLER = None
+if _FREEZE:
+    import time_machine
+
+    _day, _, _clock = _FREEZE.partition("T")
+    _hour, _minute = (_clock or "09:00").split(":")[:2]
+    _year, _month, _date = (int(part) for part in _day.split("-"))
+    _TRAVELLER = time_machine.travel(
+        datetime(_year, _month, _date, int(_hour), int(_minute), tzinfo=UTC), tick=False
+    )
+    _TRAVELLER.start()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Give the interpreter its own clock back before pytest reports."""
+    if _TRAVELLER is not None:
+        _TRAVELLER.stop()
 
 
 @pytest.fixture(autouse=True)
