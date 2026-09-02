@@ -288,7 +288,7 @@ def test_the_example_environment_contains_no_real_secret():
     ],
 )
 def test_nginx_configures_what_the_runbook_promises(directive):
-    conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
+    conf = _vhost_conf()
     base = (REPO / "infra/nginx/nginx.conf").read_text()
     inc = (REPO / "infra/nginx/conf.d/security-headers.inc").read_text()
     assert directive in conf + base + inc, f"nginx is missing {directive}"
@@ -310,6 +310,27 @@ def test_nginx_configures_what_the_runbook_promises(directive):
 
 _HEADERS_INCLUDE = "include /etc/nginx/conf.d/security-headers.inc;"
 _API_HEADERS_INCLUDE = "include /etc/nginx/conf.d/security-headers-api.inc;"
+
+
+def _vhost_conf() -> str:
+    """Every line nginx loads for the public vhosts, as one string.
+
+    WO-63 split the locations out of `lacteva.conf` into includes, because the
+    same locations now serve more than one hostname and two copies of a proxy
+    configuration are two things that drift apart. Reading only `lacteva.conf`
+    after that split would have left four of the checks below iterating over
+    an EMPTY list of locations and passing vacuously — a green test asserting
+    nothing, which is worse than the defect it was written for.
+    """
+    conf_dir = REPO / "infra/nginx/conf.d"
+    return "\n".join(
+        path.read_text()
+        for path in sorted(conf_dir.iterdir())
+        # The header snippets are what the locations INCLUDE; folding them in
+        # would let a location satisfy the "re-states the headers" check by
+        # standing next to the file that defines them.
+        if path.suffix in (".conf", ".inc") and not path.name.startswith("security-headers")
+    )
 
 
 def _location_blocks(conf: str) -> list[tuple[str, str]]:
@@ -338,7 +359,7 @@ def _location_blocks(conf: str) -> list[tuple[str, str]]:
 
 
 def test_every_location_that_adds_a_header_restates_the_security_headers():
-    conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
+    conf = _vhost_conf()
     # The API variant includes the shared snippet, so either satisfies this.
     offenders = [
         name
@@ -354,7 +375,7 @@ def test_every_location_that_adds_a_header_restates_the_security_headers():
 
 
 def test_the_server_level_still_sets_them_for_everything_else():
-    conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
+    conf = _vhost_conf()
     outside = conf
     for _, body in _location_blocks(conf):
         outside = outside.replace(body, "")
@@ -368,7 +389,7 @@ def test_the_credential_endpoints_are_rate_limited_more_tightly_than_the_rest():
     # The application's limiter is the precise one, but it needs Redis and it
     # needs a worker. This is the floor beneath it, and it is only a floor if
     # it is actually tighter than the budget every other route gets.
-    conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
+    conf = _vhost_conf()
     base = (REPO / "infra/nginx/nginx.conf").read_text()
 
     blocks = dict(_location_blocks(conf))
@@ -392,7 +413,7 @@ def test_the_credential_endpoints_are_rate_limited_more_tightly_than_the_rest():
 def test_the_longest_prefix_wins_so_the_auth_budget_is_the_one_that_applies():
     # nginx matches the LONGEST prefix, so /v1/auth/ must be a strictly longer
     # prefix of the same shape as /v1/ — not a regex, which would lose to it.
-    conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
+    conf = _vhost_conf()
     names = [name for name, _ in _location_blocks(conf)]
     assert "location /v1/auth/" in names and "location /v1/" in names
     assert len("/v1/auth/") > len("/v1/")
@@ -457,7 +478,7 @@ def test_api_and_portal_receive_the_same_set():
 
 
 def test_every_api_location_carries_the_api_header_set():
-    conf = (REPO / "infra/nginx/conf.d/lacteva.conf").read_text()
+    conf = _vhost_conf()
     api_include = "include /etc/nginx/conf.d/security-headers-api.inc;"
     missing = [
         name
@@ -915,6 +936,14 @@ def test_every_lacteva_variable_in_the_example_is_a_real_setting():
     deploy_only = {
         "LACTEVA_PUBLIC_URL",  # deploy.sh: where verification and the smoke test point
     }
+    # WO-63: read by the MARKETING SITE, which is a different application in
+    # the same stack — so they are not `Settings` fields and never will be.
+    # Same discipline as the two sets above: each must be read by that app's
+    # own source, asserted below, or this becomes a place to hide a typo.
+    site_only = {
+        "LACTEVA_SITE_URL",  # canonical origin for metadata, sitemap, robots
+        "LACTEVA_LEADS_WEBHOOK_URL",  # where the demo-request form posts
+    }
     # Same discipline as `deploy_only` below: a variable claimed to be
     # compose-level must actually appear in the compose file, or this set
     # becomes a place to hide a typo.
@@ -928,6 +957,18 @@ def test_every_lacteva_variable_in_the_example_is_a_real_setting():
             for path in (REPO / "infra").rglob("*")
             if path.is_file() and path.suffix in {".sh", ".py"}
         ), f"{name} is declared deploy-only but nothing under infra/ reads it"
+
+    site = REPO / "apps/marketing-site/src"
+    for name in site_only:
+        assert (
+            any(
+                name in path.read_text()
+                for path in site.rglob("*")
+                if path.is_file() and path.suffix in {".ts", ".tsx"}
+            )
+            or name in (REPO / "apps/marketing-site/next.config.ts").read_text()
+        ), f"{name} is declared site-only but the marketing site never reads it"
+        assert name in compose_text, f"{name} is not passed to the site by compose"
     unknown = sorted(
         key
         for key in _example_env()
@@ -935,6 +976,7 @@ def test_every_lacteva_variable_in_the_example_is_a_real_setting():
         and key not in known
         and key not in compose_only
         and key not in deploy_only
+        and key not in site_only
     )
     assert unknown == [], f"example sets LACTEVA_ variables that are not settings: {unknown}"
 

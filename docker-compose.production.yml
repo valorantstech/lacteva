@@ -362,6 +362,48 @@ services:
         limits:
           memory: ${PORTAL_MEMORY_LIMIT:-512m}
 
+  # --- marketing site -----------------------------------------------------
+  # WO-63 / MARKETING-001, unblocked at last: the public website has been
+  # built, tested and reviewed since the first audit and had nowhere to be
+  # served from, because the platform had no domain of its own. It does now.
+  #
+  # It depends on NOTHING. No database, no API, no session — the site is
+  # public pages and one webhook-posting form handler, so it must not be able
+  # to hold up the platform's start, and a platform outage must not take the
+  # website down with it. That independence is also why it is a separate
+  # upstream in nginx rather than another path on the portal.
+  #
+  # The image lives in the admin-portal ECR repository under a `marketing-`
+  # tag prefix, exactly as the release tree lives in the platform-core one
+  # under `release-`: the CI role can push to those two repositories and no
+  # others, and a third repository would need an IAM change made outside this
+  # repository — a worse trade than a tag prefix for an artifact that is built
+  # from the same commit anyway.
+  marketing:
+    image: ${MARKETING_IMAGE:-lacteva/admin-portal}:marketing-${LACTEVA_IMAGE_TAG:?set LACTEVA_IMAGE_TAG — deploys are pinned, never :latest}
+    environment:
+      NODE_ENV: production
+      # MKT-004F: the canonical origin for metadata, sitemap and robots. The
+      # build warns when it is unset and falls back to a placeholder domain,
+      # which must never become production's canonical URL.
+      LACTEVA_SITE_URL: ${LACTEVA_SITE_URL:-https://lacteva.com}
+      # Read at REQUEST time by the demo-request handler; nothing secret is
+      # ever built into the image.
+      LACTEVA_LEADS_WEBHOOK_URL: ${LACTEVA_LEADS_WEBHOOK_URL:-}
+    expose: ["3100"]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    logging: *logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${MARKETING_MEMORY_LIMIT:-384m}
+
   # --- edge ---------------------------------------------------------------
   nginx:
     image: nginx:1.27-alpine
@@ -369,6 +411,10 @@ services:
       api:
         condition: service_healthy
       portal:
+        condition: service_healthy
+      # WO-63: nginx now fronts the marketing site too, and an upstream that
+      # is not up yet is a 502 on the front page of the company website.
+      marketing:
         condition: service_healthy
     ports:
       - "${HTTP_PORT:-80}:80"

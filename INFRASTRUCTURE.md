@@ -36,15 +36,25 @@ One machine. That is not a first draft — the platform is a modular monolith wi
                     ┌──────────────▼──────────────┐
                     │  host: ufw + fail2ban       │  second layer
                     │                             │
-                    │  nginx ── api ── postgres   │  compose network,
-                    │            │      redis     │  only nginx publishes
-                    │            └─ prometheus    │
-                    │               grafana loki  │
+                    │  nginx ─┬─ marketing      │  compose network,
+                    │         ├─ portal         │  only nginx publishes
+                    │         └─ api ── postgres│
+                    │                   redis   │
+                    │            prometheus     │
+                    │            grafana loki   │
                     └──────────────┬──────────────┘
                     ┌──────────────▼──────────────┐
                     │  data volume (separate)     │  /var/lib/lacteva, /backup
                     └─────────────────────────────┘
 ```
+
+**Four names, one address** (WO-63 / D-20). nginx decides by `Host`:
+`lacteva.com` and `www` reach the marketing site; `app.lacteva.com` the admin
+portal; `api.lacteva.com` the API, which is what the mobile app is built
+against; and `dev.phoenixsoft.in` keeps serving portal-and-API for the
+handsets that were built before those names existed. Anything else is refused
+with 421 by an explicit default server rather than being handed whichever site
+nginx parsed first. One Let's Encrypt certificate covers all five.
 
 The **static IP and the data volume outlive the machine**. That is what makes host replacement routine rather than a recovery: build a new server, attach both, deploy. DNS never changes, so there is no propagation wait and no certificate reissue.
 

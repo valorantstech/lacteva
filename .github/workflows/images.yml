@@ -27,6 +27,7 @@ on:
     paths:
       - "services/platform-core/**"
       - "apps/admin-portal/**"
+      - "apps/marketing-site/**"
       - ".github/workflows/images.yml"
       # WO-44: the release tree is an image now, so a commit that changes only
       # nginx config or a deploy script has to publish a tag as well. Before
@@ -112,6 +113,18 @@ jobs:
             repository: lacteva/platform-core
             tag_prefix: "release-"
             build-args: ""
+          # WO-63 / MARKETING-001. The public website, published into the
+          # admin-portal repository under a `marketing-` prefix for the same
+          # reason the release tree uses `release-` in platform-core: the CI
+          # role can push to exactly two repositories, and a third would need
+          # an IAM change made outside this repo.
+          - name: marketing-site
+            context: apps/marketing-site
+            dockerfile: apps/marketing-site/Dockerfile
+            repository: lacteva/admin-portal
+            tag_prefix: "marketing-"
+            build-args: |
+              NODE_HEAP_MB=4096
           - name: admin-portal
             context: apps/admin-portal
             dockerfile: apps/admin-portal/Dockerfile
@@ -192,14 +205,14 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   deployable:
-    name: All three images published
+    name: All four images published
     needs: [tag, build]
     runs-on: ubuntu-latest
     steps:
-      # A deploy needs ALL THREE at the same tag — the API, the portal, and
-      # since WO-44 the release tree that carries the configuration they run
-      # beside. Saying so in one place stops someone deploying a tag where
-      # only some of them exist.
+      # A deploy needs ALL FOUR at the same tag — the API, the portal, the
+      # marketing site (WO-63), and since WO-44 the release tree that carries
+      # the configuration they run beside. Saying so in one place stops
+      # someone deploying a tag where only some of them exist.
       - run: |
           {
             echo "## Deployable"

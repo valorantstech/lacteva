@@ -75,7 +75,8 @@ certbot step could not have worked. The `certbot_webroot` volume is now shared
 between nginx and certbot, and issuance is:
 
 ```bash
-# DNS must already point at this host.
+# DNS must already point at this host — every name, or the challenge for the
+# one that does not resolve fails and takes the whole issuance with it.
 docker run --rm \
   -v /etc/lacteva/letsencrypt:/etc/letsencrypt \
   -v lacteva-production_certbot_webroot:/var/www/certbot \
@@ -94,8 +95,25 @@ does both and is driven by the `lacteva-tls-renew.timer` unit twice a day —
 certbot only acts inside the last 30 days, so it usually does nothing.
 `--dry-run` exercises the whole path without issuing.
 
-Set `LACTEVA_CORS_ORIGINS` to the same origin, or the portal's browser calls
-are refused.
+**The deployed certificate carries five names** (WO-63): `lacteva.com`,
+`www.lacteva.com`, `app.lacteva.com`, `api.lacteva.com` and
+`dev.phoenixsoft.in`. Adding or removing one is `--expand` with the full `-d`
+list and the same `--cert-name lacteva`, so the renewal timer keeps working on
+the same lineage:
+
+```bash
+... certonly --webroot -w /var/www/certbot --cert-name lacteva --expand \
+  -d lacteva.com -d www.lacteva.com -d app.lacteva.com \
+  -d api.lacteva.com -d dev.phoenixsoft.in
+```
+
+`dev.phoenixsoft.in` stays on that list until the demo handsets built against
+it are replaced: the API address is a compile-time constant in the app, so
+dropping the name is a store release rather than a configuration change.
+
+`LACTEVA_CORS_ORIGINS` is NOT how the portal reaches the API — it calls
+through its own same-origin proxy — so this list names only clients that make
+genuine cross-origin browser calls, and stays short by default.
 
 Put `fullchain.pem` and `privkey.pem` in `TLS_CERT_DIR`. To terminate TLS at a load balancer instead, point traffic at port 80 and remove the redirect block from `infra/nginx/conf.d/lacteva.conf`.
 

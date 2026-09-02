@@ -59,7 +59,19 @@ signing.
 ```bash
 flutter build apk --debug                 # works with no keystore
 flutter build apk --release               # REFUSES without android/key.properties
+
+# WO-63: the address a distributed build must carry.
+flutter build apk --release \
+  --dart-define=LACTEVA_API_URL=https://api.lacteva.com
 ```
+
+**`https://api.lacteva.com` is the API address from now on.** It has its own
+name rather than sharing `app.lacteva.com` because this constant is compiled
+in: changing it means a store release and breaks every install until each one
+updates, so it is the one address that has to be repointable with a DNS record
+instead. `https://dev.phoenixsoft.in` keeps answering the same API for every
+handset already in the field — the old name is not retired, and the
+certificate still covers it.
 
 The refusal is deliberate (PORTAL-001 / F-05): a debug-signed APK is not
 distributable and cannot be upgraded. The guard fires from the Gradle task
