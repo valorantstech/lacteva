@@ -172,9 +172,25 @@ log "deploying ${TAG} (currently running: ${PREVIOUS:-none})"
 # --- 1. pull ---------------------------------------------------------------
 # Before anything is changed. A tag that does not exist should fail here, with
 # the old version still serving, rather than after the schema has moved.
+#
+# EVERY image the stack runs, not just the API's (WO-63). It pulled one, and
+# `compose up` was left to fetch the rest — so a missing PORTAL or MARKETING
+# image failed at step 5, AFTER the release tree had been staged and `current`
+# repointed. The rollback then restored the old image tag beside the NEW
+# nginx configuration, which referenced an upstream container that did not
+# exist, and nginx refused to start: a five-minute outage caused by the deploy
+# script's own recovery path. Pulling all three here makes that failure land
+# where every other missing-image failure lands — before anything has moved.
 step "1/6  pulling ${TAG}"
-IMAGE="$(grep -E '^LACTEVA_IMAGE=' "${ENV_FILE}" | cut -d= -f2- || echo lacteva/platform-core)"
+env_value() { grep -E "^$1=" "${ENV_FILE}" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"'"'; }
+IMAGE="$(env_value LACTEVA_IMAGE || true)"; IMAGE="${IMAGE:-lacteva/platform-core}"
+PORTAL_IMAGE="$(env_value PORTAL_IMAGE || true)"; PORTAL_IMAGE="${PORTAL_IMAGE:-lacteva/admin-portal}"
+MARKETING_IMAGE="$(env_value MARKETING_IMAGE || true)"; MARKETING_IMAGE="${MARKETING_IMAGE:-${PORTAL_IMAGE}}"
 docker pull "${IMAGE}:${TAG}" || die "image ${IMAGE}:${TAG} could not be pulled — nothing has changed"
+docker pull "${PORTAL_IMAGE}:${TAG}" \
+  || die "image ${PORTAL_IMAGE}:${TAG} could not be pulled — nothing has changed"
+docker pull "${MARKETING_IMAGE}:marketing-${TAG}" \
+  || die "image ${MARKETING_IMAGE}:marketing-${TAG} could not be pulled — nothing has changed"
 
 # --- 2. pre-flight backup --------------------------------------------------
 # The last cheap moment. If the migration in step 4 turns out to be a contract

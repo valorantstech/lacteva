@@ -203,3 +203,54 @@ def test_no_location_that_serves_the_site_forgets_the_security_headers():
         and "include /etc/nginx/conf.d/security-headers.inc;" not in body
     ]
     assert not offenders, offenders
+
+
+# --- the outage this batch caused, and the guard that would have caught it ---
+#
+# The first deploy of the marketing site failed at `compose up`, AFTER the
+# release tree had been staged and `current` repointed: `MARKETING_IMAGE` was
+# unset on the host, so its default — a BARE repository name — was resolved
+# against Docker Hub, where it does not exist. The automatic rollback then put
+# the previous image tag back beside the NEW nginx configuration, which
+# referenced an upstream container that no longer existed, and nginx refused
+# to start. Five minutes of total outage, caused by the recovery path.
+#
+# Two things were wrong and both are pinned here: the deploy pulled only ONE
+# of the three images it runs, and the example environment documented only one
+# of the variables that name them.
+
+
+def test_the_deploy_pulls_every_image_before_it_stages_anything():
+    """A missing image must fail where a missing tag fails: before the release
+    tree is staged, while the old version is still serving."""
+    script = (REPO / "infra/deploy/deploy.sh").read_text()
+    pull_step = script.split("--- 2. pre-flight backup")[0]
+    for variable in ("LACTEVA_IMAGE", "PORTAL_IMAGE", "MARKETING_IMAGE"):
+        assert variable in pull_step, (
+            f"{variable} is not read in step 1 — a deploy that cannot fetch its "
+            "image discovers this after the stack has been changed"
+        )
+    # One pull per image the stack runs, and the marketing one carries its
+    # prefix: pulling `:${TAG}` from that repository would fetch the PORTAL.
+    assert pull_step.count("docker pull") >= 3, "not every image is pulled up front"
+    assert "marketing-${TAG}" in pull_step
+
+
+def test_every_image_the_stack_runs_is_named_by_a_documented_variable():
+    """A bare default resolves against Docker Hub. Every deployment that uses a
+    private registry must therefore SET each of these, so each must be in the
+    example — the file an operator fills in."""
+    import re
+
+    compose = (REPO / "docker-compose.production.yml").read_text()
+    example = (REPO / ".env.production.example").read_text()
+    # Image variables of our own: `${X_IMAGE:-lacteva/...}`.
+    variables = set(re.findall(r"\$\{([A-Z_]*IMAGE)(?::-lacteva/[^}]*)?\}", compose))
+    ours = {v for v in variables if v.endswith("IMAGE") and not v.endswith("IMAGE_TAG")}
+    assert ours, "no image variables found — the pattern this test guards has changed"
+    for variable in sorted(ours):
+        assert f"\n{variable}=" in example, (
+            f"{variable} names an image the stack runs and the example environment "
+            "does not set it, so a deployment on a private registry will look for "
+            "it on Docker Hub"
+        )
