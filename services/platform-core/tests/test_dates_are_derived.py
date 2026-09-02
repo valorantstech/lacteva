@@ -26,6 +26,24 @@ PERIOD_LITERAL = re.compile(
 #: A module-level TODAY pinned to a literal date.
 FROZEN_TODAY = re.compile(r"^TODAY\s*=\s*date\(\d{4},", re.MULTILINE)
 
+#: WO-63: a module-level WINDOW pinned to literal dates, under ANY name.
+#:
+#: The two patterns above look for a specific key and a specific variable, and
+#: `test_dairy_reconciliation.py` was neither: `MONTH = (date(2026, 8, 1),
+#: date(2026, 8, 28))`. It passed this guard for a month and then failed for
+#: the same reason everything else in WO-58 failed — its window stopped
+#: containing "now". A frozen window is a frozen window whatever it is called.
+#:
+#: THE DISTINCTION THAT DECIDES AN EXEMPTION, because this pattern catches
+#: both and only one of them is a defect: a literal is fine when the test both
+#: CREATES and QUERIES the data on that date — it is then self-consistent, and
+#: the calendar moving underneath it changes nothing. It is a defect when the
+#: window has to contain SOMETHING THAT HAPPENS NOW: a settlement collecting
+#: today's milk, a statement covering an invoice raised in the test. Every
+#: entry below was checked by running that file under a frozen 2027-01-01 and
+#: 2028-02-29 — the exemptions are evidence, not opinion.
+FROZEN_WINDOW = re.compile(r"^[A-Z_]+\s*=\s*\(?\s*date\(\d{4},", re.MULTILINE)
+
 #: Files whose literal dates are the SUBJECT rather than an assumption — a
 #: period-boundary test has to name boundaries, and a timezone test has to
 #: name an instant. Each is listed with why, so the list cannot quietly grow.
@@ -36,6 +54,17 @@ DELIBERATE = {
     # Sets the instant it then queries, so it is self-consistent.
     "test_reporting.py": "pins a UTC instant and the local day it belongs to",
     "test_closed_period_protection.py": "a closed period must be named to be closed",
+    # WO-63. Each names a DAY it then creates data on and queries — proven
+    # self-consistent by running them frozen on 2027-01-01 and 2028-02-29.
+    "test_route_report.py": "a named delivery day, created and reported on",
+    "test_route_report_postgres.py": "same fixture as its SQLite twin",
+    "test_scheduler_routes.py": "a named generation day, created and asserted",
+    "test_scheduler_routes_postgres.py": "same fixture as its SQLite twin",
+    "test_scheduler_concurrency_postgres.py": "one generation day, run twice at once",
+    "test_route_generation_postgres.py": "a named generation day",
+    "test_standing_orders.py": "the weekday IS the subject — a Monday must be a Monday",
+    "test_contact_repair_postgres.py": "pins the instants it then repairs",
+    "test_month_end_billing.py": "AUGUST is what previous_month() is asserted ABOUT",
     # This file's own patterns.
     "test_dates_are_derived.py": "the guard itself",
     # A window deliberately OUTSIDE any data (2020) and an inverted range —
@@ -75,6 +104,18 @@ def test_no_fixture_hard_codes_a_settlement_period(path, text):
         f"{path.name} hard-codes a period date. Derive it: "
         "`month_start().isoformat()` / `month_end().isoformat()` from tests.clock — "
         "a literal period stops containing today's collections when the month changes."
+    )
+
+
+@pytest.mark.parametrize("path,text", list(_sources()), ids=lambda v: getattr(v, "name", ""))
+def test_no_fixture_freezes_a_window_under_another_name(path, text):
+    """`MONTH = (date(2026, 8, 1), date(2026, 8, 28))` is the same defect as a
+    frozen TODAY, wearing a name the earlier guard did not know to look for."""
+    offenders = FROZEN_WINDOW.findall(text)
+    assert not offenders, (
+        f"{path.name} pins a window to literal dates. Derive it from tests.clock "
+        "— `previous_month(TODAY)`, `month_start()`, `days_ago(n)` — so it still "
+        "contains the data the test creates when the calendar moves."
     )
 
 

@@ -18,14 +18,20 @@ fixed number of statements no matter how many customers there are" is the
 property that actually matters and the one that breaks silently.
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
 from sqlalchemy import event
 
+from platform_core.modules.billing.month_end import previous_month
+from tests.clock import TODAY, through_today
 from tests.test_org_structure import _tenant_admin
 
-MONTH = (date(2026, 8, 1), date(2026, 8, 28))
+# WO-63: derived, not a literal August. The deliveries have to land in a month
+# that is OVER (so it can be billed in full) and the bill and the payment are
+# raised now — a fixed window stops containing "now" the moment the calendar
+# moves past it, and this one had.
+MONTH = (previous_month(TODAY)[0], previous_month(TODAY)[0] + timedelta(days=27))
 RATE = Decimal("60.0000")
 LITRES = Decimal("2.000")
 
@@ -151,7 +157,12 @@ async def test_the_month_reconciles_exactly(client):
     statement = (
         await client.get(
             f"/v1/customers/{customer['id']}/statement",
-            params={"date_from": str(MONTH[0]), "date_to": str(MONTH[1] + timedelta(days=5))},
+            # The deliveries are last month's; the invoice and the payment are
+            # today's, so the window has to span both. `through_today()` ends
+            # it a day out because the platform reads this window in the
+            # ORGANIZATION's calendar, which is already tomorrow for a Kenyan
+            # dairy after 21:00 UTC (the B8 finding, in a second file).
+            params={"date_from": str(MONTH[0]), "date_to": str(through_today())},
             headers=admin,
         )
     ).json()
