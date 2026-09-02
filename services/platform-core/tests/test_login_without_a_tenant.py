@@ -276,3 +276,50 @@ async def test_a_stranded_session_row_does_not_lock_everyone_out(client):
         "/v1/auth/token", json={"email": email, "password": "correct-horse-battery"}
     )
     assert second.status_code == 200, "a second login collided with the first"
+
+
+async def test_a_platform_session_acting_in_a_tenant_is_told_which_one(client):
+    """WO-60: `/v1/auth/me` answers for the tenant being acted in.
+
+    A platform administrator's token carries no tenant, so this endpoint used
+    to answer `organization: null` however deep into a dairy they were
+    working — which is why the portal's chip could only show a truncated UUID,
+    and why an acting administrator got no currency and no timezone either.
+    The header the platform has always accepted for this is now sent here too.
+    """
+    org, _admin = await _tenant_admin(client)
+    from tests.conftest import register_and_login
+
+    _user, platform = await register_and_login(client, "root-acting@example.com", admin=True)
+
+    blind = (await client.get("/v1/auth/me", headers=platform)).json()
+    assert blind["organization"] is None, "a platform session names no organization by itself"
+
+    acting = (
+        await client.get("/v1/auth/me", headers={**platform, "X-Tenant-ID": org["id"]})
+    ).json()
+    assert acting["tenant_id"] == org["id"]
+    assert acting["organization"]["name"] == org["name"]
+    # And the locale context comes with it — the same block a member gets.
+    assert acting["organization"]["currency_code"]
+    assert acting["organization"]["timezone"]
+
+
+async def test_a_tenant_token_ignores_a_header_naming_another_tenant(client):
+    """The header is a platform-session convenience, never an override.
+
+    A member's token is authoritative about which dairy they are in, so a
+    header naming a different one changes nothing — which is what makes it
+    safe for the portal to send this header on every session probe.
+    """
+    org, admin = await _tenant_admin(client)
+    await _member(client, admin, org["id"], "steady@kilima.example", "steady-password-1")
+    token = (await _login(client, "steady@kilima.example", "steady-password-1")).json()[
+        "access_token"
+    ]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    elsewhere = "00000000-0000-4000-8000-000000000000"
+    me = (await client.get("/v1/auth/me", headers={**headers, "X-Tenant-ID": elsewhere})).json()
+    assert me["tenant_id"] == org["id"]
+    assert me["organization"]["id"] == org["id"]

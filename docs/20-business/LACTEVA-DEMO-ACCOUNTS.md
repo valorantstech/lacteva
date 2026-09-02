@@ -3,10 +3,10 @@ id: LACTEVA-DEMO-ACCOUNTS
 title: Demo Accounts — the dairies to show a client
 type: reference
 status: Draft
-version: "0.1"
+version: "0.2"
 owner: Product & Platform Engineering
 created: 2026-08-30
-last-updated: 2026-08-30
+last-updated: 2026-09-02
 related: [LACTEVA-GO-LIVE-READINESS, LACTEVA-BUSINESS-OPERATING-MODEL]
 baseline: ARCH-BASELINE-V1
 ---
@@ -64,6 +64,18 @@ Same password for all of them, from `DEMO_PASSWORD`.
 | `viewer@lacteva-india.example.com` | Arun Menon | tenant-viewer | What a read-only account can and cannot reach |
 
 The Kenyan tenant carries the same five at `@lacteva-demo.example.com`.
+
+### Which dairy to demonstrate (WO-60 rider)
+
+**Demonstrate an Indian dairy with the INDIA tenant** —
+`manager@lacteva-india.example.com`, rupees, Indian farmer and household
+names. The Kenyan cooperative exists to prove the platform is multi-currency
+and multi-market, not to be shown to an Indian client: a demonstration that
+opens on "Amina Njoroge" and KES answers a question nobody asked, and the
+"KES on some pages, INR on others" report that produced this note was somebody
+moving between the two tenants and having no way to tell which one they were
+looking at. The organization chip now names the dairy on every screen, so that
+question is answerable at a glance — check it before sharing your screen.
 
 ### Demonstrating the rate override (BR-0029)
 
@@ -152,4 +164,5 @@ than argued.
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 0.2 | 2026-09-02 | Product & Platform Engineering | WO-60 rider: which dairy to demonstrate, and why the Kenyan tenant is the multi-currency proof rather than the client-facing demo. |
 | 0.1 | 2026-08-30 | Product & Platform Engineering | First draft (WO-38b). The five India logins, what each demonstrates, where the password comes from, and the evidence that the dataset survives a host restart. |

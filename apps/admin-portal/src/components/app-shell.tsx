@@ -32,7 +32,6 @@ import {
   Bell,
   Boxes,
   Building2,
-  ChevronDown,
   BookOpen,
   ClipboardList,
   Map,
@@ -585,9 +584,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     {session.user.full_name || session.user.email}
                   </span>
                   <span className="block text-xs leading-tight text-muted-foreground">
+                    {/* WO-60: the person's ROLE, not the generic "Organization
+                        member" that told everyone the same nothing. Platform
+                        administrator keeps its wording. */}
                     {session.tenant_id === null
                       ? "Platform administrator"
-                      : "Organization member"}
+                      : roleLabel(session)}
                   </span>
                 </span>
               ) : null}
@@ -686,6 +688,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+
+/**
+ * What this person IS here, in their own words (WO-60).
+ *
+ * From the session's roles, which `/v1/auth/me` has always returned and the
+ * shell has never read. A role name arrives as the registry spells it —
+ * `CENTRE_MANAGER`, `tenant-admin` — so it is title-cased for reading and not
+ * translated into a vocabulary of this file's own invention: the registry is
+ * the authority on what these are called, and a second naming here would
+ * disagree with the roles screen the first time one was added.
+ *
+ * More than one role is normal (a manager who also collects), so they are
+ * listed. No role at all is also normal — a member whose grants come from
+ * elsewhere — and "Organization member" is the honest answer to that, rather
+ * than an empty line.
+ */
+function roleLabel(session: Session): string {
+  if (!session.authenticated) return "";
+  const names = (session.roles ?? [])
+    .map((role) => role.name)
+    .filter(Boolean)
+    .map((name) =>
+      name
+        .replace(/[_-]+/g, " ")
+        .toLowerCase()
+        .replace(/\b\w/g, (letter) => letter.toUpperCase()),
+    );
+  const unique = Array.from(new Set(names));
+  return unique.length ? unique.join(" · ") : "Organization member";
+}
+
 function OrganizationChip({
   session,
   scoped,
@@ -697,13 +730,27 @@ function OrganizationChip({
 }) {
   const router = useRouter();
   if (!session?.authenticated) return null;
+  const organization = session.organization;
 
   if (session.tenant_id !== null) {
     return (
-      <span className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-sm">
+      <span
+        className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-sm"
+        // WO-60: the full name, for a dairy whose name does not fit. The
+        // visible text truncates; the title does not.
+        title={organization?.name ?? undefined}
+      >
         <Building2 aria-hidden className="size-3.5 text-muted-foreground" />
-        <span className="font-medium">Organization</span>
-        <ChevronDown aria-hidden className="size-3 text-muted-foreground" />
+        {/* WO-60: the ORGANIZATION'S NAME. This said the literal word
+            "Organization" — for a multi-tenant product, "which tenant am I
+            in" has to be answerable at a glance, and for a demonstration it
+            is the difference between a Kenyan and an Indian dairy on screen.
+            The chevron is gone with it: it opened nothing, and a control that
+            looks interactive and is not is the same defect as a disabled
+            button teasing a capability (WO-51b). */}
+        <span className="max-w-[14rem] truncate font-medium">
+          {organization?.name ?? "Organization"}
+        </span>
       </span>
     );
   }
@@ -711,8 +758,16 @@ function OrganizationChip({
   return (
     <span className="flex items-center gap-2 text-sm">
       <ShieldCheck aria-hidden className="size-4 text-muted-foreground" />
-      <span className="text-muted-foreground">
-        {scoped ? `acting in ${scoped.slice(0, 8)}…` : "no organization"}
+      <span className="text-muted-foreground" title={organization?.name ?? undefined}>
+        {/* WO-60: an acting platform administrator sees the tenant's NAME.
+            It used to be `acting in 8f3a2b1c…` — a truncated UUID, which
+            names nothing to the person reading it. The name arrives because
+            the session route now tells the platform which tenant is being
+            acted in; the id remains the fallback for the moment before it
+            does. */}
+        {scoped
+          ? `acting in ${organization?.name ?? `${scoped.slice(0, 8)}…`}`
+          : "no organization"}
       </span>
       {scoped ? (
         <button

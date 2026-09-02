@@ -4,6 +4,7 @@ import {
   ACCESS_COOKIE,
   REFRESH_COOKIE,
   backendUrl,
+  isTenantId,
   readAccessToken,
   readActingTenant,
 } from "@/lib/server/backend";
@@ -28,10 +29,20 @@ export async function GET() {
     return NextResponse.json({ authenticated: false }, { status: 200 });
   }
 
+  // WO-60: a PLATFORM session acting inside a tenant is asking about that
+  // tenant. Without the header the platform answers `organization: null`,
+  // which is why the chip could only show a truncated UUID and why an acting
+  // administrator got no currency and no timezone either. A tenant-scoped
+  // token ignores the header — the platform treats its own claim as
+  // authoritative — so this is safe to send in both cases.
+  const acting = await readActingTenant();
   let upstream: Response;
   try {
     upstream = await fetch(`${backendUrl()}/v1/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(isTenantId(acting) ? { "X-Tenant-ID": acting } : {}),
+      },
       cache: "no-store",
     });
   } catch {
@@ -59,7 +70,7 @@ export async function GET() {
   // session); `acting_tenant_id` is the organization this browser selected.
   // The nav needs both to say "you are platform-level, currently acting in X".
   return NextResponse.json(
-    { authenticated: true, ...me, acting_tenant_id: await readActingTenant() },
+    { authenticated: true, ...me, acting_tenant_id: acting },
     { status: 200 },
   );
 }
