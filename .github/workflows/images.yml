@@ -123,8 +123,15 @@ jobs:
             dockerfile: apps/marketing-site/Dockerfile
             repository: lacteva/admin-portal
             tag_prefix: "marketing-"
+            # WO-65: the portal's address is INLINED at build time by
+            # `next build`, so it has to be here rather than in compose —
+            # a `NEXT_PUBLIC_*` variable added at runtime is read by nothing.
+            # Without it the site's own Login button landed on a page saying
+            # the platform's address was not configured, and offered a
+            # customer who wanted to sign in a trial sign-up instead.
             build-args: |
               NODE_HEAP_MB=4096
+              NEXT_PUBLIC_PORTAL_URL=https://app.lacteva.com
           - name: admin-portal
             context: apps/admin-portal
             dockerfile: apps/admin-portal/Dockerfile

@@ -25,6 +25,25 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # serving host possible; CI passes a bigger value via NODE_HEAP_MB.
 ARG NODE_HEAP_MB=768
 ENV NODE_OPTIONS=--max-old-space-size=${NODE_HEAP_MB}
+
+# WO-65: WHERE THE PORTAL LIVES, BAKED IN AT BUILD TIME.
+#
+# `NEXT_PUBLIC_*` is INLINED into the bundle by `next build` — it is not read
+# from the environment when the server starts. That is the whole defect this
+# fixes: `/login` on the live site rendered "its address is not configured in
+# this environment" and offered a visitor who wanted to SIGN IN a trial
+# sign-up instead, and no amount of adding the variable to compose could have
+# helped, because by then the build had already decided.
+#
+# So it is an ARG, passed by the images workflow, and the value travels with
+# the image. Changing the portal's address means REBUILDING the marketing
+# site — which is the honest cost of a build-time constant, and the reason
+# `test_portal_url.test.ts` refuses a production build that has none.
+#
+# The default is empty on purpose: a local `docker build` with no argument
+# gets the explanatory /login page rather than somebody else's portal.
+ARG NEXT_PUBLIC_PORTAL_URL=""
+ENV NEXT_PUBLIC_PORTAL_URL=${NEXT_PUBLIC_PORTAL_URL}
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime
