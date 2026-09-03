@@ -34,6 +34,9 @@ import 'l10n.dart';
 import 'offline/offline_client.dart';
 import 'push.dart';
 import 'session.dart';
+import 'suppliers.dart';
+import 'shell.dart';
+import 'navigation.dart';
 import 'sign_out.dart';
 
 /// Resolves the session, then shows the experience it earns.
@@ -162,25 +165,106 @@ class _HomeRouterState extends State<HomeRouter>
   }
 
   Widget _experience(Session session) {
+    final client = widget.client;
+    // WO-72 Part B: every experience sits behind a persistent bottom bar
+    // shaped for it (`navigation.dart` is the map). The roots below are the
+    // screens that always existed; the bar is what makes the other thirty
+    // findable without guessing which tile to drill into.
     return switch (experienceFor(session)) {
-      Experience.customer => CustomerHomeScreen(
-        client: widget.client,
+      Experience.customer => AppShell(
+        client: client,
         session: session,
+        roots: {
+          'deliveries': (_) => CustomerHomeScreen(client: client, session: session),
+          'bill': (_) => CustomerBillsScreen(client: client, session: session),
+          'more': (_) => HubScreen(
+            client: client,
+            session: session,
+            titleKey: 'nav.more',
+            items: const [],
+            signOut: true,
+          ),
+        },
       ),
-      Experience.driver => DriverHomeScreen(
-        client: widget.client,
+      Experience.driver => AppShell(
+        client: client,
         session: session,
+        roots: {
+          'round': (_) => DriverHomeScreen(client: client, session: session),
+          'deliver': (_) => DeliveryRoundScreen(client: client, session: session),
+          'more': (_) => HubScreen(
+            client: client,
+            session: session,
+            titleKey: 'nav.more',
+            items: driverMoreItems,
+            signOut: true,
+          ),
+        },
       ),
-      Experience.delivery => DeliveryRoundScreen(
-        client: widget.client,
+      Experience.delivery => AppShell(
+        client: client,
         session: session,
+        roots: {
+          'round': (_) => DeliveryRoundScreen(client: client, session: session),
+          'deliver': (_) => DeliveryRoundScreen(client: client, session: session),
+          'more': (_) => HubScreen(
+            client: client,
+            session: session,
+            titleKey: 'nav.more',
+            items: driverMoreItems,
+            signOut: true,
+          ),
+        },
+        // The round IS the delivery screen for a sales officer; one root
+        // serves both keys so the bar shape stays the driver's.
       ),
       // LACTEVA-MOBILE-005: the collection experience lands on a HOME, not on
       // a list of centres. The list is still there and still does exactly what
       // it did — the home reaches it as the centre switcher.
-      Experience.collection => CollectionHomeScreen(
-        client: widget.client,
+      Experience.collection => AppShell(
+        client: client,
         session: session,
+        roots: runsTheWholeDairy(session)
+            ? {
+                'today': (_) => CollectionHomeScreen(client: client, session: session),
+                'farmers': (_) => SuppliersListScreen(client: client, session: session),
+                'money': (_) => HubScreen(
+                  client: client,
+                  session: session,
+                  titleKey: 'nav.money',
+                  items: moneyItems,
+                ),
+                'reports': (_) => HubScreen(
+                  client: client,
+                  session: session,
+                  titleKey: 'nav.reports',
+                  items: reportsItems,
+                ),
+                'more': (_) => HubScreen(
+                  client: client,
+                  session: session,
+                  titleKey: 'nav.more',
+                  items: moreItems,
+                  signOut: true,
+                ),
+              }
+            : {
+                'collect': (_) => CollectionHomeScreen(client: client, session: session),
+                'today': (_) => HubScreen(
+                  client: client,
+                  session: session,
+                  titleKey: 'nav.today',
+                  items: operatorTodayItems,
+                ),
+                'farmers': (_) => SuppliersListScreen(client: client, session: session),
+                'more': (_) => HubScreen(
+                  client: client,
+                  session: session,
+                  titleKey: 'nav.more',
+                  items: operatorMoreItems,
+                  signOut: true,
+                ),
+              },
       ),
       Experience.none => _NothingToDo(session: session, client: widget.client),
     };

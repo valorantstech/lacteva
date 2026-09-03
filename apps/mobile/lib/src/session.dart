@@ -285,7 +285,7 @@ enum Experience {
 /// on one would be deciding what somebody is allowed to see from a label
 /// rather than from a grant (`test_experience.dart` asserts a role named
 /// anything at all changes nothing).
-bool _runsTheWholeDairy(Session session) =>
+bool runsTheWholeDairy(Session session) =>
     session.can('collection.session.manage') && session.can('sales.delivery.record');
 
 /// Choose the landing experience.
@@ -319,7 +319,7 @@ bool _runsTheWholeDairy(Session session) =>
 Experience experienceFor(Session session) {
   if (session.isCustomer) return Experience.customer;
   if (session.can('logistics.run.execute')) return Experience.driver;
-  if (_runsTheWholeDairy(session)) return Experience.collection;
+  if (runsTheWholeDairy(session)) return Experience.collection;
   if (session.can('sales.delivery.record')) return Experience.delivery;
   if (session.can('collection.session.manage')) return Experience.collection;
   if (session.can('sales.delivery.read')) return Experience.delivery;
