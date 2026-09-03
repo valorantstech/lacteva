@@ -298,6 +298,7 @@ LACTEVA_TEST_POSTGRES_URL="$(app_url_for "${TESTS_DB}")" \
   tests/test_statement_delivery_postgres.py \
   tests/test_delivery_receipts_postgres.py \
   tests/test_contact_repair_postgres.py \
+  tests/test_auth_refresh_postgres.py \
   tests/test_gateway_sandbox_postgres.py \
   tests/test_template_registry_postgres.py \
   tests/test_template_variants_postgres.py \

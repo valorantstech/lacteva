@@ -19,6 +19,7 @@ vi.mock("next/navigation", () => ({
 
 import DayBookPage from "@/app/day-book/page";
 import { isCompleteDate } from "@/lib/complete-date";
+import { LocaleProvider } from "@/lib/i18n";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -269,6 +270,46 @@ describe("typing a date into the day book (WO-68)", () => {
     expect(isCompleteDate("2024-02-29")).toBe(true);
     for (const bad of ["0008-30-2026", "2026-13-01", "2026-02-31", "2026-0", "", "2026-9-2"]) {
       expect(isCompleteDate(bad), bad).toBe(false);
+    }
+  });
+});
+
+describe("the day book opens on the dairy's today (WO-73)", () => {
+  it("at 03:20 IST it asks for the Indian date, even though the timezone arrives late", async () => {
+    // 2026-09-03T21:50Z is 03:20 on 4 September in Asia/Kolkata. The shell
+    // mounts pages before the session probe answers, so the first render has
+    // no timezone and "today" is UTC's 3 September; the page used to copy
+    // that into state and keep it. The default is derived now.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-03T21:50:00Z"));
+    try {
+      const spy = routeAll();
+      const { rerender } = render(
+        <LocaleProvider locale="en-IN" timezone={null}>
+          <DayBookPage />
+        </LocaleProvider>,
+      );
+      // The session answers, and with it the organisation's timezone.
+      rerender(
+        <LocaleProvider locale="en-IN" timezone="Asia/Kolkata">
+          <DayBookPage />
+        </LocaleProvider>,
+      );
+      await waitFor(() =>
+        expect(
+          spy.mock.calls.some(([url]) => String(url).includes("business_date=2026-09-04")),
+        ).toBe(true),
+      );
+      const input = screen.getByLabelText("Business date") as HTMLInputElement;
+      expect(input.value).toBe("2026-09-04");
+      // And nothing was ever fetched for UTC's yesterday.
+      const last = spy.mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => url.includes("/reports/day-book"))
+        .at(-1);
+      expect(last).toContain("business_date=2026-09-04");
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

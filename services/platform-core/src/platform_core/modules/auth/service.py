@@ -196,10 +196,29 @@ class AuthService:
         return user
 
     async def refresh(self, refresh_token: str) -> TokenPair:
+        # WO-73 follow-up, found on the live handset twenty minutes after
+        # WO-69 shipped: `auth_session` is TENANT-OWNED under RLS, and a
+        # refresh request carries no tenant — no bearer, no body field, just
+        # the opaque token. The login route rebinds the tenant it was told in
+        # its body before looking the user up; this route had nothing to
+        # rebind to, so on PostgreSQL a tenant-scoped session was invisible
+        # to the query that renews it: the token was refused, the app signed
+        # the operator out at fifteen minutes exactly as before, and every
+        # test was green because SQLite has no policies. The token IS the
+        # credential — 256 bits, matched by hash — so the lookup runs under
+        # the audited platform bypass, and the request is then bound to the
+        # tenant the session names for everything that follows.
+        from platform_core.core.rls import bind_platform_context, rebind_tenant
+
+        await bind_platform_context(
+            self._session, reason="token refresh: the tenant is unknown until the session is found"
+        )
         token_hash = _hash_secret(refresh_token)
         auth_session = await self._session.scalar(
             select(AuthSession).where(AuthSession.refresh_token_hash == token_hash)
         )
+        if auth_session is not None:
+            await rebind_tenant(self._session, auth_session.tenant_id)
         if auth_session is None:
             # Reuse of an already-rotated token = theft signal: kill that session.
             stolen = await self._session.scalar(

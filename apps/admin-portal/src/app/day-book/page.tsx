@@ -84,8 +84,21 @@ export default function DayBookPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [centers, setCenters] = useState<Center[]>([]);
   const [centerId, setCenterId] = useState("");
-  /** What is in the date box — including whatever a half-typed date is. */
-  const [day, setDay] = useState(businessToday);
+  /**
+   * What is in the date box — including whatever a half-typed date is.
+   *
+   * WO-73: DERIVED from the dairy's today until the reader picks a day, not
+   * copied into state at mount. The shell mounts pages before the session
+   * probe answers, so on the first render the timezone is null and
+   * `businessToday` is UTC-today; a `useState(businessToday)` kept that
+   * forever, and at 03:20 IST this page opened on yesterday — the window a
+   * dairy's morning shift starts in. `useDefaultRange` already solves this
+   * shape for the dashboard; it is a range with presets, and the day book
+   * is one date, so the same two-lifetimes rule is applied here directly
+   * rather than through a range the page would immediately flatten.
+   */
+  const [chosenDay, setChosenDay] = useState<string | null>(null);
+  const day = chosenDay ?? businessToday;
   /**
    * The date the ledger is SHOWING (WO-68). A `<input type="date">` emits
    * intermediate values while someone types — `0008-30-2026` was captured
@@ -94,10 +107,11 @@ export default function DayBookPage() {
    * ledger holds the last complete date until the next complete one arrives,
    * and nothing incomplete is ever sent.
    */
-  const [shownDay, setShownDay] = useState(businessToday);
+  const [chosenShownDay, setChosenShownDay] = useState<string | null>(null);
+  const shownDay = chosenShownDay ?? businessToday;
   const changeDay = (value: string) => {
-    setDay(value);
-    if (isCompleteDate(value)) setShownDay(value);
+    setChosenDay(value);
+    if (isCompleteDate(value)) setChosenShownDay(value);
   };
   const [book, setBook] = useState<DayBook | null>(null);
   const [dispatches, setDispatches] = useState<Dispatch[] | null>(null);

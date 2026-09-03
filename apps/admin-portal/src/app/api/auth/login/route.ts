@@ -8,11 +8,7 @@ import {
   crossOriginRefused,
 } from "@/lib/server/backend";
 
-/** Matches `LACTEVA_JWT_ACCESS_TTL_SECONDS` / `..._REFRESH_TTL_SECONDS`. The
- *  cookie expiring slightly before the token is harmless; the reverse would
- *  send a dead token and read as a mysterious 401. */
-const ACCESS_MAX_AGE = 15 * 60;
-const REFRESH_MAX_AGE = 14 * 24 * 60 * 60;
+import { ACCESS_MAX_AGE, REFRESH_MAX_AGE } from "@/lib/server/refresh";
 
 /**
  * Exchange credentials for a session (PORTAL-001 / F-11).

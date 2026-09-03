@@ -1,13 +1,12 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import {
-  ACCESS_COOKIE,
-  REFRESH_COOKIE,
   backendUrl,
   isTenantId,
   readAccessToken,
   readActingTenant,
+  readRefreshToken,
 } from "@/lib/server/backend";
+import { clearSession, refreshOnce, storePair } from "@/lib/server/refresh";
 
 /**
  * Who is signed in? (SESSION-001)
@@ -24,9 +23,35 @@ import {
  * request too.
  */
 export async function GET() {
-  const token = await readAccessToken();
-  if (!token) {
+  let token = await readAccessToken();
+  const refreshToken = await readRefreshToken();
+  if (!token && !refreshToken) {
     return NextResponse.json({ authenticated: false }, { status: 200 });
+  }
+
+  // WO-73: the probe is the first thing every page runs, so it is where a
+  // fifteen-minute-old tab discovers its access cookie has died. Renew
+  // rather than answer "nobody" — the same single-flight exchange the proxy
+  // uses, so a probe racing six data requests still costs one refresh.
+  const renew = async (): Promise<Response | null> => {
+    if (!refreshToken) return null;
+    let pair;
+    try {
+      pair = await refreshOnce(refreshToken);
+    } catch {
+      return NextResponse.json({ authenticated: false, unreachable: true }, { status: 200 });
+    }
+    if (!pair) {
+      await clearSession();
+      return NextResponse.json({ authenticated: false }, { status: 200 });
+    }
+    await storePair(pair);
+    token = pair.access_token;
+    return null;
+  };
+  if (!token) {
+    const ended = await renew();
+    if (ended) return ended;
   }
 
   // WO-60: a PLATFORM session acting inside a tenant is asking about that
@@ -55,10 +80,23 @@ export async function GET() {
   }
 
   if (upstream.status === 401) {
-    const store = await cookies();
-    store.delete(ACCESS_COOKIE);
-    store.delete(REFRESH_COOKIE);
-    return NextResponse.json({ authenticated: false }, { status: 200 });
+    const ended = await renew();
+    if (ended) return ended;
+    try {
+      upstream = await fetch(`${backendUrl()}/v1/auth/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(isTenantId(acting) ? { "X-Tenant-ID": acting } : {}),
+        },
+        cache: "no-store",
+      });
+    } catch {
+      return NextResponse.json({ authenticated: false, unreachable: true }, { status: 200 });
+    }
+    if (upstream.status === 401) {
+      await clearSession();
+      return NextResponse.json({ authenticated: false }, { status: 200 });
+    }
   }
 
   if (!upstream.ok) {
