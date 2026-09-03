@@ -404,7 +404,8 @@ void main() {
         ],
       );
       expect(find.text('Complete run'), findsNothing);
-      expect(find.text('1 stops remaining'), findsOneWidget);
+      // WO-72 Part A: the plural rule the board lacked — one stop, not "1 stops".
+      expect(find.text('1 stop remaining'), findsOneWidget);
 
       final platform = await _pump(
         tester,

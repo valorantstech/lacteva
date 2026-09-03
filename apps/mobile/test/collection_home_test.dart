@@ -476,10 +476,9 @@ void main() {
       // The window is the DAIRY's clock — plain local times the platform
       // already resolved. The open session's UTC instant is deliberately not
       // rendered as a wall clock.
-      expect(
-        find.textContaining('05:00 – 11:00'),
-        findsOneWidget,
-      );
+      // WO-72 Part A: as a person says it — never `05:00:00 – 11:00:00`.
+      expect(find.textContaining('5 am – 11 am'), findsOneWidget);
+      expect(find.textContaining(':00'), findsNothing);
       expect(find.textContaining('SIT-00'), findsOneWidget);
     });
 
@@ -503,11 +502,16 @@ void main() {
       expect(find.text('Ready 6/6'), findsOneWidget);
       expect(find.text('THIS MORNING'), findsOneWidget);
       expect(find.text('412.5'), findsOneWidget);
+      // WO-72 Part A (pin 1): the unit sits against the number, read from
+      // the report — this fixture's is litres.
+      expect(find.text('L'), findsOneWidget);
       expect(find.text('38 farmers served'), findsOneWidget);
       // WO-56: the total, split by the animal that brought it.
       expect(find.text('cow 300.0 L · buffalo 112.5 L'), findsOneWidget);
-      expect(find.text('NEEDS A LOOK'), findsOneWidget);
-      expect(find.text('Nothing needs a look right now'), findsOneWidget);
+      // WO-72 Part A (pin 8): nothing needs a look, so the section is ABSENT
+      // — not a full-width card saying so.
+      expect(find.text('NEEDS A LOOK'), findsNothing);
+      expect(find.text('Nothing needs a look right now'), findsNothing);
       // The organization, not a role name — the house rule forbids printing
       // one as firmly as it forbids branching on one.
       expect(find.text('Sitara Dairy'), findsOneWidget);
@@ -555,23 +559,24 @@ void main() {
       );
     });
 
-    testWidgets('the rate-card footer needs its own grant, not the variant', (
+    testWidgets('the dashboard no longer carries the rate-card footer', (
       tester,
     ) async {
-      // A manager reads reporting; reading pricing is a separate grant, and
-      // the footer is gated on the one it actually needs.
+      // WO-72 Part A (pin 9): the line was orphaned grey text at the foot,
+      // attached to nothing and dated over a year back. A rate card is
+      // something a manager ACTS on and lives on the Rate cards screen; the
+      // dashboard neither asks for it nor prints it — with or without the
+      // pricing grant.
       final fake = await _pump(tester, _manager);
       expect(fake.calls, isNot(contains('listRateCards')));
-
       final withPricing = await _pump(
         tester,
         _session({..._manager.permissions, 'pricing.ratecard.read'}),
       );
-      expect(withPricing.calls, contains('listRateCards'));
-      expect(
-        find.textContaining('Rate card v4 published'),
-        findsOneWidget,
-      );
+      expect(withPricing.calls, isNot(contains('listRateCards')));
+      expect(find.textContaining('Rate card v'), findsNothing);
+      // The foot says where you are instead.
+      expect(find.textContaining('SIT-00'), findsOneWidget);
     });
 
     testWidgets('offers a centre switcher only when there is one to switch to', (

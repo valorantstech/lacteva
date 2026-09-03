@@ -59,6 +59,52 @@ String orgUnit(Session? session) => session?.organization?.quantityUnitLabel ?? 
 String recordUnit(Object? stored, Session? session) =>
     stored == null || stored.toString().isEmpty ? orgUnit(session) : unitLabel(stored);
 
+/// A clock time as a person says it (WO-72 Part A): `06:00:00` → `6 am`,
+/// `19:30:00` → `7:30 pm`. The platform sends operating windows as
+/// `HH:MM:SS` in the dairy's own clock; seconds never reach a person, and a
+/// business-hours label reads as a sentence, not a log line. Localised for
+/// the languages the app speaks; anything unparseable is shown as sent.
+String humanTime(String hms, {String language = 'en'}) {
+  final m = RegExp(r'^(\d{1,2}):(\d{2})(?::\d{2})?$').firstMatch(hms.trim());
+  if (m == null) return hms;
+  final hour24 = int.parse(m.group(1)!);
+  final minute = m.group(2)!;
+  if (hour24 > 23) return hms;
+  final hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12;
+  final minutes = minute == '00' ? '' : ':$minute';
+  switch (language) {
+    case 'hi':
+      // Hindi says the part of day before the hour: सुबह 6, दोपहर 1, शाम 7, रात 10.
+      final part = hour24 < 12
+          ? 'सुबह'
+          : hour24 < 16
+          ? 'दोपहर'
+          : hour24 < 20
+          ? 'शाम'
+          : 'रात';
+      return '$part $hour12$minutes';
+    case 'ar':
+      return '$hour12$minutes ${hour24 < 12 ? 'ص' : 'م'}';
+    default:
+      return '$hour12$minutes ${hour24 < 12 ? 'am' : 'pm'}';
+  }
+}
+
+/// `06:00:00` and `19:00:00` → `6 am – 7 pm`.
+String humanWindow(String opens, String closes, {String language = 'en'}) =>
+    '${humanTime(opens, language: language)} – ${humanTime(closes, language: language)}';
+
+/// An ISO instant as a label a person can scan: `2026-09-03T21:44:12.456Z`
+/// → `2026-09-03 21:44`. Seconds dropped, the `T` gone. The instant is the
+/// platform's (UTC) and is NOT converted — the app performs no timezone
+/// arithmetic (see `l10n.dart`) — so this is honest about being a stamp,
+/// not a wall clock, and stops short of pretending otherwise.
+String stamp(Object? iso) {
+  final text = (iso ?? '').toString();
+  final m = RegExp(r'^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})').firstMatch(text);
+  return m == null ? text : '${m.group(1)} ${m.group(2)}';
+}
+
 /// A quantity as a dairy says it: one decimal, then the unit.
 ///
 /// `214.000` → `214.0 L`. The rounding is presentational and one-way — the

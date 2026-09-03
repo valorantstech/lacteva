@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../main.dart' show apiUrl;
+import 'format.dart' show humanWindow;
 
 class ApiException implements Exception {
   ApiException(this.status, this.detail, {this.extra});
@@ -1276,7 +1277,13 @@ class OperatingWindowView {
   final String opens;
   final String closes;
 
+  /// The raw window, as the platform sent it. Kept for anything that needs
+  /// the machine form; a person is shown [humanLabel].
   String get label => '${dayNames[dayOfWeek]}  $opens – $closes';
+
+  /// `Mon · 6 am – 7 pm` (WO-72 Part A): seconds never reach a label.
+  String humanLabel({String language = 'en'}) =>
+      '${dayNames[dayOfWeek]} · ${humanWindow(opens, closes, language: language)}';
 }
 
 class CenterDetail {

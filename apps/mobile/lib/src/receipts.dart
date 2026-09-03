@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api.dart';
+import 'format.dart';
 
 /// Receipt history — RCP-001.
 ///
@@ -129,7 +130,7 @@ class _ReceiptHistoryScreenState extends State<ReceiptHistoryScreen> {
                     subtitle: Text(
                       '${r.number} · ${r.supplierName}\n'
                       '${r.lineCount} settlement(s) · '
-                      '${r.generatedAt.replaceFirst('T', ' ').split('.').first}',
+                      '${stamp(r.generatedAt)}',
                     ),
                     isThreeLine: true,
                     trailing: Chip(

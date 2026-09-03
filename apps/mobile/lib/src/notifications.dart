@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'format.dart';
 import 'theme.dart';
 
 /// Notification history — NOT-001.
@@ -147,7 +148,7 @@ class _NotificationHistoryScreenState extends State<NotificationHistoryScreen> {
                     subtitle: Text(
                       '${n.text ?? n.error ?? ''}\n'
                       '${n.recipient ?? 'unresolved'} · ${n.channel} · '
-                      '${n.createdAt.replaceFirst('T', ' ').split('.').first}',
+                      '${stamp(n.createdAt)}',
                     ),
                     isThreeLine: true,
                     trailing: n.attemptCount > 1
@@ -262,7 +263,7 @@ class NotificationDetailScreen extends StatelessWidget {
             dense: true,
             leading: const Icon(Icons.schedule),
             title: const Text('Created'),
-            subtitle: Text(n.createdAt.replaceFirst('T', ' ').split('.').first),
+            subtitle: Text(stamp(n.createdAt)),
           ),
         ],
       ),

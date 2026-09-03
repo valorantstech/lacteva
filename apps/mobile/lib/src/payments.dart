@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'format.dart';
 import 'theme.dart';
 
 /// Payment history — PAY-001.
@@ -132,7 +133,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                     subtitle: Text(
                       '${p.number} · ${p.method.replaceAll('_', ' ').toLowerCase()}\n'
                       '${p.lineCount} settlement(s) · '
-                      '${p.createdAt.replaceFirst('T', ' ').split('.').first}',
+                      '${stamp(p.createdAt)}',
                     ),
                     isThreeLine: true,
                     trailing: Chip(
@@ -314,7 +315,7 @@ class _PaymentDetailScreenState extends State<PaymentDetailScreen> {
                       title: Text('${a.provider} · ${a.status}'),
                       subtitle: Text(
                         a.failureReason ??
-                            a.startedAt.replaceFirst('T', ' ').split('.').first,
+                            stamp(a.startedAt),
                       ),
                     ),
                   ),

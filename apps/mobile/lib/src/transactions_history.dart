@@ -160,7 +160,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                   ),
                   subtitle: Text(
                     [
-                      '${tx['created_at']}'.replaceFirst('T', ' ').split('.').first,
+                      stamp('${tx['created_at']}'),
                       tx['milk_type']?.toString() ?? '—',
                       if (tx['net_weight'] != null)
                         '${tx['net_weight']} ${recordUnit(tx['weight_unit'], widget.session)}',

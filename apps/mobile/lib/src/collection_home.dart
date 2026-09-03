@@ -102,7 +102,6 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
   ReadinessResultView? _readiness;
   List<Map<String, dynamic>> _openSessions = const [];
   List<Map<String, dynamic>> _recent = const [];
-  RateCardSummary? _rateCard;
 
   bool _resolving = true;
   String? _error;
@@ -219,18 +218,6 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
         panel(() async {
           final r = await widget.client.readiness(centreId);
           if (mounted) setState(() => _readiness = r);
-        }),
-      // The footer fact, and the one panel gated on its OWN grant rather than
-      // on the variant: a manager may read reporting without reading pricing.
-      if (widget.session.can('pricing.ratecard.read'))
-        panel(() async {
-          final cards = await widget.client.listRateCards(
-            status: 'published',
-            limit: 1,
-          );
-          if (mounted && cards.items.isNotEmpty) {
-            setState(() => _rateCard = cards.items.first);
-          }
         }),
     ]);
   }
@@ -496,6 +483,9 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
       child: _MorningCard(
         l: _l,
         litres: quantityValue(_summary?.totalNetWeightKg),
+        // WO-72 Part A / WO-70: the unit sits against the number and is the
+        // one the REPORT carried — never assumed, never three lines away.
+        unit: _summary == null ? '' : unitLabel(_summary!.quantityUnit),
         window: _todayWindow(),
         farmers: _summary?.suppliersServed,
         // WO-56: the day split by animal, beside the total. A manager
@@ -517,7 +507,12 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
       child: _NavGrid(tiles: _managerTiles(centre)),
     ),
     _NeedsALook(l: _l, readiness: _readiness, unpriced: _summary?.unpricedAccepted ?? 0),
-    _FooterFact(text: _rateCardFooter() ?? _shiftFooter(centre)),
+    // WO-72 Part A: the rate-card line is gone from here. It was orphaned
+    // grey text at the foot, attached to nothing, dated over a year back;
+    // a rate card is something a manager ACTS on, and it lives on the Rate
+    // cards screen (Money, once the bar exists — Part B). The foot says
+    // where you are.
+    _FooterFact(text: _shiftFooter(centre)),
   ];
 
   List<_NavTile> _managerTiles(CenterSummary centre) => [
@@ -613,7 +608,8 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
   String? _todayWindow() {
     final windows = _detail?.windows ?? const <OperatingWindowView>[];
     if (windows.isEmpty) return null;
-    return windows.first.label;
+    // WO-72 Part A: `Mon · 6 am – 7 pm`, never `06:00:00 – 19:00:00`.
+    return windows.first.humanLabel(language: _l.language);
   }
 
   String _shiftFooter(CenterSummary centre) {
@@ -627,14 +623,6 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
           });
   }
 
-  String? _rateCardFooter() {
-    final card = _rateCard;
-    if (card == null) return null;
-    return _l.t('manager.rateCardFooter', {
-      'version': card.version,
-      'date': businessDate(card.effectiveFrom),
-    });
-  }
 }
 
 // =====================================================================
@@ -941,12 +929,21 @@ class _NavGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         const gap = 12.0;
-        final width = (constraints.maxWidth - gap) / 2;
+        final half = (constraints.maxWidth - gap) / 2;
+        // WO-72 Part A (pin 7): the layout is shaped to the content. An odd
+        // count used to leave a hole beside the last tile, which reads as
+        // broken rather than composed; the last tile of an odd set now
+        // spans the row.
+        final odd = tiles.length.isOdd;
         return Wrap(
           spacing: gap,
           runSpacing: gap,
           children: [
-            for (final tile in tiles) SizedBox(width: width, child: tile),
+            for (var i = 0; i < tiles.length; i++)
+              SizedBox(
+                width: odd && i == tiles.length - 1 ? constraints.maxWidth : half,
+                child: tiles[i],
+              ),
           ],
         );
       },
@@ -1330,6 +1327,7 @@ class _MorningCard extends StatelessWidget {
   const _MorningCard({
     required this.l,
     required this.litres,
+    required this.unit,
     required this.window,
     required this.farmers,
     required this.bars,
@@ -1338,6 +1336,9 @@ class _MorningCard extends StatelessWidget {
 
   final L10n l;
   final String litres;
+  /// The unit the platform reported the figure in — `L` or `kg` — rendered
+  /// against the number (WO-72 Part A pin 1). Empty while nothing is known.
+  final String unit;
   final String? window;
   final int? farmers;
   final List<double> bars;
@@ -1403,6 +1404,18 @@ class _MorningCard extends StatelessWidget {
                   color: LactevaColors.ink,
                 ),
               ),
+              if (unit.isNotEmpty && litres != '—')
+                Padding(
+                  padding: const EdgeInsets.only(left: 6, bottom: 5),
+                  child: Text(
+                    unit,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: LactevaColors.muted,
+                    ),
+                  ),
+                ),
               const SizedBox(width: 16),
               if (bars.isNotEmpty)
                 Expanded(child: _RecentBars(bars: bars, l: l)),
@@ -1554,6 +1567,10 @@ class _NeedsALook extends StatelessWidget {
           detail: check.detail,
         ),
     ];
+    // WO-72 Part A (pin 8): a section with nothing in it is ABSENT, not
+    // empty. A full-width card saying "nothing to say" was earning its space
+    // by saying nothing.
+    if (items.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
       child: Column(
@@ -1561,25 +1578,6 @@ class _NeedsALook extends StatelessWidget {
         children: [
           _SectionLabel(text: l.t('manager.needsALook')),
           const SizedBox(height: 10),
-          if (items.isEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
-              ),
-              decoration: BoxDecoration(
-                color: LactevaColors.milk,
-                border: Border.all(color: LactevaColors.hairline),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                l.t('manager.allClear'),
-                style: const TextStyle(
-                  fontSize: 13.5,
-                  color: LactevaColors.muted,
-                ),
-              ),
-            ),
           for (final item in items)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),

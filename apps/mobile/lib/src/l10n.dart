@@ -34,7 +34,7 @@ const Catalog _en = {
   'driver.start': 'Start run',
   'driver.complete': 'Complete run',
   'driver.record': 'Record',
-  'driver.remaining': '{count} stops remaining',
+  'driver.remaining': '{count, plural, one{# stop remaining} other{# stops remaining}}',
   'driver.pending': '{count} waiting to sync',
   'driver.sync': 'Sync now',
   'driver.needsSignal': 'Starting or completing a run needs a connection.',
@@ -83,7 +83,7 @@ const Catalog _en = {
   'customer.owe': 'What I owe',
   'customer.billed': 'Invoiced {billed} · paid {paid}',
   'customer.thisMonth': 'This month',
-  'customer.deliveries': '{count} deliveries',
+  'customer.deliveries': '{count, plural, one{# delivery} other{# deliveries}}',
   'customer.bills': 'My invoices',
   'customer.receipts': 'My receipts',
   'customer.noReceipts': 'A receipt appears here after each payment.',
@@ -150,7 +150,7 @@ const Catalog _en = {
   'milk.mixed': 'mixed',
 
   'login.queuedSafe':
-      '{count} captured record(s) are safe on this phone and will sync after '
+      '{count, plural, one{# captured record is} other{# captured records are}} safe on this phone and will sync after '
       'you sign in.',
 
   'wizard.stepTitle': 'Collection — step {n} of 6',
@@ -277,8 +277,8 @@ const Catalog _en = {
   'sync.title': 'Sync',
   'sync.offlineSaved':
       'Offline — collections are saved on this device ({count} waiting)',
-  'sync.needAttention': '{count} item(s) need attention',
-  'sync.syncingItems': 'Syncing {count} item(s)…',
+  'sync.needAttention': '{count, plural, one{# item needs attention} other{# items need attention}}',
+  'sync.syncingItems': 'Syncing {count, plural, one{# item} other{# items}}…',
   'sync.now': 'Sync now',
   'sync.online': 'Online',
   'sync.offline': 'Offline',
@@ -401,14 +401,14 @@ const Catalog _en = {
   'manager.ready': 'Ready {passed}/{total}',
   'manager.notReady': 'Not ready',
   'manager.thisMorning': 'This morning',
-  'manager.farmersServed': '{count} farmers served',
+  'manager.farmersServed': '{count, plural, =0{No farmers yet} one{# farmer served} other{# farmers served}}',
   'manager.noFigures': 'No figures for today yet',
-  'manager.recentShape': 'The last {count} collections, by quantity',
+  'manager.recentShape': 'The last {count, plural, one{collection} other{# collections}}, by quantity',
   'manager.todaysSummary': "Today's summary",
   'manager.centreCalendar': 'Centre calendar',
   'manager.needsALook': 'Needs a look',
   'manager.allClear': 'Nothing needs a look right now',
-  'manager.unpriced': '{count} collections are waiting for a price',
+  'manager.unpriced': '{count, plural, one{# collection is} other{# collections are}} waiting for a price',
   'manager.unpricedDetail':
       'A published rate card must cover this centre before they can be paid.',
   'manager.rateCardFooter': 'Rate card v{version} published · effective {date}',
@@ -429,7 +429,7 @@ const Catalog _en = {
   'driver.missed': 'Missed',
   'driver.then': 'Then',
   'driver.everyStopRecorded': 'Every stop recorded',
-  'round.customerCount': '{count} customers',
+  'round.customerCount': '{count, plural, one{# customer} other{# customers}}',
   'round.fromStandingOrders': 'from standing orders',
   'round.toDeliver': 'to deliver',
   'round.done': 'done',
@@ -474,7 +474,7 @@ const Catalog _en = {
   'customer.noPlanYetDetail':
       'Once the dairy sets up your standing order, your deliveries appear here.',
   'customer.thisWeek': 'This week',
-  'customer.invoiceLine': '{from} → {to} · {count} deliveries listed',
+  'customer.invoiceLine': '{from} → {to} · {count, plural, one{# delivery} other{# deliveries}} listed',
   'customer.firstMonth':
       'Your first delivery will appear here the morning it arrives.',
   'customer.freshFrom': 'Fresh from {dairy} · every morning',
@@ -504,7 +504,7 @@ const Catalog _en = {
   // Panel 3 of the motion storyboard (LACTEVA-MOBILE-008): the word beside
   // the droplets. Never the droplets alone — movement is not a signal a
   // person who cannot see it can act on.
-  'sync.sending': 'Sending {count} collections…',
+  'sync.sending': 'Sending {count, plural, one{# collection} other{# collections}}…',
 };
 
 const Catalog _hi = {
@@ -512,7 +512,7 @@ const Catalog _hi = {
   'driver.start': 'रन शुरू करें',
   'driver.complete': 'रन पूरा करें',
   'driver.record': 'दर्ज करें',
-  'driver.remaining': '{count} स्टॉप बाक़ी',
+  'driver.remaining': '{count, plural, one{# स्टॉप बाक़ी} other{# स्टॉप बाक़ी}}',
   'driver.pending': '{count} सिंक के लिए प्रतीक्षा में',
   'driver.sync': 'अभी सिंक करें',
   'driver.needsSignal': 'रन शुरू या पूरा करने के लिए कनेक्शन चाहिए।',
@@ -559,7 +559,7 @@ const Catalog _hi = {
   'customer.owe': 'मुझ पर बकाया',
   'customer.billed': 'बिल {billed} · भुगतान {paid}',
   'customer.thisMonth': 'इस महीने',
-  'customer.deliveries': '{count} वितरण',
+  'customer.deliveries': '{count, plural, one{# वितरण} other{# वितरण}}',
   'customer.bills': 'मेरे बिल',
   'customer.receipts': 'मेरी रसीदें',
   'customer.noReceipts': 'प्रत्येक भुगतान के बाद रसीद यहाँ दिखेगी।',
@@ -621,7 +621,7 @@ const Catalog _hi = {
   'milk.mixed': 'मिश्रित',
 
   'login.queuedSafe':
-      '{count} दर्ज रिकॉर्ड इस फ़ोन में सुरक्षित हैं और साइन इन के बाद सिंक होंगे।',
+      '{count, plural, one{# दर्ज रिकॉर्ड इस फ़ोन में सुरक्षित है और साइन इन के बाद सिंक होगा।} other{# दर्ज रिकॉर्ड इस फ़ोन में सुरक्षित हैं और साइन इन के बाद सिंक होंगे।}}',
 
   'wizard.stepTitle': 'संग्रह — 6 में से चरण {n}',
   'wizard.supplier': 'किसान',
@@ -745,8 +745,8 @@ const Catalog _hi = {
   'sync.title': 'सिंक',
   'sync.offlineSaved':
       'ऑफ़लाइन — संग्रह इस डिवाइस में सहेजे जा रहे हैं ({count} प्रतीक्षा में)',
-  'sync.needAttention': '{count} मद पर ध्यान चाहिए',
-  'sync.syncingItems': '{count} मद सिंक हो रहे हैं…',
+  'sync.needAttention': '{count, plural, one{# मद पर ध्यान चाहिए} other{# मदों पर ध्यान चाहिए}}',
+  'sync.syncingItems': '{count, plural, one{# मद सिंक हो रहा है…} other{# मद सिंक हो रहे हैं…}}',
   'sync.now': 'अभी सिंक करें',
   'sync.online': 'ऑनलाइन',
   'sync.offline': 'ऑफ़लाइन',
@@ -859,14 +859,14 @@ const Catalog _hi = {
   'manager.ready': 'तैयार {passed}/{total}',
   'manager.notReady': 'तैयार नहीं',
   'manager.thisMorning': 'आज सुबह',
-  'manager.farmersServed': '{count} किसानों से लिया',
+  'manager.farmersServed': '{count, plural, =0{अभी कोई किसान नहीं} one{# किसान से लिया} other{# किसानों से लिया}}',
   'manager.noFigures': 'आज के आँकड़े अभी नहीं',
-  'manager.recentShape': 'पिछले {count} संग्रह, मात्रा के अनुसार',
+  'manager.recentShape': 'पिछले {count, plural, one{संग्रह} other{# संग्रह}}, मात्रा के अनुसार',
   'manager.todaysSummary': 'आज का सारांश',
   'manager.centreCalendar': 'केंद्र कैलेंडर',
   'manager.needsALook': 'ध्यान देने योग्य',
   'manager.allClear': 'अभी कुछ ध्यान देने योग्य नहीं',
-  'manager.unpriced': '{count} संग्रह दाम के इंतज़ार में हैं',
+  'manager.unpriced': '{count, plural, one{# संग्रह दाम के इंतज़ार में है} other{# संग्रह दाम के इंतज़ार में हैं}}',
   'manager.unpricedDetail':
       'भुगतान से पहले एक प्रकाशित रेट कार्ड इस केंद्र पर लागू होना चाहिए।',
   'manager.rateCardFooter': 'रेट कार्ड v{version} प्रकाशित · {date} से लागू',
@@ -884,7 +884,7 @@ const Catalog _hi = {
   'driver.missed': 'छूट गया',
   'driver.then': 'फिर',
   'driver.everyStopRecorded': 'हर पड़ाव दर्ज हो गया',
-  'round.customerCount': '{count} ग्राहक',
+  'round.customerCount': '{count, plural, one{# ग्राहक} other{# ग्राहक}}',
   'round.fromStandingOrders': 'नियमित ऑर्डर से बना',
   'round.toDeliver': 'पहुँचाना है',
   'round.done': 'हो गया',
@@ -920,7 +920,7 @@ const Catalog _hi = {
   'customer.noPlanYetDetail':
       'डेयरी आपका नियमित ऑर्डर तय कर दे, फिर आपकी डिलीवरी यहाँ दिखेगी।',
   'customer.thisWeek': 'इस हफ़्ते',
-  'customer.invoiceLine': '{from} → {to} · {count} डिलीवरी दर्ज',
+  'customer.invoiceLine': '{from} → {to} · {count, plural, one{# डिलीवरी} other{# डिलीवरी}} दर्ज',
   'customer.firstMonth':
       'आपकी पहली डिलीवरी जिस सुबह आएगी, उसी सुबह यहाँ दिखेगी।',
   'customer.freshFrom': '{dairy} से ताज़ा · हर सुबह',
@@ -943,7 +943,7 @@ const Catalog _hi = {
   'customer.tomorrow': 'कल',
 
   // LACTEVA-MOBILE-008 — the word beside the sync droplets.
-  'sync.sending': '{count} संग्रह भेजे जा रहे हैं…',
+  'sync.sending': '{count, plural, one{# संग्रह भेजा जा रहा है…} other{# संग्रह भेजे जा रहे हैं…}}',
 };
 
 const Catalog _ar = {
@@ -951,7 +951,7 @@ const Catalog _ar = {
   'driver.start': 'بدء الجولة',
   'driver.complete': 'إنهاء الجولة',
   'driver.record': 'تسجيل',
-  'driver.remaining': '{count} محطات متبقية',
+  'driver.remaining': '{count, plural, zero{لا محطات متبقية} one{محطة واحدة متبقية} two{محطتان متبقيتان} few{# محطات متبقية} many{# محطة متبقية} other{# محطة متبقية}}',
   'driver.pending': '{count} بانتظار المزامنة',
   'driver.sync': 'مزامنة الآن',
   'driver.needsSignal': 'بدء الجولة أو إنهاؤها يحتاج اتصالاً.',
@@ -998,7 +998,7 @@ const Catalog _ar = {
   'customer.owe': 'ما عليّ',
   'customer.billed': 'الفاتورة {billed} · المدفوع {paid}',
   'customer.thisMonth': 'هذا الشهر',
-  'customer.deliveries': '{count} توصيلة',
+  'customer.deliveries': '{count, plural, zero{لا توصيلات} one{توصيلة واحدة} two{توصيلتان} few{# توصيلات} many{# توصيلة} other{# توصيلة}}',
   'customer.bills': 'فواتيري',
   'customer.receipts': 'إيصالاتي',
   'customer.noReceipts': 'يظهر الإيصال هنا بعد كل دفعة.',
@@ -1058,7 +1058,7 @@ const Catalog _ar = {
   'milk.mixed': 'مخلوط',
 
   'login.queuedSafe':
-      '{count} سجلات ملتقطة محفوظة على هذا الهاتف وستُزامَن بعد تسجيل الدخول.',
+      '{count, plural, one{سجل واحد ملتقط محفوظ على هذا الهاتف وسيُزامَن بعد تسجيل الدخول.} two{سجلان ملتقطان محفوظان على هذا الهاتف وسيُزامَنان بعد تسجيل الدخول.} few{# سجلات ملتقطة محفوظة على هذا الهاتف وستُزامَن بعد تسجيل الدخول.} other{# سجلًا ملتقطًا محفوظة على هذا الهاتف وستُزامَن بعد تسجيل الدخول.}}',
 
   'wizard.stepTitle': 'الاستلام — الخطوة {n} من 6',
   'wizard.supplier': 'المزارع',
@@ -1181,8 +1181,8 @@ const Catalog _ar = {
   'sync.title': 'المزامنة',
   'sync.offlineSaved':
       'دون اتصال — عمليات الاستلام تُحفظ على هذا الجهاز ({count} بالانتظار)',
-  'sync.needAttention': '{count} عناصر تحتاج انتباهًا',
-  'sync.syncingItems': 'مزامنة {count} عناصر…',
+  'sync.needAttention': '{count, plural, one{عنصر واحد يحتاج انتباهًا} two{عنصران يحتاجان انتباهًا} few{# عناصر تحتاج انتباهًا} other{# عنصرًا يحتاج انتباهًا}}',
+  'sync.syncingItems': 'مزامنة {count, plural, one{عنصر واحد} two{عنصرين} few{# عناصر} other{# عنصرًا}}…',
   'sync.now': 'مزامنة الآن',
   'sync.online': 'متصل',
   'sync.offline': 'غير متصل',
@@ -1294,14 +1294,14 @@ const Catalog _ar = {
   'manager.ready': 'جاهز {passed}/{total}',
   'manager.notReady': 'غير جاهز',
   'manager.thisMorning': 'هذا الصباح',
-  'manager.farmersServed': 'خدمة {count} مزارعًا',
+  'manager.farmersServed': '{count, plural, zero{لا مزارعين بعد} one{خدمة مزارع واحد} two{خدمة مزارعَين} few{خدمة # مزارعين} other{خدمة # مزارعًا}}',
   'manager.noFigures': 'لا توجد أرقام لليوم بعد',
-  'manager.recentShape': 'آخر {count} عمليات استلام، حسب الكمية',
+  'manager.recentShape': 'آخر {count, plural, one{عملية استلام} two{عمليتي استلام} few{# عمليات استلام} other{# عملية استلام}}، حسب الكمية',
   'manager.todaysSummary': 'ملخص اليوم',
   'manager.centreCalendar': 'تقويم المركز',
   'manager.needsALook': 'يحتاج إلى مراجعة',
   'manager.allClear': 'لا شيء يحتاج إلى مراجعة الآن',
-  'manager.unpriced': '{count} عمليات استلام تنتظر التسعير',
+  'manager.unpriced': '{count, plural, one{عملية استلام واحدة بانتظار} two{عمليتا استلام بانتظار} few{# عمليات استلام بانتظار} other{# عملية استلام بانتظار}} السعر',
   'manager.unpricedDetail':
       'يجب أن تغطي بطاقة أسعار منشورة هذا المركز قبل الدفع.',
   'manager.rateCardFooter': 'بطاقة الأسعار v{version} منشورة · سارية من {date}',
@@ -1319,7 +1319,7 @@ const Catalog _ar = {
   'driver.missed': 'فائتة',
   'driver.then': 'ثم',
   'driver.everyStopRecorded': 'سُجلت كل المحطات',
-  'round.customerCount': '{count} عميلًا',
+  'round.customerCount': '{count, plural, zero{لا عملاء} one{عميل واحد} two{عميلان} few{# عملاء} other{# عميلًا}}',
   'round.fromStandingOrders': 'مولّدة من الطلبات الدائمة',
   'round.toDeliver': 'للتوصيل',
   'round.done': 'منجز',
@@ -1355,7 +1355,7 @@ const Catalog _ar = {
   'customer.noPlanYetDetail':
       'بمجرد أن تُعدّ الألبان طلبك الدائم، ستظهر توصيلاتك هنا.',
   'customer.thisWeek': 'هذا الأسبوع',
-  'customer.invoiceLine': '{from} ← {to} · {count} توصيلة مدرجة',
+  'customer.invoiceLine': '{from} → {to} · {count, plural, one{توصيلة واحدة} two{توصيلتان} few{# توصيلات} other{# توصيلة}} مدرجة',
   'customer.firstMonth':
       'ستظهر أول توصيلة لك هنا في الصباح الذي تصل فيه.',
   'customer.freshFrom': 'طازج من {dairy} · كل صباح',
@@ -1378,7 +1378,7 @@ const Catalog _ar = {
   'customer.tomorrow': 'غدًا',
 
   // LACTEVA-MOBILE-008 — the word beside the sync droplets.
-  'sync.sending': 'جارٍ إرسال {count} عملية استلام…',
+  'sync.sending': 'إرسال {count, plural, one{عملية استلام} two{عمليتي استلام} few{# عمليات استلام} other{# عملية استلام}}…',
 };
 
 const Map<String, Catalog> catalogs = {'en': _en, 'hi': _hi, 'ar': _ar};
@@ -1403,10 +1403,116 @@ class L10n {
   String t(String key, [Map<String, Object?> vars = const {}]) {
     final catalog = catalogs[language] ?? _en;
     var text = catalog[key] ?? _en[key] ?? key;
+    text = resolvePlurals(text, vars, language);
     vars.forEach((name, value) {
       text = text.replaceAll('{$name}', '${value ?? ''}');
     });
     return text;
+  }
+}
+
+/// `{count, plural, =0{none} one{# farmer} other{# farmers}}` (WO-72 Part A).
+///
+/// The dashboard said "1 farmers served" because the catalog had no plural
+/// rule; a string that is wrong for the number one is a string a person
+/// reads as evidence nobody looked. This is the ICU shape, kept to what the
+/// three catalogs need: `=N` exact matches, then the CLDR category for the
+/// language, then `other`. `#` inside a branch is the number.
+///
+/// Categories are CLDR's for the languages the app speaks: English has
+/// `one`/`other`; Hindi counts 0 and 1 as `one`; Arabic has `zero`, `one`,
+/// `two`, `few` (3–10), `many` (11–99) and `other`. A category the catalog
+/// did not write falls back to `other`, so an incomplete string degrades to
+/// English-shaped grammar rather than to a raw template.
+final RegExp _pluralPattern = RegExp(r'\{(\w+),\s*plural,');
+
+String resolvePlurals(String text, Map<String, Object?> vars, String language) {
+  var out = text;
+  var match = _pluralPattern.firstMatch(out);
+  while (match != null) {
+    final name = match.group(1)!;
+    // Find the matching close brace of this plural block.
+    var depth = 0;
+    var end = -1;
+    for (var i = match.start; i < out.length; i++) {
+      if (out[i] == '{') depth++;
+      if (out[i] == '}') {
+        depth--;
+        if (depth == 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end < 0) break;
+    final body = out.substring(match.end, end);
+    final raw = vars[name];
+    final n = raw is num ? raw : num.tryParse('${raw ?? ''}') ?? 0;
+    final branches = _pluralBranches(body);
+    final chosen =
+        branches['=${n is int ? n : (n == n.truncate() ? n.toInt() : n)}'] ??
+        branches[pluralCategory(n, language)] ??
+        branches['other'] ??
+        '';
+    final formatted = n is int
+        ? '$n'
+        : (n == n.truncate() ? '${n.toInt()}' : '$n');
+    out = out.replaceRange(match.start, end + 1, chosen.replaceAll('#', formatted));
+    match = _pluralPattern.firstMatch(out);
+  }
+  return out;
+}
+
+Map<String, String> _pluralBranches(String body) {
+  final branches = <String, String>{};
+  var i = 0;
+  while (i < body.length) {
+    // selector, then a {...} branch
+    final selStart = i;
+    while (i < body.length && body[i] != '{') {
+      i++;
+    }
+    final selector = body.substring(selStart, i).trim();
+    if (i >= body.length) break;
+    var depth = 0;
+    final branchStart = i + 1;
+    var branchEnd = -1;
+    for (; i < body.length; i++) {
+      if (body[i] == '{') depth++;
+      if (body[i] == '}') {
+        depth--;
+        if (depth == 0) {
+          branchEnd = i;
+          break;
+        }
+      }
+    }
+    if (branchEnd < 0) break;
+    if (selector.isNotEmpty) branches[selector] = body.substring(branchStart, branchEnd);
+    i = branchEnd + 1;
+  }
+  return branches;
+}
+
+/// The CLDR plural category of [n] in [language]. Exported for the tests.
+String pluralCategory(num n, String language) {
+  final isInt = n == n.truncate();
+  final i = n.abs().truncate();
+  switch (language) {
+    case 'hi':
+      // CLDR hi: one = i = 0,1 (and fractions of them); other otherwise.
+      return (n.abs() >= 0 && n.abs() <= 1) ? 'one' : 'other';
+    case 'ar':
+      if (!isInt) return 'other';
+      if (i == 0) return 'zero';
+      if (i == 1) return 'one';
+      if (i == 2) return 'two';
+      final mod = i % 100;
+      if (mod >= 3 && mod <= 10) return 'few';
+      if (mod >= 11 && mod <= 99) return 'many';
+      return 'other';
+    default:
+      return (isInt && i == 1) ? 'one' : 'other';
   }
 }
 
