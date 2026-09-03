@@ -55,6 +55,13 @@ type LocaleContextValue = {
   currency: string | null;
   /** The organization's IANA zone, for anything that renders a date. */
   timezone: string | null;
+  /**
+   * D-21 / WO-70: the symbol of the unit this dairy MEASURES intake in —
+   * `L` or `kg` — for the labels on an input a person is about to fill
+   * ("Gross ({unit})"). A figure that came from the platform renders the
+   * unit it came WITH, not this one.
+   */
+  quantityUnit: string | null;
   /** Is this language written right to left? (DEMO-014 §7) */
   rtl: boolean;
   t: Translate;
@@ -65,6 +72,7 @@ const FALLBACK: LocaleContextValue = {
   language: "en",
   currency: null,
   timezone: null,
+  quantityUnit: null,
   rtl: false,
   // Interpolates, like the real one. DEMO-016 found this: the fallback used
   // to ignore `vars`, so any component rendering outside a provider — an
@@ -105,11 +113,13 @@ export function LocaleProvider({
   locale,
   currency,
   timezone,
+  quantityUnit,
   children,
 }: {
   locale: string | null | undefined;
   currency?: string | null;
   timezone?: string | null;
+  quantityUnit?: string | null;
   children: React.ReactNode;
 }) {
   const language = baseLanguage(locale);
@@ -149,10 +159,11 @@ export function LocaleProvider({
       language,
       currency: currency ?? null,
       timezone: timezone ?? null,
+      quantityUnit: quantityUnit ?? null,
       rtl,
       t,
     }),
-    [locale, language, currency, timezone, rtl, t],
+    [locale, language, currency, timezone, quantityUnit, rtl, t],
   );
 
   return (

@@ -160,7 +160,6 @@ def main() -> int:
         f"/v1/milk-transactions/{tid}/weight",
         {
             "source": "scale",
-            "unit": "kg",
             "gross": gross,
             "tare": tare,
             "device_id": devices["scale"],

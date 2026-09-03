@@ -172,6 +172,11 @@ class OrgLocale {
     required this.timezone,
     required this.defaultLanguage,
     required this.supportedLanguages,
+    this.quantityUnit = 'kg',
+    this.quantityUnitLabel = 'kg',
+    this.tradeUnit,
+    this.tradeUnitLabel,
+    this.conversionFactor,
   });
 
   final String name;
@@ -185,6 +190,21 @@ class OrgLocale {
   final String defaultLanguage;
   final List<String> supportedLanguages;
 
+  /// D-21 / WO-70. What this dairy MEASURES intake in — `litre` or `kg` —
+  /// and the symbol a person reads (`L`, `kg`). From the platform, like the
+  /// currency: there is no map from India to litres in this app, and the
+  /// handset's home used to say "L" over a kilogram total because it assumed.
+  /// The defaults are `kg` for one reason only: a platform from before WO-70
+  /// measured everything in kilograms, so a session it describes was weighed.
+  final String quantityUnit;
+  final String quantityUnitLabel;
+
+  /// Ruling 3: null in the ordinary case. When set, the dairy PAYS in this
+  /// unit at the declared kg-per-litre factor, and every figure shows both.
+  final String? tradeUnit;
+  final String? tradeUnitLabel;
+  final String? conversionFactor;
+
   static OrgLocale fromJson(Map<String, dynamic> json) => OrgLocale(
     name: (json['name'] ?? '').toString(),
     countryCode: (json['country_code'] ?? '').toString(),
@@ -197,6 +217,11 @@ class OrgLocale {
             ?.map((e) => e.toString())
             .toList() ??
         const ['en'],
+    quantityUnit: (json['quantity_unit'] ?? 'kg').toString(),
+    quantityUnitLabel: (json['quantity_unit_label'] ?? 'kg').toString(),
+    tradeUnit: json['trade_unit']?.toString(),
+    tradeUnitLabel: json['trade_unit_label']?.toString(),
+    conversionFactor: json['conversion_factor']?.toString(),
   );
 
   Map<String, dynamic> toJson() => {
@@ -207,6 +232,11 @@ class OrgLocale {
     'timezone': timezone,
     'default_language': defaultLanguage,
     'supported_languages': supportedLanguages,
+    'quantity_unit': quantityUnit,
+    'quantity_unit_label': quantityUnitLabel,
+    'trade_unit': tradeUnit,
+    'trade_unit_label': tradeUnitLabel,
+    'conversion_factor': conversionFactor,
   };
 }
 

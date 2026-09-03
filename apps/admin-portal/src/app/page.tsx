@@ -50,6 +50,7 @@ import {
 } from "@/components/date-range";
 import { BarBreakdown, TrendChart } from "@/components/trend-chart";
 import { CurrencyTotals, Money, Quantity } from "@/components/money";
+import { unitLabel } from "@/lib/units";
 import { SectionHeading } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
 import { Metric, Surface } from "@/components/surface";
@@ -250,6 +251,7 @@ export default function Home() {
           report ? report.active_centers + report.inactive_centers : null
         }
         litres={collection ? collection.total_net_weight_kg : null}
+        unit={collection ? collection.quantity_unit : null}
         fill={vesselFill}
         farmers={collection ? collection.suppliers_served : null}
         payable={primary ? String(primary[1]) : collection ? "0.00" : null}
@@ -328,7 +330,7 @@ export default function Home() {
           } /><span aria-hidden className="text-muted-foreground"><Activity className="size-4" /></span></Surface>
         <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.quantity")} value={
             collection ? (
-              <Quantity value={collection.total_net_weight_kg} unit="kg" />
+              <Quantity value={collection.total_net_weight_kg} unit={collection.quantity_unit} />
             ) : (
               "—"
             )
@@ -343,7 +345,7 @@ export default function Home() {
                     .filter((row) => row.net_weight_kg > 0)
                     .map(
                       (row) =>
-                        `${t(`milk.${row.milk_type}`)} ${row.net_weight_kg} kg`,
+                        `${t(`milk.${row.milk_type}`)} ${row.net_weight_kg} ${unitLabel(row.quantity_unit)}`,
                     ),
                 ].join(" · ")
               : undefined
@@ -559,6 +561,7 @@ export default function Home() {
             />
           ) : (
             <TrendChart
+              unit={trend.data.quantity_unit}
               metric={metric}
               data={(trend.data.points ?? []).map((p) => ({
                 day: p.day,
@@ -696,11 +699,11 @@ export default function Home() {
                 emptyDescription="Rate bands appear once milk has been collected and priced."
                 rows={(report.rate_bands ?? []).map((band) => ({
                   key: String(band.unit_price),
-                  label: `${band.unit_price} ${band.currency ?? ""} / kg`,
+                  label: `${band.unit_price} ${band.currency ?? ""} / ${unitLabel(band.quantity_unit)}`,
                   magnitude: band.total_net_weight_kg,
                   detail: (
                     <span className="flex items-center gap-2">
-                      <Quantity value={band.total_net_weight_kg} unit="kg" />
+                      <Quantity value={band.total_net_weight_kg} unit={band.quantity_unit} />
                       <Money
                         amount={band.payable_amount}
                         currency={band.currency}
@@ -843,7 +846,7 @@ export default function Home() {
                   magnitude: row.total_net_weight_kg,
                   detail: (
                     <span className="flex items-center gap-2">
-                      <Quantity value={row.total_net_weight_kg} unit="kg" />
+                      <Quantity value={row.total_net_weight_kg} unit={row.quantity_unit} />
                       <Money
                         amount={row.payable_amount}
                         currency={row.currency}
@@ -885,7 +888,7 @@ export default function Home() {
                   magnitude: row.total_net_weight_kg,
                   detail: (
                     <span className="flex items-center gap-2">
-                      <Quantity value={row.total_net_weight_kg} unit="kg" />
+                      <Quantity value={row.total_net_weight_kg} unit={row.quantity_unit} />
                       <Money
                         amount={row.payable_amount}
                         currency={row.currency}

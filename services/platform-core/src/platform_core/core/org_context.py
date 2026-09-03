@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from platform_core.core.errors import ValidationError
 from platform_core.core.locales import CURRENCIES, LocaleSettings
 from platform_core.core.tenancy import get_current_tenant
+from platform_core.core.units import ConversionTerms
 
 #: Per-request memo, keyed by tenant so a cross-tenant worker cannot be served
 #: the previous tenant's currency.
@@ -46,6 +47,16 @@ PLATFORM_DEFAULT = LocaleSettings(
     timezone="UTC",
     default_language="en",
     supported_languages=("en",),
+    # D-21: the platform's own context measures in kilograms only in the
+    # sense that every row written before WO-70 did. Nothing that prices milk
+    # should be reading this — it should be asking a tenant.
+    quantity_unit="kg",
+)
+
+#: D-21 ruling 3, per tenant per request: what the organisation measures in,
+#: what it trades in, and the declared factor between them.
+_units_cache: ContextVar[dict[uuid.UUID, ConversionTerms] | None] = ContextVar(
+    "units_cache", default=None
 )
 
 
@@ -60,6 +71,74 @@ def _cache() -> dict[uuid.UUID, LocaleSettings]:
 def reset_locale_cache() -> None:
     """Forget everything memoized. Called when settings change, and by tests."""
     _locale_cache.set({})
+    _units_cache.set({})
+
+
+async def require_tenant_unit(
+    session: AsyncSession, claimed: str | None, tenant_id: uuid.UUID | None = None
+) -> str:
+    """The organisation's measured unit — and a refusal if the caller
+    claims another (D-21 / WO-70).
+
+    This replaces `if cmd.unit != "kg": raise`. The error is still an error;
+    it is now relative to the tenant rather than to a constant, and a reading
+    in the wrong unit is refused as firmly as before — `test_units.py` proves
+    this did not become "accept anything". `None` means the caller did not
+    say, and gets the organisation's unit.
+    """
+    from platform_core.core.errors import ConflictError
+    from platform_core.core.units import UnknownUnitError, normalise_unit, unit_label
+
+    terms = await tenant_units(session, tenant_id)
+    if claimed is None or not str(claimed).strip():
+        return terms.measured_unit
+    try:
+        unit = normalise_unit(claimed)
+    except UnknownUnitError as exc:
+        raise ConflictError(str(exc)) from exc
+    if unit != terms.measured_unit:
+        raise ConflictError(
+            f"this organisation measures milk in {unit_label(terms.measured_unit)}; "
+            f"a reading in {unit_label(unit)} was refused — the unit is set in "
+            "organisation settings and applies to future collections"
+        )
+    return unit
+
+
+async def tenant_units(
+    session: AsyncSession, tenant_id: uuid.UUID | None = None
+) -> ConversionTerms:
+    """This organisation's intake unit and conversion terms (D-21 / WO-70),
+    memoized for the request like the locale.
+
+    Read from the organisation row — never from the country registry — for
+    the same reason the currency is: an organisation's unit must not move
+    when the world's does, and a change is an owner's act on future
+    transactions, not a lookup that retro-labels history.
+    """
+    from platform_core.modules.organization.models import Organization
+
+    resolved = tenant_id or get_current_tenant()
+    if resolved is None:
+        return ConversionTerms(measured_unit=PLATFORM_DEFAULT.quantity_unit)
+    cache = _units_cache.get()
+    if cache is None:
+        cache = {}
+        _units_cache.set(cache)
+    hit = cache.get(resolved)
+    if hit is not None:
+        return hit
+    org = await session.get(Organization, resolved)
+    if org is None:
+        return ConversionTerms(measured_unit=PLATFORM_DEFAULT.quantity_unit)
+    terms = ConversionTerms(
+        measured_unit=org.quantity_unit or PLATFORM_DEFAULT.quantity_unit,
+        trade_unit=org.trade_unit,
+        factor=org.conversion_factor,
+        effective_from=org.conversion_effective_from,
+    )
+    cache[resolved] = terms
+    return terms
 
 
 def remember_locale(tenant_id: uuid.UUID, settings: LocaleSettings) -> None:
@@ -89,6 +168,7 @@ async def tenant_locale(
         timezone=org.timezone or "UTC",
         default_language=org.default_locale or "en",
         supported_languages=tuple(org.supported_languages or ["en"]),
+        quantity_unit=org.quantity_unit or PLATFORM_DEFAULT.quantity_unit,
     )
     cache[resolved] = settings
     return settings

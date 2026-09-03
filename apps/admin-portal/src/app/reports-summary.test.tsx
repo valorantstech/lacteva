@@ -61,6 +61,7 @@ function mockReports(daily: unknown) {
 /** A summary with every figure the page reads, minus the one being withheld. */
 const summary = (extra: Record<string, unknown> = {}) => ({
   total_net_weight_kg: 1184.5,
+  quantity_unit: "kg",
   transactions: 12,
   accepted: 11,
   rejected: 1,

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'api.dart';
 import 'brand/motion.dart';
 import 'build_flags.dart';
+import 'format.dart';
 import 'l10n.dart';
 import 'session.dart';
 import 'theme.dart';
@@ -23,7 +24,10 @@ import 'printing/printer_transport.dart';
 /// farmer is gone. Values are copied from `milk_collection/service.py`
 /// (MAX_GROSS_KG, QUALITY_RANGES), never invented here; the backend stays
 /// authoritative and re-checks everything on sync.
-const kMaxGrossKg = 200.0;
+/// The most one container plausibly holds, in the organisation's unit — 200
+/// litres or 200 kilograms. A bound against a mistyped 1200, not a claim about
+/// density, so it is unit-neutral (WO-70). Mirrors the platform's `MAX_GROSS`.
+const kMaxGross = 200.0;
 const kFatRange = (0.0, 15.0);
 const kSnfRange = (0.0, 15.0);
 const kClrRange = (20.0, 40.0);
@@ -197,7 +201,9 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
       return 'Enter gross and tare as numbers';
     }
     if (gross <= 0 || tare < 0) return 'gross must be > 0 and tare >= 0';
-    if (gross > kMaxGrossKg) return 'gross weight exceeds $kMaxGrossKg kg limit';
+    if (gross > kMaxGross) {
+      return 'gross exceeds ${kMaxGross.toStringAsFixed(0)} $_unit limit';
+    }
     if (tare >= gross) return 'tare must be less than gross';
     return null;
   }
@@ -235,6 +241,20 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
   /// capability exists and they are not trusted with it, which is a different
   /// and worse message than a screen that simply does not offer it.
   bool get _mayOverrideRate => widget.session?.can('pricing.rate.override') ?? false;
+
+  /// D-21 / WO-70: the dairy's own unit, for the labels on the fields the
+  /// operator fills. What comes BACK from the platform renders the unit it
+  /// carries — see [_recordUnit] and [_paidUnit].
+  String get _unit => orgUnit(widget.session);
+
+  /// The unit a transaction was measured in, as the platform stored it.
+  String _recordUnit(Map<String, dynamic> tx) => recordUnit(tx['weight_unit'], widget.session);
+
+  /// The unit the farmer is PAID in — the pinned trade unit where the dairy
+  /// declared one (ruling 3), the measured unit otherwise. The rate is per
+  /// this unit, so this is what goes after the slash.
+  String _paidUnit(Map<String, dynamic> tx) =>
+      recordUnit(tx['trade_unit'] ?? tx['weight_unit'], widget.session);
 
   /// Why a rate override cannot be captured without a connection (WO-51b).
   ///
@@ -280,12 +300,12 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
               else ...[
                 // Both numbers, before anything is confirmed: whoever changes
                 // a farmer's rate should see what they are changing it FROM.
-                Text('Card rate: $base $currency/kg'),
+                Text('Card rate: $base $currency/${_paidUnit(tx)}'),
                 const SizedBox(height: 12),
                 TextField(
                   controller: rateController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(labelText: 'New rate ($currency/kg)'),
+                  decoration: InputDecoration(labelText: 'New rate ($currency/${_paidUnit(tx)})'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -680,13 +700,13 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
               _readAssist(quality: false),
               TextField(
                 controller: _gross,
-                decoration: InputDecoration(labelText: t.t('wizard.grossKg')),
+                decoration: InputDecoration(labelText: t.t('wizard.grossKg', {'unit': _unit})),
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _tare,
-                decoration: InputDecoration(labelText: t.t('wizard.tareKg')),
+                decoration: InputDecoration(labelText: t.t('wizard.tareKg', {'unit': _unit})),
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 16),
@@ -749,8 +769,22 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        t.t('wizard.netWeightLine', {'kg': tx['net_weight']}),
+                        t.t('wizard.netWeightLine', {
+                          'qty': tx['net_weight'],
+                          'unit': _recordUnit(tx),
+                        }),
                       ),
+                      // D-21 ruling 3: where the dairy pays in the other unit,
+                      // BOTH figures and the factor — the same line the parchi
+                      // prints, so the counter and the farmer read one story.
+                      if (tx['trade_quantity'] != null)
+                        Text(
+                          t.t('wizard.paidLine', {
+                            'qty': tx['trade_quantity'],
+                            'unit': _paidUnit(tx),
+                            'factor': tx['conversion_factor'] ?? '',
+                          }),
+                        ),
                       Text(
                         t.t('wizard.qualityLine', {
                           'fat': tx['fat'],
@@ -765,7 +799,7 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
                         Text(
-                          '${tx['unit_price']} ${tx['currency']}/kg · '
+                          '${tx['unit_price']} ${tx['currency']}/${_paidUnit(tx)} · '
                           '${tx['pricing_detail']}',
                         ),
                         // BR-0029 / D-3. Once a rate has been changed, this
@@ -776,7 +810,7 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                         if (tx['base_unit_price'] != null) ...[
                           const SizedBox(height: 4),
                           Text(
-                            'Card rate ${tx['base_unit_price']} ${tx['currency']}/kg '
+                            'Card rate ${tx['base_unit_price']} ${tx['currency']}/${_paidUnit(tx)} '
                             '· changed: ${tx['override_reason'] ?? ''}',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
@@ -872,7 +906,12 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                 ),
               ),
               Center(
-                child: Text(t.t('wizard.netLine', {'kg': tx['net_weight']})),
+                child: Text(
+                  t.t('wizard.netLine', {
+                    'qty': tx['net_weight'],
+                    'unit': _recordUnit(tx),
+                  }),
+                ),
               ),
               if (tx['rejected_reason'] != null)
                 Center(

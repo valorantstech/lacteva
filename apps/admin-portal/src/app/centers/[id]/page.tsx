@@ -246,7 +246,7 @@ export default function CenterDetailPage({
             label="Quantity"
             value={
               stats ? (
-                <Quantity value={stats.total_net_weight_kg} unit="kg" />
+                <Quantity value={stats.total_net_weight_kg} unit={stats.quantity_unit} />
               ) : (
                 "—"
               )
@@ -466,7 +466,7 @@ export default function CenterDetailPage({
                   magnitude: row.total_net_weight_kg,
                   detail: (
                     <span className="flex items-center gap-2">
-                      <Quantity value={row.total_net_weight_kg} unit="kg" />
+                      <Quantity value={row.total_net_weight_kg} unit={row.quantity_unit} />
                       <Money
                         amount={row.payable_amount}
                         currency={row.currency}
@@ -583,7 +583,7 @@ export default function CenterDetailPage({
                         {tx.milk_type ?? "—"}
                       </td>
                       <td className="py-2 text-end">
-                        <Quantity value={tx.net_weight} unit="kg" />
+                        <Quantity value={tx.net_weight} unit={tx.weight_unit} />
                       </td>
                       <td className="py-2 text-end tabular-nums text-muted-foreground">
                         {tx.unit_price ?? "—"}

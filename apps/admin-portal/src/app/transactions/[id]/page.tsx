@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useCallback, useEffect, useState } from "react";
+import { unitLabel } from "@/lib/units";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -267,10 +268,7 @@ export default function TransactionDetailPage({
               <CardContent>
                 <dl className="flex flex-col gap-2.5 text-sm">
                   <Row label={t9n("field.quantity")}>
-                    <Quantity
-                      value={t.net_weight}
-                      unit={t.weight_unit ?? "kg"}
-                    />
+                    <Quantity value={t.net_weight} unit={t.weight_unit} />
                   </Row>
                   <Row label={t9n("txDetail.grossTare")}>
                     <span className="tabular-nums text-muted-foreground">
@@ -680,7 +678,7 @@ function SlipCard({ txId }: { txId: string }) {
             <Row label={t9n("txDetail.farmer")}>{farmer}</Row>
             <Row label={t9n("txDetail.milk")}>{milk}</Row>
             <Row label={t9n("field.quantity")}>
-              <Quantity value={s.quantity} unit={s.weight_unit ?? "kg"} />
+              <Quantity value={s.quantity} unit={s.weight_unit} />
             </Row>
             <Row label="FAT / SNF / CLR">
               <span className="tabular-nums">
@@ -955,13 +953,28 @@ function PricingBreakdown({ tx }: { tx: MilkTransaction }) {
                 </span>
               </Row>
               <Row label={t9n("field.quantity")}>
-                <Quantity value={tx.net_weight} unit={tx.weight_unit ?? "kg"} />
+                <Quantity value={tx.net_weight} unit={tx.weight_unit} />
               </Row>
+              {/* D-21 ruling 3: where the dairy pays in the other unit, BOTH
+                  figures and the declared factor — the same line the parchi
+                  prints, so the farmer and the office read one story. */}
+              {tx.trade_quantity != null && tx.trade_unit ? (
+                <Row label={t9n("txDetail.paidQuantity")}>
+                  <span className="tabular-nums">
+                    <Quantity value={tx.trade_quantity} unit={tx.trade_unit} />
+                    {tx.conversion_factor != null ? (
+                      <span className="ms-1 text-xs text-muted-foreground">
+                        × {String(tx.conversion_factor)} kg/L
+                      </span>
+                    ) : null}
+                  </span>
+                </Row>
+              ) : null}
               <Row label={t9n("delivery.rate")}>
                 <span className="tabular-nums">
                   {String(tx.unit_price)}
                   <span className="ms-1 text-xs text-muted-foreground">
-                    {tx.currency}/{tx.weight_unit ?? "kg"}
+                    {tx.currency}/{unitLabel(tx.trade_unit ?? tx.weight_unit)}
                   </span>
                 </span>
               </Row>
@@ -975,7 +988,7 @@ function PricingBreakdown({ tx }: { tx: MilkTransaction }) {
                     <span className="tabular-nums text-muted-foreground line-through">
                       {String(tx.base_unit_price)}
                       <span className="ms-1 text-xs">
-                        {tx.currency}/{tx.weight_unit ?? "kg"}
+                        {tx.currency}/{unitLabel(tx.trade_unit ?? tx.weight_unit)}
                       </span>
                     </span>
                   </Row>

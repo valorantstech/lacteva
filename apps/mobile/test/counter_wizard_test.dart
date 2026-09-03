@@ -225,7 +225,7 @@ void main() {
     ) async {
       final over = await tryWeight(tester, '200.5', '2');
       expect(
-        find.text('gross weight exceeds 200.0 kg limit'),
+        find.text('gross exceeds 200 kg limit'),
         findsOneWidget,
       );
       expect(over.steps, isEmpty);

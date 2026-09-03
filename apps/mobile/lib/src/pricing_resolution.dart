@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'format.dart';
 import 'session.dart';
 
 /// Resolution + Calculator Test Screen (PRC-003/PRC-004). Operators check
@@ -230,8 +231,8 @@ class _ResolutionTestScreenState extends State<ResolutionTestScreen> {
                           Expanded(
                             child: TextField(
                               controller: _quantity,
-                              decoration: const InputDecoration(
-                                labelText: 'Quantity (kg)',
+                              decoration: InputDecoration(
+                                labelText: 'Quantity (${orgUnit(widget.session)})',
                               ),
                               keyboardType: TextInputType.number,
                             ),

@@ -26,6 +26,8 @@ const FULL = {
   payableCurrency: "INR",
   received: "12340.00",
   receivedCurrency: "INR",
+  // D-21: the unit comes WITH the figure, from the platform.
+  unit: "kg",
 };
 
 describe("the hero band", () => {
@@ -63,6 +65,7 @@ describe("the hero band", () => {
         centresCollecting={null}
         centresTotal={null}
         litres={null}
+        unit={null}
         fill={null}
         farmers={null}
         payable={null}

@@ -77,7 +77,6 @@ async def test_a_scale_reading_is_accepted_and_says_which_scale(client):
         f"/v1/milk-transactions/{tx['id']}/weight",
         json={
             "source": "scale",
-            "unit": "kg",
             "gross": 32.5,
             "tare": 4.5,
             "device_id": scale["id"],
@@ -104,7 +103,7 @@ async def test_an_analyzer_reading_is_accepted_and_says_which_analyzer(client):
     tx = await _to_weight_step(client, headers, session["id"], supplier)
     await client.post(
         f"/v1/milk-transactions/{tx['id']}/weight",
-        json={"source": "manual", "unit": "kg", "gross": 30.0, "tare": 5.0},
+        json={"source": "manual", "gross": 30.0, "tare": 5.0},
         headers=headers,
     )
 
@@ -135,7 +134,7 @@ async def test_an_instrument_reading_without_a_device_is_refused(client):
 
     r = await client.post(
         f"/v1/milk-transactions/{tx['id']}/weight",
-        json={"source": "scale", "unit": "kg", "gross": 32.5, "tare": 4.5},
+        json={"source": "scale", "gross": 32.5, "tare": 4.5},
         headers=headers,
     )
     assert r.status_code == 409
@@ -150,7 +149,6 @@ async def test_an_unregistered_device_is_refused(client):
         f"/v1/milk-transactions/{tx['id']}/weight",
         json={
             "source": "scale",
-            "unit": "kg",
             "gross": 32.5,
             "tare": 4.5,
             "device_id": str(uuid.uuid4()),
@@ -170,7 +168,6 @@ async def test_a_printer_cannot_report_a_weight(client):
         f"/v1/milk-transactions/{tx['id']}/weight",
         json={
             "source": "scale",
-            "unit": "kg",
             "gross": 32.5,
             "tare": 4.5,
             "device_id": printer["id"],
@@ -195,7 +192,6 @@ async def test_a_retired_device_can_no_longer_report(client):
         f"/v1/milk-transactions/{tx['id']}/weight",
         json={
             "source": "scale",
-            "unit": "kg",
             "gross": 32.5,
             "tare": 4.5,
             "device_id": scale["id"],
@@ -214,7 +210,7 @@ async def test_manual_capture_is_untouched_and_needs_no_device(client):
 
     r = await client.post(
         f"/v1/milk-transactions/{tx['id']}/weight",
-        json={"source": "manual", "unit": "kg", "gross": 30.0, "tare": 5.0},
+        json={"source": "manual", "gross": 30.0, "tare": 5.0},
         headers=headers,
     )
     assert r.status_code == 200

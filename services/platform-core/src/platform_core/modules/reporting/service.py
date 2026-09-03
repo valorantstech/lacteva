@@ -78,14 +78,44 @@ def _exact(column):
 
 
 def _kg(total) -> float:
-    """A weight total, rounded once, from an exact sum.
+    """A quantity total, rounded once, from an exact sum.
 
     The DTO field is `float` and stays `float` — the API contract does not
     move. What changed is that the value being rounded is now reproducible.
+
+    D-21 / WO-70: the NAME is historical. The fields it feeds are called
+    `*_kg` because kilograms were the only unit the platform knew when they
+    were named; they now carry the ORGANISATION'S unit, stated beside them in
+    `quantity_unit` on every DTO that has one. Renaming the wire fields is a
+    coordinated client change and is recorded as a discovered item, not done
+    silently here.
     """
     if total is None:
         return 0.0
     return float(Decimal(total).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
+
+
+def _unit(unit, distinct_count, default: str) -> str:
+    """The unit of an aggregate, READ from the rows it summed (D-21).
+
+    Every organisation has one unit at a time, so almost every window is
+    uniform and this returns it. A window that straddles an owner's change
+    of unit holds rows in both, and summing them would be a number in no
+    unit — so it says `mixed`, and a client renders that word rather than
+    either symbol. An empty window has no rows to read and reports the
+    organisation's current unit.
+    """
+    if (distinct_count or 0) > 1:
+        return "mixed"
+    return unit or default
+
+
+#: The two columns every quantity aggregate now selects beside its sum.
+def _unit_columns():
+    return (
+        func.min(case((ACCEPTED, Tx.weight_unit))),
+        func.count(distinct(case((ACCEPTED, Tx.weight_unit)))),
+    )
 
 
 def _money(total) -> Decimal:
@@ -123,6 +153,8 @@ class MilkTypeRow(BaseModel):
     milk_type: str
     transactions: int
     net_weight_kg: float
+    #: D-21: the unit of `net_weight_kg`, read from the rows. See `_kg`.
+    quantity_unit: str
     weighted_avg_fat: float | None
     amount_by_currency: dict[str, Decimal]
 
@@ -197,6 +229,10 @@ class DayBook(BaseModel):
     total_collected_kg: float
     total_dispatched_kg: float
     total_remainder_kg: float
+    #: D-21 / WO-70: the unit of every `*_kg` figure in this book — the
+    #: organisation's intake unit, read from the collections and dispatches
+    #: it summed. The suffix is historical (see `_kg`); the value is not.
+    quantity_unit: str
     sales: DayBookSales
 
 
@@ -210,6 +246,8 @@ class DailyCollectionSummary(BaseModel):
     in_progress: int
     suppliers_served: int
     total_net_weight_kg: float
+    #: D-21: the unit of `total_net_weight_kg`, read from the rows.
+    quantity_unit: str
     payable_by_currency: dict[str, Decimal]
     unpriced_accepted: int
     weighted_avg_fat: float | None
@@ -227,6 +265,7 @@ class CenterSummaryRow(BaseModel):
     transactions: int
     accepted: int
     total_net_weight_kg: float
+    quantity_unit: str  # D-21; "mixed" when the window straddles a unit change
     payable_amount: Decimal
     currency: str | None  # "MIX" when more than one currency appears
     weighted_avg_fat: float | None
@@ -243,6 +282,7 @@ class SupplierSummaryRow(BaseModel):
     deliveries: int
     accepted: int
     total_net_weight_kg: float
+    quantity_unit: str  # D-21
     payable_amount: Decimal
     currency: str | None
     weighted_avg_fat: float | None
@@ -429,6 +469,8 @@ class CollectionTrend(BaseModel):
     date_from: date
     date_to: date
     points: list[TrendPoint]
+    #: D-21: one unit for the whole series, read from the rows it summed.
+    quantity_unit: str
 
 
 class RateBandRow(BaseModel):
@@ -445,6 +487,7 @@ class RateBandRow(BaseModel):
     currency: str | None
     transactions: int
     total_net_weight_kg: float
+    quantity_unit: str  # D-21: the unit the price is per, and the total is in
     payable_amount: Decimal
 
 
@@ -602,6 +645,13 @@ class ReportingService:
 
         return business_today(await tenant_timezone(self._session))
 
+    async def _unit_default(self) -> str:
+        """The organisation's current intake unit, for an aggregate with no
+        rows to read one from (D-21)."""
+        from platform_core.core.org_context import tenant_locale
+
+        return (await tenant_locale(self._session)).quantity_unit
+
     # --- the milk day book -------------------------------------------------
 
     async def day_book(
@@ -634,6 +684,15 @@ class ReportingService:
                 .group_by(Tx.milk_type)
             )
         ).all()
+        # D-21: the unit of this book, read from what it sums — collections
+        # and dispatches alike, since the ledger subtracts one from the other.
+        units_seen = set(
+            (
+                await self._session.execute(
+                    select(distinct(Tx.weight_unit)).where(*conditions, ACCEPTED)
+                )
+            ).scalars()
+        )
 
         dispatch_conditions = [
             MilkDispatch.tenant_id == tenant_id,
@@ -653,6 +712,15 @@ class ReportingService:
                 .group_by(MilkDispatch.milk_type)
             )
         ).all()
+        units_seen |= set(
+            (
+                await self._session.execute(
+                    select(distinct(MilkDispatch.quantity_unit)).where(*dispatch_conditions)
+                )
+            ).scalars()
+        )
+        units_seen.discard(None)
+        book_unit = _unit(next(iter(units_seen), None), len(units_seen), await self._unit_default())
 
         sold = (
             await self._session.execute(
@@ -708,6 +776,7 @@ class ReportingService:
             total_collected_kg=_kg(total_in),
             total_dispatched_kg=_kg(total_out),
             total_remainder_kg=_kg(total_in - total_out),
+            quantity_unit=book_unit,
             sales=DayBookSales(
                 deliveries=int(sold[0] or 0),
                 quantity=Decimal(sold[1] or 0).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
@@ -755,6 +824,7 @@ class ReportingService:
                 case((ACCEPTED & Tx.snf.is_not(None), _exact(Tx.snf) * _exact(Tx.net_weight)))
             ),
             func.sum(case((ACCEPTED & Tx.snf.is_not(None), _exact(Tx.net_weight)))),
+            *_unit_columns(),
         ).where(*conditions)
         if branch_id is not None:
             stmt = stmt.join(CollectionCenter, CollectionCenter.id == Tx.center_id).where(
@@ -773,6 +843,8 @@ class ReportingService:
             fat_weight,
             snf_sum,
             snf_weight,
+            unit,
+            units,
         ) = row
         payable = await self._payable_by_currency(conditions, branch_id)
         by_type = await self._by_milk_type(conditions, branch_id)
@@ -786,6 +858,7 @@ class ReportingService:
             in_progress=(transactions or 0) - (accepted or 0) - (rejected or 0) - (cancelled or 0),
             suppliers_served=suppliers or 0,
             total_net_weight_kg=_kg(weight),
+            quantity_unit=_unit(unit, units, await self._unit_default()),
             payable_by_currency=payable,
             unpriced_accepted=unpriced or 0,
             weighted_avg_fat=self._weighted(fat_sum, fat_weight),
@@ -813,17 +886,19 @@ class ReportingService:
                 func.sum(case((Tx.fat.is_not(None), _exact(Tx.fat) * _exact(Tx.net_weight)))),
                 func.sum(case((Tx.fat.is_not(None), _exact(Tx.net_weight)))),
                 func.coalesce(func.sum(_exact(Tx.gross_amount)), _EXACT_ZERO),
+                *_unit_columns(),
             )
             .where(*conditions, ACCEPTED)
             .group_by(Tx.milk_type, Tx.currency)
         )
+        default_unit = await self._unit_default()
         if branch_id is not None:
             stmt = stmt.join(CollectionCenter, CollectionCenter.id == Tx.center_id).where(
                 CollectionCenter.branch_id == branch_id
             )
 
         merged: dict[str, dict] = {}
-        for milk_type, currency, count, weight, fat_sum, fat_weight, amount in (
+        for milk_type, currency, count, weight, fat_sum, fat_weight, amount, unit, units in (
             await self._session.execute(stmt)
         ).all():
             key = milk_type or "unspecified"
@@ -835,10 +910,15 @@ class ReportingService:
                     "fat_sum": Decimal(0),
                     "fat_weight": Decimal(0),
                     "amounts": {},
+                    "units": set(),
                 },
             )
             row["transactions"] += count or 0
             row["weight"] += Decimal(weight or 0)
+            if (units or 0) > 1:
+                row["units"].add("mixed")
+            elif unit:
+                row["units"].add(unit)
             row["fat_sum"] += Decimal(fat_sum or 0)
             row["fat_weight"] += Decimal(fat_weight or 0)
             if currency and amount:
@@ -852,6 +932,9 @@ class ReportingService:
                     milk_type=key,
                     transactions=row["transactions"],
                     net_weight_kg=_kg(row["weight"]),
+                    quantity_unit=_unit(
+                        next(iter(row["units"]), None), len(row["units"]), default_unit
+                    ),
                     weighted_avg_fat=self._weighted(row["fat_sum"], row["fat_weight"]),
                     amount_by_currency={c: quantize_money(a, c) for c, a in row["amounts"].items()},
                 )
@@ -911,6 +994,7 @@ class ReportingService:
                 ),
                 func.sum(case((ACCEPTED & Tx.fat.is_not(None), _exact(Tx.net_weight)))),
                 func.max(Tx.created_at),
+                *_unit_columns(),
             )
             .join(CollectionCenter, CollectionCenter.id == Tx.center_id)
             .where(*conditions)
@@ -921,6 +1005,7 @@ class ReportingService:
             stmt = stmt.where(CollectionCenter.branch_id == branch_id)
         total = await self._session.scalar(select(func.count()).select_from(stmt.subquery()))
         rows = await self._session.execute(stmt.limit(limit).offset(offset))
+        default_unit = await self._unit_default()
         items = [
             CenterSummaryRow(
                 center_id=center_id,
@@ -929,6 +1014,7 @@ class ReportingService:
                 transactions=tx_count,
                 accepted=accepted or 0,
                 total_net_weight_kg=_kg(weight),
+                quantity_unit=_unit(unit, units, default_unit),
                 payable_amount=Decimal(str(payable or 0)),
                 currency=("MIX" if (ncur or 0) > 1 else currency),
                 weighted_avg_fat=self._weighted(fat_sum, fat_weight),
@@ -947,6 +1033,8 @@ class ReportingService:
                 fat_sum,
                 fat_weight,
                 last_at,
+                unit,
+                units,
             ) in rows.all()
         ]
         return SummaryPage(items=items, total=total or 0, limit=limit, offset=offset)
@@ -988,6 +1076,7 @@ class ReportingService:
                 ),
                 func.sum(case((ACCEPTED & Tx.fat.is_not(None), _exact(Tx.net_weight)))),
                 func.max(Tx.created_at),
+                *_unit_columns(),
             )
             .join(Supplier, Supplier.id == Tx.supplier_id)
             .join(SupplierProfile, SupplierProfile.supplier_id == Supplier.id)
@@ -997,6 +1086,7 @@ class ReportingService:
         )
         total = await self._session.scalar(select(func.count()).select_from(stmt.subquery()))
         rows = await self._session.execute(stmt.limit(limit).offset(offset))
+        default_unit = await self._unit_default()
         items = [
             SupplierSummaryRow(
                 supplier_id=supplier_id,
@@ -1005,6 +1095,7 @@ class ReportingService:
                 deliveries=deliveries,
                 accepted=accepted or 0,
                 total_net_weight_kg=_kg(weight),
+                quantity_unit=_unit(unit, units, default_unit),
                 payable_amount=Decimal(str(payable or 0)),
                 currency=("MIX" if (ncur or 0) > 1 else currency),
                 weighted_avg_fat=self._weighted(fat_sum, fat_weight),
@@ -1023,6 +1114,8 @@ class ReportingService:
                 fat_sum,
                 fat_weight,
                 last_at,
+                unit,
+                units,
             ) in rows.all()
         ]
         return SummaryPage(items=items, total=total or 0, limit=limit, offset=offset)
@@ -1469,6 +1562,7 @@ class ReportingService:
                     ),
                     func.coalesce(func.sum(case((ACCEPTED & PRICED, Tx.gross_amount), else_=0)), 0),
                     func.max(case((ACCEPTED & PRICED, Tx.currency))),
+                    *_unit_columns(),
                 )
                 .where(*conditions)
                 .group_by(day)
@@ -1476,6 +1570,9 @@ class ReportingService:
             )
         ).all()
 
+        series_units = {unit for *_, unit, _n in rows if unit}
+        if any((n or 0) > 1 for *_, n in rows):
+            series_units.add("mixed")
         found = {
             (value if isinstance(value, date) else date.fromisoformat(str(value)[:10])): (
                 transactions,
@@ -1484,7 +1581,7 @@ class ReportingService:
                 payable,
                 currency,
             )
-            for value, transactions, accepted, weight, payable, currency in rows
+            for value, transactions, accepted, weight, payable, currency, _unit_, _n in rows
         }
         points: list[TrendPoint] = []
         cursor = date_from
@@ -1503,7 +1600,14 @@ class ReportingService:
                 )
             )
             cursor += timedelta(days=1)
-        return CollectionTrend(date_from=date_from, date_to=date_to, points=points)
+        return CollectionTrend(
+            date_from=date_from,
+            date_to=date_to,
+            points=points,
+            quantity_unit=_unit(
+                next(iter(series_units), None), len(series_units), await self._unit_default()
+            ),
+        )
 
     # --- rate/quality distribution (DEMO-002) -------------------------------
 
@@ -1528,21 +1632,27 @@ class ReportingService:
                     func.count(),
                     func.coalesce(func.sum(_exact(Tx.net_weight)), _EXACT_ZERO),
                     func.coalesce(func.sum(Tx.gross_amount), 0),
+                    # The unit the PRICE is per (D-21 ruling 3): the pinned
+                    # trade unit where one exists, the measured one otherwise.
+                    func.min(func.coalesce(Tx.trade_unit, Tx.weight_unit)),
+                    func.count(distinct(func.coalesce(Tx.trade_unit, Tx.weight_unit))),
                 )
                 .where(*conditions, ACCEPTED, PRICED)
                 .group_by(Tx.unit_price, Tx.currency)
                 .order_by(Tx.unit_price)
             )
         ).all()
+        default_unit = await self._unit_default()
         return [
             RateBandRow(
                 unit_price=Decimal(str(unit_price)),
                 currency=currency,
                 transactions=count,
                 total_net_weight_kg=_kg(weight),
+                quantity_unit=_unit(unit, units, default_unit),
                 payable_amount=Decimal(str(payable)),
             )
-            for unit_price, currency, count, weight, payable in rows
+            for unit_price, currency, count, weight, payable, unit, units in rows
             if unit_price is not None
         ]
 

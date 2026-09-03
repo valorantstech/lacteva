@@ -34,6 +34,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'format.dart';
 import 'brand/motion.dart';
 import 'center_summary.dart';
 import 'centers.dart';
@@ -408,7 +409,11 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
       padding: const EdgeInsets.all(20),
       child: _NavGrid(tiles: _operatorTiles(centre)),
     ),
-    _LastCollection(l: _l, tx: _recent.isEmpty ? null : _recent.first),
+    _LastCollection(
+      l: _l,
+      tx: _recent.isEmpty ? null : _recent.first,
+      session: widget.session,
+    ),
     _FooterFact(text: _shiftFooter(centre)),
   ];
 
@@ -567,7 +572,10 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
     final today = _summary;
     if (today != null && !today.isEmpty) {
       return [
-        (quantity(today.totalNetWeightKg, unit: 'L'), _l.t('home.collectedToday')),
+        (
+          quantity(today.totalNetWeightKg, unit: unitLabel(today.quantityUnit)),
+          _l.t('home.collectedToday'),
+        ),
         (count(today.suppliersServed), _l.t('home.farmers')),
         (percent(today.avgFat), _l.t('home.avgFat')),
       ];
@@ -575,7 +583,10 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
     final before = _yesterday;
     if (before != null && !before.isEmpty) {
       return [
-        (quantity(before.totalNetWeightKg, unit: 'L'), _l.t('home.collectedYesterday')),
+        (
+          quantity(before.totalNetWeightKg, unit: unitLabel(before.quantityUnit)),
+          _l.t('home.collectedYesterday'),
+        ),
         (count(before.suppliersServed), _l.t('home.farmersYesterday')),
         (percent(before.avgFat), _l.t('home.avgFatYesterday')),
       ];
@@ -1060,10 +1071,14 @@ class _Chip extends StatelessWidget {
 
 /// The last thing that happened, because that is what a farmer asks about.
 class _LastCollection extends StatelessWidget {
-  const _LastCollection({required this.l, required this.tx});
+  const _LastCollection({required this.l, required this.tx, this.session});
 
   final L10n l;
   final Map<String, dynamic>? tx;
+
+  /// For the unit of a row the platform has not yet seen (an offline
+  /// projection carries none) — the dairy's own, never an assumed one.
+  final Session? session;
 
   @override
   Widget build(BuildContext context) {
@@ -1108,7 +1123,8 @@ class _LastCollection extends StatelessWidget {
                             Text(
                               [
                                 if (row['net_weight'] != null)
-                                  '${row['net_weight']} kg',
+                                  '${row['net_weight']} '
+                                      '${recordUnit(row['weight_unit'], session)}',
                                 if (row['fat_percentage'] != null)
                                   'FAT ${row['fat_percentage']}',
                                 if (row['gross_amount'] != null)
@@ -1327,9 +1343,11 @@ class _MorningCard extends StatelessWidget {
   final List<double> bars;
   final List<MilkTypeShare> byType;
 
-  /// The platform's own figure, with its unit. Formatting a weight is a
-  /// decision the column already made — the app states it, it does not round.
-  static String _kg(double weight) => '$weight kg';
+  /// The platform's own figure, with ITS unit (D-21). Formatting a quantity
+  /// is a decision the column already made — the app states it, it does not
+  /// round; and the unit is the one the report carried, never one assumed.
+  static String _figure(MilkTypeShare share) =>
+      '${share.netWeightKg} ${unitLabel(share.quantityUnit)}';
 
   @override
   Widget build(BuildContext context) {
@@ -1421,7 +1439,7 @@ class _MorningCard extends StatelessWidget {
                           .map(
                             (share) =>
                                 '${l.t('milk.${share.milkType}')} '
-                                '${_kg(share.netWeightKg)}',
+                                '${_figure(share)}',
                           )
                           .join(' · '),
                       style: const TextStyle(

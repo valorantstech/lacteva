@@ -3,7 +3,8 @@
 import hashlib
 import secrets
 import uuid
-from datetime import timedelta
+from datetime import date, timedelta
+from decimal import Decimal
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -28,6 +29,7 @@ from platform_core.core.tenancy import (
     get_current_tenant,
     require_current_tenant,
 )
+from platform_core.core.units import UNITS, unit_label, validate_terms
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.authz.service import AuthzService
@@ -63,6 +65,9 @@ class CreateOrganizationCommand(BaseModel):
     timezone: str | None = None
     default_locale: str | None = None
     supported_languages: list[str] | None = None
+    #: D-21. `None` means "what the country trades in"; a cooperative that
+    #: weighs says `kg` here, exactly as one that bills in dollars says `USD`.
+    quantity_unit: str | None = Field(default=None, max_length=12)
 
 
 class LocaleSettingsView(BaseModel):
@@ -76,6 +81,17 @@ class LocaleSettingsView(BaseModel):
     default_language: str
     supported_languages: list[str]
     languages: list[dict]
+    #: D-21 / WO-70 — what intake is MEASURED in, and its symbol.
+    quantity_unit: str
+    quantity_unit_label: str
+    #: The units an organisation may choose between.
+    units: list[str]
+    #: Ruling 3. Null in the ordinary case: measured and traded alike, nothing
+    #: converts, nothing prints.
+    trade_unit: str | None = None
+    trade_unit_label: str | None = None
+    conversion_factor: Decimal | None = None
+    conversion_effective_from: date | None = None
 
 
 class UpdateLocaleSettingsCommand(BaseModel):
@@ -91,6 +107,18 @@ class UpdateLocaleSettingsCommand(BaseModel):
     timezone: str | None = None
     default_language: str | None = None
     supported_languages: list[str] | None = None
+    #: D-21. Changing the measured unit is an owner's act and applies to
+    #: FUTURE transactions only — `update_locale_settings` touches the
+    #: organisation row and nothing else, and `test_units.py` proves history
+    #: keeps the unit it was measured in.
+    quantity_unit: str | None = Field(default=None, max_length=12)
+    #: Ruling 3. Absent means unchanged; to withdraw a declared conversion,
+    #: send `clear_conversion: true` — a null cannot say "remove", because a
+    #: null is also what an untouched field sends.
+    trade_unit: str | None = Field(default=None, max_length=12)
+    conversion_factor: Decimal | None = Field(default=None, gt=0)
+    conversion_effective_from: date | None = None
+    clear_conversion: bool = False
 
 
 class OrganizationView(BaseModel):
@@ -104,6 +132,7 @@ class OrganizationView(BaseModel):
     currency_code: str
     timezone: str
     supported_languages: list[str]
+    quantity_unit: str
 
     model_config = {"from_attributes": True}
 
@@ -143,6 +172,7 @@ class OrganizationService:
             timezone=cmd.timezone,
             default_language=cmd.default_locale,
             supported_languages=cmd.supported_languages,
+            quantity_unit=cmd.quantity_unit,
         )
         org = Organization(
             name=cmd.name,
@@ -153,6 +183,9 @@ class OrganizationService:
             currency_code=locale.currency_code,
             timezone=locale.timezone,
             supported_languages=list(locale.supported_languages),
+            # D-21: the country proposes, the organisation decides — and from
+            # here on every transaction reads THIS column, never the registry.
+            quantity_unit=locale.quantity_unit,
         )
         self._session.add(org)
         await self._session.flush()
@@ -181,6 +214,7 @@ class OrganizationService:
                     "country": org.country_code,
                     "currency": org.currency_code,
                     "timezone": org.timezone,
+                    "quantity_unit": org.quantity_unit,
                 },
                 actor_id=actor_id,
             )
@@ -220,6 +254,14 @@ class OrganizationService:
             "timezone": org.timezone,
             "default_locale": org.default_locale,
             "supported_languages": list(org.supported_languages or []),
+            "quantity_unit": org.quantity_unit,
+            "trade_unit": org.trade_unit,
+            "conversion_factor": (
+                str(org.conversion_factor) if org.conversion_factor is not None else None
+            ),
+            "conversion_effective_from": (
+                org.conversion_effective_from.isoformat() if org.conversion_effective_from else None
+            ),
         }
         try:
             resolved = resolve(
@@ -228,7 +270,28 @@ class OrganizationService:
                 timezone=cmd.timezone or org.timezone,
                 default_language=cmd.default_language or org.default_locale,
                 supported_languages=cmd.supported_languages or list(org.supported_languages or []),
+                quantity_unit=cmd.quantity_unit or org.quantity_unit,
             )
+            # D-21 ruling 3. The three conversion fields are validated
+            # TOGETHER: a trade unit without a factor, or a factor without a
+            # differing trade unit, is refused here rather than left half-set
+            # for pricing to trip over. Absent means unchanged; clearing is an
+            # explicit act.
+            if cmd.clear_conversion:
+                trade_unit, factor, effective_from = None, None, None
+            else:
+                trade_unit = cmd.trade_unit if cmd.trade_unit is not None else org.trade_unit
+                factor = (
+                    cmd.conversion_factor
+                    if cmd.conversion_factor is not None
+                    else org.conversion_factor
+                )
+                effective_from = (
+                    cmd.conversion_effective_from
+                    if cmd.conversion_effective_from is not None
+                    else org.conversion_effective_from
+                )
+            terms = validate_terms(resolved.quantity_unit, trade_unit, factor, effective_from)
         except ValueError as exc:
             # The resolver speaks in ValueError because it is pure and knows
             # nothing about HTTP. Here is the boundary, so here is where a bad
@@ -238,6 +301,16 @@ class OrganizationService:
         org.timezone = resolved.timezone
         org.default_locale = resolved.default_language
         org.supported_languages = list(resolved.supported_languages)
+        # D-21: THE ORGANISATION ROW AND NOTHING ELSE. A unit change applies
+        # to transactions captured from now on, which read this column at
+        # capture; the rows already written keep the unit they were measured
+        # in. No UPDATE touches `milk_collection_transaction` here, by design
+        # — relabelling weighed history as volumes would silently corrupt
+        # settled payouts by about three percent.
+        org.quantity_unit = terms.measured_unit
+        org.trade_unit = terms.trade_unit
+        org.conversion_factor = terms.factor
+        org.conversion_effective_from = terms.effective_from
         await self._session.flush()
         # The memo is per-request, but this request may still go on to render
         # money in the currency it just changed.
@@ -254,6 +327,16 @@ class OrganizationService:
                     "timezone": org.timezone,
                     "default_locale": org.default_locale,
                     "supported_languages": list(org.supported_languages),
+                    "quantity_unit": org.quantity_unit,
+                    "trade_unit": org.trade_unit,
+                    "conversion_factor": (
+                        str(org.conversion_factor) if org.conversion_factor is not None else None
+                    ),
+                    "conversion_effective_from": (
+                        org.conversion_effective_from.isoformat()
+                        if org.conversion_effective_from
+                        else None
+                    ),
                 },
             },
         )
@@ -650,4 +733,11 @@ def _locale_view(org: Organization) -> LocaleSettingsView:
         default_language=org.default_locale,
         supported_languages=supported,
         languages=language_choices(supported),
+        quantity_unit=org.quantity_unit,
+        quantity_unit_label=unit_label(org.quantity_unit),
+        units=list(UNITS),
+        trade_unit=org.trade_unit,
+        trade_unit_label=unit_label(org.trade_unit) if org.trade_unit else None,
+        conversion_factor=org.conversion_factor,
+        conversion_effective_from=org.conversion_effective_from,
     )

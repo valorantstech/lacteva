@@ -31,7 +31,7 @@ from platform_core.core.metrics import (
     SETTLEMENTS_CREATED,
     SETTLEMENTS_FINALIZED,
 )
-from platform_core.core.org_context import tenant_currency
+from platform_core.core.org_context import tenant_currency, tenant_units
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money
 from platform_core.infrastructure.events import EventBus, EventEnvelope
@@ -197,7 +197,12 @@ class SettlementService:
             transaction_id=cmd.transaction_id,
             transaction_date=tx_date,
             quantity=Decimal(record["quantity"]),
-            quantity_unit=record.get("quantity_unit", "kg"),
+            # D-21: the calculation record carries the unit it was priced in;
+            # a record from before WO-70 that carries none was a kilogram
+            # calculation, and says so via the organisation's own unit at
+            # the time — which for every such tenant is kg.
+            quantity_unit=record.get("quantity_unit")
+            or (await tenant_units(self._session, settlement.tenant_id)).measured_unit,
             unit_price=Decimal(record["unit_price"]),
             gross_amount=Decimal(record["gross_amount"]),
             trace_reference=record["event_id"],

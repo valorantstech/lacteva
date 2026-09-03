@@ -242,6 +242,11 @@ class Market:
     #: (name, code) or None. A centre opened AFTER the season's rate card was
     #: published, so its milk arrives rate-pending. See `build_rate_pending`.
     late_center: tuple | None = None
+    #: D-21 / WO-70. `None` means "what the country trades in" — India and
+    #: Kenya both resolve to LITRES. Kenya is seeded as a cooperative that
+    #: WEIGHS, by explicit override, so both paths stay exercised by data
+    #: that exists: one litre tenant, one kilogram tenant, same code.
+    quantity_unit: str | None = None
 
 
 CENTERS = [
@@ -315,6 +320,7 @@ FAT_BANDS = [(3.0, 4.0, 42.0), (4.0, 5.0, 45.5), (5.0, 6.0, 49.0)]
 
 KENYA = Market(
     key="kenya",
+    quantity_unit="kg",
     org_name=DEMO_ORG,
     org_slug=DEMO_ORG_SLUG,
     country_code="KE",
@@ -520,8 +526,9 @@ def is_buffalo(index: int, day_offset: int) -> bool:
     return (index * 3 + day_offset) % 5 < 2
 
 
-# Gross/tare pairs, cycled by index. Net weights land between 8 and 42 kg,
-# which is the range a smallholder actually delivers.
+# Gross/tare pairs, cycled by index. Net quantities land between 8 and 42
+# (litres or kilograms — the organisation's unit), which is the range a
+# smallholder actually delivers.
 WEIGHTS = [
     (14.0, 2.0),
     (22.5, 2.5),
@@ -906,18 +913,35 @@ async def platform_admin(client) -> dict:
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
-async def make_org(client, admin: dict, name: str, slug: str, country_code: str) -> dict:
+async def make_org(
+    client,
+    admin: dict,
+    name: str,
+    slug: str,
+    country_code: str,
+    *,
+    quantity_unit: str | None = None,
+) -> dict:
     """DEMO-013: the country is supplied, never assumed.
 
     Nothing else is: the platform resolves currency, timezone and languages
     from it (`core/locales.py`), so this seeder states no money and no clock
     anywhere. If it did, it would be a second source of truth that could
     disagree with the tenant it just created.
+
+    D-21 / WO-70: the intake unit resolves from the country the same way, and
+    is stated here ONLY for the market that deliberately departs from its
+    country's — the Kenyan cooperative that weighs.
     """
     org = await expect(
         await client.post(
             "/v1/organizations",
-            json={"name": name, "slug": slug, "country_code": country_code},
+            json={
+                "name": name,
+                "slug": slug,
+                "country_code": country_code,
+                **({"quantity_unit": quantity_unit} if quantity_unit else {}),
+            },
             headers=admin,
         ),
         201,
@@ -1346,7 +1370,10 @@ async def collect_one(
                 "temperature_c": 4.0,
             },
         ),
-        ("weight", {"source": "manual", "unit": "kg", "gross": gross, "tare": tare}),
+        # D-21: no unit stated — the platform applies the ORGANISATION'S, and
+        # would refuse any other. The same pairs are litres in Bengaluru and
+        # kilograms in Kilima, which is the whole demonstration.
+        ("weight", {"source": "manual", "gross": gross, "tare": tare}),
         (
             "quality",
             {
@@ -3259,7 +3286,12 @@ async def seed(markets: tuple[Market, ...] = (KENYA, INDIA)) -> dict:
     summaries: dict = {}
     for market in markets:
         org = await make_org(
-            client, admin, market.org_name, market.org_slug, market.country_code
+            client,
+            admin,
+            market.org_name,
+            market.org_slug,
+            market.country_code,
+            quantity_unit=market.quantity_unit,
         )
         built = await build_demo_org(client, admin, org, market)
         built = await build_money(client, built)

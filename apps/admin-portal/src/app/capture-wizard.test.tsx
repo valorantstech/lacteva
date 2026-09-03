@@ -226,10 +226,10 @@ describe("guided capture", () => {
     await userEvent.click(screen.getByRole("button", { name: /record milk/i }));
 
     await userEvent.type(
-      await screen.findByLabelText("Gross weight (kg)"),
+      await screen.findByLabelText(/^Gross \(/),
       "12",
     );
-    await userEvent.type(screen.getByLabelText("Tare weight (kg)"), "2");
+    await userEvent.type(screen.getByLabelText(/^Tare \(/), "2");
     await userEvent.click(
       screen.getByRole("button", { name: /record weight/i }),
     );
@@ -281,10 +281,10 @@ describe("guided capture", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: /record milk/i }));
     await userEvent.type(
-      await screen.findByLabelText("Gross weight (kg)"),
+      await screen.findByLabelText(/^Gross \(/),
       "12",
     );
-    await userEvent.type(screen.getByLabelText("Tare weight (kg)"), "2");
+    await userEvent.type(screen.getByLabelText(/^Tare \(/), "2");
     await userEvent.click(
       screen.getByRole("button", { name: /record weight/i }),
     );
@@ -294,7 +294,9 @@ describe("guided capture", () => {
     );
     const body = JSON.parse(String((weightCall?.[1] as RequestInit)?.body));
     expect(body.source).toBe("manual");
-    expect(body.unit).toBe("kg");
+    // D-21 / WO-70: the portal names NO unit — the organisation's applies, and the
+    // platform would refuse any other.
+    expect(body.unit).toBeUndefined();
     // No mock hardware anywhere near this.
     expect(JSON.stringify(body)).not.toMatch(/mock/i);
   });
@@ -328,10 +330,10 @@ describe("guided capture", () => {
 
     // Tare heavier than gross — the domain refuses this, and so does the form.
     await userEvent.type(
-      await screen.findByLabelText("Gross weight (kg)"),
+      await screen.findByLabelText(/^Gross \(/),
       "2",
     );
-    await userEvent.type(screen.getByLabelText("Tare weight (kg)"), "12");
+    await userEvent.type(screen.getByLabelText(/^Tare \(/), "12");
     await userEvent.click(
       screen.getByRole("button", { name: /record weight/i }),
     );
@@ -412,7 +414,7 @@ describe("guided capture", () => {
 
     // MILK_RECEIVED means weight is next — the wizard did not guess.
     expect(
-      await screen.findByLabelText("Gross weight (kg)"),
+      await screen.findByLabelText(/^Gross \(/),
     ).toBeInTheDocument();
   });
 

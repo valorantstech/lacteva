@@ -17,9 +17,26 @@ from __future__ import annotations
 import csv
 import io
 
+from platform_core.core.units import unit_label
 from platform_core.modules.reporting.service import DayBook
 
-#: Reading order: what came in, what went out, what that leaves.
+
+#: Reading order: what came in, what went out, what that leaves. The
+#: quantity headers name the book's OWN unit (D-21 / WO-70): a file that says
+#: `collected_kg` over litres is the kind of thing somebody forwards.
+def columns(book: DayBook) -> tuple[str, ...]:
+    unit = unit_label(book.quantity_unit) or book.quantity_unit
+    return (
+        "milk_type",
+        "collections",
+        f"collected_{unit}",
+        "dispatches",
+        f"dispatched_{unit}",
+        f"remainder_{unit}",
+    )
+
+
+#: The pre-WO-70 header, for anything that imported it by name.
 COLUMNS = (
     "milk_type",
     "collections",
@@ -47,8 +64,9 @@ def to_csv(book: DayBook) -> str:
     writer.writerow(["Milk day book"])
     writer.writerow(["business_date", str(book.business_date)])
     writer.writerow(["centre", book.center_name or "all centres"])
+    writer.writerow(["quantity_unit", unit_label(book.quantity_unit) or book.quantity_unit])
     writer.writerow([])
-    writer.writerow(COLUMNS)
+    writer.writerow(columns(book))
     for row in book.rows:
         writer.writerow(
             [
@@ -77,12 +95,23 @@ def to_csv(book: DayBook) -> str:
     # the same scope.
     writer.writerow(["sold_today", book.sales.quantity, book.sales.quantity_unit])
     writer.writerow(["deliveries", book.sales.deliveries])
+    # D-21 ruling 6: the refusal to subtract stands whatever the units. Where
+    # the book is also in litres the file no longer claims a unit difference
+    # it does not have — intake litres and delivered litres are still
+    # different populations, and it says that instead.
+    same_unit = unit_label(book.quantity_unit) == (book.sales.quantity_unit or "")
+    why = (
+        "They are a different population from intake — loss, retention and "
+        "dispatch sit between the two even in the same unit."
+        if same_unit
+        else "They are measured in litres, while this ledger is in "
+        f"{unit_label(book.quantity_unit) or book.quantity_unit}."
+    )
     writer.writerow(
         [
             "note",
             "Sales are organization-wide and not attributed to a centre or a milk "
-            "type, and are measured in litres rather than weighed. They are NOT "
-            "subtracted from the remainder above.",
+            f"type. {why} They are NOT subtracted from the remainder above.",
         ]
     )
     writer.writerow(

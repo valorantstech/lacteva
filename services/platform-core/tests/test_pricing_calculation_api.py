@@ -97,10 +97,12 @@ async def test_large_quantity(client):
 async def test_quantity_unit_default_and_custom(client):
     headers, center, _, _ = await _resolution_env(client)
     row_id = await _resolved_row(client, headers, center["id"])
+    # D-21 / WO-70: an absent unit is the ORGANISATION'S — this Kenyan tenant
+    # trades in litres — never a kilogram constant. A stated unit is honoured.
     body = (await _calculate(client, headers, row_id)).json()
-    assert body["quantity"]["unit"] == "kg"
-    body = (await _calculate(client, headers, row_id, quantity_unit="litre")).json()
     assert body["quantity"]["unit"] == "litre"
+    body = (await _calculate(client, headers, row_id, quantity_unit="kg")).json()
+    assert body["quantity"]["unit"] == "kg"
 
 
 async def test_deterministic_via_api(client):

@@ -60,7 +60,9 @@ async def test_a_dispatch_is_recorded_and_appears_in_the_day_book(client):
     r = await _dispatch(client, headers, center["id"], quantity="20.000")
     assert r.status_code == 201, r.text
     assert r.json()["status"] == "recorded"
-    assert r.json()["quantity_unit"] == "kg"
+    # D-21 / WO-70: the ORGANISATION'S unit, read from the row. This tenant is
+    # Kenyan, and Kenya trades in litres.
+    assert r.json()["quantity_unit"] == "litre"
 
     book = await _book(client, headers, center["id"])
     cow = _row(book, "cow")

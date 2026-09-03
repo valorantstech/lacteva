@@ -669,6 +669,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             locale={locale}
             currency={org?.currency_code ?? null}
             timezone={org?.timezone ?? null}
+            quantityUnit={org?.quantity_unit_label ?? null}
           >
             {/* P0-UX-001: a page whose nav entry this role cannot use renders
                 the calm refusal instead of office forms the platform will 403.

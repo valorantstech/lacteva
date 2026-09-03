@@ -21,6 +21,7 @@
 import Link from "next/link";
 import { useId, useState } from "react";
 import { Money, Quantity } from "@/components/money";
+import { unitLabel } from "@/lib/units";
 import { EmptyState } from "@/components/states";
 import { cn } from "@/lib/utils";
 
@@ -47,11 +48,14 @@ const shortDay = (iso: string) => {
 export function TrendChart({
   data,
   metric,
+  unit,
   height = 220,
 }: {
   data: TrendDatum[];
   /** Which series is drawn: quantity collected, or what it is worth. */
   metric: "quantity" | "value";
+  /** D-21: the unit the platform reported the series in. */
+  unit?: string | null;
   height?: number;
 }) {
   const gradientId = useId();
@@ -94,7 +98,7 @@ export function TrendChart({
           role="img"
           aria-label={
             metric === "quantity"
-              ? `Quantity collected per day, peaking at ${peak} kg`
+              ? `Quantity collected per day, peaking at ${peak} ${unitLabel(unit)}`
               : "Collection value per day"
           }
         >
@@ -164,7 +168,7 @@ export function TrendChart({
               style={{ left: "100%", top: `${100 - scale(series[series.length - 1])}%` }}
             >
               {metric === "quantity" ? (
-                <Quantity value={data[data.length - 1].quantity} unit="kg" />
+                <Quantity value={data[data.length - 1].quantity} unit={unit} />
               ) : (
                 <Money
                   amount={data[data.length - 1].value}
@@ -186,7 +190,7 @@ export function TrendChart({
                 "flex-1 border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 hover === i && "bg-primary/5",
               )}
-              aria-label={`${d.day}: ${d.transactions} collections, ${d.quantity} kg`}
+              aria-label={`${d.day}: ${d.transactions} collections, ${d.quantity} ${unitLabel(unit)}`}
               onMouseEnter={() => setHover(i)}
               onMouseLeave={() => setHover(null)}
               onFocus={() => setHover(i)}
@@ -203,7 +207,7 @@ export function TrendChart({
             <span className="text-foreground">
               <span className="font-medium">{active.day}</span> ·{" "}
               {metric === "quantity" ? (
-                <Quantity value={active.quantity} unit="kg" />
+                <Quantity value={active.quantity} unit={unit} />
               ) : (
                 <Money amount={active.value} currency={active.currency ?? currency} />
               )}{" "}

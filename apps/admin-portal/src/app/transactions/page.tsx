@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { unitLabel } from "@/lib/units";
 import Link from "next/link";
 import { Activity, Banknote, Droplets, Percent, Plus } from "lucide-react";
 import {
@@ -266,7 +267,7 @@ export default function TransactionsPage() {
       align: "end",
       cell: (tx) => (
         <div className="flex flex-col items-end">
-          <Quantity value={tx.net_weight} unit={tx.weight_unit ?? "kg"} />
+          <Quantity value={tx.net_weight} unit={tx.weight_unit} />
           <span className="text-xs tabular-nums text-muted-foreground">
             {tx.fat != null ? t("tx.fatShort", { fat: tx.fat }) : "—"}
             {tx.snf != null ? ` · ${t("tx.snfShort", { snf: tx.snf })}` : ""}
@@ -439,7 +440,7 @@ export default function TransactionsPage() {
             label={t("field.quantity")}
             value={
               summary ? (
-                <Quantity value={summary.total_net_weight_kg} unit="kg" />
+                <Quantity value={summary.total_net_weight_kg} unit={summary.quantity_unit} />
               ) : (
                 "—"
               )
@@ -453,7 +454,10 @@ export default function TransactionsPage() {
                     t("tx.suppliersCount", { count: summary.suppliers_served }),
                     ...(summary.by_milk_type ?? [])
                       .filter((row) => row.net_weight_kg > 0)
-                      .map((row) => `${t(`milk.${row.milk_type}`)} ${row.net_weight_kg} kg`),
+                      .map(
+                        (row) =>
+                          `${t(`milk.${row.milk_type}`)} ${row.net_weight_kg} ${unitLabel(row.quantity_unit)}`,
+                      ),
                   ].join(" · ")
                 : undefined
             }

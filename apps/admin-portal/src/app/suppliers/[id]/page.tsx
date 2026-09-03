@@ -262,7 +262,7 @@ export default function SupplierDetailPage({
         <Surface tone="metric" className="flex items-start justify-between gap-3">
           <Metric
             label="Quantity"
-            value={stats ? <Quantity value={stats.total_net_weight_kg} unit="kg" /> : "—"}
+            value={stats ? <Quantity value={stats.total_net_weight_kg} unit={stats.quantity_unit} /> : "—"}
           />
           <Droplets aria-hidden className="size-4 text-muted-foreground" />
         </Surface>
@@ -559,7 +559,7 @@ export default function SupplierDetailPage({
                         {tx.milk_type ?? "—"}
                       </td>
                       <td className="py-2 text-end">
-                        <Quantity value={tx.net_weight} unit="kg" />
+                        <Quantity value={tx.net_weight} unit={tx.weight_unit} />
                       </td>
                       <td className="py-2 text-end tabular-nums text-muted-foreground">
                         {tx.unit_price ?? "—"}

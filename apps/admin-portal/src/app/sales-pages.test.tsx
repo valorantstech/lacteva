@@ -590,7 +590,7 @@ describe("customer detail — the whole workflow", () => {
     await renderDetail(<CustomerDetailPage params={params()} />);
     await screen.findByText("Delivery history");
     expect(screen.getByText("10,234.50")).toBeInTheDocument();
-    expect(screen.getAllByText("180.500").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("180.5").length).toBeGreaterThan(0);
     // A skipped delivery is worth nothing, and says so. (The outstanding
     // tile is also 0.00, hence the count rather than a single match.)
     expect(screen.getAllByText("0.00").length).toBeGreaterThanOrEqual(2);
@@ -1129,9 +1129,9 @@ describe("planned against delivered (DEMO-019)", () => {
     routeAll();
     render(<DeliveriesPage />);
     expect(await screen.findByText("Planned")).toBeInTheDocument();
-    expect(screen.getByText("200.500")).toBeInTheDocument();
+    expect(screen.getByText("200.5")).toBeInTheDocument();
     // And the achieved figure is still its own tile.
-    expect(screen.getAllByText("180.500").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("180.5").length).toBeGreaterThan(0);
   });
 
   it("says nothing when the round went to plan", async () => {
@@ -1151,7 +1151,7 @@ describe("planned against delivered (DEMO-019)", () => {
       <CustomerDetailPage params={Promise.resolve({ id: "cu-1" })} />,
     );
     expect(await screen.findByText("Milk delivered")).toBeInTheDocument();
-    expect(screen.getByText("62.000")).toBeInTheDocument();
+    expect(screen.getByText("62.0")).toBeInTheDocument();
   });
 });
 

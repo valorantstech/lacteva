@@ -49,9 +49,9 @@ class _Platform extends ApiClient {
     this.todayEmpty = false,
     this.yesterdayEmpty = false,
     this.byMilkType = const [
-      {'milk_type': 'cow', 'transactions': 30, 'net_weight_kg': 300.0,
+      {'milk_type': 'cow', 'transactions': 30, 'net_weight_kg': 300.0, 'quantity_unit': 'litre',
         'weighted_avg_fat': 4.1, 'amount_by_currency': {'INR': '13000.00'}},
-      {'milk_type': 'buffalo', 'transactions': 10, 'net_weight_kg': 112.5,
+      {'milk_type': 'buffalo', 'transactions': 10, 'net_weight_kg': 112.5, 'quantity_unit': 'litre',
         'weighted_avg_fat': 6.2, 'amount_by_currency': {'INR': '5450.00'}},
     ],
   });
@@ -145,6 +145,10 @@ class _Platform extends ApiClient {
       'rejected': empty ? 0 : 1,
       'suppliers_served': empty ? 0 : 38,
       'total_net_weight_kg': empty ? 0.0 : 412.5,
+      // D-21 / WO-70: the unit comes WITH the figure. This dairy is a litre
+      // one, and the screen must say so because the platform did — not
+      // because a phone in India assumed it.
+      'quantity_unit': 'litre',
       'payable_by_currency': empty ? <String, dynamic>{} : {'INR': '18450.00'},
       'unpriced_accepted': unpriced,
       'weighted_avg_fat': empty ? null : 4.3,
@@ -451,6 +455,7 @@ void main() {
               'id': 'tx1',
               'slip_number': 'S-88A723',
               'net_weight': '12.5',
+              'weight_unit': 'litre',
               'fat_percentage': '4.2',
               'gross_amount': '581.25',
               'state': 'COMPLETED',
@@ -460,7 +465,7 @@ void main() {
       );
       expect(find.text('S-88A723'), findsOneWidget);
       // The platform's exact decimal strings, never reformatted here.
-      expect(find.textContaining('12.5 kg'), findsOneWidget);
+      expect(find.textContaining('12.5 L · FAT'), findsOneWidget);
       expect(find.textContaining('581.25'), findsOneWidget);
     });
 
@@ -500,7 +505,7 @@ void main() {
       expect(find.text('412.5'), findsOneWidget);
       expect(find.text('38 farmers served'), findsOneWidget);
       // WO-56: the total, split by the animal that brought it.
-      expect(find.text('cow 300.0 kg · buffalo 112.5 kg'), findsOneWidget);
+      expect(find.text('cow 300.0 L · buffalo 112.5 L'), findsOneWidget);
       expect(find.text('NEEDS A LOOK'), findsOneWidget);
       expect(find.text('Nothing needs a look right now'), findsOneWidget);
       // The organization, not a role name — the house rule forbids printing

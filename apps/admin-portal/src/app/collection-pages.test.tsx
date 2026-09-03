@@ -168,6 +168,7 @@ const DAILY = {
   in_progress: 0,
   suppliers_served: 24,
   total_net_weight_kg: 7868,
+  quantity_unit: "kg",
   payable_by_currency: { KES: "353234.00" },
   unpriced_accepted: 0,
   weighted_avg_fat: 4.3,
@@ -178,6 +179,7 @@ const DAILY = {
       milk_type: "cow",
       transactions: 280,
       net_weight_kg: 5000,
+      quantity_unit: "kg",
       weighted_avg_fat: 4.1,
       amount_by_currency: { KES: "220000.00" },
     },
@@ -185,6 +187,7 @@ const DAILY = {
       milk_type: "buffalo",
       transactions: 70,
       net_weight_kg: 2868,
+      quantity_unit: "kg",
       weighted_avg_fat: 6.4,
       amount_by_currency: { KES: "133234.00" },
     },
@@ -333,7 +336,7 @@ describe("collections list", () => {
     const split = await screen.findByText(/Cow 5000 kg/);
     expect(split).toHaveTextContent(/Buffalo 2868 kg/);
     // The total is still stated: the split is beside it, not instead of it.
-    expect(screen.getByText("7,868")).toBeInTheDocument();
+    expect(screen.getByText("7,868.0")).toBeInTheDocument();
   });
 
   it("names no animal the platform did not report", async () => {
@@ -348,6 +351,7 @@ describe("collections list", () => {
               milk_type: "cow",
               transactions: 350,
               net_weight_kg: 7868,
+              quantity_unit: "kg",
               weighted_avg_fat: 4.3,
               amount_by_currency: { KES: "353234.00" },
             },

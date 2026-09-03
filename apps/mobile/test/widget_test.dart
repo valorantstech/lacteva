@@ -665,14 +665,15 @@ class _ResolveFake extends ApiClient {
     required String rowId,
     required double quantity,
     required String transactionDate,
-    String quantityUnit = 'kg',
+    String? quantityUnit,
     String? roundingPolicy,
   }) async => CalculationResultView(
     grossAmount: '5647.50',
     unitPrice: '45',
     currency: 'KES',
     quantityValue: quantity,
-    quantityUnit: quantityUnit,
+    // The fake's organisation weighs; the platform would fill this in.
+    quantityUnit: quantityUnit ?? 'kg',
     roundingPolicy: 'HALF_UP',
     calculatorVersion: '1.0.0',
     trace: [

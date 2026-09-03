@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { unitLabel } from "@/lib/units";
 import Link from "next/link";
 import { AlertTriangle, Check, PenLine } from "lucide-react";
 import {
@@ -143,7 +144,7 @@ export default function NewCollectionPage() {
   const [checkingReadiness, setCheckingReadiness] = useState(false);
 
   const [tx, setTx] = useState<MilkTransaction | null>(null);
-  const { timezone: orgTimezone, t } = useLocale();
+  const { timezone: orgTimezone, t, quantityUnit } = useLocale();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resuming, setResuming] = useState(true);
@@ -599,7 +600,7 @@ export default function NewCollectionPage() {
           <CardContent className="flex flex-col gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="w-gross">Gross weight (kg)</Label>
+                <Label htmlFor="w-gross">Gross ({quantityUnit ?? "…"})</Label>
                 <Input
                   id="w-gross"
                   inputMode="decimal"
@@ -616,12 +617,12 @@ export default function NewCollectionPage() {
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    Up to {LIMITS.maxGross} kg.
+                    Up to {LIMITS.maxGross} {quantityUnit ?? ""}.
                   </p>
                 )}
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="w-tare">Tare weight (kg)</Label>
+                <Label htmlFor="w-tare">Tare ({quantityUnit ?? "…"})</Label>
                 <Input
                   id="w-tare"
                   inputMode="decimal"
@@ -657,7 +658,7 @@ export default function NewCollectionPage() {
                   if (!weight.gross || !Number.isFinite(gross) || gross <= 0)
                     errors.gross = "Enter a gross weight greater than zero.";
                   else if (gross > LIMITS.maxGross)
-                    errors.gross = `The platform accepts at most ${LIMITS.maxGross} kg.`;
+                    errors.gross = `The platform accepts at most ${LIMITS.maxGross} ${quantityUnit ?? ""}.`;
                   if (!weight.tare || !Number.isFinite(tare) || tare < 0)
                     errors.tare = "Enter a tare weight of zero or more.";
                   else if (Number.isFinite(gross) && tare >= gross)
@@ -850,7 +851,7 @@ function ReviewStep({
             <Row label="Centre">{centre?.name ?? tx.center_id.slice(0, 8)}</Row>
             <Row label="Milk">{tx.milk_type ?? "—"}</Row>
             <Row label="Quantity">
-              <Quantity value={tx.net_weight} unit={tx.weight_unit ?? "kg"} />
+              <Quantity value={tx.net_weight} unit={tx.weight_unit} />
             </Row>
             <Row label="Fat">{tx.fat ?? "—"}%</Row>
             <Row label="SNF">{tx.snf ?? "—"}</Row>
@@ -877,7 +878,7 @@ function ReviewStep({
                   <span className="tabular-nums">
                     {String(tx.unit_price)}
                     <span className="ms-1 text-xs text-muted-foreground">
-                      {tx.currency}/{tx.weight_unit ?? "kg"}
+                      {tx.currency}/{unitLabel(tx.trade_unit ?? tx.weight_unit)}
                     </span>
                   </span>
                 </Row>
@@ -1011,7 +1012,7 @@ function DoneStep({
           </Row>
           <Row label="Centre">{centre?.name ?? tx.center_id.slice(0, 8)}</Row>
           <Row label="Quantity">
-            <Quantity value={tx.net_weight} unit={tx.weight_unit ?? "kg"} />
+            <Quantity value={tx.net_weight} unit={tx.weight_unit} />
           </Row>
           <Row label="Rate">
             <span className="tabular-nums">{String(tx.unit_price ?? "—")}</span>

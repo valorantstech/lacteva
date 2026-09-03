@@ -189,7 +189,7 @@ export default function SuppliersPage() {
       align: "end",
       cell: (s) =>
         activity[s.id] ? (
-          <Quantity value={activity[s.id].total_net_weight_kg} unit="kg" />
+          <Quantity value={activity[s.id].total_net_weight_kg} unit={activity[s.id].quantity_unit} />
         ) : (
           <span className="text-muted-foreground">—</span>
         ),

@@ -27,12 +27,23 @@ The information-request pack (docs/20-business) asks for exactly this:
    printer make/model — photos of the rear panels are gold.
 7. Who plays which role: owner, centre managers, counter operators,
    finance person, driver(s).
+8. **The intake unit — ASK, do not assume (D-21).** "When your farmer's
+   milk arrives, is it measured in litres or weighed in kilograms? And is
+   the rate you pay quoted per litre or per kilogram?" In India the answer
+   is almost always litres for both; a cooperative with a platform scale may
+   weigh. If the two answers DIFFER (measured in one, paid in the other),
+   also ask for the dairy's own conversion factor — e.g. "1.03 kg per
+   litre" — and the date it took effect. That factor is a commercial term
+   the dairy declares, never a physical constant Lacteva supplies, and it is
+   printed on every receipt beside both figures.
 
 ## 1 · Provisioning (Lacteva's side, ~10 minutes)
 Done by the Lacteva platform administrator (Phoenix staff), in the portal:
-1. Create the Organization (name, slug, country) — currency, timezone and
-   language resolve from the country automatically. A 30-day trial starts;
-   activation beyond trial is a Lacteva act (no self-serve payment yet).
+1. Create the Organization (name, slug, country) — currency, timezone,
+   language **and intake unit** resolve from the country automatically
+   (India → litres). If the dairy weighs (question 8 above), set
+   `quantity_unit: kg` at creation. A 30-day trial starts; activation
+   beyond trial is a Lacteva act (no self-serve payment yet).
 2. Invite the dairy owner as tenant admin: /admin/users → Invite →
    role "tenant-admin". The owner receives a real email, opens the accept
    link, sets their password. **Login #1 exists.**
@@ -82,6 +93,12 @@ which reaches the platform at https://api.lacteva.com.
    operator types (or scans) at the counter.
 6. **Customers** (optional now): /customers, with routes and a driver if
    they deliver.
+7. **Intake unit and conversion** — /admin/settings → *Milk is measured
+   in*. Confirm litres or kilograms with the owner (question 8 of §0). Only
+   if the dairy measures in one unit and PAYS in the other, declare the
+   trade unit, the dairy's own kg-per-litre factor and its effective date.
+   Changing the unit later applies to future collections only — the
+   receipts already issued keep the unit they were measured in.
 
 ## 3 · The counter, every morning (the operator on the handset)
 1. Operator signs in (their invitation credentials). Home shows their

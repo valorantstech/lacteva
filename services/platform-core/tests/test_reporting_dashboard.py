@@ -525,7 +525,7 @@ async def test_the_full_capture_sequence_produces_a_priced_completed_collection(
         # The platform hands off to quality by itself after a weight.
         (
             "weight",
-            {"source": "manual", "unit": "kg", "gross": 12.0, "tare": 2.0},
+            {"source": "manual", "gross": 12.0, "tare": 2.0},
             "QUALITY_PENDING",
         ),
         ("quality", {"source": "manual", "fat": 4.4, "snf": 8.6, "clr": 28.5}, "PRICED"),
@@ -557,7 +557,7 @@ async def test_a_step_out_of_order_is_refused_with_the_state_it_expected(client)
     # Weight before identify/milk.
     r = await client.post(
         f"/v1/milk-transactions/{tx['id']}/weight",
-        json={"source": "manual", "unit": "kg", "gross": 12.0, "tare": 2.0},
+        json={"source": "manual", "gross": 12.0, "tare": 2.0},
         headers=headers,
     )
     assert r.status_code == 409
@@ -604,7 +604,7 @@ async def test_manual_weight_bounds_are_enforced_by_the_platform(client):
 
     r = await client.post(
         f"/v1/milk-transactions/{tid}/weight",
-        json={"source": "manual", "unit": "kg", "gross": 2.0, "tare": 12.0},
+        json={"source": "manual", "gross": 2.0, "tare": 12.0},
         headers=headers,
     )
     assert r.status_code == 409
@@ -631,7 +631,7 @@ async def test_quality_outside_the_plausible_range_is_refused(client):
     )
     await client.post(
         f"/v1/milk-transactions/{tid}/weight",
-        json={"source": "manual", "unit": "kg", "gross": 12.0, "tare": 2.0},
+        json={"source": "manual", "gross": 12.0, "tare": 2.0},
         headers=headers,
     )
 
@@ -672,7 +672,7 @@ async def test_manual_capture_is_recorded_as_manual(client):
     )
     r = await client.post(
         f"/v1/milk-transactions/{tid}/weight",
-        json={"source": "manual", "unit": "kg", "gross": 12.0, "tare": 2.0},
+        json={"source": "manual", "gross": 12.0, "tare": 2.0},
         headers=headers,
     )
     assert r.status_code == 200, r.text

@@ -178,7 +178,7 @@ export default function CentersPage() {
       align: "end",
       cell: (c) =>
         activity[c.id] ? (
-          <Quantity value={activity[c.id].total_net_weight_kg} unit="kg" />
+          <Quantity value={activity[c.id].total_net_weight_kg} unit={activity[c.id].quantity_unit} />
         ) : (
           <span className="text-muted-foreground">—</span>
         ),

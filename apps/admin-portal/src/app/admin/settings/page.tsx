@@ -23,7 +23,9 @@ import { useCallback, useEffect, useState } from "react";
 
 import { AdminPage } from "@/components/admin-page";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import {
   type LocaleSettings,
   can,
@@ -36,6 +38,7 @@ import {
   describeError,
 } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { UNITS, unitLabel } from "@/lib/units";
 
 export default function OrganizationSettingsPage() {
   const t = useT();
@@ -98,6 +101,34 @@ export default function OrganizationSettingsPage() {
       await setMyTimezone(timezone);
       setNote(t("settings.saved"));
       await load();
+    } catch (err) {
+      setError(describeError(err, t("state.error")));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // D-21 / WO-70. The intake unit and the declared conversion terms. Both go
+  // through the one settings endpoint, which validates the three conversion
+  // fields together and refuses a half-declared one — so this form sends
+  // what was typed and shows what the platform said, rather than pre-judging.
+  const [conversion, setConversion] = useState({
+    trade_unit: "",
+    conversion_factor: "",
+    conversion_effective_from: "",
+  });
+
+  async function saveOrganization(body: Parameters<typeof updateLocaleSettings>[0]) {
+    setSaving(true);
+    setError(null);
+    setNote(null);
+    try {
+      const updated = await updateLocaleSettings(body);
+      setSettings(updated);
+      setNote(t("settings.saved"));
+      // The shell's locale provider read the unit from the session at
+      // mount; every input label below it should say the new unit.
+      window.setTimeout(() => window.location.reload(), 300);
     } catch (err) {
       setError(describeError(err, t("state.error")));
     } finally {
@@ -171,6 +202,115 @@ export default function OrganizationSettingsPage() {
           <p className="text-xs text-muted-foreground">
             {t("settings.countryFixed")}
           </p>
+
+          <section
+            className="flex flex-col gap-3 border-t border-border pt-6"
+            aria-labelledby="unit-heading"
+          >
+            <h2 id="unit-heading" className="text-sm font-semibold">
+              {t("settings.unit")}
+            </h2>
+            <p className="text-xs text-muted-foreground">{t("settings.unitHelp")}</p>
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t("settings.unit")}>
+              {(settings.units ?? [...UNITS]).map((unit) => (
+                <Button
+                  key={unit}
+                  type="button"
+                  role="radio"
+                  aria-checked={settings.quantity_unit === unit}
+                  variant={settings.quantity_unit === unit ? "default" : "outline"}
+                  disabled={saving || !mayManage}
+                  onClick={() =>
+                    settings.quantity_unit === unit
+                      ? undefined
+                      : void saveOrganization({ quantity_unit: unit })
+                  }
+                  data-testid={`unit-${unit}`}
+                >
+                  {unit === "litre" ? t("settings.unitLitre") : t("settings.unitKg")}
+                </Button>
+              ))}
+            </div>
+
+            <h3 className="mt-2 text-sm font-medium">{t("settings.conversion")}</h3>
+            <p className="text-xs text-muted-foreground">{t("settings.conversionHelp")}</p>
+            <p className="text-sm" data-testid="conversion-current">
+              {settings.trade_unit && settings.conversion_factor
+                ? t("settings.conversionCurrent", {
+                    unit: unitLabel(settings.trade_unit),
+                    factor: settings.conversion_factor,
+                    from: settings.conversion_effective_from ?? "—",
+                  })
+                : t("settings.conversionNone")}
+            </p>
+            {mayManage ? (
+              <form
+                className="flex flex-wrap items-end gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveOrganization({
+                    trade_unit: conversion.trade_unit || undefined,
+                    conversion_factor: conversion.conversion_factor || undefined,
+                    conversion_effective_from: conversion.conversion_effective_from || undefined,
+                  });
+                }}
+              >
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="trade-unit">{t("settings.tradeUnit")}</Label>
+                  <Select
+                    id="trade-unit"
+                    value={conversion.trade_unit}
+                    onChange={(e) => setConversion({ ...conversion, trade_unit: e.target.value })}
+                  >
+                    <option value="">—</option>
+                    {(settings.units ?? [...UNITS])
+                      .filter((unit) => unit !== settings.quantity_unit)
+                      .map((unit) => (
+                        <option key={unit} value={unit}>
+                          {unitLabel(unit)}
+                        </option>
+                      ))}
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="conversion-factor">{t("settings.conversionFactor")}</Label>
+                  <Input
+                    id="conversion-factor"
+                    inputMode="decimal"
+                    placeholder="1.0300"
+                    value={conversion.conversion_factor}
+                    onChange={(e) =>
+                      setConversion({ ...conversion, conversion_factor: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="conversion-from">{t("settings.effectiveFrom")}</Label>
+                  <Input
+                    id="conversion-from"
+                    type="date"
+                    value={conversion.conversion_effective_from}
+                    onChange={(e) =>
+                      setConversion({ ...conversion, conversion_effective_from: e.target.value })
+                    }
+                  />
+                </div>
+                <Button type="submit" disabled={saving}>
+                  {t("settings.saveConversion")}
+                </Button>
+                {settings.trade_unit ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={saving}
+                    onClick={() => void saveOrganization({ clear_conversion: true })}
+                  >
+                    {t("settings.clearConversion")}
+                  </Button>
+                ) : null}
+              </form>
+            ) : null}
+          </section>
 
           <section className="flex flex-col gap-3">
             <h2 className="text-sm font-semibold">

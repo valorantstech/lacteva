@@ -29,6 +29,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from platform_core.core.units import normalise_unit
+
 
 @dataclass(frozen=True)
 class Currency:
@@ -103,6 +105,13 @@ class Country:
     currency: str
     timezone: str  # IANA; the country's PRINCIPAL zone — see `resolve()`
     languages: tuple[str, ...]
+    #: D-21 / WO-70. The unit the country's dairies SELL milk in — the unit a
+    #: farmer reads on a receipt and a rate is quoted per. Not the unit a
+    #: counter's instrument happens to report: India's AMCU specification has
+    #: a weighing scale on it, and India trades in litres, which is the
+    #: inference the architect got wrong. One of `core/units.UNITS`. Like the
+    #: currency, a proposal an organisation may override at creation.
+    quantity_unit: str = "litre"
 
 
 #: `languages` is ORDERED and the first entry is the country's default.
@@ -111,20 +120,30 @@ class Country:
 #: staff read Arabic and English is the second language there, not the first.
 #: That ordering is the whole mechanism — there is no `if country == "SA"`
 #: anywhere deciding it.
+#: `quantity_unit` (D-21): every listed market retails and quotes milk by the
+#: litre — India (500 ml and 1 L packs, rates per litre), Kenya, the Gulf,
+#: East Africa and Britain alike. The one exception below is stated with its
+#: reason. Kilograms remain available to any organisation as an override, for
+#: the cooperative that weighs deliberately.
 COUNTRIES: dict[str, Country] = {
-    "IN": Country("IN", "India", "INR", "Asia/Kolkata", ("en-IN", "hi-IN")),
-    "KE": Country("KE", "Kenya", "KES", "Africa/Nairobi", ("en-KE", "sw-KE")),
-    "SA": Country("SA", "Saudi Arabia", "SAR", "Asia/Riyadh", ("ar-SA", "en-SA")),
-    "AE": Country("AE", "United Arab Emirates", "AED", "Asia/Dubai", ("ar-AE", "en-AE")),
-    "QA": Country("QA", "Qatar", "QAR", "Asia/Qatar", ("ar-QA", "en-QA")),
-    "UG": Country("UG", "Uganda", "UGX", "Africa/Kampala", ("en-UG", "sw-UG")),
-    "TZ": Country("TZ", "Tanzania", "TZS", "Africa/Dar_es_Salaam", ("en-TZ", "sw-TZ")),
-    "GB": Country("GB", "United Kingdom", "GBP", "Europe/London", ("en-GB",)),
+    "IN": Country("IN", "India", "INR", "Asia/Kolkata", ("en-IN", "hi-IN"), "litre"),
+    "KE": Country("KE", "Kenya", "KES", "Africa/Nairobi", ("en-KE", "sw-KE"), "litre"),
+    "SA": Country("SA", "Saudi Arabia", "SAR", "Asia/Riyadh", ("ar-SA", "en-SA"), "litre"),
+    "AE": Country("AE", "United Arab Emirates", "AED", "Asia/Dubai", ("ar-AE", "en-AE"), "litre"),
+    "QA": Country("QA", "Qatar", "QAR", "Asia/Qatar", ("ar-QA", "en-QA"), "litre"),
+    "UG": Country("UG", "Uganda", "UGX", "Africa/Kampala", ("en-UG", "sw-UG"), "litre"),
+    "TZ": Country("TZ", "Tanzania", "TZS", "Africa/Dar_es_Salaam", ("en-TZ", "sw-TZ"), "litre"),
+    "GB": Country("GB", "United Kingdom", "GBP", "Europe/London", ("en-GB",), "litre"),
     # The United States spans six zones and no single one is "the" American
     # timezone. The registry names the most populous as a STARTING POINT and
     # `resolve()` takes an override — which is the honest shape for any large
     # country, and why the field is documented as principal rather than only.
-    "US": Country("US", "United States", "USD", "America/New_York", ("en-US",)),
+    #
+    # And it trades farm milk BY WEIGHT — priced per hundredweight, paid on
+    # pounds. The platform's weight unit is the kilogram; pounds are not
+    # supported, and this entry says "weight" rather than pretending the US
+    # sells by the litre.
+    "US": Country("US", "United States", "USD", "America/New_York", ("en-US",), "kg"),
 }
 
 
@@ -146,6 +165,8 @@ class LocaleSettings:
     timezone: str
     default_language: str
     supported_languages: tuple[str, ...]
+    #: D-21. What this organisation MEASURES intake in; one of `units.UNITS`.
+    quantity_unit: str = "litre"
 
 
 def base_language(tag: str) -> str:
@@ -174,6 +195,7 @@ def resolve(
     timezone: str | None = None,
     default_language: str | None = None,
     supported_languages: list[str] | tuple[str, ...] | None = None,
+    quantity_unit: str | None = None,
 ) -> LocaleSettings:
     """Country in, complete settings out — with every part overridable.
 
@@ -195,7 +217,13 @@ def resolve(
     if profile is None:
         missing = [
             name
-            for name, value in (("currency_code", currency_code), ("timezone", timezone))
+            for name, value in (
+                ("currency_code", currency_code),
+                ("timezone", timezone),
+                # D-21: the unit is money-shaped in the sense that matters —
+                # guessing it prices a stranger's milk in the wrong measure.
+                ("quantity_unit", quantity_unit),
+            )
             if not value
         ]
         if missing:
@@ -223,6 +251,11 @@ def resolve(
                 f"no message catalog for {tag!r} — add it to LANGUAGES and to core/i18n.py"
             )
 
+    # D-21. A country proposes the unit; an organisation may say otherwise
+    # (a cooperative that weighs). Spelling is normalised at this boundary so
+    # the column only ever holds one of `UNITS`.
+    resolved_unit = normalise_unit(quantity_unit or (profile.quantity_unit if profile else ""))
+
     resolved_default = default_language or proposed[0]
     if resolved_default not in proposed:
         raise ValueError(
@@ -236,6 +269,7 @@ def resolve(
         timezone=resolved_timezone,
         default_language=resolved_default,
         supported_languages=proposed,
+        quantity_unit=resolved_unit,
     )
 
 
@@ -260,6 +294,7 @@ def country_choices() -> list[dict]:
             "timezone": c.timezone,
             "default_language": c.languages[0],
             "supported_languages": list(c.languages),
+            "quantity_unit": c.quantity_unit,
         }
         for c in sorted(COUNTRIES.values(), key=lambda c: c.name)
     ]

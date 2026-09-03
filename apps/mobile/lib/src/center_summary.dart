@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'l10n.dart';
+import 'format.dart';
 import 'session.dart';
 
 /// Today's operational summary for one center — REP-001. Deliberately
@@ -103,7 +104,10 @@ class _CenterTodayScreenState extends State<CenterTodayScreen> {
             if (s != null) ...[
               Row(
                 children: [
-                  _tile('${s.totalNetWeightKg} kg', t.t('today.milkCollected')),
+                  _tile(
+                    '${s.totalNetWeightKg} ${unitLabel(s.quantityUnit)}',
+                    t.t('today.milkCollected'),
+                  ),
                   const SizedBox(width: 8),
                   _tile(
                     s.payable.isEmpty ? '—' : s.payable,

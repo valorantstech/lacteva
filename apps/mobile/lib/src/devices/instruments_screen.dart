@@ -452,7 +452,9 @@ class _PrinterCardState extends State<_PrinterCard> {
             'organization_name': 'Lacteva',
             'center_name': 'Printer test',
             'quantity': '0',
-            'weight_unit': 'kg',
+            // D-21: this screen has no dairy to ask and the print is not a
+            // receipt — it claims no unit rather than an assumed one.
+            'weight_unit': '',
             'fat': '0.0',
             'snf': '0.0',
             'decision': 'NOT A RECEIPT',

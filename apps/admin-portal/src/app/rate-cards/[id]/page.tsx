@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useCallback, useEffect, useState } from "react";
+import { useLocale } from "@/lib/i18n";
 import Link from "next/link";
 import { Building2, Tags } from "lucide-react";
 import {
@@ -58,6 +59,7 @@ export default function RateCardDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const { quantityUnit } = useLocale();
   const { id } = use(params);
   const [detail, setDetail] = useState<Load<RateCardDetail>>(LOADING);
   const [matrices, setMatrices] = useState<Load<PricingMatrix[]>>(LOADING);
@@ -323,7 +325,7 @@ export default function RateCardDetailPage({
                               <td className="py-2 text-end tabular-nums font-medium">
                                 {String(row.unit_price)}
                                 <span className="ms-1 text-xs font-normal text-muted-foreground">
-                                  {card?.currency}/kg
+                                  {card?.currency}/{quantityUnit ?? "…"}
                                 </span>
                               </td>
                             </tr>

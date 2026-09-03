@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLocale } from "@/lib/i18n";
 import { CappedNotice } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
@@ -35,6 +36,7 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 export default function ResolutionPlaygroundPage() {
+  const { quantityUnit } = useLocale();
   const [centers, setCenters] = useState<Center[]>([]);
   // LACTEVA-ADMIN-007: the platform's own count, so a capped list can say so.
   const [centreTotal, setCentreTotal] = useState(0);
@@ -245,7 +247,7 @@ export default function ResolutionPlaygroundPage() {
             </div>
             <div className="flex flex-wrap items-end gap-2 border-t border-border pt-3">
               <div className="flex flex-col gap-1">
-                <Label htmlFor="c-quantity">Quantity (kg)</Label>
+                <Label htmlFor="c-quantity">Quantity ({quantityUnit ?? "…"})</Label>
                 <Input
                   id="c-quantity"
                   type="number"

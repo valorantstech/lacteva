@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { unitLabel } from "@/lib/units";
 import { CappedNotice, EmptyState,} from "@/components/states";
 
 import { useCallback, useEffect, useState } from "react";
@@ -20,7 +21,7 @@ import {
 import { PageContainer } from "@/components/page-container";
 import { PageHeader } from "@/components/page-header";
 import { Input } from "@/components/ui/input";
-import { CurrencyTotals, Money, formatAmount } from "@/components/money";
+import { CurrencyTotals, Money, Quantity, formatAmount } from "@/components/money";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -278,7 +279,7 @@ export default function ReportsPage() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {(
             [
-              ["Milk collected", `${daily.total_net_weight_kg} kg`],
+              ["Milk collected", `${daily.total_net_weight_kg} ${unitLabel(daily.quantity_unit)}`],
               ["Payable", payable],
               [
                 "Transactions",
@@ -323,7 +324,7 @@ export default function ReportsPage() {
                 <TableHead>Centre</TableHead>
                 <TableHead className="text-end">Transactions</TableHead>
                 <TableHead className="text-end">Accepted</TableHead>
-                <TableHead className="text-end">Milk (kg)</TableHead>
+                <TableHead className="text-end">Milk</TableHead>
                 <TableHead className="text-end">Payable</TableHead>
                 <TableHead className="text-end">Avg FAT</TableHead>
               </TableRow>
@@ -342,7 +343,7 @@ export default function ReportsPage() {
                   <TableCell className="text-end">{row.transactions}</TableCell>
                   <TableCell className="text-end">{row.accepted}</TableCell>
                   <TableCell className="text-end">
-                    {row.total_net_weight_kg}
+                    <Quantity value={row.total_net_weight_kg} unit={row.quantity_unit} />
                   </TableCell>
                   <TableCell className="text-end whitespace-nowrap">
                     <Money
@@ -397,7 +398,7 @@ export default function ReportsPage() {
                 <TableHead>Supplier</TableHead>
                 <TableHead className="text-end">Deliveries</TableHead>
                 <TableHead className="text-end">Accepted</TableHead>
-                <TableHead className="text-end">Milk (kg)</TableHead>
+                <TableHead className="text-end">Milk</TableHead>
                 <TableHead className="text-end">Payable</TableHead>
                 <TableHead className="text-end">Avg FAT</TableHead>
               </TableRow>
@@ -416,7 +417,7 @@ export default function ReportsPage() {
                   <TableCell className="text-end">{row.deliveries}</TableCell>
                   <TableCell className="text-end">{row.accepted}</TableCell>
                   <TableCell className="text-end">
-                    {row.total_net_weight_kg}
+                    <Quantity value={row.total_net_weight_kg} unit={row.quantity_unit} />
                   </TableCell>
                   <TableCell className="text-end whitespace-nowrap">
                     <Money

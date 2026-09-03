@@ -30,9 +30,9 @@ Session _session({String symbol = '₹', String code = 'INR'}) => Session(
 void main() {
   group('a quantity is said the way a dairy says it', () {
     test('three stored decimals become the one a person reads', () {
-      expect(quantity('214.000'), '214.0 L');
-      expect(quantity(214.0), '214.0 L');
-      expect(quantity('2.500'), '2.5 L');
+      expect(quantity('214.000', unit: 'L'), '214.0 L');
+      expect(quantity(214.0, unit: 'L'), '214.0 L');
+      expect(quantity('2.500', unit: 'L'), '2.5 L');
     });
 
     test('the unit is always there, and can be the one the platform sent', () {
@@ -40,9 +40,9 @@ void main() {
     });
 
     test('nothing is invented from nothing', () {
-      expect(quantity(null), '—');
-      expect(quantity(''), '—');
-      expect(quantity('not a number'), '—');
+      expect(quantity(null, unit: 'L'), '—');
+      expect(quantity('', unit: 'L'), '—');
+      expect(quantity('not a number', unit: 'L'), '—');
     });
 
     test('the number is never converted, only rendered', () {

@@ -174,7 +174,8 @@ async def test_slip_carries_every_parchi_field_and_the_exact_books(client):
     assert slip["session_label"] == "morning"  # the shift
     assert slip["business_date"]
     assert slip["milk_type"] == "cow"
-    assert slip["quantity"] == 25.0 and slip["weight_unit"] == "kg"
+    # D-21 / WO-70: the unit READ from the record — this Kenyan tenant's is the litre.
+    assert slip["quantity"] == 25.0 and slip["weight_unit"] == "litre"
     assert slip["gross_weight"] == 27.5 and slip["tare_weight"] == 2.5
     assert slip["fat"] == 4.2 and slip["snf"] == 8.6 and slip["clr"] == 28.5
     assert slip["supplier_code"] == supplier["code"]

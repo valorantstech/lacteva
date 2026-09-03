@@ -25,11 +25,47 @@ library;
 
 import 'session.dart';
 
+/// The symbol for a unit the platform stored (D-21 / WO-70).
+///
+/// `litre` → `L`, `kg` → `kg`; `mixed` — an aggregate across a change of
+/// unit — and anything else is shown as sent, never guessed at.
+String unitLabel(Object? unit) {
+  switch ((unit ?? '').toString().trim().toLowerCase()) {
+    case 'litre':
+    case 'litres':
+    case 'liter':
+    case 'l':
+      return 'L';
+    case 'kg':
+    case 'kilogram':
+    case 'kilograms':
+      return 'kg';
+    default:
+      return (unit ?? '').toString();
+  }
+}
+
+/// The symbol of the unit THIS DAIRY measures in, for a label on a field the
+/// operator is about to fill ("Gross (L)"). A figure that came from the
+/// platform renders the unit it came WITH — see [recordUnit].
+///
+/// With no session there is no dairy to ask; `kg` is what every platform
+/// before WO-70 measured, and is documented as that, not as a preference.
+String orgUnit(Session? session) => session?.organization?.quantityUnitLabel ?? 'kg';
+
+/// The unit a RECORD carries, as its symbol — a transaction's `weight_unit`,
+/// a summary's `quantity_unit` — falling back to the dairy's own only when the
+/// record has none (an offline projection, before the platform has seen it).
+String recordUnit(Object? stored, Session? session) =>
+    stored == null || stored.toString().isEmpty ? orgUnit(session) : unitLabel(stored);
+
 /// A quantity as a dairy says it: one decimal, then the unit.
 ///
 /// `214.000` → `214.0 L`. The rounding is presentational and one-way — the
-/// value sent to the platform is never this string.
-String quantity(Object? value, {String unit = 'L'}) {
+/// value sent to the platform is never this string. The unit is REQUIRED:
+/// this used to default to `L`, which is how the home screen said litres over
+/// a total the platform had weighed (D-21 / WO-70).
+String quantity(Object? value, {required String unit}) {
   final number = _asNumber(value);
   if (number == null) return '—';
   return '${number.toStringAsFixed(1)} $unit';

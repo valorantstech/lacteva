@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api.dart';
+import 'format.dart';
 import 'brand/motion.dart';
 import 'l10n.dart';
 import 'session.dart';
@@ -161,7 +162,8 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                     [
                       '${tx['created_at']}'.replaceFirst('T', ' ').split('.').first,
                       tx['milk_type']?.toString() ?? '—',
-                      if (tx['net_weight'] != null) '${tx['net_weight']} kg',
+                      if (tx['net_weight'] != null)
+                        '${tx['net_weight']} ${recordUnit(tx['weight_unit'], widget.session)}',
                       tx['state'].toString(),
                     ].join(' · '),
                   ),
@@ -274,7 +276,12 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   // from the catalog.
                   Text(t.t('history.state', {'state': tx['state']})),
                   Text(t.t('history.milk', {'milk': tx['milk_type'] ?? '—'})),
-                  Text(t.t('history.net', {'kg': tx['net_weight'] ?? '—'})),
+                  Text(
+                    t.t('history.net', {
+                      'qty': tx['net_weight'] ?? '—',
+                      'unit': recordUnit(tx['weight_unit'], widget.session),
+                    }),
+                  ),
                   Text(
                     t.t('wizard.qualityLine', {
                       'fat': tx['fat_percentage'] ?? tx['fat'] ?? '—',

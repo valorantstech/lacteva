@@ -29,6 +29,7 @@ export function DashboardHero({
   centresCollecting,
   centresTotal,
   litres,
+  unit,
   fill,
   farmers,
   payable,
@@ -42,6 +43,8 @@ export function DashboardHero({
   centresTotal: number | null;
   /** Kilograms, exactly as the platform counted them. */
   litres: number | null;
+  /** D-21: the unit the platform reported the figure in. */
+  unit: string | null;
   /**
    * How full the vessel is, 0..1 — or null when there is nothing to measure
    * against, in which case no vessel is drawn at all. A vessel is a
@@ -103,7 +106,7 @@ export function DashboardHero({
               {fill === null ? null : <MilkVessel fill={fill} />}
               <HeroFigure
                 value={
-                  litres === null ? "—" : <Quantity value={litres} unit="kg" />
+                  litres === null ? "—" : <Quantity value={litres} unit={unit} />
                 }
                 caption={t("dashboard.heroCollected")}
               />

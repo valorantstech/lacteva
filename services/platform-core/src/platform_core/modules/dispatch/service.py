@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import ConflictError, NotFoundError, ValidationError
 from platform_core.core.milk import MILK_TYPES
+from platform_core.core.org_context import require_tenant_unit
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
@@ -40,13 +41,18 @@ QUANTITY = Decimal("0.001")
 MIN_REASON = 3
 
 
-def kilograms(value: Decimal | None) -> Decimal:
+def quantised(value: Decimal | None) -> Decimal:
     """A quantity back at the scale the column stores (DEMO-012).
 
-    Kilograms, like the collection side. See the model for why this ledger
-    refuses to mix units.
+    In the ORGANISATION'S unit (D-21 / WO-70), like the collection side — see
+    the model for why this ledger refuses to mix units. Named `kilograms`
+    until WO-70, when kilograms stopped being the only answer.
     """
     return Decimal(value or 0).quantize(QUANTITY, rounding=ROUND_HALF_UP)
+
+
+#: The pre-WO-70 name, for any caller that still says it.
+kilograms = quantised
 
 
 # --- commands ----------------------------------------------------------------
@@ -57,7 +63,11 @@ class RecordDispatchCommand(BaseModel):
     business_date: date
     milk_type: str
     quantity: Decimal = Field(gt=0)
-    quantity_unit: str = Field(default="kg", max_length=8)
+    #: D-21. Absent means "the organisation's unit". Present, it must AGREE
+    #: with it: a dispatch in the other unit is refused, because the day book
+    #: subtracts this from collections and a ledger that took litres in and
+    #: gave kilograms out would be wrong by about 3% while looking reasonable.
+    quantity_unit: str | None = Field(default=None, max_length=12)
     destination: str = Field(min_length=1, max_length=DESTINATION_MAX)
     reference: str = Field(default="", max_length=60)
     notes: str = Field(default="", max_length=300)
@@ -113,7 +123,7 @@ def _view(row: MilkDispatch) -> DispatchView:
         center_id=row.center_id,
         business_date=row.business_date,
         milk_type=row.milk_type,
-        quantity=kilograms(row.quantity),
+        quantity=quantised(row.quantity),
         quantity_unit=row.quantity_unit,
         destination=row.destination,
         reference=row.reference,
@@ -143,13 +153,14 @@ class DispatchService:
         if centre is None or centre.tenant_id != tenant_id:
             raise NotFoundError("collection center not found")
 
+        unit = await require_tenant_unit(self._session, cmd.quantity_unit)
         dispatch = MilkDispatch(
             tenant_id=tenant_id,
             center_id=cmd.center_id,
             business_date=cmd.business_date,
             milk_type=cmd.milk_type,
-            quantity=kilograms(cmd.quantity),
-            quantity_unit=cmd.quantity_unit,
+            quantity=quantised(cmd.quantity),
+            quantity_unit=unit,
             destination=cmd.destination.strip(),
             reference=cmd.reference.strip(),
             notes=cmd.notes,
@@ -166,7 +177,8 @@ class DispatchService:
                 "center_id": str(cmd.center_id),
                 "business_date": str(cmd.business_date),
                 "milk_type": cmd.milk_type,
-                "quantity": str(kilograms(cmd.quantity)),
+                "quantity": str(quantised(cmd.quantity)),
+                "quantity_unit": dispatch.quantity_unit,
                 "destination": dispatch.destination,
             },
         )
@@ -178,7 +190,7 @@ class DispatchService:
                     "center_id": str(cmd.center_id),
                     "business_date": str(cmd.business_date),
                     "milk_type": cmd.milk_type,
-                    "quantity": str(kilograms(cmd.quantity)),
+                    "quantity": str(quantised(cmd.quantity)),
                     "quantity_unit": dispatch.quantity_unit,
                     "destination": dispatch.destination,
                 },

@@ -147,7 +147,13 @@ async def test_weight_validation_rules(client):
         ({"source": "manual", "gross": 5, "tare": 5}, "tare must be less"),
         ({"source": "manual", "gross": 5}, "requires gross and tare"),
         ({"source": "telepathy", "gross": 5, "tare": 1}, "source must be"),
-        ({"source": "manual", "gross": 5, "tare": 1, "unit": "lb"}, "only kg"),
+        # D-21 / WO-70: the refusal is now relative to the TENANT, not to a
+        # constant — and it is still a refusal. This organisation (Kenya)
+        # measures in litres, so a reading claimed in kilograms is refused as
+        # firmly as pounds are; "accept anything" is exactly what this must
+        # not have become.
+        ({"source": "manual", "gross": 5, "tare": 1, "unit": "lb"}, "unknown quantity unit"),
+        ({"source": "manual", "gross": 5, "tare": 1, "unit": "kg"}, "this organisation measures"),
     ]
     for body, fragment in cases:
         r = await client.post(f"/v1/milk-transactions/{tid}/weight", json=body, headers=headers)

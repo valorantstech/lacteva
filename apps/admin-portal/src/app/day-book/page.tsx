@@ -27,6 +27,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocale } from "@/lib/i18n";
 import { BookOpen, Download, Droplets, TruckIcon } from "lucide-react";
 
 import {
@@ -57,6 +58,7 @@ import { PageContainer } from "@/components/page-container";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { formatQuantity } from "@/components/money";
+import { unitLabel } from "@/lib/units";
 import { isCompleteDate } from "@/lib/complete-date";
 
 /** The platform's own vocabulary (`core/milk.py`). `custom` is included: a
@@ -72,9 +74,11 @@ const LABEL: Record<string, string> = {
   custom: "Other",
 };
 
-const kg = (n: number) => `${n} kg`;
+/** A figure in the BOOK'S unit (D-21) — read from the ledger, never assumed. */
+const qty = (n: number, unit: string) => `${formatQuantity(n)} ${unitLabel(unit)}`;
 
 export default function DayBookPage() {
+  const { quantityUnit } = useLocale();
   const businessToday = useBusinessToday();
   const [session, setSession] = useState<Session | null>(null);
   const [centers, setCenters] = useState<Center[]>([]);
@@ -239,7 +243,7 @@ export default function DayBookPage() {
         <Surface tone="metric" className="flex items-start justify-between gap-3">
           <Metric
             label="Collected"
-            value={book ? kg(book.total_collected_kg) : "—"}
+            value={book ? qty(book.total_collected_kg, book.quantity_unit) : "—"}
             caption={centreName ?? "every centre"}
           />
           <span aria-hidden className="text-muted-foreground">
@@ -249,7 +253,7 @@ export default function DayBookPage() {
         <Surface tone="metric" className="flex items-start justify-between gap-3">
           <Metric
             label="Dispatched"
-            value={book ? kg(book.total_dispatched_kg) : "—"}
+            value={book ? qty(book.total_dispatched_kg, book.quantity_unit) : "—"}
             caption="sent out in bulk"
           />
           <span aria-hidden className="text-muted-foreground">
@@ -259,7 +263,7 @@ export default function DayBookPage() {
         <Surface tone="metric" className="flex items-start justify-between gap-3">
           <Metric
             label="Remainder"
-            value={book ? kg(book.total_remainder_kg) : "—"}
+            value={book ? qty(book.total_remainder_kg, book.quantity_unit) : "—"}
             caption="collected minus dispatched"
           />
           <span aria-hidden className="text-muted-foreground">
@@ -316,27 +320,31 @@ export default function DayBookPage() {
                           {row.collections} in · {row.dispatches} out
                         </span>
                       </td>
-                      <td className="py-2 pe-3 text-end tabular-nums">{kg(row.collected_kg)}</td>
-                      <td className="py-2 pe-3 text-end tabular-nums">{kg(row.dispatched_kg)}</td>
+                      <td className="py-2 pe-3 text-end tabular-nums">
+                        {qty(row.collected_kg, book.quantity_unit)}
+                      </td>
+                      <td className="py-2 pe-3 text-end tabular-nums">
+                        {qty(row.dispatched_kg, book.quantity_unit)}
+                      </td>
                       <td
                         className={`py-2 text-end font-medium tabular-nums ${
                           row.remainder_kg < 0 ? "text-destructive" : ""
                         }`}
                       >
-                        {kg(row.remainder_kg)}
+                        {qty(row.remainder_kg, book.quantity_unit)}
                       </td>
                     </tr>
                   ))}
                   <tr>
                     <td className="py-2 pe-3 font-medium">Total</td>
                     <td className="py-2 pe-3 text-end font-medium tabular-nums">
-                      {kg(book.total_collected_kg)}
+                      {qty(book.total_collected_kg, book.quantity_unit)}
                     </td>
                     <td className="py-2 pe-3 text-end font-medium tabular-nums">
-                      {kg(book.total_dispatched_kg)}
+                      {qty(book.total_dispatched_kg, book.quantity_unit)}
                     </td>
                     <td className="py-2 text-end font-medium tabular-nums">
-                      {kg(book.total_remainder_kg)}
+                      {qty(book.total_remainder_kg, book.quantity_unit)}
                     </td>
                   </tr>
                 </tbody>
@@ -407,7 +415,9 @@ export default function DayBookPage() {
                 </Select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="dispatch-quantity">Quantity (kg)</Label>
+                <Label htmlFor="dispatch-quantity">
+                  Quantity ({book ? unitLabel(book.quantity_unit) : (quantityUnit ?? "…")})
+                </Label>
                 <Input
                   id="dispatch-quantity"
                   name="quantity"

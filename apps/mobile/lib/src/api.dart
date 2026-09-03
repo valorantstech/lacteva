@@ -864,7 +864,9 @@ class ApiClient {
     required String rowId,
     required double quantity,
     required String transactionDate,
-    String quantityUnit = 'kg',
+    // D-21 / WO-70: null names no unit, and the platform applies the
+    // organisation's. The app has no business asserting one.
+    String? quantityUnit,
     String? roundingPolicy,
   }) async {
     final result =
@@ -874,7 +876,7 @@ class ApiClient {
               body: {
                 'row_id': rowId,
                 'quantity': quantity,
-                'quantity_unit': quantityUnit,
+                'quantity_unit': ?quantityUnit,
                 'transaction_date': transactionDate,
                 'rounding_policy': ?roundingPolicy,
               },
@@ -1589,15 +1591,22 @@ class MatrixDetailResult {
 /// are different milk at different money, and one total says nothing about
 /// which shed turned up.
 class MilkTypeShare {
-  const MilkTypeShare({required this.milkType, required this.netWeightKg});
+  const MilkTypeShare({
+    required this.milkType,
+    required this.netWeightKg,
+    this.quantityUnit = 'kg',
+  });
 
   factory MilkTypeShare.fromJson(Map<String, dynamic> json) => MilkTypeShare(
     milkType: json['milk_type'] as String,
     netWeightKg: (json['net_weight_kg'] as num).toDouble(),
+    quantityUnit: (json['quantity_unit'] ?? 'kg').toString(),
   );
 
   final String milkType;
+  /// The suffix is historical (D-21); the unit is [quantityUnit].
   final double netWeightKg;
+  final String quantityUnit;
 }
 
 class DailySummaryView {
@@ -1613,6 +1622,7 @@ class DailySummaryView {
     required this.avgSnf,
     this.byMilkType = const [],
     this.dateFrom = '',
+    this.quantityUnit = 'kg',
   });
 
   factory DailySummaryView.fromJson(Map<String, dynamic> json) {
@@ -1637,6 +1647,9 @@ class DailySummaryView {
       // the organization's timezone — so the only honest way to ask for
       // yesterday is to take the platform's today and step back one day.
       dateFrom: (json['date_from'] ?? '').toString(),
+      // D-21 / WO-70: the unit of `total_net_weight_kg`, READ from the
+      // report. `kg` only for a platform from before the field existed.
+      quantityUnit: (json['quantity_unit'] ?? 'kg').toString(),
     );
   }
 
@@ -1653,6 +1666,10 @@ class DailySummaryView {
 
   /// The report's own first day, as the platform resolved it.
   final String dateFrom;
+
+  /// The unit every quantity in this summary is in (D-21). The field names
+  /// keep their `Kg` suffix — a wire contract — and this says what they mean.
+  final String quantityUnit;
 
   /// Did any milk arrive? `accepted` rather than `transactions`, because a
   /// rejected can is a collection that happened and is not milk in the tank.

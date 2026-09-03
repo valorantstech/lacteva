@@ -14,6 +14,7 @@
  * no `toFixed`. If a total is needed, the backend already has one; ask for it.
  */
 
+import { unitLabel } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 /** Group the integer part in threes without ever leaving string space. */
@@ -167,19 +168,27 @@ export function formatQuantity(value: string | number | null | undefined): strin
  */
 export function Quantity({
   value,
-  unit = "kg",
+  unit,
   className,
 }: {
   value: string | number | null | undefined;
+  /**
+   * D-21 / WO-70: the unit READ from the record — a transaction's
+   * `weight_unit`, an aggregate's `quantity_unit`. There is no default: this
+   * component used to assume `kg`, which put a foreign unit on the first
+   * screen of an Indian dairy's first demo. A caller with no unit to hand
+   * renders the bare figure, which is at least not a claim.
+   */
   unit?: string | null;
   className?: string;
 }) {
   const formatted = formatQuantity(value);
+  const label = unitLabel(unit);
   return (
     <span className={cn("tabular-nums whitespace-nowrap", className)}>
       {formatted}
-      {unit && formatted !== "—" ? (
-        <span className="ms-1 text-xs text-muted-foreground">{unit}</span>
+      {label && formatted !== "—" ? (
+        <span className="ms-1 text-xs text-muted-foreground">{label}</span>
       ) : null}
     </span>
   );

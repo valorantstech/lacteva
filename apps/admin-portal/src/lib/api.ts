@@ -1040,6 +1040,8 @@ export type DailyCollectionSummary = {
   in_progress: number;
   suppliers_served: number;
   total_net_weight_kg: number;
+  /** D-21: the unit of `total_net_weight_kg` — the suffix is historical. */
+  quantity_unit: string;
   payable_by_currency: Record<string, string | number>;
   unpriced_accepted: number;
   weighted_avg_fat: number | null;
@@ -1053,6 +1055,7 @@ export type MilkTypeRow = {
   milk_type: string;
   transactions: number;
   net_weight_kg: number;
+  quantity_unit: string;
   weighted_avg_fat: number | null;
   amount_by_currency: Record<string, string | number>;
 };
@@ -1064,6 +1067,7 @@ export type CenterSummaryRow = {
   transactions: number;
   accepted: number;
   total_net_weight_kg: number;
+  quantity_unit: string;
   payable_amount: string | number;
   currency: string | null;
   weighted_avg_fat: number | null;
@@ -1077,6 +1081,7 @@ export type SupplierSummaryRow = {
   deliveries: number;
   accepted: number;
   total_net_weight_kg: number;
+  quantity_unit: string;
   payable_amount: string | number;
   currency: string | null;
   weighted_avg_fat: number | null;
@@ -1194,6 +1199,8 @@ export type CollectionTrend = {
   date_from: string;
   date_to: string;
   points: TrendPoint[];
+  /** D-21: one unit for the series, read from the rows it summed. */
+  quantity_unit: string;
 };
 
 export type RateBandRow = {
@@ -1201,6 +1208,8 @@ export type RateBandRow = {
   currency: string | null;
   transactions: number;
   total_net_weight_kg: number;
+  /** The unit the price is per, and the total is in. */
+  quantity_unit: string;
   payable_amount: string | number;
 };
 
@@ -1351,6 +1360,11 @@ export type MilkTransaction = {
   gross_weight: number | null;
   tare_weight: number | null;
   net_weight: number | null;
+  /** D-21 ruling 3, pinned at capture; null unless the dairy trades in the
+   *  other unit. Show BOTH figures when present. */
+  trade_unit?: string | null;
+  trade_quantity?: number | null;
+  conversion_factor?: string | number | null;
   // DEMO-007: how the reading was obtained. "manual" is the domain's own name
   // for an operator entering it; the alternative is an instrument. Showing a
   // number without its source is how a hand-typed weight comes to look
@@ -1522,7 +1536,9 @@ export const captureWeight = (
 ) =>
   // `source: "manual"` is the domain's own name for an operator-entered
   // reading. The mock scale is refused outright in this environment.
-  step(id, "weight", { source: "manual", unit: "kg", ...body });
+  // D-21 / WO-70: no unit named — the platform applies the ORGANISATION'S
+  // and would refuse any other. The portal has no business asserting one.
+  step(id, "weight", { source: "manual", ...body });
 
 export const captureQuality = (
   id: string,
@@ -1606,6 +1622,9 @@ export type CollectionSlip = {
   weight_unit: string | null;
   gross_weight: number | null;
   tare_weight: number | null;
+  trade_unit?: string | null;
+  trade_quantity?: number | null;
+  conversion_factor?: string | number | null;
   fat: number | null;
   snf: number | null;
   clr: number | null;
@@ -2327,6 +2346,13 @@ export type MeOrganization = {
   default_language: string;
   supported_languages: string[];
   languages: { tag: string; name: string; endonym: string; rtl: boolean }[];
+  /** D-21 / WO-70: what this dairy measures intake in, and its symbol. */
+  quantity_unit: string;
+  quantity_unit_label: string;
+  trade_unit?: string | null;
+  trade_unit_label?: string | null;
+  conversion_factor?: string | null;
+  conversion_effective_from?: string | null;
 };
 export type MeMembership = { status: string; joined_at: string };
 export type MeRole = {
@@ -2371,6 +2397,14 @@ export type LocaleSettings = {
   default_language: string;
   supported_languages: string[];
   languages: { tag: string; name: string; endonym: string; rtl: boolean }[];
+  /** D-21 / WO-70 — the intake unit and the declared conversion terms. */
+  quantity_unit: string;
+  quantity_unit_label: string;
+  units: string[];
+  trade_unit: string | null;
+  trade_unit_label: string | null;
+  conversion_factor: string | null;
+  conversion_effective_from: string | null;
 };
 
 export const getLocaleSettings = () =>
@@ -2381,6 +2415,11 @@ export const updateLocaleSettings = (body: {
   timezone?: string;
   default_language?: string;
   supported_languages?: string[];
+  quantity_unit?: string;
+  trade_unit?: string;
+  conversion_factor?: string;
+  conversion_effective_from?: string;
+  clear_conversion?: boolean;
 }) =>
   api<LocaleSettings>("/v1/organizations/settings/locale", {
     method: "PUT",
@@ -3111,6 +3150,8 @@ export type DayBook = {
   total_collected_kg: number;
   total_dispatched_kg: number;
   total_remainder_kg: number;
+  /** D-21: the unit of every `*_kg` figure in this book. */
+  quantity_unit: string;
   sales: DayBookSales;
 };
 

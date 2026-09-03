@@ -66,9 +66,11 @@ void main() {
     expect(find.text(t.t('wizard.weight')), findsOneWidget);
     expect(find.text(t.t('wizard.captureWeight')), findsOneWidget);
     expect(t.t('wizard.weight'), isNot('Weight'), reason: 'really translated');
-    // Units and domain tokens stay Latin — a scale reads kg in any language.
-    expect(find.text(t.t('wizard.grossKg')), findsOneWidget);
-    expect(t.t('wizard.grossKg'), contains('kg'));
+    // Units and domain tokens stay Latin — the unit symbol is interpolated
+    // from the dairy's own setting (D-21 / WO-70) and reads `kg` or `L` in
+    // any language; the catalog carries the placeholder.
+    expect(find.text(t.t('wizard.grossKg', {'unit': 'kg'})), findsOneWidget);
+    expect(t.t('wizard.grossKg', {'unit': 'kg'}), contains('kg'));
     // No RenderFlex overflow at 320px.
     expect(tester.takeException(), isNull);
   });

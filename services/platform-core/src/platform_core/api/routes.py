@@ -36,10 +36,11 @@ from platform_core.core.errors import (
 from platform_core.core.http_security import client_ip
 from platform_core.core.keys import get_key_registry
 from platform_core.core.locales import country_choices, currency_symbol, language_choices
-from platform_core.core.org_context import tenant_timezone
+from platform_core.core.org_context import tenant_timezone, tenant_units
 from platform_core.core.security_audit import record_security_event
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.tenant_lifecycle import TenantLifecycleService
+from platform_core.core.units import unit_label
 from platform_core.modules.audit.service import AuditPage
 from platform_core.modules.auth.service import AuthService, LoginCommand, TokenPair
 from platform_core.modules.authz.permissions import PERMISSIONS
@@ -533,6 +534,17 @@ class MeOrganization(BaseModel):
     default_language: str
     supported_languages: list[str]
     languages: list[dict]
+    #: D-21 / WO-70. What this dairy measures intake in, so a client renders
+    #: the unit it READ rather than one it assumed — the handset's home said
+    #: "L" over a kilogram total before this existed. `quantity_unit_label` is
+    #: the symbol (`L`, `kg`); the conversion terms are null in the ordinary
+    #: case.
+    quantity_unit: str
+    quantity_unit_label: str
+    trade_unit: str | None = None
+    trade_unit_label: str | None = None
+    conversion_factor: str | None = None
+    conversion_effective_from: date | None = None
 
 
 class MeMembership(BaseModel):
@@ -653,6 +665,14 @@ async def me(
                 default_language=org.default_locale,
                 supported_languages=list(org.supported_languages or ["en"]),
                 languages=language_choices(list(org.supported_languages or ["en"])),
+                quantity_unit=org.quantity_unit,
+                quantity_unit_label=unit_label(org.quantity_unit),
+                trade_unit=org.trade_unit,
+                trade_unit_label=unit_label(org.trade_unit) if org.trade_unit else None,
+                conversion_factor=(
+                    str(org.conversion_factor) if org.conversion_factor is not None else None
+                ),
+                conversion_effective_from=org.conversion_effective_from,
             )
         row = await session.scalar(
             select(Membership).where(
@@ -2207,7 +2227,14 @@ CalcSvc = Annotated[PricingCalculationService, Depends(deps.get_pricing_calculat
 
 
 @matrix_router.post("/pricing/calculate", response_model=CalculationResult)
-async def calculate_pricing(req: CalculationRequest, service: CalcSvc, p: RateCardRead) -> Any:
+async def calculate_pricing(
+    req: CalculationRequest, service: CalcSvc, p: RateCardRead, session: deps.Session
+) -> Any:
+    # D-21 / WO-70: a caller that names no unit gets the ORGANISATION'S, read
+    # from its row — never a constant. A caller that names one is taken at
+    # its word here; the calculator prices per that unit.
+    if not req.quantity_unit:
+        req = req.model_copy(update={"quantity_unit": (await tenant_units(session)).measured_unit})
     """Gross = unit price x quantity for a previously RESOLVED band (send the
     row_id from /pricing/resolve — prices are never client-supplied).
     Decimal arithmetic, explicit rounding policy, full trace (BR-0005/6/7).

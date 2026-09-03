@@ -54,12 +54,15 @@ class MilkDispatch(Base, IdMixin):
     #: collections of the same type, so the vocabularies must be the one
     #: vocabulary.
     milk_type: Mapped[str] = mapped_column(String(20), index=True)
-    #: KILOGRAMS, at the same scale and in the same unit the collection side
-    #: stores (`milk_collection_transaction.net_weight`). Deliberately not
-    #: litres: the day book subtracts dispatches from collections, and a
-    #: ledger that took kilograms in and gave litres out would be wrong by
-    #: about 3% while looking entirely reasonable. The sales side measures in
-    #: litres and is reported separately for exactly that reason.
+    #: In the ORGANISATION'S intake unit (D-21 / WO-70), at the same scale and
+    #: in the same unit the collection side stores
+    #: (`milk_collection_transaction.net_weight`). The day book subtracts
+    #: dispatches from collections, and a ledger that took litres in and gave
+    #: kilograms out would be wrong by about 3% while looking entirely
+    #: reasonable — so the service refuses a dispatch in any unit but the
+    #: organisation's, and the sales side (always litres) is reported
+    #: separately for exactly that reason. The `kg` default is what every row
+    #: written before WO-70 was; new rows are written the organisation's unit.
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3))
     quantity_unit: Mapped[str] = mapped_column(String(8), default="kg", server_default="kg")
     destination: Mapped[str] = mapped_column(String(DESTINATION_MAX))

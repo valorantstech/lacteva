@@ -480,7 +480,7 @@ async def seed() -> dict:
             await _expect(
                 await c.post(
                     f"/v1/milk-transactions/{tx['id']}/weight",
-                    json={"source": "manual", "unit": "kg", "gross": 45.5, "tare": 5.5},
+                    json={"source": "manual", "gross": 45.5, "tare": 5.5},
                     headers=h,
                 ),
                 200,

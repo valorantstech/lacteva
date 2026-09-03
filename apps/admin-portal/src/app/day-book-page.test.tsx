@@ -51,6 +51,7 @@ const BOOK = {
   total_collected_kg: 700.5,
   total_dispatched_kg: 600,
   total_remainder_kg: 100.5,
+  quantity_unit: "kg",
   sales: {
     deliveries: 12,
     quantity: "48.000",
@@ -133,7 +134,8 @@ describe("the milk day book", () => {
     render(<DayBookPage />);
 
     expect(await screen.findByText("520.5 kg")).toBeInTheDocument();
-    expect(screen.getByText("-20 kg")).toBeInTheDocument();
+    // WO-68 rider: one decimal, as a dairy says it.
+    expect(screen.getByText("-20.0 kg")).toBeInTheDocument();
     expect(screen.getAllByText("100.5 kg").length).toBeGreaterThan(0);
   });
 

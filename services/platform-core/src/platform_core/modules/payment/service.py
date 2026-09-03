@@ -35,7 +35,7 @@ from platform_core.core.metrics import (
     PAYMENTS_FAILED,
 )
 from platform_core.core.money import quantize_money
-from platform_core.core.org_context import tenant_currency, tenant_timezone
+from platform_core.core.org_context import tenant_currency, tenant_timezone, tenant_units
 from platform_core.core.tenancy import require_current_tenant
 from platform_core.core.types import Money
 from platform_core.infrastructure.events import EventBus, EventEnvelope
@@ -455,11 +455,14 @@ class PaymentService:
                 )
                 .group_by(SettlementLine.settlement_id)
             )
+            # D-21: a settlement with no lines has no unit to read; the
+            # organisation's own is the only honest fallback, never "kg".
+            org_unit = (await tenant_units(self._session, payment.tenant_id)).measured_unit
             for settlement_id, quantity, gross, unit in volume_rows.all():
                 volumes[settlement_id] = (
                     Decimal(quantity or 0),
                     Decimal(gross or 0),
-                    unit or "kg",
+                    unit or org_unit,
                 )
             center_ids = {s.center_id for s in settlements.values() if s.center_id}
             if center_ids:

@@ -100,11 +100,23 @@ class MilkCollectionTransaction(Base, IdMixin):
     arrived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Weight (WEIGHT_CAPTURED)
-    weight_unit: Mapped[str | None] = mapped_column(String(8), nullable=True)  # "kg"
+    #: D-21 / WO-70: the unit the instrument MEASURED in, read from the
+    #: organisation at capture — `litre` or `kg` — never a constant. Rows from
+    #: before WO-70 hold `kg`, because kilograms are what they were.
+    weight_unit: Mapped[str | None] = mapped_column(String(8), nullable=True)
     gross_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
     tare_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
     net_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
     weight_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    #: D-21 ruling 3, PINNED AT CAPTURE. When the organisation trades in the
+    #: other unit, the factor it declared on that day, the unit it pays in,
+    #: and the quantity the two produce. Frozen here so a factor changed next
+    #: month cannot re-price this settled day, and so the receipt can print
+    #: "measured 40.000 L x 1.0300 = paid 41.200 kg" from the row alone. All
+    #: null in the ordinary case, where the paid quantity IS `net_weight`.
+    trade_unit: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    trade_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    conversion_factor: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
 
     # Quality (QUALITY_CAPTURED) — raw readings only; no derived calculations yet
     fat: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -23,8 +23,14 @@ from platform_core.core.business_time import business_date_of, format_in_zone
 from platform_core.core.db import as_utc, utcnow
 from platform_core.core.document_numbers import next_document_number
 from platform_core.core.errors import ConflictError, NotFoundError
-from platform_core.core.org_context import tenant_locale, tenant_timezone
+from platform_core.core.org_context import (
+    require_tenant_unit,
+    tenant_locale,
+    tenant_timezone,
+    tenant_units,
+)
 from platform_core.core.tenancy import require_current_tenant
+from platform_core.core.units import trade_quantity, unit_label
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.infrastructure.hardware import (
     MockHardwareRefused,
@@ -57,7 +63,22 @@ if TYPE_CHECKING:
     from platform_core.modules.pricing.calculator import PricingCalculationService
     from platform_core.modules.pricing.resolution import PricingResolutionService
 
-MAX_GROSS_KG = 200.0
+#: The most a single container can plausibly hold, in the organisation's
+#: unit. 200 litres or 200 kilograms — the bound is against a mistyped 1200,
+#: not a claim about density, so it is unit-neutral (WO-70).
+MAX_GROSS = 200.0
+#: The pre-WO-70 name, for importers.
+MAX_GROSS_KG = MAX_GROSS
+
+
+def _paid_quantity(tx) -> float:
+    """D-21 ruling 3: the pinned trade quantity where one exists, else the
+    measured net. Never recomputed from the organisation's CURRENT factor."""
+    return tx.trade_quantity if tx.trade_quantity is not None else tx.net_weight
+
+
+def _paid_unit(tx) -> str:
+    return tx.trade_unit or tx.weight_unit or "kg"
 
 
 async def _resolve_instrument(readiness, source: str, cmd, *, center_id: uuid.UUID) -> uuid.UUID:
@@ -255,7 +276,11 @@ class InstrumentProvenance(BaseModel):
 
 class WeightCommand(InstrumentProvenance):
     source: str = "manual"  # manual | scale | mock_scale
-    unit: str = "kg"
+    #: D-21 / WO-70. Absent means "the organisation's unit". Present, it must
+    #: agree with the organisation's — a reading in the other unit is refused,
+    #: as firmly as `!= "kg"` ever refused, but relative to the tenant rather
+    #: than to a constant.
+    unit: str | None = None
     gross: float | None = None
     tare: float | None = None
 
@@ -291,6 +316,12 @@ class TransactionView(BaseModel):
     gross_weight: float | None
     tare_weight: float | None
     net_weight: float | None
+    #: D-21 ruling 3, pinned at capture. Null unless the organisation trades
+    #: in the other unit; then the paid unit, the paid quantity and the
+    #: declared factor that produced it. A client shows BOTH figures.
+    trade_unit: str | None = None
+    trade_quantity: float | None = None
+    conversion_factor: Decimal | None = None
     # DEMO-007: the capture SOURCE was stored from the first day of MVP-001 and
     # never surfaced. It is the difference between "10 kg" and "10 kg, entered
     # by hand" — the one fact that stops a reading being mistaken for a
@@ -381,6 +412,11 @@ class SlipView(BaseModel):
     weight_unit: str | None
     gross_weight: float | None
     tare_weight: float | None
+    #: D-21 ruling 3: the farmer sees how the measured quantity became the
+    #: paid one, or nothing at all when they are the same.
+    trade_unit: str | None = None
+    trade_quantity: float | None = None
+    conversion_factor: Decimal | None = None
     fat: float | None
     snf: float | None
     clr: float | None
@@ -425,7 +461,16 @@ def render_slip_text(slip: SlipView, *, language: str, timezone_name: str | None
         f"{label('Milk', 'दूध')}: {milk}",
     ]
     if slip.quantity is not None:
-        lines.append(f"{label('Qty', 'मात्रा')}: {slip.quantity:g} {slip.weight_unit or 'kg'}")
+        # D-21: the unit READ from the record, as its symbol — never assumed.
+        lines.append(f"{label('Qty', 'मात्रा')}: {slip.quantity:g} {unit_label(slip.weight_unit)}")
+        if slip.trade_quantity is not None and slip.trade_unit:
+            # Ruling 3: both figures and the factor between them, so the farmer
+            # can check with a calculator how 40 L became 41.2 kg.
+            factor = f" x {slip.conversion_factor} kg/L" if slip.conversion_factor else ""
+            lines.append(
+                f"{label('Paid qty', 'भुगतान मात्रा')}: {slip.trade_quantity:g} "
+                f"{unit_label(slip.trade_unit)}{factor}"
+            )
     quality = "  ".join(
         f"{name} {value:g}"
         for name, value in (("FAT", slip.fat), ("SNF", slip.snf), ("CLR", slip.clr))
@@ -437,7 +482,8 @@ def render_slip_text(slip: SlipView, *, language: str, timezone_name: str | None
         refused = f"{label('REJECTED', 'अस्वीकृत')}"
         lines.append(f"{refused}: {slip.rejected_reason}" if slip.rejected_reason else refused)
     elif slip.unit_price is not None and slip.gross_amount is not None:
-        per = f"/{slip.weight_unit}" if slip.weight_unit else ""
+        paid_unit = slip.trade_unit or slip.weight_unit
+        per = f"/{unit_label(paid_unit)}" if paid_unit else ""
         lines.append(f"{label('Rate', 'दर')}: {slip.unit_price}{per}")
         # BR-0029 / D-3: an override the farmer cannot see on their own copy
         # is a silent one. Both numbers, and the reason, on the parchi.
@@ -664,8 +710,10 @@ class MilkCollectionService:
     ) -> MilkCollectionTransaction:
         tx = await self._get_mutable(tx_id, expected="MILK_RECEIVED")
         device_id: uuid.UUID | None = None
-        if cmd.unit != "kg":
-            raise ConflictError("only kg is supported in this sprint")
+        # D-21 / WO-70: the unit is the ORGANISATION'S, read now, and a claim
+        # of any other unit is refused. This replaced `!= "kg"`.
+        unit = await require_tenant_unit(self._session, cmd.unit, tx.tenant_id)
+        terms = await tenant_units(self._session, tx.tenant_id)
         if cmd.source == "mock_scale":
             _refuse_mock_source("mock_scale")
             reading = mock_scale.read(tx.container_identifier or str(tx.id))
@@ -686,15 +734,30 @@ class MilkCollectionService:
             raise ConflictError("weight source must be manual, scale or mock_scale")
         if gross <= 0 or tare < 0:
             raise ConflictError("gross must be > 0 and tare >= 0")
-        if gross > MAX_GROSS_KG:
-            raise ConflictError(f"gross weight exceeds {MAX_GROSS_KG} kg limit")
+        if gross > MAX_GROSS:
+            raise ConflictError(f"gross exceeds {MAX_GROSS:g} {unit_label(unit)} limit")
         if tare >= gross:
             raise ConflictError("tare must be less than gross")
-        tx.weight_unit = "kg"
+        tx.weight_unit = unit
         tx.gross_weight = round(gross, 3)
         tx.tare_weight = round(tare, 3)
         tx.net_weight = round(gross - tare, 3)
         tx.weight_source = cmd.source
+        # D-21 ruling 3, PINNED HERE. If the organisation trades in the other
+        # unit and its declared factor is in force on this business day, the
+        # paid quantity is fixed onto the row now — a factor changed next
+        # month cannot re-price this day. In the ordinary case nothing is set
+        # and the paid quantity IS the measured one.
+        locale = await tenant_locale(self._session, tx.tenant_id)
+        if terms.in_force(business_date_of(utcnow(), locale.timezone)):
+            tx.trade_unit = terms.trade_unit
+            tx.conversion_factor = terms.factor
+            tx.trade_quantity = trade_quantity(
+                tx.net_weight,
+                measured_unit=unit,
+                trade_unit=terms.trade_unit,
+                factor=terms.factor,
+            )
         tx.state = "WEIGHT_CAPTURED"
         await self._record(
             tx,
@@ -703,6 +766,12 @@ class MilkCollectionService:
                 "gross": tx.gross_weight,
                 "tare": tx.tare_weight,
                 "net": tx.net_weight,
+                "unit": tx.weight_unit,
+                "trade_unit": tx.trade_unit,
+                "trade_quantity": tx.trade_quantity,
+                "conversion_factor": (
+                    str(tx.conversion_factor) if tx.conversion_factor is not None else None
+                ),
                 **_provenance(cmd, cmd.source, device_id),
             },
             actor_id,
@@ -903,11 +972,13 @@ class MilkCollectionService:
                     value=tx.fat,
                 )
             )
+            # D-21: priced on the PAID quantity in the PAID unit — the pinned
+            # trade figure where one exists, the measured one otherwise.
             calculation = await self._pricing_calculator.calculate(
                 CalculationRequest(
                     row_id=resolution.row_id,
-                    quantity=tx.net_weight,
-                    quantity_unit=tx.weight_unit or "kg",
+                    quantity=_paid_quantity(tx),
+                    quantity_unit=_paid_unit(tx),
                     transaction_date=tx_date,
                 ),
                 actor_id=actor_id,
@@ -967,7 +1038,7 @@ class MilkCollectionService:
         tx.unit_price = cmd.unit_price
         # BR-0005: Decimal end to end, and the amount is recomputed rather than
         # scaled, so no rounding drifts between the rate and the total.
-        tx.gross_amount = (cmd.unit_price * Decimal(str(tx.net_weight))).quantize(
+        tx.gross_amount = (cmd.unit_price * Decimal(str(_paid_quantity(tx)))).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
         tx.override_reason = cmd.reason.strip()
@@ -1157,7 +1228,15 @@ class MilkCollectionService:
                 "base_unit_price": (
                     str(tx.base_unit_price) if tx.base_unit_price is not None else None
                 ),
-                "quantity_unit": tx.weight_unit,
+                # D-21: what the farmer is PAID on, with its unit as a symbol,
+                # and the measured figure beside it so a message can show
+                # both when they differ.
+                "quantity_unit": unit_label(_paid_unit(tx)),
+                "paid_quantity": _paid_quantity(tx),
+                "measured_unit": unit_label(tx.weight_unit),
+                "conversion_factor": (
+                    str(tx.conversion_factor) if tx.conversion_factor is not None else None
+                ),
             },
             actor_id,
         )
@@ -1312,6 +1391,9 @@ class MilkCollectionService:
             weight_unit=tx.weight_unit,
             gross_weight=tx.gross_weight,
             tare_weight=tx.tare_weight,
+            trade_unit=tx.trade_unit,
+            trade_quantity=tx.trade_quantity,
+            conversion_factor=tx.conversion_factor,
             fat=tx.fat,
             snf=tx.snf,
             clr=tx.clr,
@@ -1471,6 +1553,11 @@ class MilkCollectionService:
                 "tare": tx.tare_weight,
                 "net": tx.net_weight,
                 "source": tx.weight_source,
+                "trade_unit": tx.trade_unit,
+                "trade_quantity": tx.trade_quantity,
+                "conversion_factor": (
+                    str(tx.conversion_factor) if tx.conversion_factor is not None else None
+                ),
             },
             "quality": {
                 "fat": tx.fat,

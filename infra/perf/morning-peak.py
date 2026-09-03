@@ -169,7 +169,6 @@ async def _capture(t: Timed, session_id: str, supplier_id: str, index: int) -> b
         },
         "weight": {
             "source": "manual",
-            "unit": "kg",
             "gross": 40.0 + (index % 9),
             "tare": 3.0,
         },

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.units import unit_label
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.event_relay.consumers import EventConsumer, register_consumer
 from platform_core.modules.notification.service import (
@@ -251,8 +252,12 @@ def _collection_completed(envelope: EventEnvelope) -> dict | None:
         "source_id": _uuid(data.get("transaction_id")) or envelope.aggregate_id,
         "variables": {
             "slip_number": data.get("slip_number", ""),
-            "quantity": data.get("net_weight", ""),
-            "quantity_unit": data.get("quantity_unit", "") or "kg",
+            # D-21: the farmer is told the quantity they are PAID on, in the
+            # unit read from the event — never a unit this consumer assumed.
+            # Events written before WO-70 carry only `net_weight` and the raw
+            # stored unit; both still render, as the kilograms they were.
+            "quantity": data.get("paid_quantity", data.get("net_weight", "")),
+            "quantity_unit": unit_label(data.get("quantity_unit", "")),
             "fat": data.get("fat", ""),
             "snf": data.get("snf", ""),
             "unit_price": data.get("unit_price", ""),

@@ -6,9 +6,10 @@ business — ETE.ONB.01 at business level).
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
-from sqlalchemy import JSON, DateTime, String, UniqueConstraint, Uuid
+from sqlalchemy import JSON, Date, DateTime, Numeric, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.core.db import Base, IdMixin, utcnow
@@ -45,6 +46,26 @@ class Organization(Base, IdMixin):
     supported_languages: Mapped[list] = mapped_column(JSON, default=lambda: ["en"])
     #: BCP-47. Widened from the pre-DEMO-013 `en` to hold `en-IN`.
     default_locale: Mapped[str] = mapped_column(String(16), default="en")
+    #: D-21 / WO-70. The unit this organisation MEASURES intake in — `litre`
+    #: or `kg` (`core/units.UNITS`) — resolved from `country_code` at creation
+    #: exactly as `currency_code` is, and written onto every transaction at
+    #: capture. Columns, for the same reason the currency is: a later change
+    #: applies to FUTURE transactions only, and history keeps the unit it was
+    #: actually measured in.
+    #:
+    #: The ORM and server defaults are `kg` because that is what every
+    #: organisation created before WO-70 measured — a row that predates the
+    #: column was weighed. New organisations never see this default: the
+    #: service resolves the country's unit before the INSERT.
+    quantity_unit: Mapped[str] = mapped_column(String(8), default="kg", server_default="kg")
+    #: D-21 ruling 3. Where the dairy TRADES in the other unit, that unit, the
+    #: owner-declared kilograms-per-litre factor, and the date it took effect.
+    #: All null in the ordinary case (trade unit = measured unit), when
+    #: nothing converts and nothing is printed. `core/units.validate_terms`
+    #: is the one place the three are allowed to disagree or agree.
+    trade_unit: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    conversion_factor: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    conversion_effective_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     #: When the tenant was offboarded. The tombstone's timestamp — retained
     #: financial records point at a tenant_id that must still resolve to

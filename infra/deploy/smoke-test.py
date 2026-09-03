@@ -172,7 +172,7 @@ def business_path(api: Api, tenant_id: str, *, consumer_wait: float) -> dict:
         ("identify", {"method": "manual", "supplier_id": supplier["id"]}),
         ("milk", {"milk_type": "cow", "container_type": "can",
                   "container_identifier": f"SMOKE-{stamp[-4:]}", "temperature_c": 4.0}),
-        ("weight", {"source": "manual", "unit": "kg", "gross": 12.0, "tare": 2.0}),
+        ("weight", {"source": "manual", "gross": 12.0, "tare": 2.0}),
         ("quality", {"source": "manual", "fat": 4.2, "snf": 8.6, "clr": 28.5}),
         ("accept", {}),
         ("complete", {}),

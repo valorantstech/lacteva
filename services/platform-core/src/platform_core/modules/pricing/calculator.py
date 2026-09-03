@@ -117,7 +117,12 @@ class CalculationRequest(BaseModel):
 
     row_id: uuid.UUID  # from a successful POST /v1/pricing/resolve
     quantity: float = Field(ge=0)  # zero is legal (empty container), negative is not
-    quantity_unit: str = Field(default="kg", max_length=20)
+    #: D-21 / WO-70. The unit the quantity is in — and therefore the unit the
+    #: rate is per. No default: a calculator that assumed kilograms would
+    #: price an Indian litre as a kilogram without anyone asking it to. The
+    #: API fills an absent unit with the ORGANISATION'S before this is built;
+    #: the collection service passes the transaction's own.
+    quantity_unit: str | None = Field(default=None, max_length=20)
     transaction_date: date
     rounding_policy: str | None = None  # override; else tenant config; else HALF_UP
 
@@ -129,6 +134,16 @@ class CalculationRequest(BaseModel):
                 f"unknown rounding policy {v!r} — supported: {sorted(ROUNDING_POLICIES)}"
             )
         return v
+
+
+def _required_unit(unit: str | None) -> str:
+    """D-21: a calculation without a unit is refused, not defaulted."""
+    if not unit:
+        raise ValueError(
+            "quantity_unit is required — the unit the quantity is measured in is the "
+            "organisation's, never a constant"
+        )
+    return unit
 
 
 # --- domain service ----------------------------------------------------------
@@ -228,7 +243,7 @@ class PricingCalculationService:
         policy = await self._rounding_policy(req)
         calculation = self._calculator.calculate(
             unit_price=Money.of(row.unit_price, card.currency),
-            quantity=Quantity(value=req.quantity, unit=req.quantity_unit),
+            quantity=Quantity(value=req.quantity, unit=_required_unit(req.quantity_unit)),
             rounding_policy=policy,
         )
         calculation_id = uuid.uuid4()
