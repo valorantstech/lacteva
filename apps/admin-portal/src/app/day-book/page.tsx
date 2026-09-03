@@ -20,8 +20,9 @@
  * that.
  *
  * **Sales sit beside the arithmetic, not inside it.** A delivery on this
- * platform has no centre and no milk type, and is measured in litres rather
- * than weighed. Subtracting it from a centre's remainder would look precise
+ * platform has no centre and no milk type, and is a DIFFERENT POPULATION from
+ * intake — lost, retained, dispatched, sold from stock held over — whatever
+ * unit either side reads (WO-71). Subtracting it from a centre's remainder would look precise
  * and be wrong twice over, so the figure is shown with the reason it is not
  * subtracted. The flags come from the API; this page does not decide them.
  */
@@ -361,8 +362,8 @@ export default function DayBookPage() {
                 ? null
                 : "Sales are organization-wide and are not attributed to a centre"}
               {book.sales.attributable_to_milk_type ? null : " or to a milk type"}, and they are
-              measured in litres rather than weighed — so they are NOT subtracted from the
-              remainder above.
+              a different population from intake — milk is lost, retained, dispatched and sold
+              from stock held over — so they are NOT subtracted from the remainder above.
             </p>
           ) : null}
         </CardContent>

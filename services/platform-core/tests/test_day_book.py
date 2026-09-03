@@ -7,7 +7,7 @@ left at this centre?" had no answer the platform could give.
 These pin the record and the ledger, and the four ways both could lie:
 a dispatch quietly edited after somebody read the day book; a cancelled
 dispatch still counted; a remainder clamped so a wrong entry looks fine; and
-sales folded into a subtraction that is neither the same unit nor the same
+sales folded into a subtraction that is neither the same population nor the same
 scope as the milk it would be taken from.
 """
 
@@ -203,9 +203,11 @@ async def test_sales_are_reported_beside_the_ledger_and_never_subtracted(client)
     """The honest gap, pinned so nobody closes it by guessing.
 
     A delivery records a customer, a date and a free-text product — no centre,
-    no milk type — and it is measured in litres while intake is weighed in
-    kilograms. Subtracting it from a centre's remainder would look precise and
-    be wrong twice over.
+    no milk type — and it is a DIFFERENT POPULATION from intake: milk is lost,
+    retained, dispatched and sold from stock held over, so the day's
+    deliveries are not a subset of the day's intake even when both read
+    litres (WO-71 / D-21 ruling 6). Subtracting it from a centre's remainder
+    would look precise and be wrong twice over.
     """
     headers, center, supplier, session = await _procurement_env(client)
     await _collect(client, headers, session["id"], supplier, milk_type="cow", gross=55.0)

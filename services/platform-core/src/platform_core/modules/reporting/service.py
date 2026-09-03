@@ -197,10 +197,22 @@ class DayBookSales(BaseModel):
     from a product to an animal. Splitting sales by type would mean parsing
     that string, which is inventing data.
 
+    **A sale is a different population from intake (WO-71 / D-21 ruling 6).**
+    Milk is lost, retained in the tank, dispatched to a processor, and sold
+    from stock held over from yesterday — so the day's deliveries are not a
+    subset of the day's intake, and subtracting one from the other answers no
+    question anyone asked. This is the reason that SURVIVES matching units:
+    the refusal used to be explained by "sales are litres, intake is
+    kilograms", which stopped being true the day an Indian tenant measured in
+    litres, and a stale reason here is worse than none — the next reader sees
+    matching units, concludes the obstacle is gone, and nets the two into a
+    remainder that looks precise and is not.
+
     So the day's deliveries are reported as their own figure, in their own
-    unit (the sales side measures in litres; intake and dispatch are weighed
-    in kilograms), and the ledger's remainder does not subtract them. Making
-    sales attributable is a change to the sales model, not to this report.
+    unit (the sales side has always carried `L`; the ledger carries the
+    organisation's), and the ledger's remainder does not subtract them.
+    Making sales attributable is a change to the sales model, not to this
+    report — and even then the populations differ.
     """
 
     deliveries: int

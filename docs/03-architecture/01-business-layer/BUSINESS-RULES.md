@@ -3,10 +3,10 @@ id: BR-REGISTER
 title: Business Rules Register
 type: reference
 status: Approved
-version: "1.20"
+version: "1.21"
 owner: Architecture Board
 created: 2026-08-03
-last-updated: 2026-09-01
+last-updated: 2026-09-04
 related: [STD-0003, CAP-0001]
 baseline: ARCH-BASELINE-V1
 ---
@@ -393,7 +393,7 @@ Third, **it is authorized and attributed.** Recording or cancelling requires `op
 
 **The day book is a flow ledger, and says so.** COLLECTED minus DISPATCHED = REMAINDER, per centre, per day, per milk type, is arithmetic over the day's *recorded movements* and not a measurement of a tank. It cannot see evaporation, spillage, a sample drawn for testing, or milk carried over from yesterday, and a negative remainder is shown as it falls out rather than clamped to zero — it means something was recorded wrong, and hiding it would hide exactly that. Modelling actual stock in a chilling unit needs BMC telemetry the platform does not have and is deliberately parked (D-17).
 
-**SOLD is reported beside that arithmetic and is not subtracted from it**, which is a deviation from the shape this rule was first drafted in and is stated here rather than left for a reader to discover. Two properties of the platform's data force it, and both are about the sales side rather than this one. A delivery records a customer, a date and a *product* — it has **no centre**, so attributing a sale to the centre whose milk it was would be a guess; and it has **no milk type**, because the sales side prices a free-text product string (`RAW-COW-MILK` by default) and the platform holds no mapping from a product to an animal. It is also measured in litres rather than weighed. A figure that is neither the same scope nor the same unit, subtracted from a real one, produces a remainder that looks precise and is wrong twice over. So the day's deliveries appear as their own line, flagged `attributable_to_centre: false` and `attributable_to_milk_type: false`, and both the page and the CSV say in a sentence that they are not subtracted. Making sales attributable is a change to the sales model — a centre on a delivery, and a product catalogue that knows its animal — not a change to this report.
+**SOLD is reported beside that arithmetic and is not subtracted from it**, which is a deviation from the shape this rule was first drafted in and is stated here rather than left for a reader to discover. Two properties of the platform's data force it, and both are about the sales side rather than this one. A delivery records a customer, a date and a *product* — it has **no centre**, so attributing a sale to the centre whose milk it was would be a guess; and it has **no milk type**, because the sales side prices a free-text product string (`RAW-COW-MILK` by default) and the platform holds no mapping from a product to an animal. It is also a **different population** from intake — milk is lost, retained in the tank, dispatched to a processor and sold from stock held over, so a day's deliveries are not a subset of that day's intake even where both sides read litres (D-21 ruling 6; the earlier "measured in litres rather than weighed" reason stopped holding once the intake unit became the organisation's, WO-70/WO-71). A figure that is neither the same scope nor the same population, subtracted from a real one, produces a remainder that looks precise and is wrong twice over. So the day's deliveries appear as their own line, flagged `attributable_to_centre: false` and `attributable_to_milk_type: false`, and both the page and the CSV say in a sentence that they are not subtracted. Making sales attributable is a change to the sales model — a centre on a delivery, and a product catalogue that knows its animal — not a change to this report.
 
 **Enforcement.** `dispatch/service.py` — `record()` validates the milk type against the platform vocabulary (`core/milk.py`) and a positive quantity, `cancel()` requires a reason and refuses an already-cancelled dispatch by CAS, and no method mutates a recorded dispatch; `api/routes.py` exposes no update endpoint; `require_permission("operations.dispatch.record")` guards both writes; `reporting/service.py: day_book()` excludes cancelled dispatches, derives REMAINDER from the exact sums rather than from the rounded figures beside it, and reports sales outside the subtraction.
 
@@ -416,6 +416,7 @@ Third, **it is authorized and attributed.** Recording or cancelling requires `op
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.21 | 2026-09-04 | Architecture Board | WO-71 / D-21 ruling 6: BR-0030's stated reason for not subtracting sales from intake is the population difference (loss, retention, dispatch, stock held over), not a unit difference — the unit argument stopped holding once the intake unit became the organisation's (WO-70). Behaviour unchanged. |
 | 1.20 | 2026-09-01 | Architecture Board | LACTEVA-STOCK-001: BR-0030 (bulk milk out is recorded once, carries no money, and is cancelled rather than edited; the day book is a flow ledger). |
 | 1.19 | 2026-08-31 | Architecture Board | LACTEVA-PRICING-002: BR-0029 (an authorized, attributed rate override; a reprice never silently replaces one). |
 | 1.18 | 2026-08-17 | Architecture Board | DEMO-034: BR-0028 (a run needs a driver and a vehicle to start; completing one creates no financial record). |

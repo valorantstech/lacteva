@@ -3133,7 +3133,8 @@ export type DayBookRow = {
 
 /** The day's deliveries, reported BESIDE the ledger and never subtracted from
  *  it: a sale has no centre and no milk type on this platform, and is measured
- *  in litres rather than weighed. The flags are the platform's own. */
+ *  a different population from intake whatever the units (WO-71). The flags
+ *  are the platform's own. */
 export type DayBookSales = {
   deliveries: number;
   quantity: string | number;
