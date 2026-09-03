@@ -13,8 +13,17 @@
 # it immediately after. Do not export the passwords as environment variables
 # that a build log could echo.
 
-# Path to the keystore, absolute or relative to android/app/.
-storeFile=/run/secrets/lacteva-release.jks
+# Path to the keystore, absolute or relative to android/app/ — NOT to this
+# file. Gradle resolves it with `file()` inside the app module, so a keystore
+# that sits beside this file at android/lacteva-release.jks must be written
+# with the `../`:
+#
+#     storeFile=../lacteva-release.jks
+#
+# A bare `lacteva-release.jks` sends Gradle looking in android/app/ and the
+# build fails with "Keystore file ... not found" (WO-67, the first release
+# build this project ran). An absolute path avoids the question entirely.
+storeFile=../lacteva-release.jks
 storePassword=CHANGEME-keystore-password
 keyAlias=lacteva-release
 keyPassword=CHANGEME-key-password

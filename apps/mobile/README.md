@@ -63,7 +63,19 @@ flutter build apk --release               # REFUSES without android/key.properti
 # WO-63: the address a distributed build must carry.
 flutter build apk --release \
   --dart-define=LACTEVA_API_URL=https://api.lacteva.com
+# WO-67: is it signed by Phoenix Software, with the same key as last time?
+../../infra/ci/verify-release-apk.sh build/app/outputs/flutter-apk/app-release.apk
 ```
+
+**The first release build (WO-67, 2026-09-03) failed twice**, on things no
+test that read the build file could see: `storeFile` in `key.properties` is
+relative to `android/app/` (so a keystore beside the file is
+`../lacteva-release.jks`), and R8 refused the Flutter engine's references to
+Play Core deferred components, which this app does not ship —
+`proguard-rules.pro` now says `-dontwarn com.google.android.play.core.**`
+and why. CI builds a release APK on every push with a throwaway key so the
+path stays walked; `.github/workflows/release-apk.yml` signs the real one.
+Details in DEPLOYMENT.md → *Mobile release builds*.
 
 **`https://api.lacteva.com` is the API address, and the only one.** It has its
 own name rather than sharing `app.lacteva.com` because this constant is

@@ -304,28 +304,80 @@ bearer-only, CSRF-free posture (divergence #22) is unchanged.
 That distinction is what tells an operator reading nginx logs whether the
 frontend or the backend is the problem.
 
-### Mobile release builds (PORTAL-001 / F-05)
+### Mobile release builds (PORTAL-001 / F-05, walked by WO-67)
 
 Release builds were signed with the **public Android debug key** — not
 distributable, not upgradeable. They now fail unless a real keystore is
-supplied.
+supplied. **The first release build this project ever produced was WO-67's,
+on 2026-09-03**; until then the guard was proven by tests against the Gradle
+contract and the build path itself had never been run. It failed twice, and
+both failures are recorded below so nobody walks into them again.
 
 ```bash
 cp apps/mobile/android/key.properties.example apps/mobile/android/key.properties
-# point storeFile at the keystore, fill in the passwords, then:
+# point storeFile at the keystore (see below), fill in the passwords, then:
 cd apps/mobile && flutter build apk --release \
-  --dart-define=LACTEVA_API_URL=https://lacteva.example
+  --dart-define=LACTEVA_API_URL=https://api.lacteva.com
+../../infra/ci/verify-release-apk.sh build/app/outputs/flutter-apk/app-release.apk
 ```
 
+**`storeFile` is relative to `android/app/`, not to `key.properties`.**
+Gradle resolves it with `file()` inside the app module. A keystore beside
+`key.properties` at `android/lacteva-release.jks` must therefore be written
+`storeFile=../lacteva-release.jks`; a bare filename sends Gradle looking in
+`android/app/` and the build fails with "Keystore file ... not found". An
+absolute path avoids the question. (WO-67, failure 1.)
+
+**R8 needs `-dontwarn com.google.android.play.core.**`.** The Flutter engine
+references Play Core for deferred components, which this app does not use and
+does not ship; with `isMinifyEnabled` on, R8 refuses the missing classes and
+`:app:minifyReleaseWithR8` fails. The rule is in `android/app/proguard-rules.pro`
+with the reasoning; `--no-shrink` does not help because minification is set in
+Gradle, not on the command line. (WO-67, failure 2.)
+
 `android/key.properties` and every `*.jks` / `*.keystore` are gitignored and
-must never be committed. In CI, write `key.properties` from secrets
-immediately before the build and delete it immediately after; do not export
-the passwords as environment variables a build log could echo.
+must never be committed — and a test asks **git** whether they are ignored and
+untracked, not whether they exist, because the machine that builds the release
+legitimately has them on disk. In CI, `key.properties` is written from secrets
+immediately before the build and deleted after; the passwords are never
+exported as environment variables a build log could echo.
 
 **The keystore is a permanent credential.** Lose it and the app can never be
 upgraded again — a new key means a new listing and every user reinstalling.
 Back it up where more than one person can reach it, and treat it like the JWT
-signing key.
+signing key. Its certificate fingerprint is **not** secret — Android shows it
+to anyone who asks — and is pinned in `apps/mobile/android/release-certificate.sha256`
+so the verifier can tell "signed" from "signed by us, with the same key as
+last time".
+
+#### The release gate — executable, in two halves
+
+A guard proven only against a contract is a guard nobody has walked past, so
+the release path now runs:
+
+1. **Every push** — `ci.yml` job `mobile-release-build` runs
+   `flutter build apk --release` against `https://api.lacteva.com` with a
+   keystore **generated on the runner** and thrown away. No secret is needed,
+   so it runs on pull requests too, and it is what catches the next R8
+   failure. Its APK is never uploaded; `verify-release-apk.sh` is required to
+   *refuse* it, and the job fails if the verifier accepts a throwaway key.
+2. **On demand** — `release-apk.yml` (Actions → *Release APK* → *Run
+   workflow*, or a `mobile-v*` tag) builds with the owner's key from two
+   secrets, verifies the signer against the pinned fingerprint, and uploads
+   `lacteva-<label>-release` (90-day retention). **It fails, at the first
+   step, until the secrets exist** — deliberately: a skipped proof is green.
+
+   | secret | content |
+   |---|---|
+   | `LACTEVA_ANDROID_KEYSTORE_B64` | `base64 -w0 android/lacteva-release.jks` |
+   | `LACTEVA_ANDROID_KEY_PROPERTIES` | the content of `android/key.properties`, with `storeFile=../lacteva-release.jks` |
+
+**Manual gate** (a build made on a developer machine, which is how the first
+one was made): run `infra/ci/verify-release-apk.sh <apk>` and do not hand the
+file to anyone unless it prints `OK` — signer `Phoenix software`, the pinned
+fingerprint, the size. Then install it on a handset and sign in: R8 removes
+aggressively and can strip something reached by reflection, and only a running
+APK proves it did not.
 
 Note the `--dart-define`: without it a release build defaults to
 `http://localhost:8000`. The same flag also compiles the mock scale and

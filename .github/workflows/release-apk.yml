@@ -1,0 +1,108 @@
+# WO-67 — the signed, distributable Android build.
+#
+# This is the APK that goes to the sales team and to customers, signed with
+# Phoenix Software's release key. The key is a PERMANENT credential — Android
+# ties the app's identity to it, and a build signed with any other key cannot
+# upgrade an existing install — so it never lives in the repository. It lives
+# in two GitHub secrets, written to disk for the length of the build and
+# removed after:
+#
+#   LACTEVA_ANDROID_KEYSTORE_B64    base64 of android/lacteva-release.jks
+#                                   (`base64 -w0 lacteva-release.jks`)
+#   LACTEVA_ANDROID_KEY_PROPERTIES  the CONTENT of android/key.properties,
+#                                   with `storeFile=../lacteva-release.jks`
+#                                   (relative to android/app/ — WO-67
+#                                   failure 1)
+#
+# Neither secret is set by this repository; the owner sets them in
+# Settings → Secrets → Actions. Until then this workflow FAILS — visibly, at
+# the first step, with the two names — rather than skipping, because a
+# skipped proof is green and this path has sat green-and-untested once
+# already. Every push already proves the release build COMPILES
+# (ci.yml, `mobile-release-build`, with a throwaway key); this workflow is
+# the half that needs the real key.
+#
+# The APK that comes out is checked by infra/ci/verify-release-apk.sh — the
+# same script the manual gate in DEPLOYMENT.md runs — against the pinned
+# Phoenix Software certificate fingerprint before it is uploaded. A run that
+# somehow signed with anything else publishes nothing.
+
+name: Release APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: "Something to call this build (appears in the artifact name; default: the short sha)"
+        required: false
+        type: string
+  push:
+    tags:
+      - "mobile-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release-apk:
+    name: Signed release APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: The signing secrets are present
+        env:
+          KEYSTORE_B64: ${{ secrets.LACTEVA_ANDROID_KEYSTORE_B64 }}
+          KEY_PROPERTIES: ${{ secrets.LACTEVA_ANDROID_KEY_PROPERTIES }}
+        working-directory: .
+        run: |
+          missing=0
+          [ -n "$KEYSTORE_B64" ] || { echo "::error::secret LACTEVA_ANDROID_KEYSTORE_B64 is not set (base64 of lacteva-release.jks)"; missing=1; }
+          [ -n "$KEY_PROPERTIES" ] || { echo "::error::secret LACTEVA_ANDROID_KEY_PROPERTIES is not set (content of android/key.properties)"; missing=1; }
+          if [ "$missing" = 1 ]; then
+            echo "A release APK cannot be signed without the owner's key. See DEPLOYMENT.md - Mobile release builds."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Write the keystore and key.properties from secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.LACTEVA_ANDROID_KEYSTORE_B64 }}
+          KEY_PROPERTIES: ${{ secrets.LACTEVA_ANDROID_KEY_PROPERTIES }}
+        run: |
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 -d > android/lacteva-release.jks
+          printf '%s\n' "$KEY_PROPERTIES" > android/key.properties
+          grep -q '^storeFile=' android/key.properties || { echo "::error::key.properties has no storeFile line"; exit 1; }
+      - name: Release build
+        # The literal address, on purpose: it is compiled into the APK and a
+        # reader of this file should not have to chase a variable to learn it.
+        run: flutter build apk --release --dart-define=LACTEVA_API_URL=https://api.lacteva.com
+      - name: Signed by Phoenix Software, and by the same key as last time
+        # `apksigner verify --print-certs` is what this script runs; the
+        # expected fingerprint is apps/mobile/android/release-certificate.sha256.
+        run: ../../infra/ci/verify-release-apk.sh build/app/outputs/flutter-apk/app-release.apk
+      - name: Remove the keystore
+        if: always()
+        run: rm -f android/key.properties android/lacteva-release.jks
+      - name: Name the artifact
+        id: name
+        working-directory: .
+        run: |
+          label="${{ inputs.label }}"
+          [ -n "$label" ] || label="${GITHUB_REF_NAME}-$(git rev-parse --short HEAD)"
+          echo "name=lacteva-${label}-release" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.name.outputs.name }}
+          path: apps/mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 90
