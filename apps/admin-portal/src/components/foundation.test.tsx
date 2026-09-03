@@ -14,7 +14,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { DataTable } from "@/components/data-table";
-import { Money, Quantity, formatAmount } from "@/components/money";
+import { Money, Quantity, formatAmount, formatQuantity } from "@/components/money";
 import { EmptyState, ErrorState } from "@/components/states";
 import { StatusBadge, statusLabel, statusVariant } from "@/components/status-badge";
 
@@ -59,10 +59,24 @@ describe("money", () => {
     expect(screen.queryByText("KES")).not.toBeInTheDocument();
   });
 
-  it("renders a quantity with its unit", () => {
+  it("renders a quantity with its unit, to one decimal", () => {
+    // WO-68 rider: the domain stores `40.000` because the scale reads to
+    // three places; a dairy says "forty litres". WO-64 did this on the
+    // handset (214.000 L → 214.0 L); the portal still said 735.000 L.
     render(<Quantity value="40.000" unit="kg" />);
-    expect(screen.getByText("40.000")).toBeInTheDocument();
+    expect(screen.getByText("40.0")).toBeInTheDocument();
+    expect(screen.queryByText("40.000")).not.toBeInTheDocument();
     expect(screen.getByText("kg")).toBeInTheDocument();
+  });
+
+  it("rounds a quantity to one decimal without losing the grouping or the sign", () => {
+    expect(formatQuantity("735.000")).toBe("735.0");
+    expect(formatQuantity("0.000")).toBe("0.0");
+    expect(formatQuantity(1234.56)).toBe("1,234.6");
+    expect(formatQuantity("-20")).toBe("-20.0");
+    expect(formatQuantity(null)).toBe("—");
+    // Not a plain decimal: shown as sent, never mangled.
+    expect(formatQuantity("n/a")).toBe("n/a");
   });
 });
 

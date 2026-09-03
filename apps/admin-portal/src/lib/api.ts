@@ -25,6 +25,14 @@ const PROXY_PREFIX = "/api/proxy";
 export class ApiError extends Error {
   constructor(
     public status: number,
+    /**
+     * Prose for a person — ALWAYS a string (WO-68). The platform sends
+     * `detail` as a string on every refusal it writes itself, and as an ARRAY
+     * of objects on a 422 that FastAPI writes for it; `problemFrom()` folds
+     * the second into the first before this is constructed, so no reader —
+     * and there are readers of `.detail` outside `describeError` — can put an
+     * object into JSX.
+     */
     public detail: string,
     /** Structured problem-detail payload (e.g. pricing resolution stage info). */
     public extra?: unknown,
@@ -34,9 +42,109 @@ export class ApiError extends Error {
      * that needs to BEHAVE differently for one failure has to match on this.
      */
     public title?: string,
+    /** The 422's individual issues, for a form that wants to mark fields. */
+    public issues?: ValidationIssue[],
   ) {
     super(detail);
   }
+}
+
+/** One entry of FastAPI's 422 `detail` array, as the platform emits it. */
+export type ValidationIssue = {
+  type?: string;
+  loc?: (string | number)[];
+  msg?: string;
+  input?: unknown;
+  ctx?: unknown;
+};
+
+/**
+ * The parts of `loc` that name the FIELD. FastAPI prefixes the location with
+ * where it looked — `body`, `query`, `path`, `header` — and a person reading
+ * "query → business_date" wants the second word only.
+ */
+const LOCATION_PREFIXES = new Set(["body", "query", "path", "header", "cookie"]);
+
+function fieldName(loc: (string | number)[] | undefined): string {
+  if (!loc) return "";
+  const parts = loc.filter(
+    (part, index) => !(index === 0 && typeof part === "string" && LOCATION_PREFIXES.has(part)),
+  );
+  return parts.map(String).join(".");
+}
+
+/**
+ * The platform's `detail`, whatever shape it arrived in, as ONE string
+ * (WO-68 — LACTEVA-ADMIN-021).
+ *
+ * The platform's own errors (`core/errors.py`) render `detail` as a sentence.
+ * A request that never reaches them — a malformed query parameter, a body
+ * missing a field — is refused by FastAPI's validation layer, whose `detail`
+ * is an ARRAY of `{type, loc, msg, input, ctx}`. The portal declared `detail`
+ * a string, believed itself, and rendered that array as a React child: a
+ * `<input type="date">` emits intermediate values like `0008-30-2026` while
+ * someone TYPES, the day book sent one, the platform answered 422, and the
+ * page died to "This page couldn't load" (Minified React error #31). Not a
+ * day-book bug: any 422 through any page did the same.
+ *
+ * Here the array becomes "business_date: Input should be a valid date…", one
+ * issue per line, naming the field where `loc` gives one. Anything else that
+ * is not a string — a platform that one day sends an object — becomes the
+ * fallback rather than `[object Object]`.
+ */
+export function describeDetail(detail: unknown, fallback = "Request failed"): string {
+  if (typeof detail === "string") return detail || fallback;
+  if (Array.isArray(detail)) {
+    const lines = detail
+      .map((issue) => {
+        if (typeof issue === "string") return issue;
+        if (issue && typeof issue === "object") {
+          const { loc, msg } = issue as ValidationIssue;
+          const field = fieldName(loc);
+          const message = typeof msg === "string" && msg ? msg : "is not valid";
+          return field ? `${field}: ${message}` : message;
+        }
+        return "";
+      })
+      .filter((line) => line.length > 0);
+    if (lines.length > 0) return lines.join("\n");
+  }
+  return fallback;
+}
+
+/** FastAPI's 422 array, when that is what `detail` is; otherwise nothing. */
+function issuesOf(detail: unknown): ValidationIssue[] | undefined {
+  if (!Array.isArray(detail)) return undefined;
+  const issues = detail.filter(
+    (issue): issue is ValidationIssue => !!issue && typeof issue === "object",
+  );
+  return issues.length > 0 ? issues : undefined;
+}
+
+/**
+ * Read a problem document off a failed response and build the error. Every
+ * throw site goes through here, so `ApiError.detail` is a string on every
+ * path — including the pre-auth routes that never touch `api()`.
+ */
+async function problemFrom(res: Response): Promise<ApiError> {
+  let detail: string = res.statusText;
+  let extra: unknown;
+  let title: string | undefined;
+  let issues: ValidationIssue[] | undefined;
+  try {
+    const body = (await res.json()) as {
+      detail?: unknown;
+      title?: string;
+      extra?: unknown;
+    };
+    title = body.title;
+    issues = issuesOf(body.detail);
+    detail = describeDetail(body.detail, body.title ?? res.statusText ?? "Request failed");
+    extra = body.extra;
+  } catch {
+    // non-JSON error body — keep statusText
+  }
+  return new ApiError(res.status, detail, extra, title, issues);
 }
 
 /**
@@ -69,7 +177,11 @@ export function describeError(error: unknown, fallback = "Request failed"): stri
   if (error instanceof ApiError) {
     const extra = typeof error.extra === "string" ? error.extra : "";
     if (extra && !PERMISSION_KEY.test(extra)) return extra;
-    return error.detail;
+    // `detail` is a string by construction (WO-68), but this function's
+    // signature is a promise to forty callers that render its result, and a
+    // promise is kept here, not assumed: a hand-built ApiError, or a future
+    // path that forgets `problemFrom`, still cannot hand JSX an object.
+    return describeDetail(error.detail, fallback);
   }
   return error instanceof Error ? error.message : fallback;
 }
@@ -122,24 +234,7 @@ export async function api<T>(
       window.location.href = "/login";
     }
   }
-  if (!res.ok) {
-    let detail = res.statusText;
-    let extra: unknown;
-    let title: string | undefined;
-    try {
-      const body = (await res.json()) as {
-        detail?: string;
-        title?: string;
-        extra?: unknown;
-      };
-      detail = body.detail ?? body.title ?? detail;
-      extra = body.extra;
-      title = body.title;
-    } catch {
-      // non-JSON error body — keep statusText
-    }
-    throw new ApiError(res.status, detail, extra, title);
-  }
+  if (!res.ok) throw await problemFrom(res);
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
@@ -188,18 +283,7 @@ export async function login(
     credentials: "same-origin",
     cache: "no-store",
   });
-  if (!res.ok) {
-    let detail = res.statusText;
-    let title: string | undefined;
-    try {
-      const problem = (await res.json()) as { detail?: string; title?: string };
-      detail = problem.detail ?? problem.title ?? detail;
-      title = problem.title;
-    } catch {
-      // non-JSON error body — keep statusText
-    }
-    throw new ApiError(res.status, detail, undefined, title);
-  }
+  if (!res.ok) throw await problemFrom(res);
 }
 
 /**
@@ -220,18 +304,7 @@ export async function requestPasswordReset(email: string) {
     credentials: "same-origin",
     cache: "no-store",
   });
-  if (!res.ok) {
-    let detail = res.statusText;
-    let title: string | undefined;
-    try {
-      const problem = (await res.json()) as { detail?: string; title?: string };
-      detail = problem.detail ?? problem.title ?? detail;
-      title = problem.title;
-    } catch {
-      // non-JSON error body — keep statusText
-    }
-    throw new ApiError(res.status, detail, undefined, title);
-  }
+  if (!res.ok) throw await problemFrom(res);
 }
 
 /**
@@ -250,18 +323,7 @@ export async function confirmPasswordReset(token: string, newPassword: string) {
     credentials: "same-origin",
     cache: "no-store",
   });
-  if (!res.ok) {
-    let detail = res.statusText;
-    let title: string | undefined;
-    try {
-      const problem = (await res.json()) as { detail?: string; title?: string };
-      detail = problem.detail ?? problem.title ?? detail;
-      title = problem.title;
-    } catch {
-      // non-JSON error body — keep statusText
-    }
-    throw new ApiError(res.status, detail, undefined, title);
-  }
+  if (!res.ok) throw await problemFrom(res);
 }
 
 /**
@@ -2382,15 +2444,7 @@ export async function setActingTenant(tenantId: string): Promise<void> {
     credentials: "same-origin",
     cache: "no-store",
   });
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      detail = ((await res.json()) as { detail?: string }).detail ?? detail;
-    } catch {
-      // keep statusText
-    }
-    throw new ApiError(res.status, detail);
-  }
+  if (!res.ok) throw await problemFrom(res);
 }
 
 export async function clearActingTenant(): Promise<void> {
@@ -2530,18 +2584,7 @@ export async function acceptInvitation(
     credentials: "same-origin",
     cache: "no-store",
   });
-  if (!res.ok) {
-    let detail = res.statusText;
-    let title: string | undefined;
-    try {
-      const problem = (await res.json()) as { detail?: string; title?: string };
-      detail = problem.detail ?? problem.title ?? detail;
-      title = problem.title;
-    } catch {
-      // non-JSON error body — keep statusText
-    }
-    throw new ApiError(res.status, detail, undefined, title);
-  }
+  if (!res.ok) throw await problemFrom(res);
 }
 
 export const assignRole = (

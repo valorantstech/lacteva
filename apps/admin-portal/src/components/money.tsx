@@ -142,9 +142,28 @@ export function CurrencyTotals({
 }
 
 /**
- * A quantity with its unit. Same rule: the value arrives formatted by the
- * domain (`40.000`), and the trailing zeros are significant — they say the
- * scale reads to three decimal places.
+ * A quantity to ONE decimal, as a dairy says it (WO-68 rider).
+ *
+ * The domain stores three decimals — `735.000` — because that is what the
+ * instrument reads to, and money keeps every decimal it is given. A quantity
+ * is different: nobody at a dairy says "seven hundred and thirty-five point
+ * zero zero zero litres". WO-64 made the handset say `214.0 L`; the portal
+ * kept `735.000 L` on the dashboard and `0.000 L` in the day book. Same
+ * change, other client. Anything that is not a plain decimal is shown as
+ * sent, as `formatAmount` does.
+ */
+export function formatQuantity(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const text = String(value);
+  if (!/^-?\d+(\.\d+)?$/.test(text)) return text;
+  const rounded = Number(text).toFixed(1);
+  const negative = rounded.startsWith("-");
+  const [whole, fraction] = (negative ? rounded.slice(1) : rounded).split(".");
+  return `${negative ? "-" : ""}${groupDigits(whole)}.${fraction}`;
+}
+
+/**
+ * A quantity with its unit, to one decimal (see `formatQuantity`).
  */
 export function Quantity({
   value,
@@ -155,7 +174,7 @@ export function Quantity({
   unit?: string | null;
   className?: string;
 }) {
-  const formatted = formatAmount(value);
+  const formatted = formatQuantity(value);
   return (
     <span className={cn("tabular-nums whitespace-nowrap", className)}>
       {formatted}

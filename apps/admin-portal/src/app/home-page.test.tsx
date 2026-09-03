@@ -566,7 +566,8 @@ describe("dashboard", () => {
     // its own span, so the figure is asserted with the trailing zeros that
     // state its scale.
     expect(await screen.findByText("96")).toBeInTheDocument();
-    expect(screen.getByText("184.000")).toBeInTheDocument();
+    // WO-68 rider: quantities render to one decimal, as a dairy says them.
+    expect(screen.getByText("184.0")).toBeInTheDocument();
 
     // The headline debt is `total_outstanding` (16,500) — NOT the 2,400 of the
     // single row on screen. This is the assertion that catches a page total

@@ -8,7 +8,7 @@
  *   the sales line says it is not subtracted; and
  *   the controls are ABSENT, not disabled, without the permission.
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,6 +18,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import DayBookPage from "@/app/day-book/page";
+import { isCompleteDate } from "@/lib/complete-date";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -224,5 +225,48 @@ describe("the milk day book", () => {
       ).toBe(true),
     );
     expect(screen.queryByText(/nothing recorded for this day/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("typing a date into the day book (WO-68)", () => {
+  it("sends only a complete date and keeps the previous view meanwhile", async () => {
+    // A `<input type="date">` emits intermediate values while someone types;
+    // `0008-30-2026` was captured from a real browser. The page used to send
+    // each one, earn a 422 whose `detail` is an array, and die rendering it.
+    const spy = routeAll();
+    render(<DayBookPage />);
+    await waitFor(() => expect(screen.getAllByText(/700\.5/).length).toBeGreaterThan(0));
+    const bookCalls = () =>
+      spy.mock.calls.filter(([url]) => String(url).includes("/reports/day-book"));
+    const before = bookCalls().length;
+    expect(before).toBeGreaterThan(0);
+
+    const input = screen.getByLabelText("Business date") as HTMLInputElement;
+    // What a browser hands over mid-typing, and what jsdom sanitises it to.
+    for (const partial of ["0008-30-2026", "2026-13-01", "2026-02-31", "", "2026-0"]) {
+      fireEvent.change(input, { target: { value: partial } });
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    expect(bookCalls().length).toBe(before);
+    for (const [url] of bookCalls()) {
+      expect(String(url)).not.toContain("0008-30-2026");
+      expect(String(url)).toContain("business_date=20");
+    }
+    // The ledger is still showing the last complete day.
+    expect(screen.getAllByText(/700\.5/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/couldn't load|Unprocessable/i)).not.toBeInTheDocument();
+
+    // A complete date is sent, once.
+    fireEvent.change(input, { target: { value: "2026-09-02" } });
+    await waitFor(() => expect(bookCalls().length).toBe(before + 1));
+    expect(String(bookCalls().at(-1)?.[0])).toContain("business_date=2026-09-02");
+  });
+
+  it("knows which dates are complete", () => {
+    expect(isCompleteDate("2026-09-02")).toBe(true);
+    expect(isCompleteDate("2024-02-29")).toBe(true);
+    for (const bad of ["0008-30-2026", "2026-13-01", "2026-02-31", "2026-0", "", "2026-9-2"]) {
+      expect(isCompleteDate(bad), bad).toBe(false);
+    }
   });
 });

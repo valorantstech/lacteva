@@ -56,6 +56,8 @@ import { Metric, Surface } from "@/components/surface";
 import { PageContainer } from "@/components/page-container";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { formatQuantity } from "@/components/money";
+import { isCompleteDate } from "@/lib/complete-date";
 
 /** The platform's own vocabulary (`core/milk.py`). `custom` is included: a
  *  dairy that recorded milk as custom can dispatch it as custom. */
@@ -77,7 +79,21 @@ export default function DayBookPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [centers, setCenters] = useState<Center[]>([]);
   const [centerId, setCenterId] = useState("");
+  /** What is in the date box — including whatever a half-typed date is. */
   const [day, setDay] = useState(businessToday);
+  /**
+   * The date the ledger is SHOWING (WO-68). A `<input type="date">` emits
+   * intermediate values while someone types — `0008-30-2026` was captured
+   * from a real browser — and sending one to the platform earned a 422 that
+   * killed the page. Typing into a date field is normal, not misuse: the
+   * ledger holds the last complete date until the next complete one arrives,
+   * and nothing incomplete is ever sent.
+   */
+  const [shownDay, setShownDay] = useState(businessToday);
+  const changeDay = (value: string) => {
+    setDay(value);
+    if (isCompleteDate(value)) setShownDay(value);
+  };
   const [book, setBook] = useState<DayBook | null>(null);
   const [dispatches, setDispatches] = useState<Dispatch[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -96,11 +112,11 @@ export default function DayBookPage() {
     setError(null);
     try {
       const [nextBook, page] = await Promise.all([
-        getDayBook({ business_date: day, center_id: centerId || undefined }),
+        getDayBook({ business_date: shownDay, center_id: centerId || undefined }),
         listDispatches({
           center_id: centerId || undefined,
-          date_from: day,
-          date_to: day,
+          date_from: shownDay,
+          date_to: shownDay,
         }),
       ]);
       setBook(nextBook);
@@ -110,7 +126,7 @@ export default function DayBookPage() {
     } finally {
       setLoading(false);
     }
-  }, [centerId, day]);
+  }, [centerId, shownDay]);
 
   useEffect(() => {
     void getSession().then(setSession);
@@ -139,7 +155,7 @@ export default function DayBookPage() {
     try {
       await recordDispatch({
         center_id: String(data.get("center_id") ?? ""),
-        business_date: day,
+        business_date: shownDay,
         milk_type: String(data.get("milk_type") ?? "cow"),
         quantity: String(data.get("quantity") ?? ""),
         destination: String(data.get("destination") ?? ""),
@@ -167,7 +183,7 @@ export default function DayBookPage() {
         actions={
           <a
             href={dayBookCsvUrl({
-              business_date: day,
+              business_date: shownDay,
               center_id: centerId || undefined,
             })}
             className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
@@ -185,7 +201,7 @@ export default function DayBookPage() {
             id="day-book-date"
             type="date"
             value={day}
-            onChange={(e) => setDay(e.target.value)}
+            onChange={(e) => changeDay(e.target.value)}
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -330,7 +346,7 @@ export default function DayBookPage() {
 
           {book ? (
             <p className="mt-4 text-xs text-muted-foreground">
-              Sold today: {String(book.sales.quantity)} {book.sales.quantity_unit} across{" "}
+              Sold today: {formatQuantity(book.sales.quantity)} {book.sales.quantity_unit} across{" "}
               {book.sales.deliveries}{" "}
               {book.sales.deliveries === 1 ? "delivery" : "deliveries"}.{" "}
               {book.sales.attributable_to_centre
