@@ -28,6 +28,9 @@ class OfflineApiClient extends ApiClient {
     required this.deviceId,
     SyncEngine? engine,
     this.forceOffline = false,
+    // WO-69: tests drive the whole client — queue, refresh and replay — over
+    // a scripted transport, exactly as ApiClient already allows.
+    super.inner,
   }) {
     this.engine =
         engine ?? SyncEngine(client: this, queue: queue, deviceId: deviceId);

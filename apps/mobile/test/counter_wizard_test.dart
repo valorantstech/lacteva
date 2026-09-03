@@ -46,6 +46,7 @@ class _Fake extends ApiClient {
   final bool searchFails;
   String? searchedQuery;
   String? searchedCentre;
+  int searches = 0;
 
   @override
   Future<SupplierPageResult> listSuppliers({
@@ -54,6 +55,7 @@ class _Fake extends ApiClient {
     int limit = 20,
     int offset = 0,
   }) async {
+    searches++;
     searchedQuery = query;
     searchedCentre = centerId;
     if (searchFails) throw const SocketException('no route to host');
@@ -349,11 +351,13 @@ void main() {
       expect(code.autofocus, isTrue);
     });
 
-    testWidgets('search finds by name and puts the CODE in the field', (
+    testWidgets('choosing a result IDENTIFIES the farmer and advances', (
       tester,
     ) async {
-      // It fills the code rather than identifying directly, so the operator
-      // sees which farmer was chosen before a transaction exists.
+      // WO-69. WO-64 had the choice only fill the code field, leaving the
+      // operator to tap "Identify farmer" — two taps where one will do. The
+      // result row already shows name, code and phone, so choosing it is the
+      // confirmation; the wizard can step back if the wrong person was picked.
       final client = _Fake();
       await _pump(tester, client, step: 0);
 
@@ -366,13 +370,56 @@ void main() {
 
       expect(find.text('Vasanthi Prabhu'), findsOneWidget);
       expect(find.textContaining('SUP-014'), findsOneWidget);
+      expect(client.steps, isEmpty, reason: 'nothing identified yet');
+
       await tester.tap(find.text('Vasanthi Prabhu'));
       await tester.pumpAndSettle();
 
-      final code = tester.widget<TextField>(
-        find.widgetWithText(TextField, 'Farmer code'),
-      );
-      expect(code.controller?.text, 'SUP-014');
+      final identify = client.steps.where((s) => s.$1.endsWith('/identify'));
+      expect(identify, hasLength(1));
+      expect(identify.single.$2, {'method': 'code', 'value': 'SUP-014'});
+      // Step 2 — no second tap was needed.
+      expect(find.text('Collection — step 2 of 6'), findsOneWidget);
+    });
+
+    testWidgets('search fires as you type, once the typing pauses', (
+      tester,
+    ) async {
+      // WO-69. The magnifier was the only trigger: at a counter at 5am with a
+      // queue behind the farmer, that tap was a wasted motion on the most
+      // repeated action in the product. Now the pause does it — and ONLY the
+      // pause: five keystrokes in quick succession are one request.
+      final client = _Fake();
+      await _pump(tester, client, step: 0);
+      final box = find.widgetWithText(TextField, 'Search by name or phone');
+
+      for (final partial in ['V', 'Va', 'Vas', 'Vasa', 'Vasan']) {
+        await tester.enterText(box, partial);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(client.searches, 0, reason: 'still typing: no request yet');
+      }
+      await tester.pump(kLookupDebounce);
+      await tester.pumpAndSettle();
+
+      expect(client.searches, 1);
+      expect(client.searchedQuery, 'Vasan');
+      expect(find.text('Vasanthi Prabhu'), findsOneWidget);
+    });
+
+    testWidgets('clearing the box clears the list', (tester) async {
+      final client = _Fake();
+      await _pump(tester, client, step: 0);
+      final box = find.widgetWithText(TextField, 'Search by name or phone');
+      await tester.enterText(box, 'Vasanthi');
+      await tester.pump(kLookupDebounce);
+      await tester.pumpAndSettle();
+      expect(find.text('Vasanthi Prabhu'), findsOneWidget);
+
+      await tester.enterText(box, '');
+      await tester.pump(kLookupDebounce);
+      await tester.pumpAndSettle();
+      expect(find.text('Vasanthi Prabhu'), findsNothing);
+      expect(client.searches, 1, reason: 'an empty query is not a search');
     });
 
     testWidgets('the search is narrowed to THIS centre', (tester) async {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -613,11 +615,19 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
                 centerId: widget.centerId,
                 t: t,
                 onPick: (supplier) {
-                  // Fills the code field rather than identifying directly:
-                  // the operator sees WHICH code was chosen before committing
-                  // it to a transaction, and the one path into `identify`
-                  // stays the one path.
-                  setState(() => _supplierCode.text = supplier.code);
+                  // WO-69: choosing a result IDENTIFIES the farmer. WO-64 had
+                  // this fill the code field and leave the operator to tap
+                  // "Identify farmer" — so they would "see which code was
+                  // chosen before committing" — and that reasoning was wrong
+                  // for the counter: the result row already shows name, code
+                  // and phone, so choosing it IS the confirmation, and the
+                  // wizard steps back if the wrong person was picked. Two taps
+                  // where one will do, on the most repeated action in the
+                  // product. The code still lands in the field so the screen
+                  // shows what was chosen, and `identify` keeps one caller.
+                  if (_busy) return;
+                  _supplierCode.text = supplier.code;
+                  _identify();
                 },
               ),
             ],
@@ -977,8 +987,9 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
 /// The counter's primary route is the code, and it stays that way: this sits
 /// BELOW the code field, starts collapsed to a single line, and puts whatever
 /// it finds INTO the code field rather than identifying anybody directly — so
-/// the operator sees which farmer was chosen before a transaction is created,
-/// and `identify` keeps exactly one caller.
+/// choosing a result identifies the farmer at once (WO-69 — the row already
+/// shows name, code and phone, so the choice is the confirmation), and
+/// `identify` keeps exactly one caller.
 ///
 /// Narrowed to the centre. A dairy has hundreds of farmers and a counter
 /// serves dozens, so an unnarrowed search returns a list nobody can scan and
@@ -1001,22 +1012,58 @@ class _SupplierLookup extends StatefulWidget {
   State<_SupplierLookup> createState() => _SupplierLookupState();
 }
 
+/// WO-69: how long the operator's fingers get to pause before the search
+/// fires. Long enough that "Vasan" is one request rather than five; short
+/// enough that the list is there by the time they look up from the keys.
+const Duration kLookupDebounce = Duration(milliseconds: 300);
+
 class _SupplierLookupState extends State<_SupplierLookup> {
   final _query = TextEditingController();
   List<SupplierSummary> _results = const [];
   bool _searching = false;
   bool _searched = false;
   String? _error;
+  Timer? _debounce;
+
+  /// Which search is the latest. Typing "Vas", pausing, then "Vasanthi"
+  /// sends two requests, and the network does not promise to answer them in
+  /// order — a stale, broader answer arriving second must not overwrite the
+  /// one the operator is looking at.
+  int _generation = 0;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _query.dispose();
     super.dispose();
   }
 
+  /// WO-69: SEARCH AS THEY TYPE. The magnifier used to be the only trigger —
+  /// at a counter at 5am with a queue behind the farmer, that tap was a
+  /// wasted motion on the most repeated action in the product. Every
+  /// keystroke resets the timer, so a request goes out when the typing
+  /// pauses, not on every key. The icon and the keyboard's search action
+  /// still fire immediately for anyone who reaches for them.
+  void _onChanged(String value) {
+    _debounce?.cancel();
+    if (value.trim().isEmpty) {
+      // Cleared: nothing to look for, and yesterday's list must not linger
+      // under an empty box as if it were an answer to it.
+      setState(() {
+        _results = const [];
+        _searched = false;
+        _error = null;
+      });
+      return;
+    }
+    _debounce = Timer(kLookupDebounce, _search);
+  }
+
   Future<void> _search() async {
+    _debounce?.cancel();
     final query = _query.text.trim();
     if (query.isEmpty) return;
+    final generation = ++_generation;
     setState(() {
       _searching = true;
       _error = null;
@@ -1029,20 +1076,22 @@ class _SupplierLookupState extends State<_SupplierLookup> {
         // means the query was too broad, and the answer is a better query.
         limit: 8,
       );
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
         _results = page.items;
         _searched = true;
       });
     } on ApiException catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() => _error = e.detail);
     } catch (_) {
       // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1).
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() => _error = widget.t.t('common.couldNotReach'));
     } finally {
-      if (mounted) setState(() => _searching = false);
+      if (mounted && generation == _generation) {
+        setState(() => _searching = false);
+      }
     }
   }
 
@@ -1071,6 +1120,7 @@ class _SupplierLookupState extends State<_SupplierLookup> {
                   labelText: t.t('wizard.lookupHint'),
                   isDense: true,
                 ),
+                onChanged: _onChanged,
                 onSubmitted: (_) => _search(),
               ),
             ),

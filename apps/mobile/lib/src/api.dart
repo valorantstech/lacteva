@@ -41,6 +41,22 @@ class ApiClient {
   final http.Client _http;
   String? _token;
 
+  /// WO-69: the second half of the platform's `TokenPair`. The access token
+  /// lives for fifteen minutes (`jwt_access_ttl_seconds = 900`); this one for
+  /// fourteen days. Before WO-69 the app kept only the first and treated its
+  /// expiry as the END OF THE SESSION — an operator collecting from forty
+  /// farmers across a ninety-minute morning was signed out roughly six times,
+  /// mid-queue, and retyped a password with wet hands. Held in the same place
+  /// as the access token (this client's memory, never a preference file) and
+  /// forgotten with it.
+  String? _refreshToken;
+
+  /// The refresh in flight, if any. Single-flight on purpose: a screen that
+  /// fires six requests when it opens meets six 401s at once, and six
+  /// refreshes would trip the platform's rate limiter — punishing the
+  /// operator for the app's enthusiasm. Everyone awaits the one call.
+  Future<bool>? _refreshing;
+
   /// Invoked once when an authenticated request meets a 401 (D-2). The app
   /// wires this to "return to sign-in"; tests and headless callers may leave
   /// it null — the [AuthExpiredException] still surfaces to the caller either
@@ -55,6 +71,7 @@ class ApiClient {
   /// signs in next, so keeping it grants nothing.
   void logout() {
     _token = null;
+    _refreshToken = null;
   }
 
   Map<String, String> get _headers => {
@@ -82,16 +99,40 @@ class ApiClient {
     String path, {
     Object? body,
     String? idempotencyKey,
+    bool retryAfterRefresh = true,
+    bool authenticate = true,
   }) async {
     final uri = Uri.parse('$apiUrl$path');
-    final hadToken = _token != null;
-    final request = http.Request(method, uri)..headers.addAll(_headers);
+    final hadToken = authenticate && _token != null;
+    final request = http.Request(method, uri)
+      ..headers.addAll(authenticate ? _headers : _anonymousHeaders);
     if (idempotencyKey != null) {
       request.headers['Idempotency-Key'] = idempotencyKey;
     }
     if (body != null) request.body = jsonEncode(body);
     final streamed = await _http.send(request);
     final response = await http.Response.fromStream(streamed);
+    if (response.statusCode == 401 && hadToken && retryAfterRefresh) {
+      // WO-69: an expired ACCESS token is not an expired SESSION. Refresh
+      // once — sharing the one refresh with every other request that met a
+      // 401 at the same moment — and replay this request with the new token.
+      // Only if the refresh itself is refused (revoked, or the fourteen days
+      // are up) does the session end, and that is decided inside
+      // `_refreshOnce`, exactly once, for everyone waiting on it.
+      if (await _refreshOnce()) {
+        return _send(
+          method,
+          path,
+          body: body,
+          idempotencyKey: idempotencyKey,
+          retryAfterRefresh: false,
+        );
+      }
+      // No refresh token to try, or the refresh was refused (which already
+      // ended the session inside `_refreshOnce`; `_expire` is idempotent).
+      _expire();
+      throw AuthExpiredException(_detailOf(response));
+    }
     if (response.statusCode >= 400) {
       String detail = 'Request failed (${response.statusCode})';
       Map<String, dynamic>? extra;
@@ -134,18 +175,89 @@ class ApiClient {
         }
       } catch (_) {}
       if (response.statusCode == 401 && hadToken) {
-        // The session this client was carrying is no longer accepted (D-2).
-        // Clear the dead token so nothing keeps sending it, tell the app
-        // once, and fail this call with the distinguishable subclass. A 401
-        // on the login call itself (no token yet) stays a plain refusal.
-        _token = null;
-        onAuthExpired?.call();
+        // The session this client was carrying is no longer accepted (D-2),
+        // and there was no refresh to try — or the request was already the
+        // retry after one. Clear the dead tokens so nothing keeps sending
+        // them, tell the app once, and fail this call with the
+        // distinguishable subclass. A 401 on the login call itself (no token
+        // yet) stays a plain refusal.
+        _expire();
         throw AuthExpiredException(detail);
       }
       throw ApiException(response.statusCode, detail, extra: extra);
     }
     if (response.bodyBytes.isEmpty) return null;
     return jsonDecode(utf8.decode(response.bodyBytes));
+  }
+
+  Map<String, String> get _anonymousHeaders => {
+    'Content-Type': 'application/json',
+  };
+
+  /// The platform's `detail`, best effort, for an error we are about to
+  /// surface without going through the full decoding below.
+  static String _detailOf(http.Response response) {
+    try {
+      final decoded =
+          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      return (decoded['detail'] ?? decoded['title'] ?? 'Session expired')
+          .toString();
+    } catch (_) {
+      return 'Session expired';
+    }
+  }
+
+  /// End the session: forget both tokens and tell the app, once. Idempotent —
+  /// a second caller finds nothing to forget and nobody to tell.
+  void _expire() {
+    if (_token == null && _refreshToken == null) return;
+    _token = null;
+    _refreshToken = null;
+    onAuthExpired?.call();
+  }
+
+  /// Exchange the refresh token for a new pair. Returns true when the client
+  /// now holds a fresh access token, false when the session is over.
+  ///
+  /// Single-flight: concurrent callers share the same future, so a burst of
+  /// 401s costs the platform one refresh and the operator one rate-limit
+  /// token. A TRANSPORT failure (no network) is neither a success nor a
+  /// refusal — it propagates as the transport error it is, so the offline
+  /// machinery treats it as "offline" and the session stays intact; the
+  /// queued capture waits for a session the way it already waits for a
+  /// network.
+  Future<bool> _refreshOnce() {
+    final inFlight = _refreshing;
+    if (inFlight != null) return inFlight;
+    final refreshToken = _refreshToken;
+    if (refreshToken == null) return Future.value(false);
+    final started = () async {
+      try {
+        final result =
+            await _send(
+                  'POST',
+                  '/v1/auth/refresh',
+                  body: {'refresh_token': refreshToken},
+                  retryAfterRefresh: false,
+                  // The refresh route authenticates by the body, not the
+                  // header; a dead bearer alongside it buys nothing.
+                  authenticate: false,
+                )
+                as Map<String, dynamic>;
+        _token = result['access_token'] as String;
+        _refreshToken = (result['refresh_token'] as String?) ?? refreshToken;
+        return true;
+      } on ApiException {
+        // The platform CONSIDERED the refresh and said no: revoked, or the
+        // fourteen days are up. This, and only this, ends the session.
+        _expire();
+        return false;
+      } finally {
+        _refreshing = null;
+      }
+    }();
+    _refreshing = started;
+    return started;
   }
 
   Future<void> login(String email, String password, {String? tenantId}) async {
@@ -162,6 +274,10 @@ class ApiClient {
             )
             as Map<String, dynamic>;
     _token = result['access_token'] as String;
+    // WO-69: keep the refresh half of the pair. A platform that returns none
+    // (older fakes) leaves the pre-WO-69 behaviour intact: the first 401
+    // ends the session, because there is nothing to refresh with.
+    _refreshToken = result['refresh_token'] as String?;
   }
 
   Future<CenterPage> listCenters({
