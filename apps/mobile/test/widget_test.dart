@@ -693,7 +693,7 @@ class _ResolveFake extends ApiClient {
 
 class _ReportFake extends ApiClient {
   @override
-  Future<DailySummaryView> dailyReport(String centerId, {String? on}) async =>
+  Future<DailySummaryView> dailyReport(String centerId, {String? on, String? from, String? to}) async =>
       DailySummaryView(
         transactions: 3,
         accepted: 2,

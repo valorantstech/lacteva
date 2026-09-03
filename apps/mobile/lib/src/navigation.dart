@@ -61,6 +61,8 @@ BarShape shapeFor(Session session) {
     case Experience.delivery:
       // A sales officer works the round; the driver bar is the round's bar.
       return BarShape.driver;
+    case Experience.manager:
+      return BarShape.manager;
     case Experience.collection:
       return runsTheWholeDairy(session) ? BarShape.manager : BarShape.operator;
     case Experience.none:
@@ -249,6 +251,9 @@ const List<HubItem> reportsItems = [
 ];
 
 const List<HubItem> moreItems = [
+  // WO-72 Part C: the counter and the round are places a manager GOES.
+  HubItem(key: 'counter', labelKey: 'hub.counter', icon: Icons.water_drop_outlined, requires: 'collection.session.manage'),
+  HubItem(key: 'round', labelKey: 'hub.round', icon: Icons.local_shipping_outlined, requires: 'sales.delivery.read'),
   HubItem(key: 'centres', labelKey: 'hub.centres', icon: Icons.location_city_outlined, requires: 'collection.center.read'),
   HubItem(key: 'centreCalendar', labelKey: 'hub.centreCalendar', icon: Icons.calendar_month_outlined, requires: 'collection.center.read', needsCentre: true),
   HubItem(key: 'readiness', labelKey: 'hub.readiness', icon: Icons.fact_check_outlined, requires: 'operations.readiness.read', needsCentre: true),
@@ -278,8 +283,10 @@ const List<HubItem> driverMoreItems = [
 /// an operator. `navigation_test.dart` walks `lib/src` for `class *Screen`
 /// and refuses any that is not here or in [preAuthScreens].
 const Map<String, Map<BarShape, String>> screenHomes = {
+  // --- the manager's own home (Part C) -----------------------------------
+  'ManagerHomeScreen': {BarShape.manager: 'today'},
   // --- the counter and its day ------------------------------------------
-  'CollectionHomeScreen': {BarShape.manager: 'today', BarShape.operator: 'collect'},
+  'CollectionHomeScreen': {BarShape.manager: 'more', BarShape.operator: 'collect'},
   'CollectionWizardScreen': {BarShape.manager: 'today', BarShape.operator: 'collect'},
   'TransactionHistoryScreen': {BarShape.manager: 'reports', BarShape.operator: 'today'},
   'TransactionDetailScreen': {BarShape.manager: 'reports', BarShape.operator: 'today'},
@@ -316,7 +323,7 @@ const Map<String, Map<BarShape, String>> screenHomes = {
   'ConflictDetailScreen': {BarShape.manager: 'more', BarShape.operator: 'more', BarShape.driver: 'more'},
   // --- the round ----------------------------------------------------------
   'DriverHomeScreen': {BarShape.driver: 'round'},
-  'DeliveryRoundScreen': {BarShape.driver: 'deliver'},
+  'DeliveryRoundScreen': {BarShape.driver: 'deliver', BarShape.manager: 'more'},
   'RecordDeliveryScreen': {BarShape.driver: 'deliver'},
   // --- the household ------------------------------------------------------
   'CustomerHomeScreen': {BarShape.customer: 'deliveries'},

@@ -720,8 +720,19 @@ class ApiClient {
   /// timezone, and a date computed from the handset's clock would be the wrong
   /// day for part of every night. Omit it for today, which is what the
   /// platform answers by default.
-  Future<DailySummaryView> dailyReport(String centerId, {String? on}) async {
-    final window = on == null ? '' : '&date_from=$on&date_to=$on';
+  Future<DailySummaryView> dailyReport(
+    String centerId, {
+    String? on,
+    String? from,
+    String? to,
+  }) async {
+    // WO-72 Part C: the same report over a WINDOW — the cycle to date, the
+    // same weekday last week — through the same endpoint the day uses.
+    final start = from ?? on;
+    final end = to ?? on;
+    final window = start == null
+        ? ''
+        : '&date_from=$start&date_to=${end ?? start}';
     final result =
         await _send(
               'GET',

@@ -21,6 +21,8 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'center_summary.dart';
 import 'centers.dart';
+import 'collection_home.dart';
+import 'deliveries.dart';
 import 'customer_portal.dart';
 import 'devices/binding_store.dart';
 import 'devices/instruments_screen.dart';
@@ -193,6 +195,16 @@ class _HubScreenState extends State<HubScreen> {
               );
       case 'notifications':
         return NotificationHistoryScreen(client: client);
+      case 'counter':
+        // The counter and the round run offline-first; a plain client has
+        // no queue to hand them, so the hub simply omits the row.
+        final counter = client;
+        if (counter is! OfflineApiClient) return null;
+        return CollectionHomeScreen(client: counter, session: session);
+      case 'round':
+        final round = client;
+        if (round is! OfflineApiClient) return null;
+        return DeliveryRoundScreen(client: round, session: session);
       case 'centres':
         return CentersListScreen(client: client, session: session);
       case 'centreCalendar':

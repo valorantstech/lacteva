@@ -265,6 +265,12 @@ enum Experience {
   /// The collection centre: suppliers, weights, quality, pricing.
   collection,
 
+  /// Whoever RUNS the dairy (WO-72 Part C / D-23). Oversight, not
+  /// operation: progress against expectation, money, and the exceptions
+  /// that need a person. The counter and the round are places this person
+  /// navigates to, not where they are put.
+  manager,
+
   /// Signed in, but holding nothing this app can offer.
   none,
 }
@@ -297,7 +303,10 @@ bool runsTheWholeDairy(Session session) =>
 ///    so showing anything else would be a screen full of somebody else's data
 ///    that never loads.
 /// 2. A driver's whole job is the run they are on.
-/// 3. WHOEVER RUNS THE DAIRY LANDS ON THE MANAGER HOME (WO-64). This test
+/// 3. WHOEVER RUNS THE DAIRY LANDS ON THE MANAGER HOME (WO-64; its OWN
+///    experience since WO-72 Part C — until then it fell through to the
+///    counter's screen, and the owner's primary action was "Collect milk").
+///    This test
 ///    comes before the single-capability ones and it is the fix for a real
 ///    defect: the checks below return the FIRST capability that matches, and
 ///    `sales.delivery.record` was tested before `collection.session.manage`,
@@ -319,7 +328,7 @@ bool runsTheWholeDairy(Session session) =>
 Experience experienceFor(Session session) {
   if (session.isCustomer) return Experience.customer;
   if (session.can('logistics.run.execute')) return Experience.driver;
-  if (runsTheWholeDairy(session)) return Experience.collection;
+  if (runsTheWholeDairy(session)) return Experience.manager;
   if (session.can('sales.delivery.record')) return Experience.delivery;
   if (session.can('collection.session.manage')) return Experience.collection;
   if (session.can('sales.delivery.read')) return Experience.delivery;

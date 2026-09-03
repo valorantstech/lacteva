@@ -78,8 +78,8 @@ const personaGrants = <String, Set<String>>{
 /// What each of them must OPEN, and the reason in one line.
 const expected = <String, (Experience, String)>{
   // WO-64: the defect. Holds everything, so first-match sent him to the round.
-  'tenant-admin': (Experience.collection, 'the owner runs the dairy, not a van'),
-  'ORGANIZATION_MANAGER': (Experience.collection, 'organisation-wide authority'),
+  'tenant-admin': (Experience.manager, 'the owner runs the dairy, not a van'),
+  'ORGANIZATION_MANAGER': (Experience.manager, 'organisation-wide authority'),
   // Single-purpose roles: the capability IS the intent, and this was already
   // right. The work order says so explicitly — do not "fix" these.
   'SALES_OFFICER': (Experience.delivery, 'the round is the whole job'),
@@ -91,7 +91,7 @@ const expected = <String, (Experience, String)>{
   'tenant-viewer': (Experience.delivery, 'read-only, and correct as it stands'),
   'FINANCE_OFFICER': (Experience.delivery, 'reads the round; works in the portal'),
   'DRIVER': (Experience.driver, 'the run they are on'),
-  'ORGANIZATION_ADMIN': (Experience.collection, 'organisation-wide authority'),
+  'ORGANIZATION_ADMIN': (Experience.manager, 'organisation-wide authority'),
   // Read-only finance and audit personas: the round reads first, and their
   // real tool is the portal.
   'FINANCE_MANAGER': (Experience.delivery, 'reads the round; works in the portal'),
@@ -126,8 +126,11 @@ void main() {
     // Stated separately from the table because it is the finding, not a row:
     // four of five personas landed on the delivery round, and this is the one
     // that was wrong.
-    expect(experienceFor(_as('tenant-admin')), Experience.collection);
+    // WO-72 Part C: the manager home is now its own experience, not the
+    // counter's screen worn by the owner.
+    expect(experienceFor(_as('tenant-admin')), Experience.manager);
     expect(experienceFor(_as('tenant-admin')), isNot(Experience.delivery));
+    expect(experienceFor(_as('tenant-admin')), isNot(Experience.collection));
   });
 
   test('what routes them is the two halves of the business, not a role name', () {
@@ -142,7 +145,7 @@ void main() {
       permissions: const {'collection.session.manage', 'sales.delivery.record'},
       customerId: null,
     );
-    expect(experienceFor(invented), Experience.collection);
+    expect(experienceFor(invented), Experience.manager);
 
     final halfOnly = Session(
       userId: 'u3',

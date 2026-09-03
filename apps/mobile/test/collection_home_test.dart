@@ -131,7 +131,7 @@ class _Platform extends ApiClient {
   }
 
   @override
-  Future<DailySummaryView> dailyReport(String centerId, {String? on}) async {
+  Future<DailySummaryView> dailyReport(String centerId, {String? on, String? from, String? to}) async {
     // WO-64: `on` is the day the caller asked for. The home asks for
     // YESTERDAY when today is still empty, so the fake answers for a day
     // other than today or the fallback could never be exercised.
@@ -272,7 +272,7 @@ class _OfflineFake extends OfflineApiClient {
   Future<CenterDetail> centerDetail(String id) => platform.centerDetail(id);
 
   @override
-  Future<DailySummaryView> dailyReport(String id, {String? on}) =>
+  Future<DailySummaryView> dailyReport(String id, {String? on, String? from, String? to}) =>
       platform.dailyReport(id, on: on);
 
   @override

@@ -35,6 +35,7 @@ import 'offline/offline_client.dart';
 import 'push.dart';
 import 'session.dart';
 import 'suppliers.dart';
+import 'manager_home.dart';
 import 'shell.dart';
 import 'navigation.dart';
 import 'sign_out.dart';
@@ -217,6 +218,34 @@ class _HomeRouterState extends State<HomeRouter>
         },
         // The round IS the delivery screen for a sales officer; one root
         // serves both keys so the bar shape stays the driver's.
+      ),
+      // WO-72 Part C: whoever runs the dairy gets oversight, not the counter.
+      Experience.manager => AppShell(
+        client: client,
+        session: session,
+        roots: {
+          'today': (_) => ManagerHomeScreen(client: client, session: session),
+          'farmers': (_) => SuppliersListScreen(client: client, session: session),
+          'money': (_) => HubScreen(
+            client: client,
+            session: session,
+            titleKey: 'nav.money',
+            items: moneyItems,
+          ),
+          'reports': (_) => HubScreen(
+            client: client,
+            session: session,
+            titleKey: 'nav.reports',
+            items: reportsItems,
+          ),
+          'more': (_) => HubScreen(
+            client: client,
+            session: session,
+            titleKey: 'nav.more',
+            items: moreItems,
+            signOut: true,
+          ),
+        },
       ),
       // LACTEVA-MOBILE-005: the collection experience lands on a HOME, not on
       // a list of centres. The list is still there and still does exactly what
