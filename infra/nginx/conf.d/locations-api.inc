@@ -1,9 +1,8 @@
 # The platform API's locations (WO-63).
 #
-# Included by `api.lacteva.com`, which exists FOR these, and by the two names
-# that also serve the portal — `app.lacteva.com` and `dev.phoenixsoft.in` —
-# because an installed mobile build calls `https://dev.phoenixsoft.in/v1/...`
-# and a build-time constant is not something a deployment gets to change.
+# Included by `api.lacteva.com`, which exists FOR these, and by
+# `app.lacteva.com`, so that `/v1/` answers on the host somebody is already
+# on rather than 404ing there.
 #
 # Nothing here changed when it moved out of `lacteva.conf`.
 

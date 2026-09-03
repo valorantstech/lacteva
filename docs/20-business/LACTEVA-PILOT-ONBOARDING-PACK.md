@@ -192,7 +192,7 @@ payments/receivables. Same rule: every figure must trace.
 ## 6. Physical-handset validation script (Track C — run when a handset is available)
 
 Device: any Android 10+ phone, Chrome not required. Install
-`app-release.apk` (built against `https://dev.phoenixsoft.in`). Two runs:
+`app-release.apk` (built against `https://api.lacteva.com`). Two runs:
 one as a **driver** login, one as a **collection operator** login. Tick only
 what is *seen on the glass*.
 

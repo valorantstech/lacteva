@@ -1,11 +1,11 @@
 # The admin portal's locations (WO-63).
 #
-# Included by every server block that SERVES the portal — today
-# `app.lacteva.com` and `dev.phoenixsoft.in`. It exists as an include because
-# the same locations now appear under more than one name, and two copies of a
-# proxy configuration are two things that drift apart: the first time one of
-# them gains a header the other does not, the difference is invisible until
-# somebody reports it on one hostname only.
+# Included by every server block that SERVES the portal — today just
+# `app.lacteva.com`, and it stays an include rather than being folded back in.
+# The alternative is that the next name to serve the portal gets a COPY of
+# this configuration, and two copies of a proxy block are two things that
+# drift apart: the first time one gains a header the other does not, the
+# difference is invisible until somebody reports it on one hostname only.
 #
 # Nothing here changed when it moved out of `lacteva.conf` — this is the
 # configuration that was already deployed, given a name.

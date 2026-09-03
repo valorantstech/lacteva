@@ -7,19 +7,21 @@ Four names, one address, one certificate:
     api.lacteva.com                the API — what the mobile app calls
     dev.phoenixsoft.in             unchanged: portal AND API
 
-Two of these are load-bearing in a way a reader cannot see from the config
-alone, so they are asserted here.
-
-**`dev.phoenixsoft.in` must keep serving the API.** Every demo handset in the
-field was built against it, and `LACTEVA_API_URL` is a compile-time constant
-in `main.dart` — a name that stops answering is a store release, not a config
-change, and the installs in between are simply broken.
+**`dev.phoenixsoft.in` is retired** (owner, 2026-09-03). It served the portal
+and the API until then, because every demo handset in the field was built
+against it and `LACTEVA_API_URL` is a compile-time constant in `main.dart`.
+Retiring it is therefore not a configuration change with a small blast radius:
+those installs lose their server until each is replaced with a build that
+carries `https://api.lacteva.com`. The decision was the owner's, taken with
+that stated; what these tests do is make sure the name is gone from every
+place that would otherwise keep it half-alive — a server block that still
+claims it, a certificate that still carries it, an origin still trusted for it.
 
 **An unrecognised name must be refused, not served.** nginx makes the FIRST
 matching server block the default when none is marked, so without a deliberate
 default the marketing site would answer for every stale record and every scan
 of the IP address — and would look, to anyone reading the config, like it had
-been meant.
+been meant. A retired name is exactly such a stale record now.
 """
 
 import re
@@ -55,23 +57,58 @@ def _tls_blocks() -> list[tuple[str, str]]:
     return [(n, b) for n, b in _server_blocks() if "listen 443" in b]
 
 
-@pytest.mark.parametrize(
-    "hostname",
-    ["lacteva.com", "www.lacteva.com", "app.lacteva.com", "api.lacteva.com", "dev.phoenixsoft.in"],
-)
+#: The whole map. Anything not here is refused, and anything here is served.
+SERVED = ("lacteva.com", "www.lacteva.com", "app.lacteva.com", "api.lacteva.com")
+
+
+@pytest.mark.parametrize("hostname", SERVED)
 def test_every_name_in_the_map_has_a_server_block(hostname):
     served = {name for names, _ in _tls_blocks() for name in names.split()}
     assert hostname in served, f"{hostname} is in the URL map and in no server block"
 
 
-def test_dev_phoenixsoft_still_serves_the_api_the_handsets_were_built_against():
-    """The one that costs a store release to get wrong."""
-    block = next(b for n, b in _tls_blocks() if "dev.phoenixsoft.in" in n.split())
-    assert "locations-api.inc" in block, (
-        "dev.phoenixsoft.in no longer serves /v1/ — every installed demo handset "
-        "carries this name as a build-time constant and would lose its server"
-    )
-    assert "locations-portal.inc" in block, "dev.phoenixsoft.in stopped serving the portal"
+def test_the_map_serves_these_names_and_no_others():
+    """A name nobody decided to serve is a name nobody is maintaining.
+
+    Written as an equality rather than a set of `in` checks: the failure this
+    guards against is a name being ADDED quietly — a staging host, a retired
+    one coming back — and an `in` check cannot see that.
+    """
+    served = {name for names, _ in _tls_blocks() for name in names.split() if name != "_"}
+    assert served == set(SERVED), f"the map has drifted: {sorted(served)}"
+
+
+def test_the_retired_name_is_gone_from_everything_that_would_keep_it_alive():
+    """`dev.phoenixsoft.in` was retired by the owner on 2026-09-03.
+
+    Half-retiring a hostname is the bad outcome: a server block that still
+    claims it and a certificate that no longer covers it means every visitor
+    gets a security warning instead of a clean refusal, and the platform looks
+    compromised rather than moved. So the name goes from the SERVING config
+    and from the trusted origins together.
+
+    The mentions left behind are in comments that record where a defect was
+    once observed. Those are history and stay true; this checks the places
+    that are still instructions to a running system.
+    """
+    conf_dir = REPO / "infra/nginx/conf.d"
+    for path in sorted(conf_dir.iterdir()):
+        if path.suffix not in (".conf", ".inc"):
+            continue
+        instructions = [
+            line
+            for line in path.read_text().splitlines()
+            if "dev.phoenixsoft.in" in line and not line.strip().startswith("#")
+        ]
+        assert not instructions, f"{path.name} still SERVES the retired name: {instructions}"
+
+    example = (REPO / ".env.production.example").read_text()
+    origins = [
+        line
+        for line in example.splitlines()
+        if line.startswith("LACTEVA_CORS_ORIGINS") and "dev.phoenixsoft.in" in line
+    ]
+    assert not origins, f"the retired name is still a trusted browser origin: {origins}"
 
 
 def test_the_api_name_serves_the_api():

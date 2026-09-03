@@ -51,10 +51,14 @@ One machine. That is not a first draft — the platform is a modular monolith wi
 **Four names, one address** (WO-63 / D-20). nginx decides by `Host`:
 `lacteva.com` and `www` reach the marketing site; `app.lacteva.com` the admin
 portal; `api.lacteva.com` the API, which is what the mobile app is built
-against; and `dev.phoenixsoft.in` keeps serving portal-and-API for the
-handsets that were built before those names existed. Anything else is refused
-with 421 by an explicit default server rather than being handed whichever site
-nginx parsed first. One Let's Encrypt certificate covers all five.
+against. Anything else is refused with 421 by an explicit default server
+rather than being handed whichever site nginx parsed first. One Let's Encrypt
+certificate covers all four.
+
+`dev.phoenixsoft.in` was a fifth until 2026-09-03. It is retired rather than
+redirected, because the clients that used it POST to `/v1/` and an HTTP client
+does not follow a 301 with its method and body intact — a redirect would have
+read as kindness and behaved as an outage.
 
 The **static IP and the data volume outlive the machine**. That is what makes host replacement routine rather than a recovery: build a new server, attach both, deploy. DNS never changes, so there is no propagation wait and no certificate reissue.
 

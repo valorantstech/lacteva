@@ -13,7 +13,7 @@ baseline: ARCH-BASELINE-V1
 
 
 Audience: the sales / customer-success person onboarding a new dairy.
-Everything here is the product as it exists at dev.phoenixsoft.in (commit 0c752f0+);
+Everything here is the product as it exists at app.lacteva.com (commit 0c752f0+);
 the two screens marked **[Batch B7]** are landing now.
 
 ## 0 · What sales collects from the dairy (before any login exists)
@@ -38,7 +38,8 @@ Done by the Lacteva platform administrator (Phoenix staff), in the portal:
    link, sets their password. **Login #1 exists.**
 
 ## 2 · Dairy setup (the owner in the portal, guided by sales, ~1 hour)
-Portal: https://dev.phoenixsoft.in — same credentials work in the mobile app.
+Portal: https://app.lacteva.com — same credentials work in the mobile app,
+which reaches the platform at https://api.lacteva.com.
 1. **Centres**: /centers → create each collection centre with shift hours.
 2. **Staff logins** — created by the OWNER via /admin/users → Invite.
    Each person gets an email invitation; accepting sets their password.

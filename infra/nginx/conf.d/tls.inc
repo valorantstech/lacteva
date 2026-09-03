@@ -3,8 +3,8 @@
 # Four named server blocks now terminate TLS instead of one catch-all, and
 # a cipher list or a protocol floor copied four times is a cipher list that
 # will eventually differ on one hostname. The certificate is the same file
-# for all of them: a single Let's Encrypt certificate carrying all five
-# names (`lacteva.com`, `www`, `app`, `api`, and `dev.phoenixsoft.in`).
+# for all of them: a single Let's Encrypt certificate carrying the four
+# lacteva.com names (`lacteva.com`, `www`, `app`, `api`).
 
     ssl_certificate     /etc/nginx/certs/fullchain.pem;
     ssl_certificate_key /etc/nginx/certs/privkey.pem;

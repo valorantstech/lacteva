@@ -206,7 +206,7 @@ After a real restore, the equivalent by hand:
 
 ```bash
 $C run --rm --no-deps -T api python -m platform_core.core.backup.cli integrity --deep
-curl -s https://dev.phoenixsoft.in/health/ready | python3 -m json.tool
+curl -s https://api.lacteva.com/health/ready | python3 -m json.tool
 ```
 
 Then check the business: sign in, open the dashboard, confirm the receivable

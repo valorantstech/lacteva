@@ -95,21 +95,26 @@ does both and is driven by the `lacteva-tls-renew.timer` unit twice a day —
 certbot only acts inside the last 30 days, so it usually does nothing.
 `--dry-run` exercises the whole path without issuing.
 
-**The deployed certificate carries five names** (WO-63): `lacteva.com`,
-`www.lacteva.com`, `app.lacteva.com`, `api.lacteva.com` and
-`dev.phoenixsoft.in`. Adding or removing one is `--expand` with the full `-d`
-list and the same `--cert-name lacteva`, so the renewal timer keeps working on
-the same lineage:
+**The deployed certificate carries four names**: `lacteva.com`,
+`www.lacteva.com`, `app.lacteva.com` and `api.lacteva.com`. Adding or removing
+one is the full `-d` list again with the same `--cert-name lacteva`, so the
+renewal timer keeps working on the same lineage:
 
 ```bash
-... certonly --webroot -w /var/www/certbot --cert-name lacteva --expand \
-  -d lacteva.com -d www.lacteva.com -d app.lacteva.com \
-  -d api.lacteva.com -d dev.phoenixsoft.in
+... certonly --webroot -w /var/www/certbot --cert-name lacteva \
+  -d lacteva.com -d www.lacteva.com -d app.lacteva.com -d api.lacteva.com
 ```
 
-`dev.phoenixsoft.in` stays on that list until the demo handsets built against
-it are replaced: the API address is a compile-time constant in the app, so
-dropping the name is a store release rather than a configuration change.
+Use `--expand` when the list GROWS. When it shrinks, certbot needs the shorter
+list plus the same `--cert-name`; it replaces the lineage rather than
+extending it, and `renew-tls.sh` picks up whatever that lineage now holds.
+
+`dev.phoenixsoft.in` was on this list until 2026-09-03 and is not any more
+(owner's decision). Removing a name is not just a certificate change: the
+server block that claimed it and the CORS origin that trusted it go at the
+same time, or the name half-exists — served under a certificate that no longer
+covers it, which every browser reports as a security failure rather than as a
+site that moved.
 
 `LACTEVA_CORS_ORIGINS` is NOT how the portal reaches the API — it calls
 through its own same-origin proxy — so this list names only clients that make

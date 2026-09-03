@@ -65,13 +65,19 @@ flutter build apk --release \
   --dart-define=LACTEVA_API_URL=https://api.lacteva.com
 ```
 
-**`https://api.lacteva.com` is the API address from now on.** It has its own
-name rather than sharing `app.lacteva.com` because this constant is compiled
-in: changing it means a store release and breaks every install until each one
-updates, so it is the one address that has to be repointable with a DNS record
-instead. `https://dev.phoenixsoft.in` keeps answering the same API for every
-handset already in the field — the old name is not retired, and the
-certificate still covers it.
+**`https://api.lacteva.com` is the API address, and the only one.** It has its
+own name rather than sharing `app.lacteva.com` because this constant is
+compiled in: changing it means a store release and breaks every install until
+each one updates, so it is the one address that has to be repointable with a
+DNS record instead.
+
+**`https://dev.phoenixsoft.in` was retired on 2026-09-03** (owner's decision).
+It is not served and not redirected — a 301 is not followed with method and
+body intact by an HTTP client POSTing to `/v1/`, so a redirect would have been
+an outage that looked like a courtesy. **Every handset still carrying a build
+made against the old name has lost its server and needs this APK
+reinstalled.** That is the cost the compile-time constant imposes, and it is
+the reason `api.lacteva.com` exists: the next move is a DNS record.
 
 The refusal is deliberate (PORTAL-001 / F-05): a debug-signed APK is not
 distributable and cannot be upgraded. The guard fires from the Gradle task
