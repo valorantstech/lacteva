@@ -235,6 +235,17 @@ mkdir -p "${RELEASE}"
 # this change have no release image, and a rollback to one of them must still
 # work. A deploy that silently fell back would be the old bug wearing a new
 # hat, so it says which path it took, every time.
+# The same incident, other half: the command that started it ran
+# /opt/lacteva/staging/infra/deploy/deploy.sh — a copy from before this
+# script learned about release images. A stale copy of THIS script has no
+# way to know it is stale, so the one thing it can do is say where it lives,
+# and the documented invocation (DEPLOYMENT.md) is the current release's own
+# copy: /opt/lacteva/current/infra/deploy/deploy.sh.
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+case "${SELF}" in
+  "$(readlink -f "${CURRENT}" 2>/dev/null)"/*|"${RELEASES}"/*) ;;
+  *) log "WARNING: running ${SELF}, which is not a release's own copy — prefer ${CURRENT}/infra/deploy/deploy.sh" ;;
+esac
 RELEASE_IMAGE="${IMAGE}:release-${TAG}"
 if docker pull "${RELEASE_IMAGE}" > /dev/null 2>&1; then
   log "release tree from ${RELEASE_IMAGE}"
@@ -256,7 +267,18 @@ if docker pull "${RELEASE_IMAGE}" > /dev/null 2>&1; then
       || die "the release image is missing ${required} — refusing to deploy an incomplete release"
   done
 else
-  log "no ${RELEASE_IMAGE} — falling back to the host tree at ${SOURCE_TREE} (pre-WO-44 tag)"
+  # WO-70 deploy incident: the fallback ran when a transient pull failure met
+  # a STALE host tree, and shipped an August compose file over a September
+  # platform — the marketing service vanished and lacteva.com served the
+  # portal's login page. A tree this script cannot vouch for is not a release.
+  # The fallback now needs to be ASKED for, by name, for the one case it
+  # exists for: rolling back to a tag published before WO-44, which has no
+  # release image. Everything since has one, and a missing image is a reason
+  # to stop, not to guess.
+  if [ "${ALLOW_HOST_TREE:-}" != "1" ]; then
+    die "no ${RELEASE_IMAGE} in the registry (or the pull failed). Refusing to deploy from the host tree at ${SOURCE_TREE}: it may be stale. Re-run once the image pulls, or set ALLOW_HOST_TREE=1 for a pre-WO-44 tag."
+  fi
+  log "no ${RELEASE_IMAGE} — ALLOW_HOST_TREE=1: falling back to the host tree at ${SOURCE_TREE} (pre-WO-44 tag)"
   rsync -a --delete --exclude '.git' "${SOURCE_TREE}/" "${RELEASE}/"
 fi
 echo "${PREVIOUS}" > "${RELEASE}/.deployed-tag"   # what to go BACK to

@@ -563,6 +563,22 @@ def test_the_deploy_prefers_the_registry_over_the_host_tree():
     assert "log " in deploy.split('RELEASE_IMAGE="')[0][-2000:] or "log " in deploy
 
 
+def test_the_host_tree_fallback_must_be_asked_for_by_name():
+    """WO-70 deploy incident. A transient pull failure met a stale host tree
+    and the fallback shipped an August compose file over a September
+    platform: the marketing service vanished and lacteva.com served the
+    portal's login page. A missing release image is a reason to STOP; the
+    rsync path exists only for a pre-WO-44 rollback and needs ALLOW_HOST_TREE=1
+    said out loud."""
+    deploy = (REPO / "infra/deploy/deploy.sh").read_text()
+    branch = deploy.split('if docker pull "${RELEASE_IMAGE}"')[1]
+    fallback = branch.split("\nelse\n", 1)[1].split("\nfi\n", 1)[0]
+    assert "ALLOW_HOST_TREE" in fallback
+    assert fallback.index("die ") < fallback.index("rsync "), "refuse BEFORE the rsync"
+    # And a copy of the script that is not a release's own says so.
+    assert "BASH_SOURCE[0]" in deploy and "not a release's own copy" in deploy
+
+
 def test_an_incomplete_release_is_refused_rather_than_deployed():
     deploy = (REPO / "infra/deploy/deploy.sh").read_text()
     required_paths = (

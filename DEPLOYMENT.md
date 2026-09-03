@@ -234,6 +234,15 @@ it works there), but it is no longer how releases are made.
 sudo /opt/lacteva/current/infra/deploy/deploy.sh main-<short sha>
 ```
 
+> **Run the CURRENT release's copy, never `/opt/lacteva/staging/…`.** The
+> `staging` tree on the host is a hand-rsynced checkout from August; its
+> `deploy.sh` predates release images and always stages from that stale tree.
+> WO-70's deploy was started from it: the marketing service disappeared and
+> `lacteva.com` served the portal's login page until the deploy was re-run
+> from a release copy. The script now refuses the host-tree fallback unless
+> `ALLOW_HOST_TREE=1` is set (a pre-WO-44 rollback), and warns when it is not
+> running from a release directory.
+
 `deploy.sh` pulls, migrates, deploys, verifies, smoke-tests, and rolls back
 automatically if any of that fails. The equivalent by hand:
 
