@@ -229,7 +229,7 @@ void main() {
       expect(find.text('Household One'), findsOneWidget);
       expect(find.text('Household Two'), findsOneWidget);
       // The one already served says so; the other says it plainly.
-      expect(find.text('H-001 · delivered 2.000 L'), findsOneWidget);
+      expect(find.text('H-001 · delivered · 2.0 L'), findsOneWidget);
       expect(find.text('H-002 · not yet recorded'), findsOneWidget);
       // The claim is unchanged and the selector moved with the redesign: the
       // figures are the platform's aggregate for the whole day, not a sum of
@@ -239,7 +239,8 @@ void main() {
         findsOneWidget,
         reason: "the server's count",
       );
-      expect(find.text('31.000 L'), findsOneWidget);
+      // WO-64: one decimal, the way a dairy says a quantity.
+      expect(find.text('31.0 L'), findsOneWidget);
     });
 
     testWidgets('a round of forty households is not forty requests', (

@@ -268,11 +268,16 @@ void main() {
       // below would add up to. Whichever number the screen shows is the one a
       // rider repeats to the dairy, and it must be the platform's.
       await _pump(tester, customers: const [_joshi, _patil]);
-      expect(find.text('126.000 L'), findsOneWidget);
+      // WO-64: one decimal, because that is how a dairy says a quantity —
+      // the platform still stores and sends three.
+      expect(find.text('126.0 L'), findsOneWidget);
       expect(find.text('to deliver'), findsOneWidget);
       expect(find.text('9 / 14'), findsOneWidget);
       expect(find.text('done'), findsOneWidget);
-      expect(find.text('2140.00'), findsOneWidget);
+      // WO-64: and money wears its currency. "2140.00" alone is a number,
+      // not an amount — the WO-61 defect in a smaller font.
+      expect(find.text('2140.00'), findsNothing);
+      expect(find.text('₹2140.00'), findsOneWidget);
     });
 
     testWidgets('a rider without the reporting grant still gets the round', (
@@ -301,13 +306,16 @@ void main() {
     ) async {
       await _pump(tester, customers: const [_joshi]);
       expect(find.text('Joshi household'), findsOneWidget);
-      expect(find.text('Pending'), findsOneWidget);
+      // WO-64: "Not yet" rather than "Pending", and quiet rather than amber —
+      // a stop nobody has reached is the expected state of a round that has
+      // just started, not a warning.
+      expect(find.text('Not yet'), findsOneWidget);
       expect(find.text('Standing order'), findsOneWidget);
       // Not 2.0 L, not 0.0 L, and not any other number the app would have had
       // to make up. The one litre figure on screen is the platform's own
       // day-total in the strip above — the card contributes none.
       expect(find.textContaining(' L'), findsOneWidget);
-      expect(find.text('126.000 L'), findsOneWidget);
+      expect(find.text('126.0 L'), findsOneWidget);
     });
 
     testWidgets('one tap sends the plan, with no quantity at all', (
@@ -391,7 +399,7 @@ void main() {
         ],
       );
       expect(find.text('On invoice'), findsOneWidget);
-      expect(find.textContaining('20.000 L'), findsOneWidget);
+      expect(find.textContaining('20.0 L'), findsOneWidget);
     });
 
     testWidgets('a delivered row not yet invoiced shows what it is worth', (
@@ -433,9 +441,15 @@ void main() {
           },
         ],
       );
-      expect(find.text('Retry later'), findsOneWidget);
-      // The status arrives as a CODE and the catalog decides the word.
+      // WO-64: the outcome names itself AND what follows from it. "Retry
+      // later" said neither — and wore the same amber as a stop nobody had
+      // reached yet, so a failure and a wait read as siblings.
+      expect(find.text('Skipped'), findsOneWidget);
+      expect(find.text('Retry later'), findsNothing);
+      // The status arrives as a CODE and the catalog decides the word, and
+      // the CONSEQUENCE rides on the detail line where there is width for it.
       expect(find.textContaining('not delivered'), findsOneWidget);
+      expect(find.textContaining('not invoiced'), findsOneWidget);
     });
 
     testWidgets('a missed row in Hindi reads Hindi, from the same keys', (
@@ -449,8 +463,9 @@ void main() {
         ],
         session: _session(locale: 'hi'),
       );
-      expect(find.text('बाद में फिर'), findsOneWidget);
-      expect(find.text('Retry later'), findsNothing);
+      expect(find.text('छोड़ा'), findsOneWidget);
+      expect(find.text('Skipped'), findsNothing);
+      expect(find.textContaining('बिल नहीं'), findsOneWidget);
     });
   });
 
@@ -497,6 +512,171 @@ void main() {
     testWidgets('the board is still once it has loaded', (tester) async {
       await _pump(tester, customers: const [_joshi]);
       expect(tester.binding.hasScheduledFrame, isFalse);
+    });
+  });
+
+
+  // ===================================================================
+  // WO-64 — the round reads as work, not as a list
+  // ===================================================================
+
+  group('the round is grouped by what has to be done', () {
+    test('a stop with no outcome is work; a delivery is done; anything else needs a look', () {
+      // A pure function, so the ordering rule is testable without a phone —
+      // the same reason `inRouteOrder` is public.
+      final groups = groupRound(
+        const [
+          {'id': 'c1', 'name': 'Nobody has been'},
+          {'id': 'c2', 'name': 'Delivered'},
+          {'id': 'c3', 'name': 'Came back'},
+          {'id': 'c4', 'name': 'Skipped'},
+        ],
+        const {
+          'c2': {'status': 'delivered'},
+          'c3': {'status': 'returned'},
+          'c4': {'status': 'skipped'},
+        },
+      );
+      expect(groups.toDeliver.map((c) => c['id']), ['c1']);
+      expect(groups.delivered.map((c) => c['id']), ['c2']);
+      // Both non-delivery outcomes are the part of the round somebody has to
+      // decide about, and they come first for that reason.
+      expect(groups.attention.map((c) => c['id']), ['c3', 'c4']);
+    });
+
+    test('route order survives inside a group — the sequence is the road', () {
+      final groups = groupRound(
+        const [
+          {'id': 'c1'},
+          {'id': 'c2'},
+          {'id': 'c3'},
+        ],
+        const {},
+      );
+      // Reordering within "to deliver" would send a van back on itself.
+      expect(groups.toDeliver.map((c) => c['id']), ['c1', 'c2', 'c3']);
+    });
+
+    test('progress is the platform\'s rows counted, and absent when there is no round', () {
+      expect(
+        groupRound(const [
+          {'id': 'a'},
+          {'id': 'b'},
+        ], const {
+          'a': {'status': 'delivered'},
+        }).progress,
+        0.5,
+      );
+      // A bar at 0% on an empty round would report a failure that is an
+      // absence.
+      expect(groupRound(const [], const {}).progress, isNull);
+    });
+
+    testWidgets('the screen shows the groups, and the progress as a bar', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        customers: const [_joshi, _patil, _tea],
+        deliveries: const [
+          {'customer_id': 'c2', 'status': 'delivered', 'quantity': '2.000'},
+          {'customer_id': 'c4', 'status': 'skipped'},
+        ],
+        // Tall enough that all three groups are laid out at once: a ListView
+        // gives no element to a child below the fold, so a shorter surface
+        // would test scrolling rather than grouping. The 320px fit is its own
+        // test, above.
+        size: const Size(390, 1600),
+      );
+      expect(find.text('NEEDS ATTENTION'), findsOneWidget);
+      expect(find.text('TO DELIVER'), findsOneWidget);
+      expect(find.text('DELIVERED'), findsOneWidget);
+      // "0 / 14" was the whole answer before. The bar is the feeling and the
+      // sentence is the count; a roundsman asks both.
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      expect(find.textContaining('of 3 delivered'), findsOneWidget);
+    });
+
+    testWidgets('an empty group is not a heading over nothing', (tester) async {
+      await _pump(tester, customers: const [_joshi]);
+      expect(find.text('TO DELIVER'), findsOneWidget);
+      expect(find.text('NEEDS ATTENTION'), findsNothing);
+      expect(find.text('DELIVERED'), findsNothing);
+    });
+  });
+
+  group('a failure does not look like a wait', () {
+    Color? chipGround(WidgetTester tester, String text) {
+      final chip = tester.widget<Container>(
+        find
+            .ancestor(of: find.text(text), matching: find.byType(Container))
+            .first,
+      );
+      return (chip.decoration as BoxDecoration?)?.color;
+    }
+
+    testWidgets('a stop nobody has reached is quiet, not amber', (tester) async {
+      await _pump(tester, customers: const [_joshi]);
+      expect(chipGround(tester, 'Not yet'), LactevaColors.neutralTint);
+    });
+
+    testWidgets('milk that came back gets the only danger ground on the screen', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        customers: const [_tea],
+        deliveries: const [
+          {'customer_id': 'c4', 'status': 'returned', 'invoice_id': null},
+        ],
+        size: const Size(390, 1200),
+      );
+      expect(find.text('Returned'), findsOneWidget);
+      expect(find.textContaining('not invoiced'), findsOneWidget);
+      expect(chipGround(tester, 'Returned'), LactevaColors.dangerTint);
+    });
+
+    testWidgets('a skip is amber — something happened, nothing is owed', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        customers: const [_tea],
+        deliveries: const [
+          {'customer_id': 'c4', 'status': 'skipped', 'invoice_id': null},
+        ],
+      );
+      expect(chipGround(tester, 'Skipped'), LactevaColors.warningTint);
+    });
+
+    testWidgets('a correction is quiet: nothing to chase', (tester) async {
+      await _pump(
+        tester,
+        customers: const [_tea],
+        deliveries: const [
+          {'customer_id': 'c4', 'status': 'cancelled', 'invoice_id': null},
+        ],
+      );
+      expect(find.text('Cancelled'), findsOneWidget);
+      expect(find.textContaining('recorded in error'), findsOneWidget);
+      expect(chipGround(tester, 'Cancelled'), LactevaColors.neutralTint);
+    });
+
+    testWidgets('the two states no longer share a ground', (tester) async {
+      // The defect in one assertion: "Pending" and "Retry later" were the same
+      // amber, so the eye learned to skim both.
+      await _pump(
+        tester,
+        customers: const [_joshi, _tea],
+        deliveries: const [
+          {'customer_id': 'c4', 'status': 'returned', 'invoice_id': null},
+        ],
+        size: const Size(390, 1200),
+      );
+      expect(
+        chipGround(tester, 'Not yet'),
+        isNot(chipGround(tester, 'Returned')),
+      );
     });
   });
 }

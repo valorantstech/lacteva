@@ -893,6 +893,7 @@ class _CenterDetailScreenState extends State<CenterDetailScreen> {
                     builder: (_) => CollectionWizardScreen(
                       client: widget.client,
                       sessionId: session['id'] as String,
+                      centerId: widget.centerId,
                       session: widget.session,
                     ),
                   ),

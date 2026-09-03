@@ -238,8 +238,16 @@ class ApiClient {
     return CenterSummary.fromJson(result);
   }
 
+  /// Suppliers, optionally narrowed to one centre (WO-64).
+  ///
+  /// `q` is the platform's own search and matches a name, a code OR a phone
+  /// number — the three things somebody at a counter might have. `centerId`
+  /// narrows to the suppliers assigned to that centre, which is what makes
+  /// the result usable: a dairy has hundreds of farmers and a counter serves
+  /// dozens.
   Future<SupplierPageResult> listSuppliers({
     String query = '',
+    String? centerId,
     int limit = 20,
     int offset = 0,
   }) async {
@@ -247,6 +255,7 @@ class ApiClient {
       'limit': '$limit',
       'offset': '$offset',
       if (query.isNotEmpty) 'q': query,
+      if (centerId != null && centerId.isNotEmpty) 'center_id': centerId,
     };
     final qs = Uri(queryParameters: params).query;
     final result =
@@ -587,9 +596,20 @@ class ApiClient {
   }
 
   /// Lightweight center summary for operators (REP-001). Defaults to today.
-  Future<DailySummaryView> dailyReport(String centerId) async {
+  /// Today's collection summary for a centre, or another day's.
+  ///
+  /// `on` is a plain `YYYY-MM-DD` the caller has already resolved in the
+  /// DAIRY's calendar — the platform windows this report in the organization's
+  /// timezone, and a date computed from the handset's clock would be the wrong
+  /// day for part of every night. Omit it for today, which is what the
+  /// platform answers by default.
+  Future<DailySummaryView> dailyReport(String centerId, {String? on}) async {
+    final window = on == null ? '' : '&date_from=$on&date_to=$on';
     final result =
-        await _send('GET', '/v1/reports/collection/daily?center_id=$centerId')
+        await _send(
+              'GET',
+              '/v1/reports/collection/daily?center_id=$centerId$window',
+            )
             as Map<String, dynamic>;
     return DailySummaryView.fromJson(result);
   }
@@ -1476,6 +1496,7 @@ class DailySummaryView {
     required this.avgFat,
     required this.avgSnf,
     this.byMilkType = const [],
+    this.dateFrom = '',
   });
 
   factory DailySummaryView.fromJson(Map<String, dynamic> json) {
@@ -1495,6 +1516,11 @@ class DailySummaryView {
       byMilkType: ((json['by_milk_type'] as List<dynamic>?) ?? const [])
           .map((row) => MilkTypeShare.fromJson(row as Map<String, dynamic>))
           .toList(),
+      // WO-64: the day this report is ABOUT, in the dairy's calendar. A phone
+      // cannot compute that date itself — the platform windows the report in
+      // the organization's timezone — so the only honest way to ask for
+      // yesterday is to take the platform's today and step back one day.
+      dateFrom: (json['date_from'] ?? '').toString(),
     );
   }
 
@@ -1508,6 +1534,26 @@ class DailySummaryView {
   final double? avgFat;
   final double? avgSnf;
   final List<MilkTypeShare> byMilkType;
+
+  /// The report's own first day, as the platform resolved it.
+  final String dateFrom;
+
+  /// Did any milk arrive? `accepted` rather than `transactions`, because a
+  /// rejected can is a collection that happened and is not milk in the tank.
+  bool get isEmpty => accepted == 0 && totalNetWeightKg == 0;
+
+  /// The day before this report's, or null when the platform did not say
+  /// which day it answered for. Plain calendar arithmetic on a date the
+  /// platform already resolved — never a timezone conversion on the handset.
+  String? get dayBefore {
+    if (dateFrom.isEmpty) return null;
+    final day = DateTime.tryParse(dateFrom);
+    if (day == null) return null;
+    return day
+        .subtract(const Duration(days: 1))
+        .toIso8601String()
+        .substring(0, 10);
+  }
 }
 
 class SettlementSummary {

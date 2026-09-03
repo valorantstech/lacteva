@@ -138,6 +138,28 @@ abstract final class LactevaColors {
   /// success.
   static const waterTint = Color(0xFFEAF1F5);
 
+  /// A FAILURE, and the only tint that means one (WO-64).
+  ///
+  /// The round showed "Pending" — nothing done yet, the normal state of every
+  /// stop at 5am — in the same amber as a delivery that had come back. The two
+  /// read as siblings, so the eye learned to skim both. A failure gets its own
+  /// ground so that the one row a roundsman must act on is the one row that
+  /// looks different.
+  static const dangerTint = Color(0xFFF7E7E6);
+
+  /// [danger] darkened for the tint, the same reason [onWarningTint] exists:
+  /// the pure hue loses separation on its own ground in sunlight.
+  static const onDangerTint = Color(0xFF8C2019);
+
+  /// NOT YET, which is not a problem (WO-64).
+  ///
+  /// A stop nobody has reached is the expected state of a round that has just
+  /// started. It is context, not subject — so it takes the quietest ground in
+  /// the palette and a muted foreground, and the colour is spent on the rows
+  /// that need a decision instead.
+  static const neutralTint = Color(0xFFEFEFEC);
+  static const onNeutralTint = Color(0xFF5B5F58);
+
   // ---------------------------------------------------------------------
   // On ink (LACTEVA-MOBILE-006, from the Driver board).
   //

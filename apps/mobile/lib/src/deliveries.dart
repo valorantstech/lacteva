@@ -35,8 +35,6 @@ import 'theme.dart';
 String _deviceDate() =>
     DateTime.now().toUtc().toIso8601String().substring(0, 10);
 
-String _money(Object? v) => v == null ? '—' : v.toString();
-
 /// The round in the ROUTE's order, with anybody not on the route after it.
 ///
 /// A pure function, and PUBLIC so the rule is testable without a phone, a
@@ -190,6 +188,7 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
   @override
   Widget build(BuildContext context) {
     final canRecord = widget.session.can('sales.delivery.record');
+    final groups = groupRound(_customers, _doneToday);
     final t = L10n.of(widget.session);
     return Scaffold(
       body: SafeArea(
@@ -227,28 +226,45 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
                           // still works — it simply has no figures, which is
                           // the behaviour this screen has always had.
                           if (_report != null)
-                            _RoundFigures(report: _report!, t: t),
+                            _RoundFigures(
+                              report: _report!,
+                              t: t,
+                              session: widget.session,
+                            ),
                           if (_customers.isEmpty)
                             _Empty(
                               icon: Icons.people_outline,
                               title: t.t('round.empty'),
                               detail: t.t('round.emptyDetail'),
                             )
-                          else
-                            for (final c in _customers)
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(20, 0, 20, 9),
-                                child: _RoundRow(
-                                  customer: c,
-                                  delivered: _doneToday[c['id'].toString()],
-                                  session: widget.session,
-                                  t: t,
-                                  onOpen: canRecord ? () => _open(c) : null,
-                                  onDeliver: canRecord
-                                      ? (quantity) => _deliver(c, quantity)
-                                      : null,
-                                ),
-                              ),
+                          else ...[
+                            // WO-64: grouped by what has to be DONE about each
+                            // stop, and the progress bar answers "how far
+                            // through am I" without counting chips.
+                            _RoundProgress(groups: groups, t: t),
+                            for (final (key, rows) in <(String, List<Map<String, dynamic>>)>[
+                              ('round.groupAttention', groups.attention),
+                              ('round.groupToDo', groups.toDeliver),
+                              ('round.groupDone', groups.delivered),
+                            ])
+                              if (rows.isNotEmpty) ...[
+                                _GroupHeading(text: t.t(key), count: rows.length),
+                                for (final c in rows)
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 9),
+                                    child: _RoundRow(
+                                      customer: c,
+                                      delivered: _doneToday[c['id'].toString()],
+                                      session: widget.session,
+                                      t: t,
+                                      onOpen: canRecord ? () => _open(c) : null,
+                                      onDeliver: canRecord
+                                          ? (quantity) => _deliver(c, quantity)
+                                          : null,
+                                    ),
+                                  ),
+                              ],
+                          ],
                           const SizedBox(height: 26),
                         ],
                       ),
@@ -468,6 +484,161 @@ class _RoundHeader extends StatelessWidget {
   }
 }
 
+/// The round, in the order a roundsman works it (WO-64).
+///
+/// The list was flat: twenty-four households in route order, delivered and
+/// undelivered alike, so "what is left to do" was something the eye had to
+/// compute from a column of chips. Grouped, the question is answered by the
+/// shape of the screen.
+///
+/// Three groups, and the order is the argument:
+///
+///   NEEDS ATTENTION  a stop that came back or was skipped. Something went
+///                    wrong and somebody has to decide; it goes first because
+///                    it is the only part of the round that is not routine.
+///   TO DELIVER       the work. Route order is preserved WITHIN the group —
+///                    the sequence is the road, and reordering it would send
+///                    a van back on itself.
+///   DELIVERED        done, and last. Kept rather than hidden: a roundsman
+///                    checking whether he has been somewhere needs to see it.
+///
+/// A pure function over rows the platform sent, so the ordering is testable
+/// without a phone or a widget tree — like `inRouteOrder`, which it composes
+/// rather than replaces.
+class RoundGroups {
+  const RoundGroups({
+    required this.attention,
+    required this.toDeliver,
+    required this.delivered,
+  });
+
+  final List<Map<String, dynamic>> attention;
+  final List<Map<String, dynamic>> toDeliver;
+  final List<Map<String, dynamic>> delivered;
+
+  /// How much of the round is behind them. `null` when there is nothing to
+  /// do — a bar at 0% on an empty round would report a failure that is really
+  /// an absence.
+  double? get progress {
+    final total = attention.length + toDeliver.length + delivered.length;
+    return total == 0 ? null : delivered.length / total;
+  }
+
+  int get total => attention.length + toDeliver.length + delivered.length;
+}
+
+/// Split the round by what the roundsman must do about each stop.
+///
+/// `outcomes` is the map this screen already keeps: customer id → the row the
+/// platform returned for today, or absent when nothing has been recorded.
+RoundGroups groupRound(
+  List<Map<String, dynamic>> customers,
+  Map<String, Map<String, dynamic>> outcomes,
+) {
+  final attention = <Map<String, dynamic>>[];
+  final toDeliver = <Map<String, dynamic>>[];
+  final delivered = <Map<String, dynamic>>[];
+  for (final customer in customers) {
+    final row = outcomes[customer['id'].toString()];
+    final status = (row?['status'] ?? '').toString();
+    if (row == null) {
+      toDeliver.add(customer);
+    } else if (status == 'delivered') {
+      delivered.add(customer);
+    } else {
+      // Skipped, returned, cancelled: an outcome exists and it is not a
+      // delivery, so it is the part of the round somebody has to look at.
+      attention.add(customer);
+    }
+  }
+  return RoundGroups(
+    attention: attention,
+    toDeliver: toDeliver,
+    delivered: delivered,
+  );
+}
+
+/// How far through the round they are (WO-64).
+///
+/// The board said "0 / 14" and nothing else. A fraction is a fact a person has
+/// to convert into a feeling; a bar IS the feeling, and the fraction stays
+/// beside it because a roundsman counting stops needs the number too.
+///
+/// It is not an animation. A progress bar that fills over half a second is a
+/// bar somebody watches instead of a round somebody works.
+class _RoundProgress extends StatelessWidget {
+  const _RoundProgress({required this.groups, required this.t});
+
+  final RoundGroups groups;
+  final L10n t;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = groups.progress;
+    if (progress == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              backgroundColor: LactevaColors.quietBar,
+              valueColor: const AlwaysStoppedAnimation(LactevaColors.success),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            // The number stays: a bar answers "roughly how far", a count
+            // answers "how many left", and a roundsman asks both.
+            t.t('round.progress', {
+              'done': '${groups.delivered.length}',
+              'total': '${groups.total}',
+            }),
+            style: const TextStyle(fontSize: 12.5, color: LactevaColors.muted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A group's name and size, so a heading is never a bare word.
+class _GroupHeading extends StatelessWidget {
+  const _GroupHeading({required this.text, required this.count});
+
+  final String text;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+      child: Row(
+        children: [
+          Text(
+            text.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+              color: LactevaColors.muted,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$count',
+            style: const TextStyle(fontSize: 11.5, color: LactevaColors.muted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The day, as the DATABASE aggregated it (§7).
 ///
 /// Nothing here is summed on the phone — the totals cover the whole day, not
@@ -476,24 +647,34 @@ class _RoundHeader extends StatelessWidget {
 /// day, so this shows the day's delivered VALUE, which the report does
 /// compute, and says so.
 class _RoundFigures extends StatelessWidget {
-  const _RoundFigures({required this.report, required this.t});
+  const _RoundFigures({required this.report, required this.t, required this.session});
 
   final Map<String, dynamic> report;
   final L10n t;
 
+  /// WO-64: the organization's currency lives here, and money without it is
+  /// not money. Passed in rather than looked up so this widget stays a pure
+  /// render of what it was handed.
+  final Session? session;
+
   @override
   Widget build(BuildContext context) {
+    // WO-64: a dairy says "214.0 L", not "214.000 L", and a value without a
+    // currency is not money — the WO-61 defect in a smaller font. Both figures
+    // come from `format.dart` now, which is the one place that decides how a
+    // number is said.
     final unit = (report['quantity_unit'] ?? 'L').toString();
     final cells = <(String, String)>[
       (
-        '${report['planned_quantity'] ?? report['total_quantity'] ?? 0} $unit',
+        quantity(report['planned_quantity'] ?? report['total_quantity'] ?? 0, unit: unit),
         t.t('round.toDeliver'),
       ),
       (
-        '${report['deliveries'] ?? 0} / ${report['planned'] ?? report['customers_served'] ?? 0}',
+        '${count(report['deliveries'] ?? 0)} / '
+            '${count(report['planned'] ?? report['customers_served'] ?? 0)}',
         t.t('round.done'),
       ),
-      (_money(report['total_amount']), t.t('round.value')),
+      (money(report['total_amount'], session), t.t('round.value')),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
@@ -598,10 +779,15 @@ class _RoundRow extends StatelessWidget {
           children: [
             Expanded(child: _identity(bold: true)),
             const SizedBox(width: 12),
+            // WO-64: NOT YET is not a problem. This chip was amber, the same
+            // amber a returned delivery wore, so at 5am every stop on the
+            // round looked like a warning and the eye learned to skim them
+            // all. It is the quietest ground in the palette now, and the
+            // colour is spent on the rows that need a decision.
             _Chip(
               text: t.t('round.pending'),
-              tint: LactevaColors.warningTint,
-              ink: LactevaColors.onWarningTint,
+              tint: LactevaColors.neutralTint,
+              ink: LactevaColors.onNeutralTint,
             ),
           ],
         ),
@@ -613,9 +799,17 @@ class _RoundRow extends StatelessWidget {
     );
   }
 
+  /// What follows from an outcome that is not a delivery, or nothing.
+  String _consequence(String status) => switch (status) {
+    'delivered' => '',
+    'cancelled' => ' · ${t.t('round.recordedInError')}',
+    // Skipped and returned are both milk the household is not invoiced for.
+    _ => ' · ${t.t('round.notInvoiced')}',
+  };
+
   Widget _settled(BuildContext context, Map<String, dynamic> row, String status) {
     final done = status == 'delivered';
-    final quantity = row['quantity'];
+    final delivered = row['quantity'];
     final unit = (row['quantity_unit'] ?? 'L').toString();
     return Row(
       children: [
@@ -642,8 +836,15 @@ class _RoundRow extends StatelessWidget {
                 // The status arrives as a CODE and is translated here. It used
                 // to be printed raw, so a Hindi-speaking rider read the English
                 // word the database happens to store (DEMO-016).
+                // WO-64: the quantity is said the way a dairy says it —
+                // `20.0 L`, not the platform's stored `20.000 L` — and an
+                // outcome that is not a delivery says what FOLLOWS from it
+                // here, where there is width. The consequence is the
+                // platform's own rule: `BILLABLE_STATUSES` is
+                // `("delivered",)`, so nothing else is invoiced.
                 '${customer['code'] ?? ''} · ${t.t('status.$status')}'
-                '${quantity != null ? ' $quantity $unit' : ''}',
+                '${_consequence(status)}'
+                '${delivered != null ? ' · ${quantity(delivered, unit: unit)}' : ''}',
                 style: const TextStyle(
                   fontSize: 12.5,
                   color: LactevaColors.muted,
@@ -667,11 +868,34 @@ class _RoundRow extends StatelessWidget {
   /// changed hands would be the app inventing a receipt.
   Widget _outcomeChip(Map<String, dynamic> row, bool done) {
     if (!done) {
-      return _Chip(
-        text: t.t('round.retryLater'),
-        tint: LactevaColors.warningTint,
-        ink: LactevaColors.onWarningTint,
-      );
+      // WO-64: an error must not look like a wait, and "Retry later" said
+      // neither what happened nor what follows. Each outcome now names itself
+      // and its consequence — and the consequence is the platform's own rule,
+      // not a guess: `BILLABLE_STATUSES` is `("delivered",)`, so anything else
+      // is milk the household is not charged for.
+      final status = (row['status'] ?? '').toString();
+      return switch (status) {
+        // Milk came back. The one that costs the dairy something, and the
+        // only outcome on this screen that gets the danger ground.
+        'returned' => _Chip(
+          text: t.t('round.returned'),
+          tint: LactevaColors.dangerTint,
+          ink: LactevaColors.onDangerTint,
+        ),
+        // Recorded in error: a correction, not a failure. Nothing to chase.
+        'cancelled' => _Chip(
+          text: t.t('round.cancelled'),
+          tint: LactevaColors.neutralTint,
+          ink: LactevaColors.onNeutralTint,
+        ),
+        // Customer away or declined — a real event worth seeing, worth
+        // nothing to bill, and worth a call if it keeps happening.
+        _ => _Chip(
+          text: t.t('round.skipped'),
+          tint: LactevaColors.warningTint,
+          ink: LactevaColors.onWarningTint,
+        ),
+      };
     }
     if (row['invoice_id'] != null) {
       return _Chip(

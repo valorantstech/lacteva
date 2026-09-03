@@ -46,6 +46,8 @@ class _Platform extends ApiClient {
     this.unpriced = 0,
     this.centres = 1,
     this.panelDelay = Duration.zero,
+    this.todayEmpty = false,
+    this.yesterdayEmpty = false,
     this.byMilkType = const [
       {'milk_type': 'cow', 'transactions': 30, 'net_weight_kg': 300.0,
         'weighted_avg_fat': 4.1, 'amount_by_currency': {'INR': '13000.00'}},
@@ -60,6 +62,12 @@ class _Platform extends ApiClient {
   final int readinessFailed;
   final int unpriced;
   final int centres;
+
+  /// WO-64. Whether the centre has taken anything yet. `todayEmpty` is the
+  /// 5am state this app renders every single morning; `yesterdayEmpty` is a
+  /// centre that has genuinely not run.
+  final bool todayEmpty;
+  final bool yesterdayEmpty;
 
   /// WO-56. The day split by animal, as the platform reports it — empty for
   /// the test that asks what an older platform's answer looks like.
@@ -123,21 +131,26 @@ class _Platform extends ApiClient {
   }
 
   @override
-  Future<DailySummaryView> dailyReport(String centerId) async {
-    calls.add('dailyReport');
+  Future<DailySummaryView> dailyReport(String centerId, {String? on}) async {
+    // WO-64: `on` is the day the caller asked for. The home asks for
+    // YESTERDAY when today is still empty, so the fake answers for a day
+    // other than today or the fallback could never be exercised.
+    calls.add(on == null ? 'dailyReport' : 'dailyReport($on)');
     if (panelDelay > Duration.zero) await Future<void>.delayed(panelDelay);
+    final empty = on == null ? todayEmpty : yesterdayEmpty;
     return DailySummaryView.fromJson(<String, dynamic>{
-      'transactions': 41,
-      'accepted': 40,
-      'rejected': 1,
-      'suppliers_served': 38,
-      'total_net_weight_kg': 412.5,
-      'payable_by_currency': {'INR': '18450.00'},
+      'date_from': on ?? '2026-08-27',
+      'transactions': empty ? 0 : 41,
+      'accepted': empty ? 0 : 40,
+      'rejected': empty ? 0 : 1,
+      'suppliers_served': empty ? 0 : 38,
+      'total_net_weight_kg': empty ? 0.0 : 412.5,
+      'payable_by_currency': empty ? <String, dynamic>{} : {'INR': '18450.00'},
       'unpriced_accepted': unpriced,
-      'weighted_avg_fat': 4.3,
-      'weighted_avg_snf': 8.4,
+      'weighted_avg_fat': empty ? null : 4.3,
+      'weighted_avg_snf': empty ? null : 8.4,
       // WO-56: the same litres, split by animal. The parts sum to the whole.
-      'by_milk_type': byMilkType,
+      'by_milk_type': empty ? const [] : byMilkType,
     });
   }
 
@@ -255,7 +268,8 @@ class _OfflineFake extends OfflineApiClient {
   Future<CenterDetail> centerDetail(String id) => platform.centerDetail(id);
 
   @override
-  Future<DailySummaryView> dailyReport(String id) => platform.dailyReport(id);
+  Future<DailySummaryView> dailyReport(String id, {String? on}) =>
+      platform.dailyReport(id, on: on);
 
   @override
   Future<List<Map<String, dynamic>>> listOpenSessions(String centerId) =>
@@ -385,11 +399,12 @@ void main() {
       expect(find.text('Session open'), findsOneWidget);
 
       // Three figures, each the platform's own — 412.5 is not arithmetic this
-      // screen performed.
-      expect(find.text('412.5'), findsOneWidget);
+      // screen performed. WO-64: each now carries its unit, because a number
+      // without one is a number a person has to guess at.
+      expect(find.text('412.5 L'), findsOneWidget);
       expect(find.text('collected today'), findsOneWidget);
       expect(find.text('38'), findsOneWidget);
-      expect(find.text('4.3'), findsOneWidget);
+      expect(find.text('4.3%'), findsOneWidget);
     });
 
     testWidgets('names every door, where an icon strip named none', (
@@ -762,6 +777,88 @@ void main() {
           );
         }
       }
+    });
+  });
+
+  // ===================================================================
+  // WO-64 — never three em-dashes
+  // ===================================================================
+
+  group('an empty morning says something true', () {
+    testWidgets('before the first collection it shows YESTERDAY, labelled', (
+      tester,
+    ) async {
+      // This is 5am every day and the start of every demonstration. The board
+      // used to render "—", "—", "—": a screen saying nothing three times,
+      // which reads as broken rather than as early.
+      final fake = await _pump(
+        tester,
+        _operator,
+        platform: _Platform(todayEmpty: true),
+      );
+      expect(find.text('—'), findsNothing);
+      expect(find.text('412.5 L'), findsOneWidget);
+      expect(find.text('yesterday'), findsOneWidget);
+      expect(find.text('farmers yesterday'), findsOneWidget);
+      // And it ASKED for yesterday, rather than relabelling today's zero.
+      expect(fake.calls.where((c) => c.startsWith('dailyReport(')), isNotEmpty);
+    });
+
+    testWidgets('an ordinary morning asks for today and nothing else', (
+      tester,
+    ) async {
+      // The extra request exists only for the empty case; a dairy already
+      // collecting must not pay for it.
+      final fake = await _pump(tester, _operator);
+      expect(fake.calls.where((c) => c.startsWith('dailyReport(')), isEmpty);
+      expect(find.text('412.5 L'), findsOneWidget);
+      expect(find.text('yesterday'), findsNothing);
+    });
+
+    testWidgets('a centre that has not run yet gets one honest line', (
+      tester,
+    ) async {
+      // Nothing today, nothing yesterday. A zero here would claim the day had
+      // been measured and found empty; this says what is actually true.
+      await _pump(
+        tester,
+        _operator,
+        platform: _Platform(todayEmpty: true, yesterdayEmpty: true),
+      );
+      expect(find.text('—'), findsNothing);
+      expect(
+        find.text('Shift open · first collection not yet taken'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('with no shift open it says that instead', (tester) async {
+      await _pump(
+        tester,
+        _operator,
+        platform: _Platform(
+          todayEmpty: true,
+          yesterdayEmpty: true,
+          sessionsOpen: false,
+        ),
+      );
+      expect(
+        find.text('No shift open yet · today has not started'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the honest line replaces the figures, never joins them', (
+      tester,
+    ) async {
+      // A sentence explaining an absence UNDER three dashes explains it twice.
+      await _pump(
+        tester,
+        _operator,
+        platform: _Platform(todayEmpty: true, yesterdayEmpty: true),
+      );
+      expect(find.text('collected today'), findsNothing);
+      expect(find.text('yesterday'), findsNothing);
     });
   });
 }

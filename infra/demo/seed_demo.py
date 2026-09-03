@@ -141,8 +141,12 @@ ROUTES = [
 #: One van and one driver. Enough for a run to be startable (BR-0028 refuses a
 #: run with neither), and deliberately not a fleet: DEMO-034's boundaries name
 #: capacity, maintenance and driver tracking as out of scope.
+#:
+#: WO-64 rider: the DRIVER moved onto `Market`, because "Joseph Mwangi" was
+#: driving the van in Bengaluru. The vehicle stays shared — a registration
+#: plate is scenery, and inventing a plausible Karnataka series would be
+#: inventing a fact rather than reusing one.
 DEMO_VEHICLE = ("KDA 337X", "Blue delivery van")
-DEMO_DRIVER = ("DRV-01", "Joseph Mwangi", "+254733000337")
 
 
 #: Days of delivery history. Enough for a monthly bill to be a real month.
@@ -216,6 +220,16 @@ class Market:
     centers: list
     supplier_names: list
     customers: list
+    #: WO-64 rider. The FARMERS' phone numbers, which were `+2547…` in every
+    #: market — so the Indian demo showed Vasanthi Prabhu on a Kenyan mobile.
+    #: In a sales demonstration to an Indian dairy that is the detail that
+    #: breaks the spell, and it is one line of data. Prefix + base + index, so
+    #: the numbers stay stable per supplier and unique within a market.
+    supplier_phone_prefix: str
+    supplier_phone_base: int
+    #: (code, name, phone) for the one demo driver. Same reason: a Kenyan name
+    #: driving the van in Bengaluru is the same broken spell.
+    driver: tuple
     #: (fat_min, fat_max, rate) — the money is per-market because a litre is
     #: not worth the same number in two currencies.
     fat_bands: list
@@ -308,6 +322,11 @@ KENYA = Market(
     centers=CENTERS,
     supplier_names=SUPPLIER_NAMES,
     customers=CUSTOMERS,
+    # Unchanged: `+2547` + (20000000 + index) is byte-for-byte what this
+    # market has always issued.
+    supplier_phone_prefix="+2547",
+    supplier_phone_base=20000000,
+    driver=("DRV-01", "Joseph Mwangi", "+254733000337"),
     fat_bands=FAT_BANDS,
     staff={
         "manager": "Wanjiku Mbugua",
@@ -443,6 +462,12 @@ INDIA = Market(
     centers=INDIA_CENTERS,
     supplier_names=INDIA_SUPPLIERS,
     customers=INDIA_CUSTOMERS,
+    # +91 98451 000NN — a real Indian mobile shape (10 digits, leading 9),
+    # and a different block from the customers' 98450 so a farmer and a
+    # household are never the same number.
+    supplier_phone_prefix="+9198",
+    supplier_phone_base=45100000,
+    driver=("DRV-01", "Mahesh Gowda", "+919845133700"),
     fat_bands=INDIA_FAT_BANDS,
     staff={
         "manager": "Priya Raghavan",
@@ -1230,11 +1255,17 @@ async def make_rate_card(
     return card
 
 
-async def make_supplier(client, h: dict, name: str, index: int, center_id: str) -> dict:
+async def make_supplier(
+    client, h: dict, name: str, index: int, center_id: str, market: Market
+) -> dict:
+    # WO-64 rider: the number comes from the MARKET. It was `+2547…` for every
+    # dairy, so the Indian demo's farmers — Vasanthi Prabhu, Shivakumar
+    # Angadi — carried Kenyan mobiles.
+    phone = f"{market.supplier_phone_prefix}{market.supplier_phone_base + index:08d}"
     supplier = await expect(
         await client.post(
             "/v1/suppliers",
-            json={"full_name": name, "phone": f"+2547{20000000 + index:08d}"},
+            json={"full_name": name, "phone": phone},
             headers=h,
         ),
         201,
@@ -1655,7 +1686,10 @@ async def build_demo_org(client, admin: dict, org: dict, market: Market) -> dict
     for i, name in enumerate(market.supplier_names):
         center = centers[i % len(centers)]
         suppliers.append(
-            {**await make_supplier(client, h, name, i, center["id"]), "_center": center}
+            {
+                **await make_supplier(client, h, name, i, center["id"], market),
+                "_center": center,
+            }
         )
     summary["suppliers"] = len(suppliers)
 
@@ -1807,7 +1841,7 @@ async def build_rate_pending(client, built: dict) -> dict:
     opened = today - timedelta(days=LATE_DAYS_AGO)
     late_suppliers = [
         await make_supplier(
-            client, h, farmer, LATE_SUPPLIER_INDEX + i, late["id"]
+            client, h, farmer, LATE_SUPPLIER_INDEX + i, late["id"], built["market"]
         )
         for i, farmer in enumerate(LATE_SUPPLIERS)
     ]
@@ -2354,7 +2388,7 @@ async def build_routes(client, built: dict) -> dict:
         )
     )["registration"]
 
-    driver_code, full_name, phone = DEMO_DRIVER
+    driver_code, full_name, phone = built["market"].driver
     summary["driver"] = (
         await expect(
             await client.post(
@@ -2634,7 +2668,7 @@ async def build_isolation_org(client, admin: dict, org: dict, market: Market = K
         publish=True,
     )
     suppliers = [
-        await make_supplier(client, h, name, 100 + i, center["id"])
+        await make_supplier(client, h, name, 100 + i, center["id"], market)
         for i, name in enumerate(["Kiptoo Langat", "Nancy Jepkosgei", "Wilson Kibet"])
     ]
     session = await expect(
@@ -2773,7 +2807,14 @@ async def adopt_routes() -> dict:
         )
         summary["vehicle"] = registration if vehicle.status_code in (201, 409) else "FAILED"
 
-        driver_code, full_name, phone = DEMO_DRIVER
+        # WO-64 rider: the market this slug belongs to decides the driver, so
+        # adopting routes on the Indian dairy does not register a Kenyan one.
+        # Falls back to Kenya's for the isolation tenant, which has no market
+        # of its own and no round to drive.
+        driver_code, full_name, phone = next(
+            (m.driver for m in MARKETS.values() if m.org_slug == slug),
+            KENYA.driver,
+        )
         driver = await client.post(
             "/v1/drivers",
             json={"code": driver_code, "full_name": full_name, "phone": phone},

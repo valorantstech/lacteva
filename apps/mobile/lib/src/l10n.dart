@@ -19,6 +19,14 @@ import 'package:flutter/widgets.dart';
 
 import 'session.dart';
 
+// WO-64: `money()` moved to `format.dart`, where the app's other units live,
+// and is re-exported here so every existing caller keeps its import. There
+// were two money formatters — this one and a private one on the delivery
+// round that rendered a bare `toString()` — and the second is how a day's
+// value came to be "0.00" with no currency beside it.
+export 'format.dart' show money, quantity, quantityValue, percent, count;
+
+
 typedef Catalog = Map<String, String>;
 
 const Catalog _en = {
@@ -149,6 +157,13 @@ const Catalog _en = {
   'wizard.supplier': 'Farmer',
   'wizard.supplierCode': 'Farmer code',
   'wizard.supplierCodeHelp': 'QR scanning arrives with device integration',
+  // WO-64: the recovery path at the counter — a farmer whose code nobody has
+  // to hand. Narrowed to this centre, and it fills the code field rather than
+  // identifying directly, so the operator sees who was chosen.
+  'wizard.lookupTitle': "Don't have the code?",
+  'wizard.lookupHint': 'Search by name or phone',
+  'wizard.lookupAction': 'Search',
+  'wizard.lookupNone': 'Nobody at this centre matches that',
   'wizard.identify': 'Identify farmer',
   'wizard.milk': 'Milk',
   'wizard.milkType': 'Milk type',
@@ -353,6 +368,17 @@ const Catalog _en = {
   'home.sessionOpen': 'Session open',
   'home.sessionClosed': 'No open session',
   'home.collectedToday': 'collected today',
+  // WO-64: the same three figures, said of the day before. Shown only when
+  // today is still empty — a labelled real number beats three em-dashes,
+  // which is what this band rendered every morning before the first can.
+  'home.collectedYesterday': 'yesterday',
+  'home.farmersYesterday': 'farmers yesterday',
+  'home.avgFatYesterday': 'avg FAT yesterday',
+  // And when yesterday is empty too, one honest line rather than a zero: a
+  // zero would claim the day was measured and found empty. `home.
+  // noCollectionsYet` below already says the plain fact and is reused.
+  'home.shiftOpenNoneYet': 'Shift open · first collection not yet taken',
+  'home.shiftNotOpenYet': 'No shift open yet · today has not started',
   'home.farmers': 'farmers',
   'home.avgFat': 'avg FAT',
   'home.collectMilk': 'Collect milk',
@@ -406,8 +432,27 @@ const Catalog _en = {
   'round.fromStandingOrders': 'from standing orders',
   'round.toDeliver': 'to deliver',
   'round.done': 'done',
-  'round.pending': 'Pending',
+  'round.pending': 'Not yet',
   'round.retryLater': 'Retry later',
+  // WO-64: an outcome that is not a delivery says WHAT IT MEANS and what
+  // follows from it. The platform's rule is that only a delivery is billable
+  // (`BILLABLE_STATUSES`), so "not invoiced" is the consequence, not a guess.
+  'round.skipped': 'Skipped',
+  'round.returned': 'Returned',
+  'round.cancelled': 'Cancelled',
+  // The CONSEQUENCE, said on the detail line where there is width for it. A
+  // chip carrying this much text overflowed a 390px row by 89 pixels — found
+  // by the test, which is where a layout defect should be found.
+  //
+  // "not invoiced", never "not billed": D-4's glossary says this product
+  // spells it invoice, and the glossary test caught the first draft.
+  'round.notInvoiced': 'not invoiced',
+  'round.recordedInError': 'recorded in error',
+  'round.needsAction': 'Needs a call',
+  'round.groupToDo': 'To deliver',
+  'round.groupDone': 'Delivered',
+  'round.groupAttention': 'Needs attention',
+  'round.progress': '{done} of {total} delivered',
   'round.onInvoice': 'On invoice',
   'round.toInvoice': '{amount} to invoice',
   'round.standingOrder': 'Standing order',
@@ -581,6 +626,10 @@ const Catalog _hi = {
   'wizard.supplier': 'किसान',
   'wizard.supplierCode': 'किसान कोड',
   'wizard.supplierCodeHelp': 'QR स्कैनिंग डिवाइस एकीकरण के साथ आएगी',
+  'wizard.lookupTitle': 'कोड नहीं है?',
+  'wizard.lookupHint': 'नाम या फ़ोन से खोजें',
+  'wizard.lookupAction': 'खोजें',
+  'wizard.lookupNone': 'इस केंद्र पर कोई मेल नहीं',
   'wizard.identify': 'किसान पहचानें',
   'wizard.milk': 'दूध',
   'wizard.milkType': 'दूध का प्रकार',
@@ -782,6 +831,11 @@ const Catalog _hi = {
   'home.sessionOpen': 'शिफ्ट चालू है',
   'home.sessionClosed': 'कोई शिफ्ट चालू नहीं',
   'home.collectedToday': 'आज संग्रहित',
+  'home.collectedYesterday': 'कल',
+  'home.farmersYesterday': 'कल किसान',
+  'home.avgFatYesterday': 'कल औसत वसा',
+  'home.shiftOpenNoneYet': 'पाली खुली · पहला संग्रह अभी नहीं',
+  'home.shiftNotOpenYet': 'कोई पाली अभी नहीं खुली · दिन शुरू नहीं हुआ',
   'home.farmers': 'किसान',
   'home.avgFat': 'औसत FAT',
   'home.collectMilk': 'दूध लें',
@@ -832,8 +886,18 @@ const Catalog _hi = {
   'round.fromStandingOrders': 'नियमित ऑर्डर से बना',
   'round.toDeliver': 'पहुँचाना है',
   'round.done': 'हो गया',
-  'round.pending': 'बाकी',
+  'round.pending': 'अभी नहीं',
   'round.retryLater': 'बाद में फिर',
+  'round.skipped': 'छोड़ा',
+  'round.returned': 'वापस',
+  'round.cancelled': 'रद्द',
+  'round.notInvoiced': 'बिल नहीं',
+  'round.recordedInError': 'गलती से दर्ज',
+  'round.needsAction': 'कॉल करें',
+  'round.groupToDo': 'पहुँचाना है',
+  'round.groupDone': 'पहुँचाया',
+  'round.groupAttention': 'ध्यान दें',
+  'round.progress': '{total} में से {done} पहुँचाए',
   'round.onInvoice': 'बिल में',
   'round.toInvoice': '{amount} बिल बनना है',
   'round.standingOrder': 'नियमित ऑर्डर',
@@ -998,6 +1062,10 @@ const Catalog _ar = {
   'wizard.supplier': 'المزارع',
   'wizard.supplierCode': 'رمز المزارع',
   'wizard.supplierCodeHelp': 'مسح QR يأتي مع تكامل الأجهزة',
+  'wizard.lookupTitle': 'ليس لديك الرمز؟',
+  'wizard.lookupHint': 'ابحث بالاسم أو الهاتف',
+  'wizard.lookupAction': 'بحث',
+  'wizard.lookupNone': 'لا أحد في هذا المركز يطابق ذلك',
   'wizard.identify': 'تحديد المزارع',
   'wizard.milk': 'الحليب',
   'wizard.milkType': 'نوع الحليب',
@@ -1197,6 +1265,11 @@ const Catalog _ar = {
   'home.sessionOpen': 'الوردية مفتوحة',
   'home.sessionClosed': 'لا توجد وردية مفتوحة',
   'home.collectedToday': 'جُمع اليوم',
+  'home.collectedYesterday': 'أمس',
+  'home.farmersYesterday': 'مزارعو أمس',
+  'home.avgFatYesterday': 'متوسط الدسم أمس',
+  'home.shiftOpenNoneYet': 'الوردية مفتوحة · لم يتم أول استلام بعد',
+  'home.shiftNotOpenYet': 'لا وردية مفتوحة بعد · لم يبدأ اليوم',
   'home.farmers': 'مزارعون',
   'home.avgFat': 'متوسط الدهن',
   'home.collectMilk': 'استلام الحليب',
@@ -1247,8 +1320,18 @@ const Catalog _ar = {
   'round.fromStandingOrders': 'مولّدة من الطلبات الدائمة',
   'round.toDeliver': 'للتوصيل',
   'round.done': 'منجز',
-  'round.pending': 'قيد الانتظار',
+  'round.pending': 'لم يتم بعد',
   'round.retryLater': 'أعد المحاولة لاحقًا',
+  'round.skipped': 'تم التخطي',
+  'round.returned': 'مُرجَع',
+  'round.cancelled': 'ملغى',
+  'round.notInvoiced': 'بلا فاتورة',
+  'round.recordedInError': 'سُجّل خطأً',
+  'round.needsAction': 'يحتاج اتصالاً',
+  'round.groupToDo': 'للتسليم',
+  'round.groupDone': 'تم التسليم',
+  'round.groupAttention': 'يحتاج انتباهاً',
+  'round.progress': '{done} من {total} تم تسليمها',
   'round.onInvoice': 'على الفاتورة',
   'round.toInvoice': '{amount} للفوترة',
   'round.standingOrder': 'الطلب الدائم',
@@ -1359,17 +1442,3 @@ bool isRtl(String? tag) => rtlLanguages.contains(baseLanguage(tag));
 TextDirection directionFor(Session? session) =>
     isRtl(session?.locale) ? TextDirection.rtl : TextDirection.ltr;
 
-/// Money as the ORGANIZATION counts it.
-///
-/// The amount arrives as an exact decimal STRING and leaves as one: no
-/// `double.parse`, no arithmetic. The symbol and code come from the session,
-/// so an Indian dairy shows ₹ and a Kenyan one KSh without this function
-/// knowing either country exists.
-String money(String? amount, Session? session, {bool symbol = true}) {
-  if (amount == null || amount.isEmpty) return '—';
-  final org = session?.organization;
-  if (org == null) return amount;
-  return symbol && org.currencySymbol.isNotEmpty
-      ? '${org.currencySymbol}$amount'
-      : '$amount ${org.currencyCode}';
-}

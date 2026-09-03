@@ -239,6 +239,25 @@ enum Experience {
   none,
 }
 
+/// Does this person's remit cover the WHOLE dairy rather than one job in it?
+///
+/// The two grants are the two halves of the business: running a collection
+/// session is the procurement side, recording a delivery is the sales side.
+/// A person trusted with both is not doing either job — they are running the
+/// place, and every role that holds both is an organisation-wide one
+/// (`tenant-admin`, `ORGANIZATION_MANAGER`, `ORGANIZATION_ADMIN`), while
+/// every single-purpose role holds exactly one (`SALES_OFFICER` the sales
+/// half, `COLLECTION_OPERATOR` and `CENTRE_MANAGER` the procurement half).
+///
+/// Expressed as capabilities and never as a role NAME, which is the house
+/// rule and not a preference: role names are rows in a database that a
+/// deployment may rename or compose differently, and a screen that branched
+/// on one would be deciding what somebody is allowed to see from a label
+/// rather than from a grant (`test_experience.dart` asserts a role named
+/// anything at all changes nothing).
+bool _runsTheWholeDairy(Session session) =>
+    session.can('collection.session.manage') && session.can('sales.delivery.record');
+
 /// Choose the landing experience.
 ///
 /// Order matters and encodes a real judgement:
@@ -247,14 +266,30 @@ enum Experience {
 ///    scope is the narrower fact and the platform will enforce it regardless,
 ///    so showing anything else would be a screen full of somebody else's data
 ///    that never loads.
-/// 2. Otherwise, if they can record a delivery, the round is their job.
-/// 3. Otherwise, if they can run a collection session, the centre is.
-/// 4. A user with read-only sales access — a manager checking the day — gets
+/// 2. A driver's whole job is the run they are on.
+/// 3. WHOEVER RUNS THE DAIRY LANDS ON THE MANAGER HOME (WO-64). This test
+///    comes before the single-capability ones and it is the fix for a real
+///    defect: the checks below return the FIRST capability that matches, and
+///    `sales.delivery.record` was tested before `collection.session.manage`,
+///    so a tenant-admin — who holds everything — landed on the delivery
+///    round. The owner of the dairy opened the product he had bought and was
+///    shown a delivery van's worklist, with the manager home built in cycle 3
+///    unreachable from it. Found on a real handset, not by reading this file.
+///
+///    Routing by INTENT rather than by first match is the difference: for a
+///    person with one job the capability IS the intent, and steps 4-7 are
+///    right for them and unchanged; for a person with authority over both
+///    halves it is not, and the round and the counter become places they
+///    navigate to rather than where they are put.
+/// 4. Otherwise, if they can record a delivery, the round is their job.
+/// 5. Otherwise, if they can run a collection session, the centre is.
+/// 6. A user with read-only sales access — a manager checking the day — gets
 ///    the delivery experience, which is read-first anyway; the record button
 ///    is hidden by its own permission check.
 Experience experienceFor(Session session) {
   if (session.isCustomer) return Experience.customer;
   if (session.can('logistics.run.execute')) return Experience.driver;
+  if (_runsTheWholeDairy(session)) return Experience.collection;
   if (session.can('sales.delivery.record')) return Experience.delivery;
   if (session.can('collection.session.manage')) return Experience.collection;
   if (session.can('sales.delivery.read')) return Experience.delivery;

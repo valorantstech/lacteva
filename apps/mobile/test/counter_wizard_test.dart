@@ -23,10 +23,47 @@ import 'package:lacteva_mobile/src/api.dart';
 import 'package:lacteva_mobile/src/collection_wizard.dart';
 
 class _Fake extends ApiClient {
-  _Fake({this.offlineCompletion = false, this.slipFailsFirst = false});
+  _Fake({
+    this.offlineCompletion = false,
+    this.slipFailsFirst = false,
+    this.suppliers = const [
+      {
+        'id': 's-14',
+        'code': 'SUP-014',
+        'status': 'active',
+        'full_name': 'Vasanthi Prabhu',
+        'phone': '+91 98450 00016',
+      },
+    ],
+    this.searchFails = false,
+  });
 
   final bool offlineCompletion;
   bool slipFailsFirst;
+
+  /// WO-64: what the farmer lookup finds, and what it was asked.
+  final List<Map<String, dynamic>> suppliers;
+  final bool searchFails;
+  String? searchedQuery;
+  String? searchedCentre;
+
+  @override
+  Future<SupplierPageResult> listSuppliers({
+    String query = '',
+    String? centerId,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    searchedQuery = query;
+    searchedCentre = centerId;
+    if (searchFails) throw const SocketException('no route to host');
+    return SupplierPageResult.fromJson(<String, dynamic>{
+      'items': suppliers,
+      'total': suppliers.length,
+      'limit': limit,
+      'offset': offset,
+    });
+  }
 
   final List<(String, Map<String, dynamic>)> steps = [];
   int slipFetches = 0;
@@ -93,6 +130,9 @@ Future<void> _pump(WidgetTester tester, _Fake client, {int step = 0}) async {
       home: CollectionWizardScreen(
         client: client,
         sessionId: 's1',
+        // WO-64: the counter knows which centre it is standing in, which is
+        // what narrows the farmer lookup.
+        centerId: 'centre-1',
         initialStep: step,
       ),
     ),
@@ -292,6 +332,88 @@ void main() {
       expect(find.textContaining('issued when this phone syncs'), findsOneWidget);
       expect(client.slipFetches, 0, reason: 'no slip exists to fetch yet');
       expect(find.textContaining('SLP-'), findsNothing);
+    });
+  });
+
+  group('finding a farmer whose code is not to hand (WO-64)', () {
+    testWidgets('the code field keeps focus and stays the primary route', (
+      tester,
+    ) async {
+      // The recovery path must not cost the common path a keystroke: an
+      // operator who knows the code types it the moment the screen opens.
+      final client = _Fake();
+      await _pump(tester, client, step: 0);
+      final code = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'Farmer code'),
+      );
+      expect(code.autofocus, isTrue);
+    });
+
+    testWidgets('search finds by name and puts the CODE in the field', (
+      tester,
+    ) async {
+      // It fills the code rather than identifying directly, so the operator
+      // sees which farmer was chosen before a transaction exists.
+      final client = _Fake();
+      await _pump(tester, client, step: 0);
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Search by name or phone'),
+        'Vasanthi',
+      );
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Vasanthi Prabhu'), findsOneWidget);
+      expect(find.textContaining('SUP-014'), findsOneWidget);
+      await tester.tap(find.text('Vasanthi Prabhu'));
+      await tester.pumpAndSettle();
+
+      final code = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'Farmer code'),
+      );
+      expect(code.controller?.text, 'SUP-014');
+    });
+
+    testWidgets('the search is narrowed to THIS centre', (tester) async {
+      // A dairy has hundreds of farmers and a counter serves dozens. Worse
+      // than long: an unnarrowed list offers people who do not deliver here.
+      final client = _Fake();
+      await _pump(tester, client, step: 0);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Search by name or phone'),
+        '9845',
+      );
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+      expect(client.searchedCentre, 'centre-1');
+      expect(client.searchedQuery, '9845');
+    });
+
+    testWidgets('nothing found is said, not left blank', (tester) async {
+      final client = _Fake(suppliers: const []);
+      await _pump(tester, client, step: 0);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Search by name or phone'),
+        'Nobody',
+      );
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+      expect(find.text('Nobody at this centre matches that'), findsOneWidget);
+    });
+
+    testWidgets('a transport failure says so rather than showing nothing', (
+      tester,
+    ) async {
+      final client = _Fake(searchFails: true);
+      await _pump(tester, client, step: 0);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Search by name or phone'),
+        'Vasanthi',
+      );
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Could not reach'), findsOneWidget);
     });
   });
 }

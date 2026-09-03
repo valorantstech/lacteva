@@ -94,6 +94,10 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
   int _centreCount = 0;
   CenterDetail? _detail;
   DailySummaryView? _summary;
+
+  /// WO-64: yesterday, fetched ONLY when today is still empty — which is the
+  /// state of every dairy at 5am and of every demo before the first can.
+  DailySummaryView? _yesterday;
   ReadinessResultView? _readiness;
   List<Map<String, dynamic>> _openSessions = const [];
   List<Map<String, dynamic>> _recent = const [];
@@ -182,6 +186,19 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
       panel(() async {
         final s = await widget.client.dailyReport(centreId);
         if (mounted) setState(() => _summary = s);
+        // WO-64: three em-dashes is what this screen showed before the first
+        // collection of the day — which is 5am daily, and every demo. Empty is
+        // not quiet, it is unfinished. So when today has nothing yet, ask for
+        // YESTERDAY and label it: a real figure from the day before is a
+        // dairy's own number and tells an operator the centre is working.
+        //
+        // Fetched only in that case, and only after today's answer has
+        // arrived, so the ordinary morning costs one request as it always did.
+        if (!s.isEmpty) return;
+        final before = s.dayBefore;
+        if (before == null) return;
+        final y = await widget.client.dailyReport(centreId, on: before);
+        if (mounted) setState(() => _yesterday = y);
       }),
       panel(() async {
         final o = await widget.client.listOpenSessions(centreId);
@@ -248,6 +265,9 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
           builder: (_) => CollectionWizardScreen(
             client: widget.client,
             sessionId: session['id'] as String,
+            // WO-64: so step 1 can look a farmer up among THIS centre's
+            // suppliers when the code is not to hand.
+            centerId: centre.id,
             session: widget.session,
             // WO-54: the instruments this handset is bound to, if any. Empty
             // is the ordinary case and the wizard offers nothing extra —
@@ -376,11 +396,8 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
       sessionLabel: _openSessions.isNotEmpty
           ? _l.t('home.sessionOpen')
           : _l.t('home.sessionClosed'),
-      metrics: [
-        (_litres(_summary?.totalNetWeightKg), _l.t('home.collectedToday')),
-        ('${_summary?.suppliersServed ?? "—"}', _l.t('home.farmers')),
-        ('${_summary?.avgFat ?? "—"}', _l.t('home.avgFat')),
-      ],
+      metrics: _metrics(),
+      note: _metricsNote(),
       onSignOut: SignOutButton(client: widget.client),
     ),
     Padding(
@@ -473,7 +490,7 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
       child: _MorningCard(
         l: _l,
-        litres: _litres(_summary?.totalNetWeightKg),
+        litres: quantityValue(_summary?.totalNetWeightKg),
         window: _todayWindow(),
         farmers: _summary?.suppliersServed,
         // WO-56: the day split by animal, beside the total. A manager
@@ -535,11 +552,48 @@ class _CollectionHomeScreenState extends State<CollectionHomeScreen> {
   static String _firstName(String full) =>
       full.trim().isEmpty ? '' : full.trim().split(RegExp(r'\s+')).first;
 
-  /// The platform sends kilograms; the board reads litres because that is the
-  /// word at the counter. The NUMBER is not converted — it is the platform's
-  /// own figure, and inventing a density here would be arithmetic on a
-  /// business fact.
-  static String _litres(double? kg) => kg == null ? '—' : '$kg';
+  /// The three figures the hero band shows, and WHOSE day they are (WO-64).
+  ///
+  /// Before the first collection all three read "—", every morning and in
+  /// every demonstration: a screen that says nothing three times, which reads
+  /// as broken rather than as early. So when today is still empty this shows
+  /// YESTERDAY's figures, labelled as yesterday — a true number from this
+  /// dairy, which also answers the question an operator actually has at 5am
+  /// ("is this thing working?").
+  ///
+  /// When yesterday is empty too there is genuinely nothing to show, and the
+  /// band renders one honest line instead — see [_metricsNote].
+  List<(String, String)> _metrics() {
+    final today = _summary;
+    if (today != null && !today.isEmpty) {
+      return [
+        (quantity(today.totalNetWeightKg, unit: 'L'), _l.t('home.collectedToday')),
+        (count(today.suppliersServed), _l.t('home.farmers')),
+        (percent(today.avgFat), _l.t('home.avgFat')),
+      ];
+    }
+    final before = _yesterday;
+    if (before != null && !before.isEmpty) {
+      return [
+        (quantity(before.totalNetWeightKg, unit: 'L'), _l.t('home.collectedYesterday')),
+        (count(before.suppliersServed), _l.t('home.farmersYesterday')),
+        (percent(before.avgFat), _l.t('home.avgFatYesterday')),
+      ];
+    }
+    return const [];
+  }
+
+  /// The one line that replaces the figures when there are none to show.
+  ///
+  /// It says what is TRUE — the shift is open and no collection has been
+  /// taken — rather than rendering a zero, which would claim the day had been
+  /// measured and found empty.
+  String? _metricsNote() {
+    if (_metrics().isNotEmpty) return null;
+    return _openSessions.isNotEmpty
+        ? _l.t('home.shiftOpenNoneYet')
+        : _l.t('home.shiftNotOpenYet');
+  }
 
   /// Today's operating window, in the DAIRY's clock — the platform sends
   /// `opens`/`closes` as plain local times, already resolved. The open
@@ -585,6 +639,7 @@ class _HeroBand extends StatelessWidget {
     required this.sessionOpen,
     required this.sessionLabel,
     required this.metrics,
+    this.note,
     required this.onSignOut,
   });
 
@@ -593,6 +648,11 @@ class _HeroBand extends StatelessWidget {
   final bool sessionOpen;
   final String sessionLabel;
   final List<(String, String)> metrics;
+
+  /// WO-64: what to say when there are no figures. Rendered INSTEAD of the
+  /// metric row — never beside it — because a line explaining an absence
+  /// under three dashes explains it twice.
+  final String? note;
   final Widget onSignOut;
 
   @override
@@ -642,14 +702,24 @@ class _HeroBand extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Row(
-            children: [
-              for (final (value, label) in metrics) ...[
-                Expanded(child: _HeroMetric(value: value, label: label)),
-                if (label != metrics.last.$2) const SizedBox(width: 10),
+          if (metrics.isEmpty)
+            Text(
+              note ?? '',
+              style: const TextStyle(
+                color: LactevaColors.onBrand,
+                fontSize: 13.5,
+                height: 1.35,
+              ),
+            )
+          else
+            Row(
+              children: [
+                for (final (value, label) in metrics) ...[
+                  Expanded(child: _HeroMetric(value: value, label: label)),
+                  if (label != metrics.last.$2) const SizedBox(width: 10),
+                ],
               ],
-            ],
-          ),
+            ),
         ],
       ),
     );

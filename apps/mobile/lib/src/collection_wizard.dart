@@ -48,6 +48,7 @@ class CollectionWizardScreen extends StatefulWidget {
     super.key,
     required this.client,
     required this.sessionId,
+    this.centerId,
     this.session,
     this.initialStep = 0,
     this.devices = const DeviceSettings(),
@@ -56,6 +57,19 @@ class CollectionWizardScreen extends StatefulWidget {
 
   final ApiClient client;
   final String sessionId;
+
+  /// The centre this counter belongs to (WO-64).
+  ///
+  /// Used for ONE thing: narrowing the farmer lookup to the suppliers
+  /// assigned here. It is not a permission — the platform decides what this
+  /// operator may see and would refuse a centre they do not cover — it is a
+  /// courtesy that keeps the list short enough to be usable at a counter, and
+  /// stops an operator identifying a farmer who does not deliver to them.
+  ///
+  /// Null keeps the search unnarrowed rather than disabling it: a wizard
+  /// opened from a screen that does not know its centre is still better with
+  /// a search than without one.
+  final String? centerId;
 
   /// The signed-in principal, for language only (P1-LOCALE-I18N-001).
   /// Null renders English — no test constructor changes needed.
@@ -571,15 +585,40 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
               const SizedBox(height: 12),
               TextField(
                 controller: _supplierCode,
+                // WO-64: the code KEEPS FOCUS and stays the primary route.
+                // An operator who knows the code types it and moves on; the
+                // lookup below exists for the farmer whose code nobody has to
+                // hand, and must not slow the common path by a keystroke.
+                autofocus: true,
                 decoration: InputDecoration(
                   labelText: t.t('wizard.supplierCode'),
                   helperText: t.t('wizard.supplierCodeHelp'),
                 ),
+                onSubmitted: (_) => _busy ? null : _identify(),
               ),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _busy ? null : _identify,
                 child: Text(t.t('wizard.identify')),
+              ),
+              // WO-64: THE RECOVERY PATH. Step 1 took a code and nothing else,
+              // so a mistyped code or a farmer whose code the operator does
+              // not know had no way forward on glass — the on-site review
+              // could not identify a farmer without querying the database.
+              // Search is by name or phone, narrowed to THIS centre, and it
+              // is a second route rather than a replacement.
+              const SizedBox(height: 20),
+              _SupplierLookup(
+                client: widget.client,
+                centerId: widget.centerId,
+                t: t,
+                onPick: (supplier) {
+                  // Fills the code field rather than identifying directly:
+                  // the operator sees WHICH code was chosen before committing
+                  // it to a transaction, and the one path into `identify`
+                  // stays the one path.
+                  setState(() => _supplierCode.text = supplier.code);
+                },
               ),
             ],
             if (_step == 1) ...[
@@ -929,6 +968,153 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Find a farmer when the code is not to hand (WO-64).
+///
+/// The counter's primary route is the code, and it stays that way: this sits
+/// BELOW the code field, starts collapsed to a single line, and puts whatever
+/// it finds INTO the code field rather than identifying anybody directly — so
+/// the operator sees which farmer was chosen before a transaction is created,
+/// and `identify` keeps exactly one caller.
+///
+/// Narrowed to the centre. A dairy has hundreds of farmers and a counter
+/// serves dozens, so an unnarrowed search returns a list nobody can scan and
+/// offers people who do not deliver here. The platform decides what this
+/// operator may see; this decides what is USEFUL to show them.
+class _SupplierLookup extends StatefulWidget {
+  const _SupplierLookup({
+    required this.client,
+    required this.centerId,
+    required this.t,
+    required this.onPick,
+  });
+
+  final ApiClient client;
+  final String? centerId;
+  final L10n t;
+  final void Function(SupplierSummary) onPick;
+
+  @override
+  State<_SupplierLookup> createState() => _SupplierLookupState();
+}
+
+class _SupplierLookupState extends State<_SupplierLookup> {
+  final _query = TextEditingController();
+  List<SupplierSummary> _results = const [];
+  bool _searching = false;
+  bool _searched = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    final query = _query.text.trim();
+    if (query.isEmpty) return;
+    setState(() {
+      _searching = true;
+      _error = null;
+    });
+    try {
+      final page = await widget.client.listSuppliers(
+        query: query,
+        centerId: widget.centerId,
+        // A counter needs the few that match, not a catalogue. More than this
+        // means the query was too broad, and the answer is a better query.
+        limit: 8,
+      );
+      if (!mounted) return;
+      setState(() {
+        _results = page.items;
+        _searched = true;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.detail);
+    } catch (_) {
+      // A transport failure is not a platform refusal (P0-PRODUCT-008 D-1).
+      if (!mounted) return;
+      setState(() => _error = widget.t.t('common.couldNotReach'));
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          t.t('wizard.lookupTitle'),
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: LactevaColors.muted,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _query,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  labelText: t.t('wizard.lookupHint'),
+                  isDense: true,
+                ),
+                onSubmitted: (_) => _search(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              onPressed: _searching ? null : _search,
+              icon: const Icon(Icons.search),
+              tooltip: t.t('wizard.lookupAction'),
+            ),
+          ],
+        ),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        // An empty result is a FACT and says so: "this centre has nobody by
+        // that name" is a different message from a blank space, and it is the
+        // one that tells an operator to check the spelling or the centre.
+        if (_searched && _results.isEmpty && !_searching && _error == null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              t.t('wizard.lookupNone'),
+              style: const TextStyle(fontSize: 12.5, color: LactevaColors.muted),
+            ),
+          ),
+        for (final supplier in _results)
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text(supplier.fullName),
+            // The code is what the operator is about to use, and the phone is
+            // how they confirm they have the right person.
+            subtitle: Text(
+              [supplier.code, if (supplier.phone.isNotEmpty) supplier.phone]
+                  .join(' · '),
+            ),
+            onTap: () => widget.onPick(supplier),
+          ),
+      ],
     );
   }
 }
