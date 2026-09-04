@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'src/api_url.dart';
 import 'src/brand/splash.dart';
 import 'src/centers.dart';
 import 'src/theme.dart';
@@ -13,6 +15,10 @@ import 'src/offline/store.dart';
 /// Backend base URL. Override at run/build time:
 ///   flutter run --dart-define=LACTEVA_API_URL=http://10.0.2.2:8000
 /// (10.0.2.2 reaches the host machine from the Android emulator.)
+///
+/// The default is for `flutter run` against a laptop and NOTHING else. A
+/// release build compiled with it is refused at startup by `apiUrlProblem`
+/// (see `src/api_url.dart` for the APK that shipped pointing at localhost).
 const apiUrl = String.fromEnvironment(
   'LACTEVA_API_URL',
   defaultValue: 'http://localhost:8000',
@@ -20,6 +26,14 @@ const apiUrl = String.fromEnvironment(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final misbuilt = apiUrlProblem(apiUrl, release: kReleaseMode);
+  if (misbuilt != null) {
+    // A release that points at a developer machine is not an app with a
+    // network problem; it is the wrong artifact. Say so on the only screen
+    // it will ever show, instead of "Could not reach the platform".
+    runApp(MisbuiltReleaseApp(problem: misbuilt));
+    return;
+  }
   // P0-PILOT-004, found on the first physical handset: the queue file was a
   // RELATIVE path, which on Android resolves against '/' — a read-only
   // filesystem — so every offline write crashed and the "durable queue"
@@ -119,3 +133,41 @@ class _LactevaAppState extends State<LactevaApp> {
   }
 }
 
+
+/// The whole of a release build that was compiled against a developer
+/// address: one screen, one message, no sign-in to fail.
+class MisbuiltReleaseApp extends StatelessWidget {
+  const MisbuiltReleaseApp({super.key, required this.problem});
+
+  final String problem;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Lacteva',
+      theme: lactevaTheme(),
+      home: Scaffold(
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.build_circle_outlined, size: 40),
+                const SizedBox(height: 16),
+                const Text(
+                  'This build is not for distribution',
+                  key: ValueKey('misbuilt-title'),
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                Text(problem, key: const ValueKey('misbuilt-problem')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

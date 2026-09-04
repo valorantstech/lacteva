@@ -61,8 +61,24 @@ else
   echo "WARN: ${expected_file} missing; the signer's identity was checked but not pinned" >&2
 fi
 
+# Found 2026-09-04: a release APK handed to the handset had been built without
+# `--dart-define=LACTEVA_API_URL`, so `main.dart`'s developer default —
+# http://localhost:8000 — was compiled in and every sign-in said "Could not
+# reach the platform". The signature was perfect. So the same script that
+# proves WHO signed the file proves WHERE it points: Dart string literals
+# survive AOT compilation and `strings` finds them, which is exactly how the
+# defect was found. The app refuses such a build at startup as well
+# (apps/mobile/lib/src/api_url.dart); this is the check before it ships.
+command -v strings >/dev/null 2>&1 || fail "'strings' (binutils) is needed to read the platform address out of the APK"
+api_hits="$(strings "$apk" | grep -c 'https://api\.' || true)"
+dev_hits="$(strings "$apk" | grep -cE 'https?://(localhost|127\.0\.0\.1|10\.0\.2\.2|0\.0\.0\.0)(:|/|$)' || true)"
+[ "$api_hits" -gt 0 ] || fail "the APK carries no https://api… address — built without --dart-define=LACTEVA_API_URL=https://api.lacteva.com"
+[ "$dev_hits" -eq 0 ] || fail "the APK carries a developer address (localhost / 127.0.0.1 / 10.0.2.2) ${dev_hits} time(s) — it would try to reach a server on the phone itself"
+api_url="$(strings "$apk" | grep -oE 'https://api\.[A-Za-z0-9.-]+' | sed 's/\.$//' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')"
+
 size_bytes="$(stat -c %s "$apk")"
 echo "OK: $apk"
 echo "    signer:  $dn"
 echo "    sha256:  $sha"
+echo "    api:     $api_url (no developer address present)"
 printf '    size:    %s bytes (%.1f MiB)\n' "$size_bytes" "$(echo "$size_bytes / 1048576" | bc -l)"
