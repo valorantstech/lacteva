@@ -31,6 +31,8 @@ class OfflineApiClient extends ApiClient {
     // WO-69: tests drive the whole client — queue, refresh and replay — over
     // a scripted transport, exactly as ApiClient already allows.
     super.inner,
+    // 2026-09-04: where the session outlives the process.
+    super.store,
   }) {
     this.engine =
         engine ?? SyncEngine(client: this, queue: queue, deviceId: deviceId);
@@ -47,7 +49,9 @@ class OfflineApiClient extends ApiClient {
   /// under the next sign-in.
   Future<void> signOut() async {
     await revokePush(this, deviceId);
-    logout();
+    // Awaited: the saved pair is gone before the sign-in screen appears, so
+    // the next launch asks for a password — which is what "sign out" means.
+    await forgetSession();
   }
 
   /// Test/demo switch: pretend the network is gone.

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
 import '../main.dart' show apiUrl;
 import 'format.dart' show humanWindow;
+import 'session_store.dart';
 
 class ApiException implements Exception {
   ApiException(this.status, this.detail, {this.extra});
@@ -37,9 +39,15 @@ class AuthExpiredException extends ApiException {
 /// Thin API client for platform-core. Kept overridable for widget tests.
 /// TODO(M2): offline queue + sync engine replaces direct calls (Collect R09).
 class ApiClient {
-  ApiClient({http.Client? inner}) : _http = inner ?? http.Client();
+  ApiClient({http.Client? inner, SessionStore? store})
+    : _http = inner ?? http.Client(),
+      _store = store;
 
   final http.Client _http;
+
+  /// Where the session outlives the process (owner, 2026-09-04). `null` —
+  /// tests, embedding — means the pre-2026-09-04 behaviour: memory only.
+  final SessionStore? _store;
   String? _token;
 
   /// WO-69: the second half of the platform's `TokenPair`. The access token
@@ -73,6 +81,40 @@ class ApiClient {
   void logout() {
     _token = null;
     _refreshToken = null;
+    unawaited(_store?.clear() ?? Future.value());
+  }
+
+  /// [logout], awaited: the store has forgotten the session when this
+  /// returns, so a sign-in screen pushed next cannot be beaten by a restart
+  /// that finds the old pair still there.
+  Future<void> forgetSession() async {
+    _token = null;
+    _refreshToken = null;
+    await _store?.clear();
+  }
+
+  /// Pick up the session saved by the last sign-in or refresh, if any.
+  /// Returns true when the client now holds a pair — the platform, not this
+  /// method, decides whether it is still good: a stale access token
+  /// refreshes itself on the first 401, and a refused refresh ends the
+  /// session through [onAuthExpired] exactly as it would mid-morning.
+  Future<bool> restoreSession() async {
+    final saved = await _store?.read();
+    if (saved == null) return false;
+    _token = saved.accessToken;
+    _refreshToken = saved.refreshToken;
+    return true;
+  }
+
+  /// Save the pair the platform just issued. Awaited by the callers, because
+  /// a rotated refresh token that is NOT saved before the process dies is
+  /// worse than none: the next launch would present the previous one, which
+  /// the platform treats as theft and answers by revoking the session.
+  Future<void> _persist() async {
+    final token = _token;
+    final refresh = _refreshToken;
+    if (token == null || refresh == null) return;
+    await _store?.write(StoredSession(accessToken: token, refreshToken: refresh));
   }
 
   Map<String, String> get _headers => {
@@ -214,6 +256,7 @@ class ApiClient {
     if (_token == null && _refreshToken == null) return;
     _token = null;
     _refreshToken = null;
+    unawaited(_store?.clear() ?? Future.value());
     onAuthExpired?.call();
   }
 
@@ -247,6 +290,7 @@ class ApiClient {
                 as Map<String, dynamic>;
         _token = result['access_token'] as String;
         _refreshToken = (result['refresh_token'] as String?) ?? refreshToken;
+        await _persist();
         return true;
       } on ApiException {
         // The platform CONSIDERED the refresh and said no: revoked, or the
@@ -279,6 +323,7 @@ class ApiClient {
     // (older fakes) leaves the pre-WO-69 behaviour intact: the first 401
     // ends the session, because there is nothing to refresh with.
     _refreshToken = result['refresh_token'] as String?;
+    await _persist();
   }
 
   Future<CenterPage> listCenters({

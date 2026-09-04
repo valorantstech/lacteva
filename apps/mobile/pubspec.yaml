@@ -44,6 +44,7 @@ dependencies:
   # reading back to the bytes without the platform holding a device serial or
   # a calibration record it has no business keeping.
   crypto: ^3.0.6
+  flutter_secure_storage: ^9.2.4
 
 dev_dependencies:
   flutter_test:

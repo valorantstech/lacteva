@@ -11,6 +11,8 @@ import 'src/theme.dart';
 import 'src/offline/offline_client.dart';
 import 'src/offline/queue.dart';
 import 'src/offline/store.dart';
+import 'src/session_store.dart';
+import 'src/startup.dart';
 
 /// Backend base URL. Override at run/build time:
 ///   flutter run --dart-define=LACTEVA_API_URL=http://10.0.2.2:8000
@@ -60,6 +62,7 @@ OfflineApiClient buildClient({
   OfflineStore? store,
   String? deviceId,
   String? queuePath,
+  SessionStore? sessionStore,
 }) {
   return OfflineApiClient(
     queue: SyncQueue(
@@ -69,13 +72,20 @@ OfflineApiClient buildClient({
               : MemoryOfflineStore()),
     ),
     deviceId: deviceId ?? 'mobile-device',
+    // 2026-09-04: the session outlives the process, in the device's
+    // encrypted store, until sign-out or the platform refuses a refresh.
+    store: sessionStore ?? SecureSessionStore(),
   );
 }
 
 class LactevaApp extends StatefulWidget {
-  const LactevaApp({super.key, this.queuePath});
+  const LactevaApp({super.key, this.queuePath, this.sessionStore});
 
   final String? queuePath;
+
+  /// Where the session outlives the process. Tests hand in a memory store;
+  /// a device gets the encrypted one.
+  final SessionStore? sessionStore;
 
   @override
   State<LactevaApp> createState() => _LactevaAppState();
@@ -88,7 +98,10 @@ class _LactevaAppState extends State<LactevaApp> {
   @override
   void initState() {
     super.initState();
-    _client = buildClient(queuePath: widget.queuePath);
+    _client = buildClient(
+      queuePath: widget.queuePath,
+      sessionStore: widget.sessionStore,
+    );
     // P0-PRODUCT-008 D-2: when the platform stops accepting the session, the
     // app returns to sign-in ONCE, app-wide, instead of every screen dying on
     // its own raw 401. The offline queue is untouched — captured work waits
@@ -128,7 +141,10 @@ class _LactevaAppState extends State<LactevaApp> {
       //
       // The sign-in screen underneath is BUILT here, not after: the splash is
       // a layer over a finished screen, and one tap takes it down.
-      home: LactevaSplash(child: LoginScreen(client: _client)),
+      //
+      // 2026-09-04: the first screen is no longer always sign-in. The gate
+      // asks the session store and shows sign-in only when nobody is saved.
+      home: LactevaSplash(child: StartupGate(client: _client)),
     );
   }
 }

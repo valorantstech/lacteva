@@ -54,6 +54,14 @@ define; the release keystore comes from `android/key.properties`, which is
 gitignored, and a release build fails rather than falling back to debug
 signing.
 
+## Staying signed in
+
+The platform issues a fourteen-day session. Since 2026-09-04 the app keeps it
+in the device's encrypted store (`flutter_secure_storage`) and restores it at
+launch, so a restart is not a sign-out. The session ends on **Sign out** (More
+tab) or when the platform refuses a refresh; nothing else forgets it. See
+`lib/src/session_store.dart` and `lib/src/startup.dart`.
+
 ## Release builds
 
 ```bash

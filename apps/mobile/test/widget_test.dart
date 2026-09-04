@@ -17,6 +17,7 @@ import 'package:lacteva_mobile/src/receipts.dart';
 import 'package:lacteva_mobile/src/pricing_resolution.dart';
 import 'package:lacteva_mobile/src/rate_cards.dart';
 import 'package:lacteva_mobile/src/settlements.dart';
+import 'package:lacteva_mobile/src/session_store.dart';
 import 'package:lacteva_mobile/src/suppliers.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -29,7 +30,10 @@ class _FakeClient extends ApiClient {
 
 void main() {
   testWidgets('app starts on the login screen', (tester) async {
-    await tester.pumpWidget(const LactevaApp());
+    // 2026-09-04: the first screen is decided by the session store, and an
+    // EMPTY store is what a fresh install has. One pump lets the gate ask it.
+    await tester.pumpWidget(LactevaApp(sessionStore: MemorySessionStore()));
+    await tester.pump();
     // LACTEVA-BRAND-003 moved the identity off the app bar and into the page:
     // the mark and the wordmark stand above the card, static, always — which
     // is what lets the entrance be removed for reduced motion without the
