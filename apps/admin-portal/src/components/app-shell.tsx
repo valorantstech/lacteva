@@ -24,7 +24,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   BadgeCheck,
   CalendarDays,
@@ -68,6 +68,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { LocaleProvider, translatorFor, useT } from "@/lib/i18n";
+import { isPublic, loginPath } from "@/proxy";
 import { cn } from "@/lib/utils";
 
 /**
@@ -359,24 +360,67 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [tenantInput, setTenantInput] = useState("");
   const [tenantError, setTenantError] = useState<string | null>(null);
 
+  // WO-79 part 5: the sign-out, when it happens, must look like a sign-out.
+  //
+  // The front door lets a browser through on the PRESENCE of a cookie. When
+  // the session behind it is dead — the platform refused the refresh: the
+  // month is up by the server's clock before the browser's, or the session
+  // was revoked (sign-out elsewhere, `revoke_all_for_user`, reuse detection)
+  // — the probe clears the cookies and answers `authenticated: false`, and
+  // without this the person was left on the DASHBOARD in its signed-out
+  // state with a small "Sign in" link: the WO-59 defect by another road.
+  //
+  // So a probe that answers `authenticated: false` WITHOUT `unreachable`,
+  // on a route that is not public, goes to the sign-in page carrying
+  // `next=` — the same `loginPath` the front door spells it with.
+  // `unreachable` stays where it is: an outage is not a sign-out (WO-73).
+  //
+  // No loop, and LOOP-001 is why the shell did not do this until now: the
+  // sign-in page sends /login → "/" only on `authenticated: true` (WO-79
+  // part 2); this sends "/" → /login only on `authenticated: false`; the
+  // same probe cannot answer both, and `unreachable` triggers neither. A
+  // probe that FAILS (`.catch`) is treated as unreachable, not as ended.
+  const settle = useCallback((s: Session) => {
+    setSession(s);
+    if (
+      !s.authenticated &&
+      !s.unreachable &&
+      typeof window !== "undefined" &&
+      !isPublic(window.location.pathname)
+    ) {
+      window.location.assign(
+        loginPath(`${window.location.pathname}${window.location.search}`),
+      );
+    }
+  }, []);
+
   const load = () =>
     getSession()
-      .then(setSession)
-      .catch(() => setSession({ authenticated: false }))
+      .then(settle)
+      .catch(() => setSession({ authenticated: false, unreachable: true }))
       .finally(() => setChecked(true));
 
   useEffect(() => {
     let cancelled = false;
     getSession()
-      .then((s) => !cancelled && setSession(s))
-      .catch(() => !cancelled && setSession({ authenticated: false }))
+      .then((s) => !cancelled && settle(s))
+      .catch(() => !cancelled && setSession({ authenticated: false, unreachable: true }))
       .finally(() => !cancelled && setChecked(true));
     return () => {
       cancelled = true;
     };
-  }, []);
+    // Once, when the shell mounts (DEMO-010 explains why a sign-in must then
+    // be a full navigation); `settle` is stable.
+  }, [settle]);
 
-  const signedIn = checked && session?.authenticated === true;
+  // WO-79 part 3: /login wears the signed-out chrome WHATEVER the probe says.
+  // Part 2 makes a signed-in person's stay on /login last one probe, but one
+  // probe is long enough to paint the organisation chip, the person's name
+  // and the whole rail around a form asking for their password — the
+  // screenshot of 2026-09-20. Only /login: a signed-in person following an
+  // invitation to a second organisation, or a reset link, is a real case and
+  // those pages are left alone.
+  const signedIn = checked && session?.authenticated === true && pathname !== "/login";
   // DEMO-013: the person's own language, from the session. Not the browser's
   // — a shared machine in a dairy office would otherwise flip a supervisor's
   // screen because of what the last person's laptop was set to.

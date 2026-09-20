@@ -3,10 +3,10 @@ id: JWT-ROTATION
 title: JWT Key Rotation Procedure
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Architecture Board
 created: 2026-08-05
-last-updated: 2026-08-05
+last-updated: 2026-09-21
 related: [SECURITY, SECURITY-CHECKLIST]
 baseline: ARCH-BASELINE-V1
 ---
@@ -59,7 +59,7 @@ Never commit this output. It goes straight into the secret store.
 
 **Step 4 — let it take over.** At `activates_at` the new key signs automatically. Confirm a fresh login carries the new `kid`. Existing sessions are untouched — that is the point.
 
-**Step 5 — age the old key out.** Set the old key's `expires_at` to **now + the refresh-token TTL** (14 days by default). Earlier would strand valid refresh tokens; later leaves a compromised-key window open longer than necessary.
+**Step 5 — age the old key out.** Set the old key's `expires_at` to **now + the refresh-token TTL** (30 days by default — `LACTEVA_JWT_REFRESH_TTL_SECONDS`, D-26). Earlier would strand valid refresh tokens; later leaves a compromised-key window open longer than necessary.
 
 **Step 6 — remove.** After `expires_at` passes, drop the entry and drop the private material from the secret store.
 
@@ -101,3 +101,4 @@ If a new key is bad (wrong PEM, unreachable secret), remove its entry and redepl
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-05 | Architecture Board | Established by SEC-001. |
+| 1.1 | 2026-09-21 | Engineering | Step 5's default refresh-token TTL is thirty days (owner decision D-26, WO-79), no longer fourteen. |

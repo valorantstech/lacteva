@@ -41,7 +41,11 @@ class Settings(BaseSettings):
     # dev/test means "generate an ephemeral keypair"; empty in prod is fatal.
     jwt_keys: str = ""
     jwt_access_ttl_seconds: int = 900
-    jwt_refresh_ttl_seconds: int = 14 * 24 * 3600
+    # Sliding: the session dies thirty days after its LAST use, or at sign-out,
+    # or on refresh-token reuse, whichever is first (owner decision D-26,
+    # 2026-09-20; was fourteen days). Written again as REFRESH_MAX_AGE in the
+    # portal, `apps/admin-portal/src/lib/server/refresh.ts`.
+    jwt_refresh_ttl_seconds: int = 30 * 24 * 3600
     jwt_leeway_seconds: int = 30  # clock skew tolerance between nodes
 
     # Rate limiting (per-IP / per-user / per-endpoint, Redis-backed).

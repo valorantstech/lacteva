@@ -7,8 +7,9 @@ import { ACCESS_COOKIE, REFRESH_COOKIE, backendUrl, cookieOptions } from "@/lib/
 /**
  * Spend the refresh cookie (WO-73 — the portal-side twin of WO-69).
  *
- * The platform issues a 900-second access token and a fourteen-day refresh
- * token. The login route stored both and nothing ever spent the second: on
+ * The platform issues a 900-second access token and a refresh token that
+ * lives thirty days from its last use (D-26; fourteen when this was written).
+ * The login route stored both and nothing ever spent the second: on
  * a 401 the proxy ended the session, so an administrator finalising
  * settlements was ejected every quarter of an hour — and this defect ended
  * its own discoverer's session mid-verification.
@@ -47,7 +48,21 @@ const inFlight = new Map<string, Entry>();
 
 /** Matches the login route; the cookie may expire slightly before the token. */
 export const ACCESS_MAX_AGE = 15 * 60;
-export const REFRESH_MAX_AGE = 14 * 24 * 60 * 60;
+
+/**
+ * Thirty days — owner decision D-26 (2026-09-20): a browser stays signed in
+ * for as long as the person keeps using it, and is signed out one month
+ * after its last use. "Same as Google login."
+ *
+ * This number and `LACTEVA_JWT_REFRESH_TTL_SECONDS` on the platform are the
+ * SAME FACT written twice. The cookie and the token are stamped by the same
+ * refresh (`storePair`, below, on every rotation), so they slide together and
+ * expire together; when the month is up the browser discards the cookie and
+ * the front door sends the person to a clean sign-in page. If the two drift,
+ * the shorter one wins and the longer one is a lie — `auth-routes.test.ts`
+ * reads the platform's setting from the tree and refuses the drift.
+ */
+export const REFRESH_MAX_AGE = 30 * 24 * 60 * 60;
 
 /**
  * Exchange `refreshToken` for a new pair. Resolves to the pair, or to `null`

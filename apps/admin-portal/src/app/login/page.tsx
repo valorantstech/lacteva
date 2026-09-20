@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,9 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiError, login,
-  describeError,
-} from "@/lib/api";
+import { ApiError, describeError, getSession, login } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { safeNext } from "@/proxy";
 import { LactevaLockup } from "@/components/lockup";
@@ -67,6 +65,45 @@ export default function LoginPage() {
   const [needsTenant, setNeedsTenant] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // WO-79: the sign-in page must not be served to someone who is signed in.
+  //
+  // The front door lets a session holder through everywhere else, but
+  // /login is public, so it never sees a bookmark, the back button, a tab
+  // the browser restored from a fortnight ago or a link in an old email —
+  // all of which land here directly. So this page asks the same question the
+  // shell asks: `getSession()` renews a dead access cookie from the refresh
+  // cookie (WO-73) and says who is signed in. Authenticated → on to where
+  // they were going, by a FULL navigation (window.location.assign, not
+  // router.push — the DEMO-010 reason above `submit`). Unreachable, or
+  // nobody → the form stays exactly as it is.
+  //
+  // The form renders IMMEDIATELY and is replaced if the probe says so; a
+  // probe that takes a second must not leave a blank card in front of
+  // somebody who genuinely needs to sign in.
+  //
+  // Loop check (LOOP-001 is in this file's history): the navigation goes to
+  // `next ?? "/"`, never back here; "/" with a live session is not redirected
+  // by the front door, because the probe that just answered "authenticated"
+  // has just re-set both cookies via `storePair` — so the navigation lands.
+  // The shell's own redirect (WO-79 part 5) fires only on `authenticated:
+  // false`, which this probe did not answer, and never on /login.
+  useEffect(() => {
+    let cancelled = false;
+    getSession()
+      .then((session) => {
+        if (!cancelled && session.authenticated) window.location.assign(next ?? "/");
+      })
+      .catch(() => {
+        // Nothing to do: an unreachable platform is the form's problem to
+        // report when the person actually submits it.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // `next` is a string read from the URL, the same on every render while
+    // this page is mounted, so this runs once.
+  }, [next]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

@@ -89,9 +89,7 @@ def test_an_unknown_country_is_onboardable_but_never_guessed_at():
     # guessing the measure a stranger's milk is priced in.
     with pytest.raises(UnknownCountryError, match="quantity_unit"):
         resolve("ZZ", currency_code="EUR", timezone="Europe/Berlin")
-    settings = resolve(
-        "ZZ", currency_code="EUR", timezone="Europe/Berlin", quantity_unit="litre"
-    )
+    settings = resolve("ZZ", currency_code="EUR", timezone="Europe/Berlin", quantity_unit="litre")
     assert settings.currency_code == "EUR"
     assert settings.timezone == "Europe/Berlin"
 

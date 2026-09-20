@@ -25,8 +25,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-/** The cookie `POST /api/auth/login` sets. Kept in step with `lib/server/backend.ts`. */
-const ACCESS_COOKIE = "lacteva_session";
+// WO-79: the SAME declarations the server routes use, from a module with no
+// imports so the edge runtime can take it. This file used to redeclare the
+// access cookie's name "kept in step" with `lib/server/backend.ts`, and did
+// not know the refresh cookie existed — which is how WO-73 could give the
+// portal a fortnight of session the front door did not recognise.
+import { ACCESS_COOKIE, REFRESH_COOKIE } from "@/lib/session-cookies";
 
 /**
  * Routes a person must be able to reach WITHOUT a session.
@@ -45,7 +49,7 @@ const PUBLIC_PREFIXES = [
   "/api",
 ] as const;
 
-function isPublic(pathname: string): boolean {
+export function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
@@ -77,20 +81,44 @@ export function safeNext(target: string | null | undefined): string | null {
   }
 }
 
+/**
+ * The sign-in page's path for somebody who was going to `target` — the ONE
+ * spelling of it, used by the guard below and by the shell when a session it
+ * held turns out to have ended (WO-79 part 5), so the two cannot disagree
+ * about what `next=` looks like. `/` carries no `next=`: there is nothing to
+ * come back to.
+ */
+export function loginPath(target: string): string {
+  const next = safeNext(target);
+  if (!next || next === "/") return "/login";
+  return `/login?${new URLSearchParams({ next })}`;
+}
+
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   if (isPublic(pathname)) return NextResponse.next();
-  if (request.cookies.get(ACCESS_COOKIE)) return NextResponse.next();
+  // A session is present when EITHER cookie is (WO-79). The access cookie
+  // lives fifteen minutes; the refresh cookie lives thirty days from its last
+  // use (D-26). Close the tab, come back after lunch: the browser has
+  // discarded `lacteva_session` and still holds `lacteva_refresh`, and that
+  // person is signed in — the session probe every page runs first renews the
+  // dead access cookie from the refresh cookie (WO-73). Checking only the
+  // access cookie here sent every returning user to /login, where the shell
+  // then probed, renewed, and drew the signed-in chrome around the sign-in
+  // form: the screenshot of 2026-09-20.
+  if (request.cookies.get(ACCESS_COOKIE) || request.cookies.get(REFRESH_COOKIE)) {
+    return NextResponse.next();
+  }
 
-  // Signed out, on a route that needs a session: the sign-in page, carrying
-  // where they were going. The cookie's mere presence is what is checked here
-  // — whether it is still VALID is the platform's answer, and a stale cookie
-  // lands on the dashboard, which clears it and shows the signed-out state.
-  // Deciding that here would mean a round trip to the API on every navigation.
-  const login = new URL("/login", request.url);
-  const next = safeNext(`${pathname}${search}`);
-  if (next && next !== "/") login.searchParams.set("next", next);
-  return NextResponse.redirect(login);
+  // Neither cookie, on a route that needs a session: the sign-in page,
+  // carrying where they were going. A cookie's mere PRESENCE is what is
+  // checked here — whether it is still valid is the platform's answer. A
+  // refresh the platform refuses (the month is up, the session was revoked,
+  // a rotated token was reused) is what clears both cookies and shows the
+  // signed-out state; the shell then brings that person here (part 5).
+  // Deciding validity here would mean a round trip to the API on every
+  // navigation.
+  return NextResponse.redirect(new URL(loginPath(`${pathname}${search}`), request.url));
 }
 
 export const config = {

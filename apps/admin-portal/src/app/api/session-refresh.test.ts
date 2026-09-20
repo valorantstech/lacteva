@@ -41,7 +41,7 @@ process.env.LACTEVA_API_URL = "http://api.internal:8000";
 const { GET: proxyGET } = await import("@/app/api/proxy/[...path]/route");
 const { GET: sessionGET } = await import("@/app/api/auth/session/route");
 const { ACCESS_COOKIE, REFRESH_COOKIE } = await import("@/lib/server/backend");
-const { resetRefreshMemory } = await import("@/lib/server/refresh");
+const { REFRESH_MAX_AGE, resetRefreshMemory } = await import("@/lib/server/refresh");
 
 const context = (path: string[]) => ({ params: Promise.resolve({ path }) });
 const json = (body: unknown, status: number) =>
@@ -169,6 +169,27 @@ describe("the proxy renews the session instead of ending it (WO-73)", () => {
     );
     expect(response.status).toBe(401);
     expect(api.refreshes).toBe(0);
+  });
+});
+
+describe("the month slides on the browser's side too (D-26, WO-79)", () => {
+  it("a successful refresh RE-SETS the refresh cookie, with the full thirty days again", async () => {
+    // If the refresh cookie were only set at login, the month would count
+    // from sign-in, not from last use — the browser would discard it while
+    // the platform still held a live session.
+    cookieStore.jar.set(REFRESH_COOKIE, { value: "rt-old" });
+    const api = platform();
+    api.release();
+
+    const response = await proxyGET(
+      new Request("https://portal.example/api/proxy/v1/suppliers"),
+      context(["v1", "suppliers"]),
+    );
+    expect(response.status).toBe(200);
+    const refresh = cookieStore.jar.get(REFRESH_COOKIE)!;
+    expect(refresh.value).toBe("rt-new");
+    expect((refresh.options as { maxAge: number }).maxAge).toBe(REFRESH_MAX_AGE);
+    expect(REFRESH_MAX_AGE).toBe(30 * 24 * 60 * 60);
   });
 });
 

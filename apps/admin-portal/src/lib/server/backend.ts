@@ -2,6 +2,8 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
+import { ACCESS_COOKIE, REFRESH_COOKIE } from "@/lib/session-cookies";
+
 /**
  * Where the platform API lives, from the SERVER's point of view.
  *
@@ -24,9 +26,11 @@ export function backendUrl(): string {
 }
 
 /** PORTAL-001 / F-11: the session cookies. Names are stable — nginx, the
- *  proxy and the tests all agree on them. */
-export const ACCESS_COOKIE = "lacteva_session";
-export const REFRESH_COOKIE = "lacteva_refresh";
+ *  proxy and the tests all agree on them — and since WO-79 they are declared
+ *  in `lib/session-cookies.ts`, which the edge-runtime front door can import
+ *  and this server-only module cannot be imported by. Re-exported here so
+ *  every existing server import keeps working. */
+export { ACCESS_COOKIE, REFRESH_COOKIE };
 
 /**
  * TENANT-001: which organization a PLATFORM-level session is acting inside.

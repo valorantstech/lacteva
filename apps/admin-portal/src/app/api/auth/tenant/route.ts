@@ -6,6 +6,7 @@ import {
   isTenantId,
   readAccessToken,
 } from "@/lib/server/backend";
+import { REFRESH_MAX_AGE } from "@/lib/server/refresh";
 
 /**
  * Choose which organization a platform-level session acts inside (TENANT-001).
@@ -40,12 +41,16 @@ export async function POST(request: Request) {
   }
 
   const store = await cookies();
+  // WO-79 / D-26: as long as the session itself, from the same constant. A
+  // platform administrator whose session outlived their organisation choice
+  // (this was a fourteen-day literal beside a thirty-day session) would find
+  // themselves signed in and acting in nothing, with every page a 403.
   store.set(TENANT_COOKIE, tenantId, {
     httpOnly: true,
     sameSite: "strict",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 14 * 24 * 60 * 60,
+    maxAge: REFRESH_MAX_AGE,
   });
   return new NextResponse(null, { status: 204 });
 }

@@ -36,7 +36,9 @@ const { POST: resetRequest } = await import(
 const { POST: resetConfirm } = await import(
   "@/app/api/auth/password-reset/confirm/route"
 );
-const { ACCESS_COOKIE, REFRESH_COOKIE } = await import("@/lib/server/backend");
+const { POST: chooseTenant } = await import("@/app/api/auth/tenant/route");
+const { ACCESS_COOKIE, REFRESH_COOKIE, TENANT_COOKIE } = await import("@/lib/server/backend");
+const { ACCESS_MAX_AGE, REFRESH_MAX_AGE } = await import("@/lib/server/refresh");
 
 function request(url: string, init: RequestInit = {}) {
   return new Request(url, {
@@ -371,5 +373,73 @@ describe("password-reset confirm route", () => {
     );
     expect(response.status).toBe(403);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// --- D-26: thirty days from the last use (WO-79 part 4) ----------------------
+
+describe("the session lives thirty days from its last use (D-26)", () => {
+  const signIn = async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ access_token: "at-123", refresh_token: "rt-456" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    await login(
+      request("https://portal.example/api/auth/login", {
+        body: JSON.stringify({ email: "a@b.example", password: "correct-horse-battery" }),
+      }),
+    );
+  };
+
+  it("the refresh cookie's Max-Age is REFRESH_MAX_AGE, and that is thirty days", async () => {
+    await signIn();
+    expect(cookieStore.jar.get(REFRESH_COOKIE)!.options.maxAge).toBe(REFRESH_MAX_AGE);
+    expect(REFRESH_MAX_AGE).toBe(30 * 24 * 60 * 60);
+    // The access cookie stays at fifteen minutes: it limits the damage of a
+    // leaked token, and with the front door recognising the refresh cookie
+    // nobody sees it expire.
+    expect(cookieStore.jar.get(ACCESS_COOKIE)!.options.maxAge).toBe(ACCESS_MAX_AGE);
+    expect(ACCESS_MAX_AGE).toBe(900);
+  });
+
+  it("the acting-tenant cookie lives exactly as long, from the same constant", async () => {
+    await signIn();
+    const response = await chooseTenant(
+      request("https://portal.example/api/auth/tenant", {
+        headers: { Origin: "https://portal.example" },
+        body: JSON.stringify({ tenant_id: "0f5c1d1e-9b2a-4c3d-8e7f-6a5b4c3d2e1f" }),
+      }),
+    );
+    expect(response.status).toBe(204);
+    expect(cookieStore.jar.get(TENANT_COOKIE)!.options.maxAge).toBe(REFRESH_MAX_AGE);
+    // Not a literal that happens to agree today: a platform administrator
+    // whose session outlives their organisation choice is signed in and
+    // acting in nothing, with every page a 403.
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const source = readFileSync(resolve(__dirname, "tenant/route.ts"), "utf8");
+    expect(source).toContain("maxAge: REFRESH_MAX_AGE");
+    expect(source).not.toMatch(/maxAge:\s*\d/);
+  });
+
+  it("is the same number the platform is configured with — the fact is written twice", async () => {
+    // If the two drift, the shorter one wins and the longer one is a lie.
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const repo = resolve(__dirname, "../../../../../..");
+    const config = readFileSync(
+      resolve(repo, "services/platform-core/src/platform_core/core/config.py"),
+      "utf8",
+    );
+    expect(config).toContain(`jwt_refresh_ttl_seconds: int = 30 * 24 * 3600`);
+    for (const example of [".env.production.example", "services/platform-core/.env.example"]) {
+      const text = readFileSync(resolve(repo, example), "utf8");
+      expect(text).toContain(`LACTEVA_JWT_REFRESH_TTL_SECONDS=${REFRESH_MAX_AGE}`);
+    }
   });
 });

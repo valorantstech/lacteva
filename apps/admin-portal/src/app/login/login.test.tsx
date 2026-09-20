@@ -19,6 +19,30 @@ Object.defineProperty(window, "location", {
 
 import LoginPage from "@/app/login/page";
 
+/**
+ * WO-79: the page now probes `/api/auth/session` on mount. Every stub here
+ * answers that probe with "nobody" and everything else with `response`, so
+ * a 204 with no body — the login route's answer — is never parsed as a
+ * session by the probe. A test that stubs fetch with one answer for
+ * everything now says what the probe hears.
+ */
+const NOBODY = { authenticated: false };
+function platform(response: () => Response, probe: unknown = NOBODY) {
+  const spy = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input) === "/api/auth/session")
+      return new Response(JSON.stringify(probe), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    return response();
+  });
+  vi.stubGlobal("fetch", spy);
+  return spy;
+}
+const signedIn204 = () => new Response(null, { status: 204 });
+const loginCalls = (spy: ReturnType<typeof vi.fn>) =>
+  spy.mock.calls.filter((c) => String(c[0]) === "/api/auth/login");
+
 beforeEach(() => {
   push.mockClear();
   assign.mockClear();
@@ -38,7 +62,7 @@ describe("signing in returns the visitor to what they asked for (WO-59)", () => 
     });
 
   it("lands on the page the guard interrupted", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    platform(signedIn204);
     at("?next=%2Fsettlements%3Fstatus%3Dfinalized");
     const user = userEvent.setup();
     render(<LoginPage />);
@@ -52,7 +76,7 @@ describe("signing in returns the visitor to what they asked for (WO-59)", () => 
   it("lands on the dashboard when the next= is one somebody tampered with", async () => {
     // The other half of the open-redirect refusal: the FORM does the
     // navigating, so it re-checks rather than trusting the query string.
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    platform(signedIn204);
     at("?next=https%3A%2F%2Fevil.example%2Fsteal");
     const user = userEvent.setup();
     render(<LoginPage />);
@@ -65,10 +89,7 @@ describe("signing in returns the visitor to what they asked for (WO-59)", () => 
 
 describe("login page", () => {
   it("signs in and moves on", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValue(new Response(null, { status: 204 }));
-    vi.stubGlobal("fetch", fetchSpy);
+    const fetchSpy = platform(signedIn204);
     const user = userEvent.setup();
 
     render(<LoginPage />);
@@ -82,13 +103,12 @@ describe("login page", () => {
     // with no navigation until the user reloaded.
     await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
     expect(push).not.toHaveBeenCalled();
-    expect(fetchSpy.mock.calls[0][0]).toBe("/api/auth/login");
+    expect(loginCalls(fetchSpy)).toHaveLength(1);
   });
 
   it("shows the platform's reason when the credentials are wrong, and stays put", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
+    platform(
+      () =>
         new Response(
           JSON.stringify({ detail: "Email or password is incorrect." }),
           {
@@ -96,7 +116,6 @@ describe("login page", () => {
             headers: { "Content-Type": "application/json" },
           },
         ),
-      ),
     );
     const user = userEvent.setup();
 
@@ -111,9 +130,8 @@ describe("login page", () => {
   });
 
   it("tells the operator they are rate limited rather than that the password is wrong", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
+    platform(
+      () =>
         new Response(
           JSON.stringify({
             detail: "Too many requests. Please wait and try again.",
@@ -123,7 +141,6 @@ describe("login page", () => {
             headers: { "Content-Type": "application/json" },
           },
         ),
-      ),
     );
     const user = userEvent.setup();
 
@@ -135,10 +152,7 @@ describe("login page", () => {
   });
 
   it("never writes a credential into browser storage", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
-    );
+    platform(signedIn204);
     const user = userEvent.setup();
 
     render(<LoginPage />);
@@ -183,7 +197,8 @@ describe("signing in without knowing a tenant UUID", () => {
     const calls: RequestInit[] = [];
     const fetchSpy = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        void input;
+        if (String(input) === "/api/auth/session")
+          return new Response(JSON.stringify(NOBODY), { status: 200 });
         if (init) calls.push(init);
         return new Response(null, { status: 204 });
       },
@@ -208,8 +223,8 @@ describe("signing in without knowing a tenant UUID", () => {
   });
 
   it("asks which organization ONLY when the platform says the sign-in is ambiguous", async () => {
-    const fetchSpy = vi.fn(
-      async () =>
+    platform(
+      () =>
         new Response(
           JSON.stringify({
             title: "ambiguous_tenant",
@@ -218,7 +233,6 @@ describe("signing in without knowing a tenant UUID", () => {
           { status: 401, headers: { "Content-Type": "application/json" } },
         ),
     );
-    vi.stubGlobal("fetch", fetchSpy);
     render(<LoginPage />);
 
     await userEvent.type(screen.getByLabelText("Email"), "both@dairy.example");
@@ -233,8 +247,8 @@ describe("signing in without knowing a tenant UUID", () => {
   });
 
   it("keeps an ordinary failure ordinary — no organization field appears", async () => {
-    const fetchSpy = vi.fn(
-      async () =>
+    platform(
+      () =>
         new Response(
           JSON.stringify({
             title: "invalid_credentials",
@@ -243,7 +257,6 @@ describe("signing in without knowing a tenant UUID", () => {
           { status: 401, headers: { "Content-Type": "application/json" } },
         ),
     );
-    vi.stubGlobal("fetch", fetchSpy);
     render(<LoginPage />);
 
     await userEvent.type(
@@ -255,5 +268,79 @@ describe("signing in without knowing a tenant UUID", () => {
 
     expect(await screen.findByText(/incorrect/i)).toBeInTheDocument();
     expect(screen.queryByLabelText("Organization")).not.toBeInTheDocument();
+  });
+});
+
+// --- WO-79: the sign-in page is not served to someone who is signed in -------
+
+describe("a signed-in person who lands on /login is sent on (WO-79)", () => {
+  const at = (search: string) =>
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, search, assign },
+    });
+  const PRIYA = {
+    authenticated: true,
+    user: { id: "u1", email: "manager@dairy.example", full_name: "Priya Raghavan" },
+    tenant_id: "org-1",
+  };
+
+  it("goes to the dashboard without any typing", async () => {
+    at("");
+    const spy = platform(signedIn204, PRIYA);
+    render(<LoginPage />);
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
+    // A FULL navigation, for the DEMO-010 reason; and no sign-in was posted.
+    expect(push).not.toHaveBeenCalled();
+    expect(loginCalls(spy)).toHaveLength(0);
+  });
+
+  it("goes to where they were going when ?next= carries it", async () => {
+    at("?next=%2Fsettlements%3Fstatus%3Dfinalized");
+    platform(signedIn204, PRIYA);
+    render(<LoginPage />);
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith("/settlements?status=finalized"),
+    );
+  });
+
+  it("still refuses a next= that points off-site", async () => {
+    at("?next=https%3A%2F%2Fevil.example%2Fsteal");
+    platform(signedIn204, PRIYA);
+    render(<LoginPage />);
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
+  });
+
+  it("keeps the form when the platform is unreachable", async () => {
+    at("");
+    const spy = platform(signedIn204, { authenticated: false, unreachable: true });
+    render(<LoginPage />);
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(spy.mock.calls.some((c) => String(c[0]) === "/api/auth/session")).toBe(true),
+    );
+    expect(assign).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
+  });
+
+  it("keeps the form when nobody is signed in — and does not wait for the probe to draw it", async () => {
+    at("");
+    let answer: (r: Response) => void = () => {};
+    const held = new Promise<Response>((resolve) => {
+      answer = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input) === "/api/auth/session" ? held : signedIn204(),
+      ),
+    );
+    render(<LoginPage />);
+    // The probe has not answered; the form is already there.
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+    answer(new Response(JSON.stringify(NOBODY), { status: 200 }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(assign).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
   });
 });
