@@ -134,8 +134,13 @@ def test_the_landing_screens_are_the_ones_the_review_found_correct():
     """
     source = DART.read_text().split("const expected")[1]
     landings = dict(re.findall(r"'([^']+)':\s*\(Experience\.(\w+)", source))
-    assert landings["tenant-admin"] == "collection"
-    assert landings["ORGANIZATION_MANAGER"] == "collection"
+    # WO-72 Part C (2026-09-04, provisional under D-23): whoever runs the whole
+    # dairy lands on the manager's own experience, not on the counter. The
+    # review's "collection" for these two was right for the app it reviewed,
+    # which had no manager experience to land on; this pin followed the Dart
+    # table there and had not been moved with it (found by WO-79's gate).
+    assert landings["tenant-admin"] == "manager"
+    assert landings["ORGANIZATION_MANAGER"] == "manager"
     assert landings["COLLECTION_OPERATOR"] == "collection"
     assert landings["SALES_OFFICER"] == "delivery"
     assert landings["tenant-viewer"] == "delivery"
