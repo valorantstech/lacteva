@@ -1,6 +1,6 @@
 {
-    "name": "lacteva_mobile",
-    "short_name": "lacteva_mobile",
+    "name": "Lacteva",
+    "short_name": "Lacteva",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

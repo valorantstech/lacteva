@@ -3,10 +3,10 @@ id: LACTEVA-P1-PRODUCT-READINESS-001-HANDSET-VALIDATION
 title: The Operator Journey on a Physical Handset
 type: reference
 status: Approved
-version: "1.0"
+version: "1.1"
 owner: Engineering
 created: 2026-08-26
-last-updated: 2026-08-26
+last-updated: 2026-09-21
 related: [LACTEVA-P1-PRODUCT-READINESS-AUDIT, LACTEVA-P1-MOBILE-COUNTER-001, LACTEVA-P0-PRODUCT-008-FULL-PRODUCT-READINESS-AUDIT, LACTEVA-PILOT-READINESS-GATE, LACTEVA-MASTER-PRODUCT-ROADMAP]
 baseline: ARCH-BASELINE-V1
 ---
@@ -54,7 +54,7 @@ the device, not the network, not the database, not the numbers.
 | Layer | What ran |
 |---|---|
 | Handset | moto g57 power, `ZN5226CLBG`, Android 16 (API 36), 1080×2400 |
-| App | `com.lacteva.lacteva_mobile`, debug build from this tree |
+| App | `com.lacteva.lacteva_mobile` (renamed `com.phoenix.lacteva` by WO-78 on 2026-09-21), debug build from this tree |
 | Backend | FastAPI `platform-core` on `:8000`, real PostgreSQL |
 | Data | Synthetic dairy seeded through the platform's own API |
 | Driving | `adb shell input` taps; `adb exec-out screencap` read back as images |
@@ -86,7 +86,7 @@ adb shell curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8000/healthz
 cd apps/mobile
 flutter build apk --debug --dart-define=LACTEVA_API_URL=http://localhost:8000
 adb install -r build/app/outputs/flutter-apk/app-debug.apk
-adb shell monkey -p com.lacteva.lacteva_mobile 1
+adb shell monkey -p com.phoenix.lacteva 1
 ```
 
 **3.3 — A note on the release build.** A release APK merges only
@@ -317,3 +317,4 @@ the owner. `git status` is clean apart from this document.
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-08-26 | Engineering | The complete operator journey — centre, open session, supplier, milk entry, fat/quality, pricing, accept, close session — executed on a physical moto g57 power (Android 16) against a real backend and real PostgreSQL, driven by `adb` and verified independently over HTTP at every step. Eleven of eleven steps passed; parchi `SLP-2026-000001` issued and session `83e44f9e` closed with the collection intact. No production code changed. Three findings, none blocking: D-1, the mobile client shows a raw permission key (`reporting.read`, `pricing.ratecard.read`) because a string `extra` unconditionally overrides `detail` — a regression from the P0-PILOT-004 fix, which is right for validation refusals and wrong for 403s; D-2, two centre-toolbar screens are offered to a `COLLECTION_OPERATOR` who holds neither grant, where the graceful pattern already exists in `deliveries.dart`; F-1, pricing is proven only by refusal because the fixture has no published rate card, and the parchi prints "Rate pending" — a business decision, flagged not decided (P1-PRODUCT-READINESS-001). |
+| 1.1 | 2026-09-21 | Engineering | The application id is `com.phoenix.lacteva` since WO-78 (owner decision 2026-09-04); the `adb shell monkey -p` instruction and the layer table say so. Nothing else in the record changed. |

@@ -12,7 +12,7 @@ Lacteva Flutter application — **one app, three field experiences**, chosen by 
 
 The app is a *client*: no pricing, no billing, no settlement, no payment, no tenancy logic, and it never recomputes a financial figure the platform has already produced. The architecture, and why, is [docs/03-architecture/04-technology-layer/MOBILE-EXPERIENCES.md](../../docs/03-architecture/04-technology-layer/MOBILE-EXPERIENCES.md).
 
-Scaffolded with `flutter create` (org `com.lacteva`, project `lacteva_mobile`, platforms android/ios/web), Flutter 3.38 stable.
+Scaffolded with `flutter create` (org `com.lacteva`, project `lacteva_mobile`, platforms android/ios/web), Flutter 3.38 stable. The application id is **`com.phoenix.lacteva`** since WO-78 (owner decision, 2026-09-04) — the Dart package name stays `lacteva_mobile`, which is a library identifier and not something a customer sees.
 
 ## Run
 

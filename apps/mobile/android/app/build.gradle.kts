@@ -23,7 +23,9 @@ plugins {
 }
 
 android {
-    namespace = "com.lacteva.lacteva_mobile"
+    // WO-78 (owner decision 2026-09-04, final): the company's identity, moved
+    // once, on purpose, before anything is published. See manifest_test.dart.
+    namespace = "com.phoenix.lacteva"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -38,7 +40,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.lacteva.lacteva_mobile"
+        applicationId = "com.phoenix.lacteva"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
