@@ -190,6 +190,9 @@ class SyncQueue {
       );
       final last = data['last_sync_at'] as String?;
       _lastSyncAt = last == null ? null : DateTime.tryParse(last);
+      cache
+        ..clear()
+        ..addAll(((data['cache'] as Map?) ?? const {}).cast<String, dynamic>());
     }
     // A process that died mid-flight leaves SYNCING rows behind. They are
     // safe to retry — the operation id makes replay idempotent — so recover
@@ -206,8 +209,14 @@ class SyncQueue {
       'operations': _operations.map((o) => o.toJson()).toList(),
       'id_map': _idMap,
       'last_sync_at': _lastSyncAt?.toIso8601String(),
+      'cache': cache,
     });
   }
+
+  /// Reference data the handset keeps beside its queue (WO-82 §2): the
+  /// catalogue a driver adds items from, cached on the last online read and
+  /// served from here with no signal. Keyed by name; JSON in, JSON out.
+  final Map<String, dynamic> cache = {};
 
   Future<QueuedOperation> enqueue({
     required String operationId,

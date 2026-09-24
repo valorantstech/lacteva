@@ -1064,6 +1064,37 @@ class ApiClient {
       await _send('GET', '/v1/reports/receivables?owing_only=true&limit=1')
           as Map<String, dynamic>;
 
+  /// The catalogue (WO-81): what the organisation sells, active only — the
+  /// list a driver adds an item from at the doorstep (WO-82 §2).
+  Future<List<Map<String, dynamic>>> listProducts() async {
+    final result = await _send('GET', '/v1/products') as Map<String, dynamic>;
+    return ((result['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
+  }
+
+  /// Sell a shop item to a household (WO-81 / WO-82 §2). No price from the
+  /// phone: a DRIVER holds `sales.item.record` and not `sales.item.price`,
+  /// and the platform prices it from the catalogue. `idempotencyKey` is the
+  /// queue's operation id, so a replay is the same item.
+  Future<Map<String, dynamic>> recordSaleItem({
+    required String customerId,
+    required String productCode,
+    required String quantity,
+    String? saleDate,
+    String? notes,
+    String? idempotencyKey,
+  }) async {
+    final body = <String, dynamic>{
+      'product_code': productCode,
+      'quantity': quantity,
+      'recorded_via': 'mobile',
+      if (saleDate != null && saleDate.isNotEmpty) 'sale_date': saleDate,
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
+      'idempotency_key': ?idempotencyKey,
+    };
+    return await _send('POST', '/v1/customers/$customerId/items', body: body)
+        as Map<String, dynamic>;
+  }
+
   /// Today's delivery runs — the route the rider is actually on (DEMO-034).
   ///
   /// The date is OMITTED deliberately, for the same reason the report omits
@@ -1115,11 +1146,14 @@ class ApiClient {
     required String status,
     String? quantity,
     String? notes,
+    String? product,
     String? idempotencyKey,
   }) async {
     final body = <String, dynamic>{
       'status': status,
       'quantity': ?quantity,
+      // WO-82 §1: which standing order, when the household has two.
+      'product': ?product,
       if (notes != null && notes.isNotEmpty) 'notes': notes,
     };
     final path = '/v1/delivery-runs/$runId/stops/$customerId/outcome';

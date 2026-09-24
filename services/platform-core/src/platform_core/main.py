@@ -124,7 +124,10 @@ async def _delivery_scheduler_loop() -> None:
     when a dairy has no round.
     """
     from platform_core.modules.delivery.scheduler import run_once
-    from platform_core.modules.logistics.service import scheduled_round_scopes
+    from platform_core.modules.logistics.service import (
+        plan_auto_routes_for_scheduler,
+        scheduled_round_scopes,
+    )
 
     # DEMO-036: the composition point, and the ONLY place the two modules meet.
     # `logistics` depends on `delivery`, so `delivery` importing routes would
@@ -137,6 +140,8 @@ async def _delivery_scheduler_loop() -> None:
             await run_once(
                 generation_hour=settings.scheduler_generation_hour,
                 route_scopes=scheduled_round_scopes,
+                # WO-82 §3: the auto-planned routes' runs, after the round.
+                route_planner=plan_auto_routes_for_scheduler,
             )
         except Exception:
             # Never fatal to the loop: tomorrow is another business date, and

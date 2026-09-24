@@ -87,6 +87,7 @@ class _Platform extends ApiClient {
     required String status,
     String? quantity,
     String? notes,
+    String? product,
     String? idempotencyKey,
   }) async {
     // Quantity is recorded here rather than read: a driver may report what
@@ -145,6 +146,7 @@ class _Client extends OfflineApiClient {
     required String status,
     String? quantity,
     String? notes,
+    String? product,
     String? idempotencyKey,
   }) => platform.recordRunOutcome(
     runId: runId,

@@ -150,6 +150,7 @@ from platform_core.modules.logistics.service import (
     RouteDetailView,
     RouteInput,
     RouteStopsInput,
+    RouteUpdateInput,
     RouteView,
     RunAssignment,
     RunGenerationView,
@@ -4386,6 +4387,20 @@ async def list_routes(service: LogisticsSvc, p: RouteRead, active: bool | None =
 @logistics_router.get("/routes/{route_id}", response_model=RouteDetailView)
 async def get_route(route_id: uuid.UUID, service: LogisticsSvc, p: RouteRead) -> Any:
     return await service.get_route(route_id)
+
+
+@logistics_router.patch("/routes/{route_id}", response_model=RouteView)
+async def update_route(
+    route_id: uuid.UUID,
+    body: RouteUpdateInput,
+    service: LogisticsSvc,
+    audit: deps.Audit,
+    p: RouteManage,
+) -> Any:
+    """Name, notes, retirement — and the auto-plan defaults (WO-82 §3): with
+    `auto_plan` on and a default driver, the round will exist every morning
+    without anyone creating it."""
+    return await service.update_route(route_id, body, actor_id=p.id, audit=audit)
 
 
 @logistics_router.put("/routes/{route_id}/stops", response_model=RouteDetailView)

@@ -211,6 +211,22 @@ class CustomerView(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class StandingOrder(BaseModel):
+    """What a household takes on a standing basis, as a stop needs it (WO-82).
+
+    The run telling the driver what to pour: product, quantity, unit — read
+    from the ACTIVE plan for the run's slot, priced by nobody here. A
+    household with two milks has two of these.
+    """
+
+    customer_id: uuid.UUID
+    plan_id: uuid.UUID
+    product: str
+    quantity: Decimal
+    quantity_unit: str
+    slot: str
+
+
 class CustomerContact(BaseModel):
     """A customer as a DRIVER at the gate needs them (P0-MOB-002).
 
@@ -576,6 +592,41 @@ class CustomerService:
             )
         ).all()
         return {row[0]: CustomerName(id=row[0], code=row[1], name=row[2]) for row in rows}
+
+    async def standing_orders_for(
+        self, customer_ids: set[uuid.UUID], slot: str
+    ) -> dict[uuid.UUID, list[StandingOrder]]:
+        """Every ACTIVE plan for these households on this slot, in ONE query
+        (WO-82 §1). The batch shape a run view needs; a household absent
+        from the result has no standing order for the slot."""
+        if not customer_ids:
+            return {}
+        tenant_id = require_current_tenant()
+        rows = (
+            await self._session.scalars(
+                select(DeliveryPlan)
+                .where(
+                    DeliveryPlan.tenant_id == tenant_id,
+                    DeliveryPlan.customer_id.in_(customer_ids),
+                    DeliveryPlan.slot == slot,
+                    DeliveryPlan.active.is_(True),
+                )
+                .order_by(DeliveryPlan.customer_id, DeliveryPlan.product)
+            )
+        ).all()
+        orders: dict[uuid.UUID, list[StandingOrder]] = {}
+        for plan in rows:
+            orders.setdefault(plan.customer_id, []).append(
+                StandingOrder(
+                    customer_id=plan.customer_id,
+                    plan_id=plan.id,
+                    product=plan.product,
+                    quantity=Decimal(plan.default_quantity),
+                    quantity_unit=plan.quantity_unit,
+                    slot=plan.slot,
+                )
+            )
+        return orders
 
     async def contact_directory(
         self, customer_ids: set[uuid.UUID]

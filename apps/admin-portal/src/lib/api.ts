@@ -3830,6 +3830,11 @@ export type Route = {
   center_id: string | null;
   active: boolean;
   notes: string;
+  /** WO-82 §3: with `auto_plan` and a default driver, the round exists every
+   *  morning without anyone creating it. */
+  default_driver_id?: string | null;
+  default_vehicle_id?: string | null;
+  auto_plan?: boolean;
   stop_count: number;
 };
 
@@ -3856,6 +3861,15 @@ export type Driver = {
 export type RunStop = RouteStop & {
   /** `MilkDelivery.status`, or null when the delivery domain has no row yet. */
   delivery_status: string | null;
+  /** WO-82 §1: what to pour — the household's standing order(s) for the
+   *  run's slot, named from the catalogue. */
+  orders?: {
+    product: string;
+    product_name: string;
+    quantity: string | number;
+    quantity_unit: string;
+    delivery_status: string | null;
+  }[];
 };
 
 export type DeliveryRun = {
@@ -3885,6 +3899,22 @@ export const createRoute = (body: {
   name: string;
   center_id?: string | null;
 }) => api<Route>("/v1/routes", { method: "POST", body: JSON.stringify(body) });
+
+/** WO-82 §3: name, notes, retirement and the auto-plan defaults. Absent means
+ *  unchanged; `clear_default_*` withdraws a default. */
+export const updateRoute = (
+  id: string,
+  body: {
+    name?: string;
+    notes?: string;
+    active?: boolean;
+    default_driver_id?: string;
+    default_vehicle_id?: string;
+    clear_default_driver?: boolean;
+    clear_default_vehicle?: boolean;
+    auto_plan?: boolean;
+  },
+) => api<Route>(`/v1/routes/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 
 /** The ORDER is the payload: send the sequence, not add/remove calls. */
 export const setRouteStops = (id: string, customerIds: string[]) =>

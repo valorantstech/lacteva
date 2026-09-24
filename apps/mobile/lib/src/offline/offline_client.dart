@@ -335,6 +335,7 @@ class OfflineApiClient extends ApiClient {
     required String status,
     String? quantity,
     String? notes,
+    String? product,
   }) async {
     if (isOnline) {
       try {
@@ -344,6 +345,7 @@ class OfflineApiClient extends ApiClient {
           status: status,
           quantity: quantity,
           notes: notes,
+          product: product,
         );
       } on ApiException {
         // The platform ANSWERED — a refusal (closed run, off-route customer)
@@ -362,6 +364,7 @@ class OfflineApiClient extends ApiClient {
       payload: {
         'status': status,
         if (quantity != null && quantity.isNotEmpty) 'quantity': quantity,
+        if (product != null && product.isNotEmpty) 'product': product,
         if (notes != null && notes.isNotEmpty) 'notes': notes,
       },
     );
@@ -372,6 +375,125 @@ class OfflineApiClient extends ApiClient {
       // what milk is worth.
       '_queued': true,
     };
+  }
+
+  /// The catalogue, from the platform when there is signal and from the
+  /// queue's cache when there is not (WO-82 §2). The cache is refreshed on
+  /// every online read, so a product deactivated in the office disappears
+  /// from the phone the next time it is connected.
+  Future<List<Map<String, dynamic>>> cachedProducts() async {
+    await queue.load();
+    if (isOnline) {
+      try {
+        final fresh = await listProducts();
+        queue.cache['catalog'] = fresh;
+        await queue.save();
+        return fresh;
+      } on ApiException {
+        rethrow;
+      } catch (_) {
+        _believedOnline = false;
+      }
+    }
+    return ((queue.cache['catalog'] as List?) ?? const [])
+        .cast<Map<String, dynamic>>();
+  }
+
+  /// An item sold at the doorstep (WO-82 §2). Online, the platform prices it
+  /// now and a refusal — a product with no price, a retired product — reaches
+  /// the driver. Offline, it goes into the SAME queue with the operation id
+  /// as its idempotency key, and the replay is the same item, once.
+  Future<Map<String, dynamic>> recordSaleItemOffline({
+    required String customerId,
+    required String productCode,
+    required String quantity,
+    String? saleDate,
+    String? notes,
+  }) async {
+    final operationId = _operationId();
+    if (isOnline) {
+      try {
+        return await recordSaleItem(
+          customerId: customerId,
+          productCode: productCode,
+          quantity: quantity,
+          saleDate: saleDate,
+          notes: notes,
+          idempotencyKey: operationId,
+        );
+      } on ApiException {
+        rethrow;
+      } catch (_) {
+        _believedOnline = false;
+      }
+    }
+    await queue.load();
+    await queue.enqueue(
+      operationId: operationId,
+      kind: 'sale_item',
+      clientReference: _localId('item'),
+      targetRef: '/v1/customers/$customerId/items',
+      payload: {
+        'product_code': productCode,
+        'quantity': quantity,
+        'recorded_via': 'mobile',
+        'idempotency_key': operationId,
+        if (saleDate != null && saleDate.isNotEmpty) 'sale_date': saleDate,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+      },
+    );
+    return {
+      'customer_id': customerId,
+      'product_code': productCode,
+      'quantity': quantity,
+      'status': 'recorded',
+      'offline': true,
+    };
+  }
+
+  /// Drain queued doorstep items — the outcome loop's shape, the item's path.
+  Future<(int, int)> _drainSaleItems() async {
+    await queue.load();
+    final mine = queue
+        .due()
+        .where((op) => op.kind == 'sale_item' && op.targetRef != null)
+        .toList(growable: false);
+    if (mine.isEmpty) return (0, 0);
+    var sent = 0;
+    var failed = 0;
+    for (final op in mine) {
+      try {
+        await sendIdempotent(
+          'POST',
+          op.targetRef!,
+          idempotencyKey: op.operationId,
+          body: op.payload,
+        );
+        queue.applyResult(op, {'operation_id': op.operationId, 'status': 'applied'});
+        sent++;
+      } on ApiException catch (e) {
+        if (e.status == 401) {
+          queue.markBatchFailed([op], 'session expired — sign in to sync');
+          failed++;
+          break;
+        }
+        if (e.status >= 400 && e.status < 500 && e.status != 409) {
+          queue.applyResult(op, {
+            'operation_id': op.operationId,
+            'status': 'conflict',
+            'detail': e.detail,
+          });
+        } else {
+          queue.markBatchFailed([op], e.detail);
+        }
+        failed++;
+      } catch (e) {
+        queue.markBatchFailed([op], 'offline');
+        failed++;
+      }
+    }
+    await queue.save();
+    return (sent, failed);
   }
 
   /// Drain queued driver outcomes — the same loop shape as `_drainDeliveries`,
@@ -480,18 +602,19 @@ class OfflineApiClient extends ApiClient {
     await queue.load();
     final (deliverySent, deliveryFailed) = await _drainDeliveries();
     final (outcomeSent, outcomeFailed) = await _drainRunOutcomes();
+    final (itemSent, itemFailed) = await _drainSaleItems();
     final result = await engine.sync();
-    if (result.error == null && deliveryFailed == 0 && outcomeFailed == 0) {
+    if (result.error == null && deliveryFailed == 0 && outcomeFailed == 0 && itemFailed == 0) {
       _believedOnline = true;
     }
     // Deliveries fold into the same tally the collection engine reports, so
     // one screen can say "12 sent, 1 queued" without knowing which protocol
     // carried which operation.
     return SyncRunResult(
-      applied: result.applied + deliverySent + outcomeSent,
+      applied: result.applied + deliverySent + outcomeSent + itemSent,
       duplicates: result.duplicates,
       conflicts: result.conflicts,
-      failed: result.failed + deliveryFailed + outcomeFailed,
+      failed: result.failed + deliveryFailed + outcomeFailed + itemFailed,
       batches: result.batches,
       cancelled: result.cancelled,
       error: result.error,

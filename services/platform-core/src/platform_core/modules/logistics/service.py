@@ -46,6 +46,27 @@ class RouteInput(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     center_id: uuid.UUID | None = None
     notes: str = Field(default="", max_length=500)
+    #: WO-82 §3. "The round will exist every morning without anyone
+    #: creating it" — when `auto_plan` is on and a default driver is named.
+    default_driver_id: uuid.UUID | None = None
+    default_vehicle_id: uuid.UUID | None = None
+    auto_plan: bool = False
+
+
+class RouteUpdateInput(BaseModel):
+    """A partial update: absent means unchanged. The code never changes —
+    yesterday's runs point at it."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    notes: str | None = Field(default=None, max_length=500)
+    active: bool | None = None
+    default_driver_id: uuid.UUID | None = None
+    default_vehicle_id: uuid.UUID | None = None
+    #: Explicit, because `None` on the two ids above must be able to mean
+    #: "unchanged" and a route needs a way to say "no default any more".
+    clear_default_driver: bool = False
+    clear_default_vehicle: bool = False
+    auto_plan: bool | None = None
 
 
 class RouteView(BaseModel):
@@ -55,6 +76,9 @@ class RouteView(BaseModel):
     center_id: uuid.UUID | None
     active: bool
     notes: str
+    default_driver_id: uuid.UUID | None = None
+    default_vehicle_id: uuid.UUID | None = None
+    auto_plan: bool = False
     stop_count: int = 0
 
     model_config = {"from_attributes": True}
@@ -194,6 +218,10 @@ class StopOutcomeInput(BaseModel):
     status: str
     quantity: Decimal | None = Field(default=None, ge=0)
     notes: str = Field(default="", max_length=300)
+    #: WO-82 §1. Which of the household's standing orders this is about.
+    #: Omitted, the household's ONE standing order for the run's slot; a
+    #: household with two milks must name one, and is told so.
+    product: str | None = Field(default=None, max_length=40)
 
     @field_validator("status")
     @classmethod
@@ -202,6 +230,19 @@ class StopOutcomeInput(BaseModel):
         if value not in allowed:
             raise ValueError(f"a driver outcome must be one of {', '.join(allowed)}")
         return value
+
+
+class RunStopOrder(BaseModel):
+    """One standing order at a stop, as the run tells the driver what to pour
+    (WO-82 §1). Resolved server-side from the household's active plan for
+    the run's slot; the driver is already entitled to the run, so no new
+    permission — this is the run describing itself."""
+
+    product: str
+    product_name: str
+    quantity: Decimal
+    quantity_unit: str
+    delivery_status: str | None = None
 
 
 class RunStopView(BaseModel):
@@ -221,6 +262,10 @@ class RunStopView(BaseModel):
     phone: str = ""
     address: str = ""
     delivery_status: str | None = None
+    #: WO-82 §1: the standing product(s), name, quantity and unit — a
+    #: household with two milks lists two. `delivery_status` above stays the
+    #: stop's overall answer for callers that predate this.
+    orders: list[RunStopOrder] = []
 
 
 class RunView(BaseModel):
@@ -390,6 +435,8 @@ class LogisticsService:
         ):
             raise ConflictError(f"route {data.code!r} already exists")
 
+        if data.default_driver_id is not None or data.default_vehicle_id is not None:
+            await self._assert_assignable(data.default_vehicle_id, data.default_driver_id)
         route = Route(tenant_id=tenant_id, **data.model_dump())
         self._session.add(route)
         await self._session.flush()
@@ -401,6 +448,56 @@ class LogisticsService:
             detail={"code": route.code, "center_id": str(data.center_id or "")},
         )
         return route
+
+    async def update_route(
+        self,
+        route_id: uuid.UUID,
+        data: RouteUpdateInput,
+        *,
+        actor_id: uuid.UUID | None,
+        audit: AuditService,
+    ) -> RouteView:
+        """Name, notes, retirement and the auto-plan defaults (WO-82 §3)."""
+        route = await self._route(route_id)
+        changed: dict[str, str] = {}
+        if data.name is not None and data.name != route.name:
+            route.name = data.name
+            changed["name"] = data.name
+        if data.notes is not None and data.notes != route.notes:
+            route.notes = data.notes
+            changed["notes"] = data.notes
+        if data.active is not None and data.active != route.active:
+            route.active = data.active
+            changed["active"] = str(data.active)
+        if data.clear_default_driver:
+            route.default_driver_id = None
+            changed["default_driver_id"] = ""
+        elif data.default_driver_id is not None:
+            await self._assert_assignable(None, data.default_driver_id)
+            route.default_driver_id = data.default_driver_id
+            changed["default_driver_id"] = str(data.default_driver_id)
+        if data.clear_default_vehicle:
+            route.default_vehicle_id = None
+            changed["default_vehicle_id"] = ""
+        elif data.default_vehicle_id is not None:
+            await self._assert_assignable(data.default_vehicle_id, None)
+            route.default_vehicle_id = data.default_vehicle_id
+            changed["default_vehicle_id"] = str(data.default_vehicle_id)
+        if data.auto_plan is not None and data.auto_plan != route.auto_plan:
+            route.auto_plan = data.auto_plan
+            changed["auto_plan"] = str(data.auto_plan)
+        await self._session.flush()
+        if changed:
+            await audit.record(
+                action="logistics.route_updated",
+                resource_type="route",
+                resource_id=route.id,
+                actor_id=actor_id,
+                detail={"code": route.code, **changed},
+            )
+        view = RouteView.model_validate(route)
+        view.stop_count = (await self._stop_counts([route.id])).get(route.id, 0)
+        return view
 
     async def list_routes(self, *, active: bool | None = None) -> list[RouteView]:
         tenant_id = require_current_tenant()
@@ -615,7 +712,7 @@ class LogisticsService:
     # --- runs --------------------------------------------------------------
 
     async def create_run(
-        self, data: RunInput, *, actor_id: uuid.UUID, audit: AuditService
+        self, data: RunInput, *, actor_id: uuid.UUID | None, audit: AuditService
     ) -> RunView:
         """Plan one route's round for one of the dairy's own days.
 
@@ -699,7 +796,7 @@ class LogisticsService:
         run_id: uuid.UUID,
         data: RunAssignment,
         *,
-        actor_id: uuid.UUID,
+        actor_id: uuid.UUID | None,
         audit: AuditService,
     ) -> RunView:
         run = await self._run(run_id)
@@ -780,7 +877,7 @@ class LogisticsService:
         return await self._run_view(run)
 
     async def generate_for_run(
-        self, run_id: uuid.UUID, *, actor_id: uuid.UUID, audit: AuditService
+        self, run_id: uuid.UUID, *, actor_id: uuid.UUID | None, audit: AuditService
     ) -> RunGenerationView:
         """Generate the deliveries this run's route is for (DEMO-035).
 
@@ -1074,6 +1171,23 @@ class LogisticsService:
 
         from platform_core.modules.delivery.service import RecordDeliveryCommand
 
+        # WO-82 §1: which standing order. One plan for the slot answers
+        # itself; two (cow AND buffalo, WO-81) need the driver to say which,
+        # and the run view told him both.
+        standing = (await self._customers.standing_orders_for({customer_id}, run.slot)).get(
+            customer_id, []
+        )
+        product = outcome.product
+        if product is None:
+            if len(standing) == 1:
+                product = standing[0].product
+            elif len(standing) > 1:
+                raise ConflictError(
+                    "this household takes more than one product — say which: "
+                    + ", ".join(o.product for o in standing)
+                )
+            else:
+                raise ConflictError("this household has no standing order for this slot")
         delivery = await self._deliveries.record(
             RecordDeliveryCommand(
                 customer_id=customer_id,
@@ -1081,6 +1195,7 @@ class LogisticsService:
                 slot=run.slot,
                 status=outcome.status,
                 quantity=outcome.quantity,
+                product=product,
                 notes=outcome.notes,
             ),
             actor_id=user_id,
@@ -1146,6 +1261,19 @@ class LogisticsService:
             outcomes = await self._deliveries.status_by_customer(
                 [s.customer_id for s in route_stops], run.business_date, run.slot
             )
+            # WO-82 §1: what to pour at each stop — the household's active
+            # plans for this slot, named from the catalogue, each with what
+            # the delivery domain says happened to it.
+            ids = {s.customer_id for s in route_stops}
+            standing = await self._customers.standing_orders_for(ids, run.slot)
+            per_product = await self._deliveries.status_by_customer_product(
+                list(ids), run.business_date, run.slot
+            )
+            from platform_core.modules.catalog.service import CatalogService
+
+            names = await CatalogService(self._session).names_for(
+                {o.product for orders in standing.values() for o in orders}
+            )
             # One batch for how to find and reach each household (P0-MOB-002),
             # through the module that owns customers — never a join, never a
             # query per stop.
@@ -1159,6 +1287,16 @@ class LogisticsService:
                     phone=contacts[s.customer_id].phone if s.customer_id in contacts else "",
                     address=contacts[s.customer_id].address if s.customer_id in contacts else "",
                     delivery_status=outcomes.get(s.customer_id),
+                    orders=[
+                        RunStopOrder(
+                            product=o.product,
+                            product_name=names.get(o.product, o.product),
+                            quantity=o.quantity,
+                            quantity_unit=o.quantity_unit,
+                            delivery_status=per_product.get((s.customer_id, o.product)),
+                        )
+                        for o in standing.get(s.customer_id, [])
+                    ],
                 )
                 for s in route_stops
             ]
@@ -1180,3 +1318,91 @@ class LogisticsService:
             finished_at=run.finished_at,
             stops=stops,
         )
+
+
+async def plan_auto_routes(
+    session: AsyncSession, tenant_id: uuid.UUID, day: date, *, bus, audit: AuditService
+) -> list[str]:
+    """Today's round, without the owner (WO-82 §3).
+
+    For every active route with `auto_plan` and a default driver: create the
+    business day's run, assign the driver (and the vehicle, when one is
+    named) and generate its deliveries — through `create_run`, `assign` and
+    `generate_for_run` EXACTLY, so there is no second path that could drift
+    from the one the office uses. Idempotent at the database: a run that
+    already exists for (route, day, slot) is left alone, and the generator's
+    ON CONFLICT makes a second pass a no-op. A non-working day is skipped by
+    the resolver `create_run` already consults, and the refusal is not an
+    error here: the scheduler is nobody, and nobody asked for a round on a
+    holiday.
+
+    Returns the codes of the routes it planned, for the log.
+    """
+    routes = (
+        await session.scalars(
+            select(Route)
+            .where(
+                Route.tenant_id == tenant_id,
+                Route.active.is_(True),
+                Route.auto_plan.is_(True),
+                Route.default_driver_id.is_not(None),
+            )
+            .order_by(Route.code)
+        )
+    ).all()
+    if not routes:
+        return []
+    service = LogisticsService(session, bus, audit)
+    planned: list[str] = []
+    for route in routes:
+        exists = await session.scalar(
+            select(DeliveryRun.id).where(
+                DeliveryRun.tenant_id == tenant_id,
+                DeliveryRun.route_id == route.id,
+                DeliveryRun.business_date == day,
+                DeliveryRun.slot == "morning",
+            )
+        )
+        if exists is not None:
+            continue
+        try:
+            run = await service.create_run(
+                RunInput(route_id=route.id, business_date=day, slot="morning"),
+                actor_id=None,
+                audit=audit,
+            )
+            await service.assign(
+                run.id,
+                RunAssignment(
+                    vehicle_id=route.default_vehicle_id, driver_id=route.default_driver_id
+                ),
+                actor_id=None,
+                audit=audit,
+            )
+        except ConflictError:
+            # Not a working day for this route, a retired driver, or a run
+            # that appeared between the check and the insert — all of them
+            # "no round today", none of them a fault.
+            continue
+        await service.generate_for_run(run.id, actor_id=None, audit=audit)
+        planned.append(route.code)
+    return planned
+
+
+async def plan_auto_routes_for_scheduler(
+    session: AsyncSession, tenant_id: uuid.UUID, day: date
+) -> list[str]:
+    """`plan_auto_routes` in the shape the scheduler hands a callable: the
+    outbox bus on the caller's session and an audit service on it, so a run
+    the scheduler creates is audited and its events relayed exactly as one
+    the office creates."""
+    from platform_core.infrastructure.events import get_event_bus
+    from platform_core.modules.event_relay.service import OutboxEventBus
+
+    return await plan_auto_routes(
+        session,
+        tenant_id,
+        day,
+        bus=OutboxEventBus(session, get_event_bus()),
+        audit=AuditService(session),
+    )

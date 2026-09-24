@@ -739,6 +739,23 @@ class DeliveryService:
         )
         return {row[0]: row[1] for row in rows}
 
+    async def status_by_customer_product(
+        self, customer_ids: list[uuid.UUID], day: date, slot: str
+    ) -> dict[tuple[uuid.UUID, str], str]:
+        """`status_by_customer`, per PRODUCT (WO-82 §1): a household with two
+        milks on one morning has two rows, and the run shows each."""
+        if not customer_ids:
+            return {}
+        rows = await self._session.execute(
+            select(MilkDelivery.customer_id, MilkDelivery.product, MilkDelivery.status).where(
+                MilkDelivery.tenant_id == require_current_tenant(),
+                MilkDelivery.delivery_date == day,
+                MilkDelivery.slot == slot,
+                MilkDelivery.customer_id.in_(customer_ids),
+            )
+        )
+        return {(row[0], row[1]): row[2] for row in rows}
+
     def _conditions(
         self,
         tenant_id: uuid.UUID,

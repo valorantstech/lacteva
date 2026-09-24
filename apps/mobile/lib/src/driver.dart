@@ -131,6 +131,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     Map<String, dynamic> stop,
     String status, {
     String? notes,
+    String? quantity,
+    String? product,
   }) async {
     try {
       await widget.client.recordRunOutcomeOffline(
@@ -138,6 +140,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         customerId: stop['customer_id'].toString(),
         status: status,
         notes: notes,
+        // WO-82 §1: an unchanged quantity sends nothing, exactly as before;
+        // the product names which standing order when there are two.
+        quantity: quantity,
+        product: product,
       );
       await _load();
     } on ApiException catch (e) {
@@ -151,6 +157,87 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Could not reach the platform')));
+    }
+  }
+
+  /// Delivered, with the quantity at the doorstep (WO-82 §1): the sheet
+  /// opens prefilled with the standing figure; confirming sends the quantity
+  /// only when the driver changed it, and the product when the household
+  /// has more than one.
+  Future<void> _deliver(Map<String, dynamic> run, Map<String, dynamic> stop) async {
+    final t = L10n.of(widget.session);
+    final orders = stopOrders(stop);
+    if (orders.isEmpty) {
+      // A stop the run could not describe: the platform still prices from
+      // the plan, exactly as before this work order.
+      await _recordOutcome(run, stop, 'delivered');
+      return;
+    }
+    final choice = await showModalBottomSheet<_PourChoice>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: LactevaColors.cream,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _QuantitySheet(orders: orders, t: t),
+    );
+    if (choice == null || !mounted) return;
+    await _recordOutcome(
+      run,
+      stop,
+      'delivered',
+      quantity: choice.changed ? choice.quantity : null,
+      product: orders.length > 1 ? choice.product : null,
+    );
+  }
+
+  /// An item sold at the doorstep (WO-82 §2): the cached catalogue, a
+  /// quantity, no price — the platform prices it, and a product with no
+  /// price cannot be added at all.
+  Future<void> _addItem(Map<String, dynamic> run, Map<String, dynamic> stop) async {
+    final t = L10n.of(widget.session);
+    List<Map<String, dynamic>> products;
+    try {
+      products = await widget.client.cachedProducts();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.detail)));
+      return;
+    } catch (_) {
+      products = const [];
+    }
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<_ItemChoice>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: LactevaColors.cream,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _ItemSheet(products: products, t: t),
+    );
+    if (picked == null || !mounted) return;
+    try {
+      await widget.client.recordSaleItemOffline(
+        customerId: stop['customer_id'].toString(),
+        productCode: picked.code,
+        quantity: picked.quantity,
+        saleDate: run['business_date']?.toString(),
+      );
+      if (!mounted) return;
+      setState(() => _pending = widget.client.pendingCount);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${t.t('driver.itemAdded')}: ${picked.name} × ${picked.quantity}')),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.detail)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.t('driver.needsSignal'))),
+      );
     }
   }
 
@@ -401,11 +488,14 @@ class _ProgressBar extends StatelessWidget {
 /// The one stop that matters, at the size it matters.
 ///
 /// Glanceability is the constraint: a driver reads this through a windscreen
-/// with the engine running. The board put a 40px quantity here; a run stop
-/// carries no quantity and a DRIVER holds only `logistics.run.execute`, so
-/// there is no read that could ever supply one. The big figure is the stop's
-/// own position instead — true, and the thing a driver checks against a paper
-/// list.
+/// with the engine running. The board put a 40px quantity here, and until
+/// WO-82 a run stop carried none — a DRIVER holds only
+/// `logistics.run.execute`, and no read could supply one. Now the run
+/// describes itself: each stop carries its standing order(s) — product name,
+/// quantity, unit — resolved server-side from the plan (WO-82 §1), so the
+/// card says what to pour, and "Delivered" opens that figure to be changed
+/// at the doorstep. The big figure stays the stop's position — the thing a
+/// driver checks against a paper list — with the standing order beneath it.
 class _NextStopCard extends StatelessWidget {
   const _NextStopCard({
     required this.run,
@@ -480,6 +570,20 @@ class _NextStopCard extends StatelessWidget {
                               ),
                             ),
                           ],
+                          // WO-82 §1: what to pour, from the run itself.
+                          for (final order in stopOrders(stop)) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              '${order['product_name'] ?? order['product']} · '
+                              '${order['quantity']} ${order['quantity_unit'] ?? 'L'}',
+                              key: ValueKey('stop-order-${order['product']}'),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: LactevaColors.ink,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -543,8 +647,7 @@ class _NextStopCard extends StatelessWidget {
                         label: t.t('driver.outcome.delivered'),
                         icon: Icons.check,
                         primary: true,
-                        onTap: () =>
-                            state._recordOutcome(run, stop, 'delivered'),
+                        onTap: () => state._deliver(run, stop),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -563,9 +666,295 @@ class _NextStopCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                // WO-82 §2: a thing sold beside the milk.
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    key: const ValueKey('stop-add-item'),
+                    onPressed: () => state._addItem(run, stop),
+                    icon: const Icon(Icons.shopping_bag_outlined, size: 18),
+                    label: Text(t.t('driver.addItem')),
+                  ),
+                ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The standing orders a run stop carries (WO-82 §1), as sent.
+List<Map<String, dynamic>> stopOrders(Map<String, dynamic> stop) =>
+    ((stop['orders'] as List?) ?? const []).cast<Map<String, dynamic>>();
+
+/// The step a ± button moves a quantity by: a quarter for a measured
+/// product, one for a counted one.
+double stepFor(String unit) => unit == 'pc' ? 1.0 : 0.25;
+
+/// A quantity as the platform wants it: three decimals, never negative.
+String formatQuantity(double value) =>
+    (value < 0 ? 0.0 : value).toStringAsFixed(3);
+
+class _PourChoice {
+  const _PourChoice({required this.product, required this.quantity, required this.changed});
+  final String product;
+  final String quantity;
+  final bool changed;
+}
+
+/// How much did you pour? (WO-82 §1). Prefilled with the standing figure,
+/// big digits, one hand: ± buttons for the unit's step and a number pad
+/// behind the field. Confirming with the figure untouched sends nothing —
+/// "yes, the usual" must stay one tap.
+class _QuantitySheet extends StatefulWidget {
+  const _QuantitySheet({required this.orders, required this.t});
+  final List<Map<String, dynamic>> orders;
+  final L10n t;
+  @override
+  State<_QuantitySheet> createState() => _QuantitySheetState();
+}
+
+class _QuantitySheetState extends State<_QuantitySheet> {
+  late int _index = 0;
+  late final TextEditingController _field = TextEditingController(text: _standing);
+
+  Map<String, dynamic> get _order => widget.orders[_index];
+  String get _unit => (_order['quantity_unit'] ?? 'L').toString();
+  String get _standing =>
+      formatQuantity(double.tryParse('${_order['quantity']}') ?? 0);
+
+  void _nudge(double delta) {
+    final current = double.tryParse(_field.text.trim()) ?? 0;
+    _field.text = formatQuantity(current + delta);
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            t.t('driver.quantityTitle'),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: LactevaColors.ink),
+          ),
+          if (widget.orders.length > 1) ...[
+            const SizedBox(height: 10),
+            Text(t.t('driver.whichProduct'), style: const TextStyle(color: LactevaColors.muted)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (var i = 0; i < widget.orders.length; i++)
+                  ChoiceChip(
+                    key: ValueKey('pour-${widget.orders[i]['product']}'),
+                    label: Text('${widget.orders[i]['product_name'] ?? widget.orders[i]['product']}'),
+                    selected: i == _index,
+                    onSelected: (_) => setState(() {
+                      _index = i;
+                      _field.text = _standing;
+                    }),
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 12),
+          Text(
+            '${t.t('driver.pours')}: $_standing $_unit',
+            style: const TextStyle(fontSize: 13.5, color: LactevaColors.muted),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _StepButton(key: const ValueKey('pour-minus'), label: '−', onTap: () => _nudge(-stepFor(_unit))),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('pour-quantity'),
+                  controller: _field,
+                  textAlign: TextAlign.center,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w700, color: LactevaColors.ink),
+                  decoration: InputDecoration(suffixText: _unit, border: const OutlineInputBorder()),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 10),
+              _StepButton(key: const ValueKey('pour-plus'), label: '+', onTap: () => _nudge(stepFor(_unit))),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: FilledButton(
+              key: const ValueKey('pour-confirm'),
+              style: FilledButton.styleFrom(backgroundColor: LactevaColors.dairy),
+              onPressed: () {
+                final typed = double.tryParse(_field.text.trim());
+                if (typed == null || typed <= 0) return;
+                final quantity = formatQuantity(typed);
+                Navigator.of(context).pop(
+                  _PourChoice(
+                    product: '${_order['product']}',
+                    quantity: quantity,
+                    changed: quantity != _standing,
+                  ),
+                );
+              },
+              child: Text(t.t('driver.confirmDelivered')),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  const _StepButton({super.key, required this.label, required this.onTap});
+  final String label;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 56,
+    height: 56,
+    child: OutlinedButton(
+      onPressed: onTap,
+      child: Text(label, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
+    ),
+  );
+}
+
+class _ItemChoice {
+  const _ItemChoice({required this.code, required this.name, required this.quantity});
+  final String code;
+  final String name;
+  final String quantity;
+}
+
+/// Add an item (WO-82 §2): the cached catalogue, a quantity, no price. A
+/// product with no default price is shown but cannot be added — the platform
+/// would refuse a zero-rupee line and the app says why first.
+class _ItemSheet extends StatefulWidget {
+  const _ItemSheet({required this.products, required this.t});
+  final List<Map<String, dynamic>> products;
+  final L10n t;
+  @override
+  State<_ItemSheet> createState() => _ItemSheetState();
+}
+
+class _ItemSheetState extends State<_ItemSheet> {
+  Map<String, dynamic>? _picked;
+  double _quantity = 1;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    final picked = _picked;
+    final step = picked == null ? 1.0 : stepFor((picked['unit'] ?? 'pc').toString());
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            t.t('driver.itemTitle'),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: LactevaColors.ink),
+          ),
+          const SizedBox(height: 10),
+          if (widget.products.isEmpty)
+            Text(t.t('driver.noCatalogue'), style: const TextStyle(color: LactevaColors.muted))
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 280),
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final product in widget.products)
+                    ListTile(
+                      key: ValueKey('item-${product['code']}'),
+                      dense: true,
+                      selected: identical(product, picked),
+                      enabled: product['default_price'] != null,
+                      title: Text('${product['name']}'),
+                      subtitle: Text(
+                        product['default_price'] == null
+                            ? t.t('driver.itemNoPrice')
+                            : '${product['default_price']} / ${product['unit']}',
+                      ),
+                      onTap: product['default_price'] == null
+                          ? null
+                          : () => setState(() {
+                              _picked = product;
+                              _quantity = 1;
+                            }),
+                    ),
+                ],
+              ),
+            ),
+          if (picked != null) ...[
+            const SizedBox(height: 12),
+            Text(t.t('driver.itemQuantity'), style: const TextStyle(color: LactevaColors.muted)),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                _StepButton(
+                  key: const ValueKey('item-minus'),
+                  label: '−',
+                  onTap: () => setState(() => _quantity = (_quantity - step).clamp(step, 999)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${step == 1.0 ? _quantity.toStringAsFixed(0) : formatQuantity(_quantity)} ${picked['unit']}',
+                    key: const ValueKey('item-quantity'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w700, color: LactevaColors.ink),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _StepButton(
+                  key: const ValueKey('item-plus'),
+                  label: '+',
+                  onTap: () => setState(() => _quantity += step),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: FilledButton(
+                key: const ValueKey('item-confirm'),
+                style: FilledButton.styleFrom(backgroundColor: LactevaColors.dairy),
+                onPressed: () => Navigator.of(context).pop(
+                  _ItemChoice(
+                    code: '${picked['code']}',
+                    name: '${picked['name']}',
+                    quantity: formatQuantity(_quantity),
+                  ),
+                ),
+                child: Text(t.t('driver.addItem')),
+              ),
+            ),
+          ],
         ],
       ),
     );

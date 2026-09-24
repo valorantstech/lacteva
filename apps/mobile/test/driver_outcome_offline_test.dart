@@ -53,6 +53,7 @@ class _FakePlatform extends ApiClient {
     required String status,
     String? quantity,
     String? notes,
+    String? product,
     String? idempotencyKey,
   }) async {
     if (offline) throw const SocketException('no route to host');
@@ -98,6 +99,7 @@ class _TestOfflineClient extends OfflineApiClient {
     required String status,
     String? quantity,
     String? notes,
+    String? product,
     String? idempotencyKey,
   }) => platform.recordRunOutcome(
     runId: runId,

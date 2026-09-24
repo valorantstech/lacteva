@@ -20,6 +20,7 @@ import {
   listRoutes,
   listVehicles,
   setDeliveryRunStatus,
+  updateRoute,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -277,7 +278,10 @@ export default function RoutesPage() {
                   <th className="py-1 pr-4 font-medium">Code</th>
                   <th className="py-1 pr-4 font-medium">Name</th>
                   <th className="py-1 pr-4 font-medium">Stops</th>
-                  <th className="py-1 font-medium">Status</th>
+                  <th className="py-1 pr-4 font-medium">Status</th>
+                  <th className="py-1 pr-4 font-medium">Default driver</th>
+                  <th className="py-1 pr-4 font-medium">Default vehicle</th>
+                  <th className="py-1 font-medium">Every morning</th>
                 </tr>
               </thead>
               <tbody>
@@ -288,16 +292,90 @@ export default function RoutesPage() {
                     </td>
                     <td className="py-2 pr-4">{route.name}</td>
                     <td className="py-2 pr-4">{route.stop_count}</td>
-                    <td className="py-2">
+                    <td className="py-2 pr-4">
                       <StatusBadge
                         status={route.active ? "active" : "inactive"}
                       />
+                    </td>
+                    {/* WO-82 §3: the round will exist every morning without
+                        anyone creating it — when a default driver is named
+                        and the switch is on. */}
+                    <td className="py-2 pr-4">
+                      <Select
+                        aria-label={`Default driver for ${route.code}`}
+                        value={route.default_driver_id ?? ""}
+                        onChange={(e) =>
+                          act(() =>
+                            updateRoute(
+                              route.id,
+                              e.target.value
+                                ? { default_driver_id: e.target.value }
+                                : { clear_default_driver: true },
+                            ),
+                          )
+                        }
+                      >
+                        <option value="">— none —</option>
+                        {drivers.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.full_name}
+                          </option>
+                        ))}
+                      </Select>
+                    </td>
+                    <td className="py-2 pr-4">
+                      <Select
+                        aria-label={`Default vehicle for ${route.code}`}
+                        value={route.default_vehicle_id ?? ""}
+                        onChange={(e) =>
+                          act(() =>
+                            updateRoute(
+                              route.id,
+                              e.target.value
+                                ? { default_vehicle_id: e.target.value }
+                                : { clear_default_vehicle: true },
+                            ),
+                          )
+                        }
+                      >
+                        <option value="">— none —</option>
+                        {vehicles.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.registration}
+                          </option>
+                        ))}
+                      </Select>
+                    </td>
+                    <td className="py-2">
+                      <label className="flex items-center gap-2 text-xs">
+                        <input
+                          type="checkbox"
+                          aria-label={`Plan ${route.code} every morning`}
+                          checked={route.auto_plan === true}
+                          disabled={!route.default_driver_id}
+                          onChange={(e) =>
+                            act(() =>
+                              updateRoute(route.id, { auto_plan: e.target.checked }),
+                            )
+                          }
+                        />
+                        {route.default_driver_id
+                          ? "auto-plan"
+                          : "needs a default driver"}
+                      </label>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
+          <p className="pt-3 text-xs text-muted-foreground">
+            With a default driver and &ldquo;auto-plan&rdquo; on, the round will
+            exist every morning without anyone creating it: the platform creates
+            the day&apos;s run at its generation hour, assigns the driver (and the
+            vehicle, if named) and generates the deliveries. A non-working day is
+            skipped.
+          </p>
         </CardContent>
       </Card>
     </PageContainer>

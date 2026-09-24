@@ -71,6 +71,16 @@ class Route(Base, IdMixin):
     #: Retired rather than deleted: yesterday's runs still point at it.
     active: Mapped[bool] = mapped_column(default=True, index=True)
     notes: Mapped[str] = mapped_column(String(500), default="")
+    #: WO-82 §3 — today's round, without the owner. With `auto_plan` and a
+    #: default driver, the daily scheduler creates the business day's run,
+    #: assigns the driver (and the vehicle, when one is named) and generates
+    #: its deliveries, through `create_run`, `assign` and `generate_for_run`
+    #: exactly — no second path. Non-working days are skipped by the resolver
+    #: that already answers that. Null driver or `auto_plan=False`: nothing
+    #: happens, as before.
+    default_driver_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    default_vehicle_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    auto_plan: Mapped[bool] = mapped_column(default=False, server_default="0")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

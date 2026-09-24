@@ -176,6 +176,7 @@ async def run_for_tenant(
     trigger: str = "scheduler",
     force_date: date | None = None,
     route_scopes: RouteScopeProvider | None = None,
+    route_planner: RoutePlanner | None = None,
 ) -> DeliveryGenerationRun | None:
     """Generate one tenant's round, if it is due, and record what happened.
 
@@ -225,6 +226,18 @@ async def run_for_tenant(
                 else None
             ),
         )
+        # WO-82 §3: the auto-planned routes' runs, once the day's round has
+        # been generated. Its own failure is logged, never the day's: a
+        # driver profile retired last night must not mark the whole
+        # generation failed.
+        if route_planner is not None:
+            try:
+                planned = await route_planner(session, tenant.id, day)
+                if planned:
+                    log.info("auto_planned_routes", tenant=tenant.slug, routes=planned)
+                await session.commit()
+            except Exception:
+                log.exception("auto_plan_routes_error", tenant=tenant.slug)
         return run
 
 
@@ -572,12 +585,18 @@ async def record_run(
 #: settled the shape of this problem by passing `is_working` in.
 RouteScopeProvider = Callable[[AsyncSession, uuid.UUID, date], Awaitable[list[RoundScope]]]
 
+#: WO-82 §3. Handed the day AFTER the round is generated: plans the runs of
+#: every auto-planned route. A callable, for the same reason `route_scopes`
+#: is — `delivery` must not import `logistics`.
+RoutePlanner = Callable[[AsyncSession, uuid.UUID, date], Awaitable[list[str]]]
+
 
 async def run_once(
     *,
     generation_hour: int,
     now: datetime | None = None,
     route_scopes: RouteScopeProvider | None = None,
+    route_planner: RoutePlanner | None = None,
 ) -> list[DeliveryGenerationRun]:
     """One pass over every active tenant.
 
@@ -594,6 +613,7 @@ async def run_once(
                 now=now,
                 generation_hour=generation_hour,
                 route_scopes=route_scopes,
+                route_planner=route_planner,
             )
         except Exception:
             log.exception("delivery_scheduler_tenant_error", tenant=tenant.slug)

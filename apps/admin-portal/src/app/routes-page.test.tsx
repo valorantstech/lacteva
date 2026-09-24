@@ -225,3 +225,53 @@ describe("routes and runs", () => {
     }
   });
 });
+
+// --- WO-82 §3: today's round, without the owner ------------------------------
+
+describe("a route that plans its own morning (WO-82)", () => {
+  it("names a default driver by sending only that, and the switch waits for it", async () => {
+    stubApi();
+    const spy = vi
+      .spyOn(api, "updateRoute")
+      .mockResolvedValue({ ...ROUTE, default_driver_id: "d-1" } as never);
+    render(<RoutesPage />);
+    const toggle = (await screen.findByLabelText("Plan R-01 every morning")) as HTMLInputElement;
+    expect(toggle.disabled).toBe(true);
+    expect(screen.getByText("needs a default driver")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Default driver for R-01"), {
+      target: { value: "d-1" },
+    });
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith("route-1", { default_driver_id: "d-1" }),
+    );
+    expect(
+      screen.getByText(/the round will exist every morning without anyone creating it/i),
+    ).toBeInTheDocument();
+  });
+
+  it("turns auto-plan on once a driver is named, and withdraws a default explicitly", async () => {
+    vi.spyOn(api, "listRoutes").mockResolvedValue([
+      { ...ROUTE, default_driver_id: "d-1", auto_plan: false },
+    ] as never);
+    stubApi();
+    vi.spyOn(api, "listRoutes").mockResolvedValue([
+      { ...ROUTE, default_driver_id: "d-1", auto_plan: false },
+    ] as never);
+    const spy = vi
+      .spyOn(api, "updateRoute")
+      .mockResolvedValue({ ...ROUTE, default_driver_id: "d-1", auto_plan: true } as never);
+    render(<RoutesPage />);
+    const toggle = (await screen.findByLabelText("Plan R-01 every morning")) as HTMLInputElement;
+    expect(toggle.disabled).toBe(false);
+    fireEvent.click(toggle);
+    await waitFor(() => expect(spy).toHaveBeenCalledWith("route-1", { auto_plan: true }));
+
+    fireEvent.change(screen.getByLabelText("Default vehicle for R-01"), {
+      target: { value: "" },
+    });
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith("route-1", { clear_default_vehicle: true }),
+    );
+  });
+});
