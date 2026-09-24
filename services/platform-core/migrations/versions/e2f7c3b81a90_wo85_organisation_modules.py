@@ -38,7 +38,11 @@ def upgrade() -> None:
     # The default, spelled as data rather than as a server default a JSON
     # column cannot portably carry on both dialects: every row that exists
     # when this lands runs the whole product.
-    op.execute(f"UPDATE organization SET modules = '{BOTH}' WHERE modules IS NULL")
+    op.execute(
+        sa.text("UPDATE organization SET modules = :both WHERE modules IS NULL").bindparams(
+            both=BOTH
+        )
+    )
 
 
 def downgrade() -> None:
