@@ -28,7 +28,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from platform_core.modules.billing.month_end import draft_month_end
-from tests.clock import TODAY
+from tests.clock import through_today
 from tests.conftest import invite
 from tests.test_month_end_billing import BILLED_MONTH
 from tests.test_org_structure import _tenant_admin
@@ -550,12 +550,15 @@ async def test_the_clients_spreadsheet_month_reproduces_to_the_paisa(client):
     for inv in (tower_inv, flat_inv, a_inv):
         r = await client.post(f"/v1/invoices/{inv['id']}/issue", headers=admin)
         assert r.status_code == 200, r.text
-    # The statement's window is by ISSUE date (the dairy's), and the bills
-    # were issued today — so the window runs from last month's item to today.
+    # The statement's window is by ISSUE date in the DAIRY's calendar, and
+    # the bills were issued "today" — which, for a Nairobi dairy after 21:00
+    # UTC, is already tomorrow by UTC's `TODAY`. `through_today()` is the
+    # window end that contains the organisation's own business date (WO-58);
+    # this test failed at 03:15 IST for exactly that reason.
     statement = (
         await client.get(
             f"/v1/customers/{a1607['id']}/statement",
-            params={"date_from": previous_day, "date_to": TODAY},
+            params={"date_from": previous_day, "date_to": through_today()},
             headers=admin,
         )
     ).json()
