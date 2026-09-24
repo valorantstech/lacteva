@@ -2353,6 +2353,9 @@ export type MeOrganization = {
   trade_unit_label?: string | null;
   conversion_factor?: string | null;
   conversion_effective_from?: string | null;
+  /** D-31 / WO-85: which of the product's modules this organisation runs —
+   *  "collection", "sales", or both. Presentation only; absent means both. */
+  modules?: string[];
 };
 export type MeMembership = { status: string; joined_at: string };
 export type MeRole = {
@@ -2405,6 +2408,11 @@ export type LocaleSettings = {
   trade_unit_label: string | null;
   conversion_factor: string | null;
   conversion_effective_from: string | null;
+  /** D-31 / WO-85: the modules turned on, and the registry to choose from.
+   *  Optional on the type because a fixture or an older platform may omit
+   *  them; the settings page treats absence as "nothing to switch". */
+  modules?: string[];
+  available_modules?: { key: string; label: string; description: string }[];
 };
 
 export const getLocaleSettings = () =>
@@ -2420,6 +2428,8 @@ export const updateLocaleSettings = (body: {
   conversion_factor?: string;
   conversion_effective_from?: string;
   clear_conversion?: boolean;
+  /** D-31: never empty — the platform refuses an organisation with no module. */
+  modules?: string[];
 }) =>
   api<LocaleSettings>("/v1/organizations/settings/locale", {
     method: "PUT",

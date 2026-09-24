@@ -6,7 +6,7 @@ import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +24,7 @@ from platform_core.core.locales import (
     language_choices,
     resolve,
 )
+from platform_core.core.modules import DEFAULT_MODULES, module_choices, validate_modules
 from platform_core.core.org_context import reset_locale_cache
 from platform_core.core.tenancy import (
     get_current_tenant,
@@ -68,6 +69,19 @@ class CreateOrganizationCommand(BaseModel):
     #: D-21. `None` means "what the country trades in"; a cooperative that
     #: weighs says `kg` here, exactly as one that bills in dollars says `USD`.
     quantity_unit: str | None = Field(default=None, max_length=12)
+    #: D-31 / WO-85. Which of the product's modules this organisation runs:
+    #: `collection`, `sales`, or both. `None` means both. Never empty.
+    modules: list[str] | None = None
+
+    @field_validator("modules")
+    @classmethod
+    def _known_modules(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        try:
+            return validate_modules(v)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
 
 class LocaleSettingsView(BaseModel):
@@ -92,6 +106,9 @@ class LocaleSettingsView(BaseModel):
     trade_unit_label: str | None = None
     conversion_factor: Decimal | None = None
     conversion_effective_from: date | None = None
+    #: D-31 / WO-85. The modules turned on, and the registry to choose from.
+    modules: list[str] = Field(default_factory=lambda: list(DEFAULT_MODULES))
+    available_modules: list[dict] = Field(default_factory=module_choices)
 
 
 class UpdateLocaleSettingsCommand(BaseModel):
@@ -119,6 +136,19 @@ class UpdateLocaleSettingsCommand(BaseModel):
     conversion_factor: Decimal | None = Field(default=None, gt=0)
     conversion_effective_from: date | None = None
     clear_conversion: bool = False
+    #: D-31 / WO-85. Absent means unchanged. Presentation only: hides
+    #: navigation, deletes nothing, refuses nothing; an empty list is refused.
+    modules: list[str] | None = None
+
+    @field_validator("modules")
+    @classmethod
+    def _known_modules(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        try:
+            return validate_modules(v)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
 
 class OrganizationView(BaseModel):
@@ -133,6 +163,7 @@ class OrganizationView(BaseModel):
     timezone: str
     supported_languages: list[str]
     quantity_unit: str
+    modules: list[str] = Field(default_factory=lambda: list(DEFAULT_MODULES))
 
     model_config = {"from_attributes": True}
 
@@ -186,6 +217,8 @@ class OrganizationService:
             # D-21: the country proposes, the organisation decides — and from
             # here on every transaction reads THIS column, never the registry.
             quantity_unit=locale.quantity_unit,
+            # D-31: both unless the onboarding form said otherwise.
+            modules=validate_modules(cmd.modules),
         )
         self._session.add(org)
         await self._session.flush()
@@ -270,6 +303,7 @@ class OrganizationService:
             "conversion_effective_from": (
                 org.conversion_effective_from.isoformat() if org.conversion_effective_from else None
             ),
+            "modules": list(org.modules or DEFAULT_MODULES),
         }
         try:
             resolved = resolve(
@@ -319,6 +353,12 @@ class OrganizationService:
         org.trade_unit = terms.trade_unit
         org.conversion_factor = terms.factor
         org.conversion_effective_from = terms.effective_from
+        # D-31: THE LIST ON THE ORGANISATION ROW AND NOTHING ELSE. Turning a
+        # module off hides navigation; no row anywhere is deleted, archived
+        # or closed, and `test_modules.py` counts rows before and after to
+        # keep it so.
+        if cmd.modules is not None:
+            org.modules = list(cmd.modules)
         await self._session.flush()
         # The memo is per-request, but this request may still go on to render
         # money in the currency it just changed.
@@ -345,6 +385,7 @@ class OrganizationService:
                         if org.conversion_effective_from
                         else None
                     ),
+                    "modules": list(org.modules or DEFAULT_MODULES),
                 },
             },
         )
@@ -748,4 +789,6 @@ def _locale_view(org: Organization) -> LocaleSettingsView:
         trade_unit_label=unit_label(org.trade_unit) if org.trade_unit else None,
         conversion_factor=org.conversion_factor,
         conversion_effective_from=org.conversion_effective_from,
+        modules=list(org.modules or DEFAULT_MODULES),
+        available_modules=module_choices(),
     )

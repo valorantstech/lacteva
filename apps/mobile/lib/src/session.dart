@@ -177,6 +177,7 @@ class OrgLocale {
     this.tradeUnit,
     this.tradeUnitLabel,
     this.conversionFactor,
+    this.modules = const ['collection', 'sales'],
   });
 
   final String name;
@@ -205,6 +206,21 @@ class OrgLocale {
   final String? tradeUnitLabel;
   final String? conversionFactor;
 
+  /// D-31 / WO-85. Which of the product's modules this organisation runs —
+  /// `collection` (milk in from suppliers), `sales` (milk out to
+  /// customers), or both. A PRESENTATION fact: it decides which tiles and
+  /// tabs are shown and nothing else. The default is both, because that is
+  /// what every organisation from before D-31 has, and what a platform
+  /// that predates the field is describing.
+  final List<String> modules;
+
+  bool get collects => modules.contains('collection');
+  bool get sells => modules.contains('sales');
+
+  /// Sells and does not collect — the one shape in which "collection
+  /// centre" is a meaningless phrase to the owner (D-31 §6).
+  bool get salesOnly => sells && !collects;
+
   static OrgLocale fromJson(Map<String, dynamic> json) => OrgLocale(
     name: (json['name'] ?? '').toString(),
     countryCode: (json['country_code'] ?? '').toString(),
@@ -222,7 +238,15 @@ class OrgLocale {
     tradeUnit: json['trade_unit']?.toString(),
     tradeUnitLabel: json['trade_unit_label']?.toString(),
     conversionFactor: json['conversion_factor']?.toString(),
+    modules: _modulesOf(json['modules']),
   );
+
+  /// The list as sent, or both when the platform sent nothing — an absent
+  /// list is "nothing said", never a shop.
+  static List<String> _modulesOf(Object? raw) {
+    final listed = (raw as List?)?.map((e) => e.toString()).toList() ?? const [];
+    return listed.isEmpty ? const ['collection', 'sales'] : listed;
+  }
 
   Map<String, dynamic> toJson() => {
     'name': name,
@@ -237,6 +261,7 @@ class OrgLocale {
     'trade_unit': tradeUnit,
     'trade_unit_label': tradeUnitLabel,
     'conversion_factor': conversionFactor,
+    'modules': modules,
   };
 }
 

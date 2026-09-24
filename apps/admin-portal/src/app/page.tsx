@@ -51,6 +51,7 @@ import {
 import { BarBreakdown, TrendChart } from "@/components/trend-chart";
 import { CurrencyTotals, Money, Quantity } from "@/components/money";
 import { unitLabel } from "@/lib/units";
+import { enabledModules } from "@/lib/modules";
 import { SectionHeading } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
 import { Metric, Surface } from "@/components/surface";
@@ -129,6 +130,11 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
 
   const signedIn = session?.authenticated === true;
+  // D-31 / WO-85: the dashboard shows what the organisation has. Both
+  // modules on (every organisation from before D-31) shows both halves.
+  const modules = enabledModules(session);
+  const showCollection = modules.has("collection");
+  const showSales = modules.has("sales");
 
   useEffect(() => {
     let cancelled = false;
@@ -313,135 +319,295 @@ export default function Home() {
           A manager reading this page should never have to work out which
           direction a number's money is going — procurement is what the dairy
           PAYS, sales is what it is OWED, and putting them in one undivided
-          grid was the fastest way to make an owner mistrust the whole page. */}
-      <SectionHeading
-        title={t("dashboard.procurement")}
-        detail={t("dashboard.procurementDetail")}
-      />
+          grid was the fastest way to make an owner mistrust the whole page.
+          D-31 / WO-85: each half is shown when its module is on. An
+          organisation that does both sees both, which is more and is
+          correct; nothing is replaced for a dairy that does both. */}
+      {showCollection ? (
+        <>
+          <SectionHeading
+            title={t("dashboard.procurement")}
+            detail={t("dashboard.procurementDetail")}
+          />
 
-      <section
-        aria-label="Collection summary"
-        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
-      >
-        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.collections")} value={collection ? collection.transactions : "—"} caption={
-            collection
-              ? `${collection.accepted} accepted · ${collection.rejected} rejected`
-              : undefined
-          } /><span aria-hidden className="text-muted-foreground"><Activity className="size-4" /></span></Surface>
-        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.quantity")} value={
-            collection ? (
-              <Quantity value={collection.total_net_weight_kg} unit={collection.quantity_unit} />
-            ) : (
-              "—"
-            )
-          } caption={
-            // WO-55: today's litres split by animal, beside the total. Cow and
-            // buffalo are different milk at different money, and a total alone
-            // hides which of them the morning actually brought in.
-            collection
-              ? [
-                  `${collection.suppliers_served} suppliers served`,
-                  ...(collection.by_milk_type ?? [])
-                    .filter((row) => row.net_weight_kg > 0)
-                    .map(
-                      (row) =>
-                        `${t(`milk.${row.milk_type}`)} ${row.net_weight_kg} ${unitLabel(row.quantity_unit)}`,
-                    ),
-                ].join(" · ")
-              : undefined
-          } /><span aria-hidden className="text-muted-foreground"><Droplets className="size-4" /></span></Surface>
-        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.collectionValue")} value={
-            // WO-61: the platform's own currency for the figure it summed. The
-            // organization's is used only for the EMPTY case below, where there
-            // are no rows to contradict it and "0.00" still needs a name.
-            primary ? (
-              <Money amount={primary[1]} currency={primary[0]} />
-            ) : collection ? (
-              <Money amount="0.00" currency={orgCurrency} />
-            ) : (
-              "—"
-            )
-          } caption={
-            currencies.length > 1
-              ? `+${currencies.length - 1} more currency`
-              : "payable"
-          } /><span aria-hidden className="text-muted-foreground"><Banknote className="size-4" /></span></Surface>
-        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.averageFat")} value={
-            collection?.weighted_avg_fat != null
-              ? `${collection.weighted_avg_fat}%`
-              : "—"
-          } caption="weighted by quantity" /><span aria-hidden className="text-muted-foreground"><Percent className="size-4" /></span></Surface>
-        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.activeSuppliers")} value={report ? report.active_suppliers : "—"} caption="registered and active" /><span aria-hidden className="text-muted-foreground"><Truck className="size-4" /></span></Surface>
-        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.activeCentres")} value={report ? report.active_centers : "—"} caption={
-            report?.inactive_centers
-              ? `${report.inactive_centers} not active`
-              : "all active"
-          } /><span aria-hidden className="text-muted-foreground"><Building2 className="size-4" /></span></Surface>
-      </section>
+          <section
+            aria-label="Collection summary"
+            className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+          >
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={t("dashboard.collections")}
+                value={collection ? collection.transactions : "—"}
+                caption={
+                  collection
+                    ? `${collection.accepted} accepted · ${collection.rejected} rejected`
+                    : undefined
+                }
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <Activity className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={t("dashboard.quantity")}
+                value={
+                  collection ? (
+                    <Quantity
+                      value={collection.total_net_weight_kg}
+                      unit={collection.quantity_unit}
+                    />
+                  ) : (
+                    "—"
+                  )
+                }
+                caption={
+                  // WO-55: today's litres split by animal, beside the total. Cow and
+                  // buffalo are different milk at different money, and a total alone
+                  // hides which of them the morning actually brought in.
+                  collection
+                    ? [
+                        `${collection.suppliers_served} suppliers served`,
+                        ...(collection.by_milk_type ?? [])
+                          .filter((row) => row.net_weight_kg > 0)
+                          .map(
+                            (row) =>
+                              `${t(`milk.${row.milk_type}`)} ${row.net_weight_kg} ${unitLabel(row.quantity_unit)}`,
+                          ),
+                      ].join(" · ")
+                    : undefined
+                }
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <Droplets className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={t("dashboard.collectionValue")}
+                value={
+                  // WO-61: the platform's own currency for the figure it summed. The
+                  // organization's is used only for the EMPTY case below, where there
+                  // are no rows to contradict it and "0.00" still needs a name.
+                  primary ? (
+                    <Money amount={primary[1]} currency={primary[0]} />
+                  ) : collection ? (
+                    <Money amount="0.00" currency={orgCurrency} />
+                  ) : (
+                    "—"
+                  )
+                }
+                caption={
+                  currencies.length > 1
+                    ? `+${currencies.length - 1} more currency`
+                    : "payable"
+                }
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <Banknote className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={t("dashboard.averageFat")}
+                value={
+                  collection?.weighted_avg_fat != null
+                    ? `${collection.weighted_avg_fat}%`
+                    : "—"
+                }
+                caption="weighted by quantity"
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <Percent className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={t("dashboard.activeSuppliers")}
+                value={report ? report.active_suppliers : "—"}
+                caption="registered and active"
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <Truck className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={t("dashboard.activeCentres")}
+                value={report ? report.active_centers : "—"}
+                caption={
+                  report?.inactive_centers
+                    ? `${report.inactive_centers} not active`
+                    : "all active"
+                }
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <Building2 className="size-4" />
+              </span>
+            </Surface>
+          </section>
+        </>
+      ) : null}
 
-      <SectionHeading
-        title={t("dashboard.sales")}
-        detail={t("dashboard.salesDetail")}
-        href="/receivables"
-        hrefLabel={t("nav.receivables")}
-      />
+      {showSales ? (
+        <>
+          <SectionHeading
+            title={t("dashboard.sales")}
+            detail={t("dashboard.salesDetail")}
+            href="/receivables"
+            hrefLabel={t("nav.receivables")}
+          />
 
-      <section
-        aria-label="Sales summary"
-        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
-      >
-        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.deliveries")} value={sales ? sales.deliveries_in_period : "—"} caption={
-            sales
-              ? `${sales.customers_served_in_period} customers served`
-              : undefined
-          } /><span aria-hidden className="text-muted-foreground"><PackageCheck className="size-4" /></span></Surface>
-        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.milkDelivered")} value={
-            sales ? (
-              <Quantity
-                value={sales.delivered_quantity_in_period}
-                unit={sales.quantity_unit ?? "L"}
+          <section
+            aria-label="Sales summary"
+            className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+          >
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={t("dashboard.deliveries")}
+                value={sales ? sales.deliveries_in_period : "—"}
+                caption={
+                  sales
+                    ? `${sales.customers_served_in_period} customers served`
+                    : undefined
+                }
               />
-            ) : (
-              "—"
-            )
-          } caption="over the selected range" /><span aria-hidden className="text-muted-foreground"><Droplets className="size-4" /></span></Surface>
-        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.salesValue")} value={
-            sales ? (
-              <Money
-                amount={sales.sales_value_in_period}
-                currency={sales.currency}
+              <span aria-hidden className="text-muted-foreground">
+                <PackageCheck className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={t("dashboard.milkDelivered")}
+                value={
+                  sales ? (
+                    <Quantity
+                      value={sales.delivered_quantity_in_period}
+                      unit={sales.quantity_unit ?? "L"}
+                    />
+                  ) : (
+                    "—"
+                  )
+                }
+                caption="over the selected range"
               />
-            ) : (
-              "—"
-            )
-          } caption="milk delivered in this range" /><span aria-hidden className="text-muted-foreground"><Banknote className="size-4" /></span></Surface>
-        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.customerReceivable")} value={
-            sales ? (
-              <Money
-                amount={sales.receivable}
-                currency={sales.currency}
+              <span aria-hidden className="text-muted-foreground">
+                <Droplets className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={t("dashboard.salesValue")}
+                value={
+                  sales ? (
+                    <Money
+                      amount={sales.sales_value_in_period}
+                      currency={sales.currency}
+                    />
+                  ) : (
+                    "—"
+                  )
+                }
+                caption="milk delivered in this range"
               />
-            ) : (
-              "—"
-            )
-          } caption={
-            sales
-              ? `${sales.customers_owing} customers owing · all time`
-              : undefined
-          } /><span aria-hidden className="text-muted-foreground"><Wallet className="size-4" /></span></Surface>
-        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.billsOutstanding")} value={sales ? sales.open_invoices : "—"} caption={sales ? `${sales.receipts_issued} receipts issued` : undefined} /><span aria-hidden className="text-muted-foreground"><FileText className="size-4" /></span></Surface>
-        <Surface tone="metric" className="flex items-start justify-between gap-3"><Metric label={t("dashboard.deliveredNotBilled")} value={sales ? sales.unbilled_deliveries : "—"} caption={
-            sales ? (
-              <>
-                worth{" "}
-                <Money
-                  amount={sales.unbilled_amount}
-                  currency={sales.currency}
-                />
-              </>
-            ) : undefined
-          } /><span aria-hidden className="text-muted-foreground"><UserRound className="size-4" /></span></Surface>
-      </section>
+              <span aria-hidden className="text-muted-foreground">
+                <Banknote className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={t("dashboard.customerReceivable")}
+                value={
+                  sales ? (
+                    <Money
+                      amount={sales.receivable}
+                      currency={sales.currency}
+                    />
+                  ) : (
+                    "—"
+                  )
+                }
+                caption={
+                  sales
+                    ? `${sales.customers_owing} customers owing · all time`
+                    : undefined
+                }
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <Wallet className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={t("dashboard.billsOutstanding")}
+                value={sales ? sales.open_invoices : "—"}
+                caption={
+                  sales ? `${sales.receipts_issued} receipts issued` : undefined
+                }
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <FileText className="size-4" />
+              </span>
+            </Surface>
+            <Surface
+              tone="metric"
+              className="flex items-start justify-between gap-3"
+            >
+              <Metric
+                label={t("dashboard.deliveredNotBilled")}
+                value={sales ? sales.unbilled_deliveries : "—"}
+                caption={
+                  sales ? (
+                    <>
+                      worth{" "}
+                      <Money
+                        amount={sales.unbilled_amount}
+                        currency={sales.currency}
+                      />
+                    </>
+                  ) : undefined
+                }
+              />
+              <span aria-hidden className="text-muted-foreground">
+                <UserRound className="size-4" />
+              </span>
+            </Surface>
+          </section>
+        </>
+      ) : null}
 
       {/*
         Needs your attention (LACTEVA-ADMIN-015).
@@ -455,7 +621,10 @@ export default function Home() {
         A severity is a TINT and an outline, never a fill: a filled row reads
         as a control, and none of these is one.
       */}
-      <section aria-label={t("dashboard.attention")} className="flex flex-col gap-3">
+      <section
+        aria-label={t("dashboard.attention")}
+        className="flex flex-col gap-3"
+      >
         <SectionHeading title={t("dashboard.attention")} />
         {dashboard.state === "loading" ? (
           <LoadingState label="Checking for exceptions…" />
@@ -515,392 +684,417 @@ export default function Home() {
         )}
       </section>
 
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
-          <div>
-            {/* i18n-WIRED surface: these two were English literals on a page
+      {showCollection ? (
+        <Card>
+          <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+            <div>
+              {/* i18n-WIRED surface: these two were English literals on a page
                 whose every other string goes through the catalog. */}
-            <CardTitle className="text-base">
-              {t("dashboard.trendTitle")}
-            </CardTitle>
-            <CardDescription>
-              {t("dashboard.heroRange", { from: range.from, to: range.to })} ·{" "}
-              {t("dashboard.trendDetail")}
-            </CardDescription>
-          </div>
-          <div
-            role="group"
-            aria-label="Trend metric"
-            className="flex gap-1 rounded-lg border border-border p-1"
-          >
-            {(["quantity", "value"] as const).map((m) => (
-              <Button
-                key={m}
-                type="button"
-                size="sm"
-                variant={metric === m ? "secondary" : "ghost"}
-                aria-pressed={metric === m}
-                onClick={() => setMetric(m)}
-              >
-                {m === "quantity" ? "Quantity" : "Value"}
-              </Button>
-            ))}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {trend.state === "loading" ? (
-            <LoadingState label="Loading the trend…" />
-          ) : trend.state === "forbidden" ? (
-            <EmptyState
-              title="Not part of your access"
-              description="Your role does not include reporting. Nothing here is broken."
-            />
-          ) : trend.state === "error" ? (
-            <ErrorState
-              message={`The trend is unavailable — ${trend.message}.`}
-            />
-          ) : (
-            <TrendChart
-              unit={trend.data.quantity_unit}
-              metric={metric}
-              data={(trend.data.points ?? []).map((p) => ({
-                day: p.day,
-                quantity: p.total_net_weight_kg,
-                value: String(p.payable_amount),
-                currency: p.currency,
-                transactions: p.transactions,
-              }))}
-            />
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Handshake aria-hidden className="size-4 text-muted-foreground" />
-              Settlements and payments
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            {dashboard.state === "loading" ? (
-              <LoadingState label="Loading money…" />
-            ) : !report || !payments ? (
-              <p className="text-sm text-muted-foreground">Unavailable.</p>
-            ) : (
-              <>
-                <div>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Settlements
-                  </p>
-                  {(report.settlements?.by_status ?? []).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No settlements yet.
-                    </p>
-                  ) : (
-                    <div className="flex flex-wrap items-center gap-2">
-                      {(report.settlements?.by_status ?? []).map((row) => (
-                        <span
-                          key={row.status}
-                          className="flex items-center gap-1.5"
-                        >
-                          <StatusBadge status={row.status} />
-                          <span className="text-sm tabular-nums text-muted-foreground">
-                            {row.count}
-                          </span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <dt className="text-muted-foreground">
-                        Finalized net total
-                      </dt>
-                      <dd className="mt-0.5">
-                        {/* WO-61: the settlements' own currency. */}
-                        <CurrencyTotals
-                          totals={report.settlements?.finalized_by_currency}
-                          emphasis
-                        />
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">
-                        Settlement lines
-                      </dt>
-                      <dd className="mt-0.5 tabular-nums">
-                        {report.settlements?.total_lines ?? 0}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-
-                <div className="border-t border-border pt-4">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Payments
-                  </p>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    {[
-                      { label: "Completed", value: payments.completed_count },
-                      { label: "Processing", value: payments.processing_count },
-                      { label: "Pending", value: payments.pending_count },
-                      { label: "Failed", value: payments.failed_count },
-                    ].map((cell) => (
-                      <div key={cell.label}>
-                        <p className="text-xs text-muted-foreground">
-                          {cell.label}
-                        </p>
-                        <p className="text-lg font-semibold tabular-nums">
-                          {cell.value ?? 0}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                  <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <dt className="text-muted-foreground">Paid</dt>
-                      <dd className="mt-0.5">
-                        <CurrencyTotals
-                          totals={payments.completed_by_currency}
-                          emphasis
-                        />
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Outstanding</dt>
-                      <dd className="mt-0.5">
-                        <CurrencyTotals totals={payments.outstanding_by_currency} />
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Quantity by rate</CardTitle>
-            <CardDescription>
-              What was bought at each unit price the rate card resolved to.
-            </CardDescription>
+              <CardTitle className="text-base">
+                {t("dashboard.trendTitle")}
+              </CardTitle>
+              <CardDescription>
+                {t("dashboard.heroRange", { from: range.from, to: range.to })} ·{" "}
+                {t("dashboard.trendDetail")}
+              </CardDescription>
+            </div>
+            <div
+              role="group"
+              aria-label="Trend metric"
+              className="flex gap-1 rounded-lg border border-border p-1"
+            >
+              {(["quantity", "value"] as const).map((m) => (
+                <Button
+                  key={m}
+                  type="button"
+                  size="sm"
+                  variant={metric === m ? "secondary" : "ghost"}
+                  aria-pressed={metric === m}
+                  onClick={() => setMetric(m)}
+                >
+                  {m === "quantity" ? "Quantity" : "Value"}
+                </Button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent>
-            {dashboard.state === "loading" ? (
-              <LoadingState label="Loading rates…" />
-            ) : !report ? (
-              <p className="text-sm text-muted-foreground">Unavailable.</p>
+            {trend.state === "loading" ? (
+              <LoadingState label="Loading the trend…" />
+            ) : trend.state === "forbidden" ? (
+              <EmptyState
+                title="Not part of your access"
+                description="Your role does not include reporting. Nothing here is broken."
+              />
+            ) : trend.state === "error" ? (
+              <ErrorState
+                message={`The trend is unavailable — ${trend.message}.`}
+              />
             ) : (
-              <BarBreakdown
-                emptyTitle="No priced collection in this period"
-                emptyDescription="Rate bands appear once milk has been collected and priced."
-                rows={(report.rate_bands ?? []).map((band) => ({
-                  key: String(band.unit_price),
-                  label: `${band.unit_price} ${band.currency ?? ""} / ${unitLabel(band.quantity_unit)}`,
-                  magnitude: band.total_net_weight_kg,
-                  detail: (
-                    <span className="flex items-center gap-2">
-                      <Quantity value={band.total_net_weight_kg} unit={band.quantity_unit} />
-                      <Money
-                        amount={band.payable_amount}
-                        currency={band.currency}
-                      />
-                    </span>
-                  ),
+              <TrendChart
+                unit={trend.data.quantity_unit}
+                metric={metric}
+                data={(trend.data.points ?? []).map((p) => ({
+                  day: p.day,
+                  quantity: p.total_net_weight_kg,
+                  value: String(p.payable_amount),
+                  currency: p.currency,
+                  transactions: p.transactions,
                 }))}
               />
             )}
           </CardContent>
         </Card>
-      </div>
+      ) : null}
+
+      {showCollection ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Handshake
+                  aria-hidden
+                  className="size-4 text-muted-foreground"
+                />
+                Settlements and payments
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5">
+              {dashboard.state === "loading" ? (
+                <LoadingState label="Loading money…" />
+              ) : !report || !payments ? (
+                <p className="text-sm text-muted-foreground">Unavailable.</p>
+              ) : (
+                <>
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Settlements
+                    </p>
+                    {(report.settlements?.by_status ?? []).length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No settlements yet.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        {(report.settlements?.by_status ?? []).map((row) => (
+                          <span
+                            key={row.status}
+                            className="flex items-center gap-1.5"
+                          >
+                            <StatusBadge status={row.status} />
+                            <span className="text-sm tabular-nums text-muted-foreground">
+                              {row.count}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="text-muted-foreground">
+                          Finalized net total
+                        </dt>
+                        <dd className="mt-0.5">
+                          {/* WO-61: the settlements' own currency. */}
+                          <CurrencyTotals
+                            totals={report.settlements?.finalized_by_currency}
+                            emphasis
+                          />
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">
+                          Settlement lines
+                        </dt>
+                        <dd className="mt-0.5 tabular-nums">
+                          {report.settlements?.total_lines ?? 0}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+
+                  <div className="border-t border-border pt-4">
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Payments
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      {[
+                        { label: "Completed", value: payments.completed_count },
+                        {
+                          label: "Processing",
+                          value: payments.processing_count,
+                        },
+                        { label: "Pending", value: payments.pending_count },
+                        { label: "Failed", value: payments.failed_count },
+                      ].map((cell) => (
+                        <div key={cell.label}>
+                          <p className="text-xs text-muted-foreground">
+                            {cell.label}
+                          </p>
+                          <p className="text-lg font-semibold tabular-nums">
+                            {cell.value ?? 0}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="text-muted-foreground">Paid</dt>
+                        <dd className="mt-0.5">
+                          <CurrencyTotals
+                            totals={payments.completed_by_currency}
+                            emphasis
+                          />
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Outstanding</dt>
+                        <dd className="mt-0.5">
+                          <CurrencyTotals
+                            totals={payments.outstanding_by_currency}
+                          />
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Quantity by rate</CardTitle>
+              <CardDescription>
+                What was bought at each unit price the rate card resolved to.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {dashboard.state === "loading" ? (
+                <LoadingState label="Loading rates…" />
+              ) : !report ? (
+                <p className="text-sm text-muted-foreground">Unavailable.</p>
+              ) : (
+                <BarBreakdown
+                  emptyTitle="No priced collection in this period"
+                  emptyDescription="Rate bands appear once milk has been collected and priced."
+                  rows={(report.rate_bands ?? []).map((band) => ({
+                    key: String(band.unit_price),
+                    label: `${band.unit_price} ${band.currency ?? ""} / ${unitLabel(band.quantity_unit)}`,
+                    magnitude: band.total_net_weight_kg,
+                    detail: (
+                      <span className="flex items-center gap-2">
+                        <Quantity
+                          value={band.total_net_weight_kg}
+                          unit={band.quantity_unit}
+                        />
+                        <Money
+                          amount={band.payable_amount}
+                          currency={band.currency}
+                        />
+                      </span>
+                    ),
+                  }))}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
 
       {/* The question a dairy owner asks first, answered on the front page.
           The list is the six largest debts; `total_outstanding` beside it is
           computed by the platform across EVERY debtor, so the headline figure
           does not quietly become "the six on screen". */}
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Wallet aria-hidden className="size-4 text-muted-foreground" />
-              Who owes money
-            </CardTitle>
-            <CardDescription>
-              Largest balances first, across every customer in this
-              organization.
-            </CardDescription>
-          </div>
-          {owing.state === "ready" && owing.data.total > 0 ? (
-            <div className="text-end">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                Total owed
-              </p>
-              <p className="text-lg font-semibold">
-                <Money
-                  amount={owing.data.total_outstanding}
-                  currency={owing.data.currency}
-                />
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {owing.data.total}{" "}
-                {owing.data.total === 1 ? "customer" : "customers"}
-              </p>
+      {showSales ? (
+        <Card>
+          <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Wallet aria-hidden className="size-4 text-muted-foreground" />
+                Who owes money
+              </CardTitle>
+              <CardDescription>
+                Largest balances first, across every customer in this
+                organization.
+              </CardDescription>
             </div>
-          ) : null}
-        </CardHeader>
-        <CardContent>
-          {owing.state === "loading" ? (
-            <TableSkeleton rows={4} columns={3} />
-          ) : owing.state === "forbidden" ? (
-            <EmptyState
-              title="Not part of your access"
-              description="Your role does not include reporting. Nothing here is broken."
-            />
-          ) : owing.state === "error" ? (
-            <ErrorState
-              message={`Receivables are unavailable — ${owing.message}.`}
-            />
-          ) : (owing.data.items ?? []).length === 0 ? (
-            <EmptyState
-              title="Every customer is settled"
-              description="No customer has an outstanding balance right now."
-            />
-          ) : (
-            <>
-              <ul className="flex flex-col divide-y divide-border">
-                {(owing.data.items ?? []).map((row) => (
-                  <li
-                    key={row.customer_id}
-                    className="flex items-center justify-between gap-3 py-2"
+            {owing.state === "ready" && owing.data.total > 0 ? (
+              <div className="text-end">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Total owed
+                </p>
+                <p className="text-lg font-semibold">
+                  <Money
+                    amount={owing.data.total_outstanding}
+                    currency={owing.data.currency}
+                  />
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {owing.data.total}{" "}
+                  {owing.data.total === 1 ? "customer" : "customers"}
+                </p>
+              </div>
+            ) : null}
+          </CardHeader>
+          <CardContent>
+            {owing.state === "loading" ? (
+              <TableSkeleton rows={4} columns={3} />
+            ) : owing.state === "forbidden" ? (
+              <EmptyState
+                title="Not part of your access"
+                description="Your role does not include reporting. Nothing here is broken."
+              />
+            ) : owing.state === "error" ? (
+              <ErrorState
+                message={`Receivables are unavailable — ${owing.message}.`}
+              />
+            ) : (owing.data.items ?? []).length === 0 ? (
+              <EmptyState
+                title="Every customer is settled"
+                description="No customer has an outstanding balance right now."
+              />
+            ) : (
+              <>
+                <ul className="flex flex-col divide-y divide-border">
+                  {(owing.data.items ?? []).map((row) => (
+                    <li
+                      key={row.customer_id}
+                      className="flex items-center justify-between gap-3 py-2"
+                    >
+                      <div className="flex min-w-0 flex-col">
+                        <Link
+                          className="truncate text-sm font-medium hover:underline"
+                          href={`/customers/${row.customer_id}`}
+                        >
+                          {row.name}
+                        </Link>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {row.code}
+                          {row.oldest_unpaid_from
+                            ? ` · unpaid since ${row.oldest_unpaid_from}`
+                            : ""}
+                          {row.open_invoices
+                            ? ` · ${row.open_invoices} open ${
+                                row.open_invoices === 1 ? "bill" : "bills"
+                              }`
+                            : ""}
+                        </span>
+                      </div>
+                      <Money
+                        amount={row.outstanding}
+                        currency={row.currency}
+                        emphasis
+                      />
+                    </li>
+                  ))}
+                </ul>
+                {owing.data.total > (owing.data.items ?? []).length ? (
+                  <Link
+                    className="mt-3 inline-block text-sm underline-offset-4 hover:underline"
+                    href="/receivables"
                   >
-                    <div className="flex min-w-0 flex-col">
-                      <Link
-                        className="truncate text-sm font-medium hover:underline"
-                        href={`/customers/${row.customer_id}`}
-                      >
-                        {row.name}
-                      </Link>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {row.code}
-                        {row.oldest_unpaid_from
-                          ? ` · unpaid since ${row.oldest_unpaid_from}`
-                          : ""}
-                        {row.open_invoices
-                          ? ` · ${row.open_invoices} open ${
-                              row.open_invoices === 1 ? "bill" : "bills"
-                            }`
-                          : ""}
+                    See all {owing.data.total} customers who owe
+                  </Link>
+                ) : null}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showCollection ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Centre performance</CardTitle>
+              <CardDescription>
+                Highest volume first, over the selected range.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {centers.state === "loading" ? (
+                <TableSkeleton rows={4} columns={3} />
+              ) : centers.state === "forbidden" ? (
+                <EmptyState
+                  title="Not part of your access"
+                  description="Your role does not include reporting. Nothing here is broken."
+                />
+              ) : centers.state === "error" ? (
+                <ErrorState
+                  message={`Centre performance is unavailable — ${centers.message}.`}
+                />
+              ) : (
+                <BarBreakdown
+                  emptyTitle="No centre activity in this period"
+                  rows={(centers.data.items ?? []).map((row) => ({
+                    key: row.center_id,
+                    label: row.center_name,
+                    href: `/centers/${row.center_id}`,
+                    magnitude: row.total_net_weight_kg,
+                    detail: (
+                      <span className="flex items-center gap-2">
+                        <Quantity
+                          value={row.total_net_weight_kg}
+                          unit={row.quantity_unit}
+                        />
+                        <Money
+                          amount={row.payable_amount}
+                          currency={row.currency}
+                        />
                       </span>
-                    </div>
-                    <Money
-                      amount={row.outstanding}
-                      currency={row.currency}
-                      emphasis
-                    />
-                  </li>
-                ))}
-              </ul>
-              {owing.data.total > (owing.data.items ?? []).length ? (
-                <Link
-                  className="mt-3 inline-block text-sm underline-offset-4 hover:underline"
-                  href="/receivables"
-                >
-                  See all {owing.data.total} customers who owe
-                </Link>
-              ) : null}
-            </>
-          )}
-        </CardContent>
-      </Card>
+                    ),
+                  }))}
+                />
+              )}
+            </CardContent>
+          </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Centre performance</CardTitle>
-            <CardDescription>
-              Highest volume first, over the selected range.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {centers.state === "loading" ? (
-              <TableSkeleton rows={4} columns={3} />
-            ) : centers.state === "forbidden" ? (
-              <EmptyState
-                title="Not part of your access"
-                description="Your role does not include reporting. Nothing here is broken."
-              />
-            ) : centers.state === "error" ? (
-              <ErrorState
-                message={`Centre performance is unavailable — ${centers.message}.`}
-              />
-            ) : (
-              <BarBreakdown
-                emptyTitle="No centre activity in this period"
-                rows={(centers.data.items ?? []).map((row) => ({
-                  key: row.center_id,
-                  label: row.center_name,
-                  href: `/centers/${row.center_id}`,
-                  magnitude: row.total_net_weight_kg,
-                  detail: (
-                    <span className="flex items-center gap-2">
-                      <Quantity value={row.total_net_weight_kg} unit={row.quantity_unit} />
-                      <Money
-                        amount={row.payable_amount}
-                        currency={row.currency}
-                      />
-                    </span>
-                  ),
-                }))}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Top suppliers</CardTitle>
-            <CardDescription>
-              By quantity delivered over the selected range.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {suppliers.state === "loading" ? (
-              <TableSkeleton rows={4} columns={3} />
-            ) : suppliers.state === "forbidden" ? (
-              <EmptyState
-                title="Not part of your access"
-                description="Your role does not include reporting. Nothing here is broken."
-              />
-            ) : suppliers.state === "error" ? (
-              <ErrorState
-                message={`Supplier performance is unavailable — ${suppliers.message}.`}
-              />
-            ) : (
-              <BarBreakdown
-                emptyTitle="No supplier deliveries in this period"
-                rows={(suppliers.data.items ?? []).map((row) => ({
-                  key: row.supplier_id,
-                  label: row.supplier_name,
-                  href: `/suppliers/${row.supplier_id}`,
-                  magnitude: row.total_net_weight_kg,
-                  detail: (
-                    <span className="flex items-center gap-2">
-                      <Quantity value={row.total_net_weight_kg} unit={row.quantity_unit} />
-                      <Money
-                        amount={row.payable_amount}
-                        currency={row.currency}
-                      />
-                    </span>
-                  ),
-                }))}
-              />
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Top suppliers</CardTitle>
+              <CardDescription>
+                By quantity delivered over the selected range.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {suppliers.state === "loading" ? (
+                <TableSkeleton rows={4} columns={3} />
+              ) : suppliers.state === "forbidden" ? (
+                <EmptyState
+                  title="Not part of your access"
+                  description="Your role does not include reporting. Nothing here is broken."
+                />
+              ) : suppliers.state === "error" ? (
+                <ErrorState
+                  message={`Supplier performance is unavailable — ${suppliers.message}.`}
+                />
+              ) : (
+                <BarBreakdown
+                  emptyTitle="No supplier deliveries in this period"
+                  rows={(suppliers.data.items ?? []).map((row) => ({
+                    key: row.supplier_id,
+                    label: row.supplier_name,
+                    href: `/suppliers/${row.supplier_id}`,
+                    magnitude: row.total_net_weight_kg,
+                    detail: (
+                      <span className="flex items-center gap-2">
+                        <Quantity
+                          value={row.total_net_weight_kg}
+                          unit={row.quantity_unit}
+                        />
+                        <Money
+                          amount={row.payable_amount}
+                          currency={row.currency}
+                        />
+                      </span>
+                    ),
+                  }))}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader>

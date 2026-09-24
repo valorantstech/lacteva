@@ -1056,6 +1056,14 @@ class ApiClient {
         as Map<String, dynamic>;
   }
 
+  /// Who owes money, as the platform totals it (WO-85 §7): the headline
+  /// figure of `/v1/reports/receivables`, across every debtor, never a sum
+  /// the phone made. One row is enough — the total is on the page, not in
+  /// the rows.
+  Future<Map<String, dynamic>> receivablesSummary() async =>
+      await _send('GET', '/v1/reports/receivables?owing_only=true&limit=1')
+          as Map<String, dynamic>;
+
   /// Today's delivery runs — the route the rider is actually on (DEMO-034).
   ///
   /// The date is OMITTED deliberately, for the same reason the report omits

@@ -63,6 +63,9 @@ class _ManagerHomeScreenState extends State<ManagerHomeScreen> {
   List<DailySummaryView?> _week = const [];
   int? _activeFarmers;
   ReadinessResultView? _readiness;
+  //: D-31 / WO-85 §7 — the sales side, from endpoints that already exist.
+  Map<String, dynamic>? _round;
+  Map<String, dynamic>? _receivable;
   bool _sessionOpen = false;
   DateTime? _fetchedAt;
 
@@ -99,7 +102,14 @@ class _ManagerHomeScreenState extends State<ManagerHomeScreen> {
     }
   }
 
+  bool get _collects => widget.session.organization?.collects ?? true;
+  bool get _sells => widget.session.organization?.sells ?? true;
+
   /// Independently: one refusal must not blank the others.
+  ///
+  /// D-31 / WO-85 §7: the intake panels load when the organisation collects
+  /// milk, the round and the receivables when it sells. Both, for one that
+  /// does both — more tiles, and correct.
   Future<void> _loadPanels(String centreId) async {
     Future<void> panel(Future<void> Function() run) async {
       try {
@@ -108,6 +118,17 @@ class _ManagerHomeScreenState extends State<ManagerHomeScreen> {
     }
 
     await Future.wait([
+      if (_sells)
+        panel(() async {
+          final round = await widget.client.deliveryReport();
+          if (mounted) setState(() => _round = round);
+        }),
+      if (_sells)
+        panel(() async {
+          final owed = await widget.client.receivablesSummary();
+          if (mounted) setState(() => _receivable = owed);
+        }),
+      if (_collects)
       panel(() async {
         final today = await widget.client.dailyReport(centreId);
         if (!mounted) return;
@@ -141,14 +162,17 @@ class _ManagerHomeScreenState extends State<ManagerHomeScreen> {
           }),
         ]);
       }),
+      if (_collects)
       panel(() async {
         final s = await widget.client.listSuppliers(centerId: centreId, limit: 1);
         if (mounted) setState(() => _activeFarmers = s.total);
       }),
+      if (_collects)
       panel(() async {
         final r = await widget.client.readiness(centreId);
         if (mounted) setState(() => _readiness = r);
       }),
+      if (_collects)
       panel(() async {
         final open = await widget.client.listOpenSessions(centreId);
         if (mounted) setState(() => _sessionOpen = open.isNotEmpty);
@@ -204,28 +228,40 @@ class _ManagerHomeScreenState extends State<ManagerHomeScreen> {
               onSwitch: () => _open(CentersListScreen(client: widget.client, session: widget.session)),
               sessionOpen: _sessionOpen,
             ),
-            const SizedBox(height: 16),
-            _MorningCard(
-              l: l,
-              today: today,
-              expected: _sameDayLastWeek,
-              unit: unit,
-              activeFarmers: _activeFarmers,
-            ),
-            if (today != null && today.byMilkType.isNotEmpty) ...[
+            // D-31 / WO-85 §7: the intake tiles when the organisation
+            // collects, the round and the receivables when it sells, both
+            // when it does both. Nothing is replaced for a dairy that does
+            // both; a shop sees its round instead of four zeroes.
+            if (_collects) ...[
+              const SizedBox(height: 16),
+              _MorningCard(
+                l: l,
+                today: today,
+                expected: _sameDayLastWeek,
+                unit: unit,
+                activeFarmers: _activeFarmers,
+              ),
+              if (today != null && today.byMilkType.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _MilkTypes(l: l, shares: today.byMilkType),
+              ],
               const SizedBox(height: 12),
-              _MilkTypes(l: l, shares: today.byMilkType),
+              _Money(l: l, today: today, cycle: _cycle),
             ],
-            const SizedBox(height: 12),
-            _Money(l: l, today: today, cycle: _cycle),
+            if (_sells) ...[
+              const SizedBox(height: 12),
+              _SalesCard(l: l, session: widget.session, round: _round, receivable: _receivable),
+            ],
             if (exceptions.isNotEmpty) ...[
               const SizedBox(height: 20),
               _SectionLabel(text: l.t('mgr.needsYou', {'count': exceptions.length})),
               const SizedBox(height: 8),
               for (final e in exceptions) Padding(padding: const EdgeInsets.only(bottom: 8), child: e),
             ],
-            const SizedBox(height: 20),
-            _WeekChart(l: l, week: _week, unit: unit),
+            if (_collects) ...[
+              const SizedBox(height: 20),
+              _WeekChart(l: l, week: _week, unit: unit),
+            ],
           ],
         ),
       ),
@@ -596,6 +632,83 @@ class _Money extends StatelessWidget {
         cell(l.t('mgr.payableToday'), money(today), const ValueKey('mgr-payable-today')),
         const SizedBox(width: 8),
         cell(l.t('mgr.thisCycle'), money(cycle), const ValueKey('mgr-payable-cycle')),
+      ],
+    );
+  }
+}
+
+/// The sales side of the morning (D-31 / WO-85 §7): today's round —
+/// delivered, still to deliver, skipped — and what customers owe, from the
+/// delivery report and the receivables report the platform already serves.
+/// The same tile widgets as the intake side, with different content; no new
+/// tile design.
+class _SalesCard extends StatelessWidget {
+  const _SalesCard({
+    required this.l,
+    required this.session,
+    required this.round,
+    required this.receivable,
+  });
+
+  final L10n l;
+  final Session session;
+  final Map<String, dynamic>? round;
+  final Map<String, dynamic>? receivable;
+
+  @override
+  Widget build(BuildContext context) {
+    final r = round;
+    String count(Object? v) => v == null ? '—' : '$v';
+    final owed = receivable?['total_outstanding'];
+    Widget cell(String label, String value, Key key) => Expanded(
+      child: _Card(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _Label(label),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              key: key,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: LactevaColors.ink),
+            ),
+          ],
+        ),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionLabel(text: l.t('mgr.round')),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            cell(l.t('mgr.delivered'), count(r?['deliveries']), const ValueKey('mgr-round-delivered')),
+            const SizedBox(width: 8),
+            cell(l.t('mgr.remaining'), count(r?['scheduled']), const ValueKey('mgr-round-remaining')),
+            const SizedBox(width: 8),
+            cell(l.t('mgr.skipped'), count(r?['skipped']), const ValueKey('mgr-round-skipped')),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _Card(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _Label(l.t('mgr.owed')),
+              const SizedBox(height: 4),
+              Text(
+                owed == null ? '—' : money(owed, session),
+                key: const ValueKey('mgr-owed'),
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: LactevaColors.ink),
+              ),
+              const SizedBox(height: 2),
+              Text(l.t('mgr.owedDetail'), style: const TextStyle(fontSize: 12, color: LactevaColors.muted)),
+            ],
+          ),
+        ),
       ],
     );
   }

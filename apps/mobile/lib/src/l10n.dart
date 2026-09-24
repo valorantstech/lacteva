@@ -41,6 +41,12 @@ const Catalog _en = {
   'mgr.level': '= same as {day}',
   'mgr.farmersOf': '{served} of {total} farmers',
   'mgr.stillToCome': '{count, plural, =0{everyone is in} one{# still to come} other{# still to come}}',
+  'mgr.round': "Today's round",
+  'mgr.delivered': 'delivered',
+  'mgr.remaining': 'still to deliver',
+  'mgr.skipped': 'skipped',
+  'mgr.owed': 'Owed by customers',
+  'mgr.owedDetail': 'across every household, as the platform totals it',
   'mgr.payableToday': 'Payable today',
   'mgr.thisCycle': 'This cycle',
   'mgr.needsYou': '{count, plural, one{Needs you — #} other{Needs you — #}}',
@@ -591,6 +597,12 @@ const Catalog _hi = {
   'mgr.level': '= {day} जितना',
   'mgr.farmersOf': '{total} में से {served} किसान',
   'mgr.stillToCome': '{count, plural, =0{सब आ चुके} one{# अभी आना बाकी} other{# अभी आने बाकी}}',
+  'mgr.round': 'आज का राउंड',
+  'mgr.delivered': 'दिया गया',
+  'mgr.remaining': 'अभी देना बाकी',
+  'mgr.skipped': 'छोड़ा गया',
+  'mgr.owed': 'ग्राहकों पर बकाया',
+  'mgr.owedDetail': 'हर घर मिलाकर, जैसा प्लेटफ़ॉर्म जोड़ता है',
   'mgr.payableToday': 'आज देय',
   'mgr.thisCycle': 'इस चक्र में',
   'mgr.needsYou': '{count, plural, one{आपकी ज़रूरत — #} other{आपकी ज़रूरत — #}}',
@@ -1102,6 +1114,12 @@ const Catalog _ar = {
   'mgr.level': '= مثل {day}',
   'mgr.farmersOf': '{served} من {total} مزارعًا',
   'mgr.stillToCome': '{count, plural, zero{وصل الجميع} one{بقي واحد} two{بقي اثنان} few{بقي #} other{بقي #}}',
+  'mgr.round': 'جولة اليوم',
+  'mgr.delivered': 'تم التسليم',
+  'mgr.remaining': 'متبقٍ للتسليم',
+  'mgr.skipped': 'تم التخطي',
+  'mgr.owed': 'مستحق على العملاء',
+  'mgr.owedDetail': 'عبر كل الأسر، كما يجمعها النظام',
   'mgr.payableToday': 'مستحق اليوم',
   'mgr.thisCycle': 'هذه الدورة',
   'mgr.needsYou': '{count, plural, one{يحتاجك — #} two{يحتاجك — #} few{يحتاجك — #} other{يحتاجك — #}}',
@@ -1599,6 +1617,25 @@ const Catalog _ar = {
 
 const Map<String, Catalog> catalogs = {'en': _en, 'hi': _hi, 'ar': _ar};
 
+/// The words that change for an organisation that sells and does not
+/// collect (D-31 / WO-85 §6) — and only those. Small, in one place, keyed
+/// by the same message keys; a key absent here falls through to the
+/// catalogue.
+const Map<String, Catalog> salesOnlyOverrides = {
+  'en': {
+    'hub.centres': 'Shop',
+    'center.listTitle': 'Shop',
+    'center.fallback': 'Shop',
+    'hub.noCentre': 'No shop set up yet',
+  },
+  'hi': {
+    'hub.centres': 'दुकान',
+    'center.listTitle': 'दुकान',
+    'center.fallback': 'दुकान',
+    'hub.noCentre': 'अभी कोई दुकान सेट नहीं है',
+  },
+};
+
 /// `hi-IN` → `hi`. The catalog key for a BCP-47 tag: the region carries the
 /// money and the clock, which live on the organization, not in the words.
 String baseLanguage(String? tag) =>
@@ -1610,15 +1647,27 @@ String baseLanguage(String? tag) =>
 /// A missing key shows the key, which an engineer can grep for. Neither is a
 /// blank space on a phone at 5 a.m.
 class L10n {
-  const L10n(this.language);
+  const L10n(this.language, {this.salesOnly = false});
 
-  factory L10n.of(Session? session) => L10n(baseLanguage(session?.locale));
+  factory L10n.of(Session? session) => L10n(
+    baseLanguage(session?.locale),
+    salesOnly: session?.organization?.salesOnly ?? false,
+  );
 
   final String language;
 
+  /// D-31 / WO-85 §6: the organisation sells and does not collect, so the
+  /// few words that name a "centre" read "shop". Every other key falls
+  /// through to the catalogue; an organisation that does both keeps every
+  /// existing word.
+  final bool salesOnly;
+
   String t(String key, [Map<String, Object?> vars = const {}]) {
     final catalog = catalogs[language] ?? _en;
-    var text = catalog[key] ?? _en[key] ?? key;
+    final override = salesOnly
+        ? (salesOnlyOverrides[language]?[key] ?? salesOnlyOverrides['en']?[key])
+        : null;
+    var text = override ?? catalog[key] ?? _en[key] ?? key;
     text = resolvePlurals(text, vars, language);
     vars.forEach((name, value) {
       text = text.replaceAll('{$name}', '${value ?? ''}');

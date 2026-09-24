@@ -203,6 +203,13 @@ const en: Catalog = {
   "nav.subscription": "Subscription",
   "nav.calendar": "Business calendar",
   "nav.users": "Users",
+  "modules.title": "What this organisation does",
+  "modules.help": "Turning a module off hides its screens from the navigation and nothing else. No farmer, customer, rate card, invoice or settlement is deleted, archived or closed; every page and every report still answers. Turn it back on and everything is exactly where it was. An organisation needs at least one.",
+  "modules.collection": "This organisation collects milk from suppliers",
+  "modules.collectionDetail": "Centres, suppliers, intake, rate cards, settlements and supplier payments.",
+  "modules.sales": "This organisation sells milk to customers",
+  "modules.salesDetail": "Customers, deliveries, routes, invoices and who owes money.",
+  "modules.atLeastOne": "At least one must stay on — an organisation with neither has no product.",
   "nav.products": "Products",
 
   // --- dashboard -----------------------------------------------------
@@ -898,6 +905,13 @@ const hi: Catalog = {
   "nav.subscription": "सदस्यता",
   "nav.calendar": "व्यावसायिक कैलेंडर",
   "nav.users": "उपयोगकर्ता",
+  "modules.title": "यह संगठन क्या करता है",
+  "modules.help": "किसी मॉड्यूल को बंद करने से केवल उसकी स्क्रीनें नेविगेशन से छिपती हैं, और कुछ नहीं। कोई किसान, ग्राहक, रेट कार्ड, बिल या सेटलमेंट न हटता है, न बंद होता है; हर पेज और रिपोर्ट पहले की तरह काम करती है। वापस चालू करने पर सब कुछ वहीं मिलेगा जहाँ था। कम से कम एक चालू रहना चाहिए।",
+  "modules.collection": "यह संगठन आपूर्तिकर्ताओं से दूध लेता है",
+  "modules.collectionDetail": "केंद्र, आपूर्तिकर्ता, आवक, रेट कार्ड, सेटलमेंट और आपूर्तिकर्ता भुगतान।",
+  "modules.sales": "यह संगठन ग्राहकों को दूध बेचता है",
+  "modules.salesDetail": "ग्राहक, डिलीवरी, रूट, बिल और बकाया।",
+  "modules.atLeastOne": "कम से कम एक चालू रहना चाहिए — दोनों बंद हों तो कोई उत्पाद नहीं बचता।",
   "nav.products": "उत्पाद",
 
   // --- dashboard -----------------------------------------------------
@@ -1589,6 +1603,13 @@ const ar: Catalog = {
   "nav.subscription": "الاشتراك",
   "nav.calendar": "التقويم التجاري",
   "nav.users": "المستخدمون",
+  "modules.title": "ما تقوم به هذه المنظمة",
+  "modules.help": "إيقاف وحدة يخفي شاشاتها من التنقل فقط. لا يُحذف أي مزارع أو عميل أو بطاقة أسعار أو فاتورة أو تسوية، وكل صفحة وتقرير يستمر في العمل. أعد تشغيلها وستجد كل شيء في مكانه. يجب أن تبقى وحدة واحدة على الأقل.",
+  "modules.collection": "تجمع هذه المنظمة الحليب من المورّدين",
+  "modules.collectionDetail": "المراكز والمورّدون والاستلام وبطاقات الأسعار والتسويات ومدفوعات المورّدين.",
+  "modules.sales": "تبيع هذه المنظمة الحليب للعملاء",
+  "modules.salesDetail": "العملاء والتوصيل والمسارات والفواتير والمستحقات.",
+  "modules.atLeastOne": "يجب أن تبقى وحدة واحدة على الأقل — بدونهما لا يوجد منتج.",
   "nav.products": "المنتجات",
 
   // --- dashboard -----------------------------------------------------

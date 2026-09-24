@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lacteva_mobile/src/api.dart';
 import 'package:lacteva_mobile/src/centers.dart';
+import 'package:lacteva_mobile/src/l10n.dart';
 import 'package:lacteva_mobile/src/manager_home.dart';
 import 'package:lacteva_mobile/src/session.dart';
 import 'package:lacteva_mobile/src/suppliers.dart';
@@ -113,26 +114,49 @@ class _Dairy extends ApiClient {
   }
 
   @override
+  Future<Map<String, dynamic>> deliveryReport({String? dateFrom, String? dateTo, String? customerId}) async {
+    calls.add('deliveryReport');
+    return {
+      'deliveries': 9,
+      'scheduled': 12,
+      'skipped': 3,
+      'planned': 24,
+      'total_amount': '576.00',
+      'currency': 'INR',
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> receivablesSummary() async {
+    calls.add('receivablesSummary');
+    return {'items': [], 'total': 12, 'total_outstanding': '276665.00', 'currency': 'INR'};
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> listOpenSessions(String centerId) async {
     calls.add('listOpenSessions');
     return sessionOpen ? [{'id': 's1', 'label': 'morning', 'status': 'open'}] : const [];
   }
 }
 
-Session _session(Set<String> permissions) => Session(
+Session _session(
+  Set<String> permissions, {
+  List<String> modules = const ['collection', 'sales'],
+}) => Session(
   userId: 'u1',
   email: 'owner@dairy.example',
   fullName: 'Sitara Owner',
   tenantId: 'org-1',
   permissions: permissions,
-  organization: const OrgLocale(
+  organization: OrgLocale(
     name: 'Sitara Dairy',
     countryCode: 'IN',
     currencyCode: 'INR',
     currencySymbol: '₹',
     timezone: 'Asia/Kolkata',
     defaultLanguage: 'en',
-    supportedLanguages: ['en', 'hi'],
+    supportedLanguages: const ['en', 'hi'],
+    modules: modules,
   ),
 );
 
@@ -147,9 +171,19 @@ final _owner = _session({
   'settlement.read',
 });
 
-Future<_Dairy> _pump(WidgetTester tester, {_Dairy? dairy}) async {
+Future<_Dairy> _pump(WidgetTester tester, {_Dairy? dairy, Session? session}) async {
+  // D-31 / WO-85: a dairy that does both now carries the round beside the
+  // intake, so the home is taller than the test window's default. A tall
+  // surface, so the chart at the bottom is built and the assertions about
+  // it stay assertions about what a phone scrolls to.
+  tester.view.physicalSize = const Size(1080, 4800);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
   final fake = dairy ?? _Dairy();
-  await tester.pumpWidget(MaterialApp(home: ManagerHomeScreen(client: fake, session: _owner)));
+  await tester.pumpWidget(
+    MaterialApp(home: ManagerHomeScreen(client: fake, session: session ?? _owner)),
+  );
   await tester.pumpAndSettle();
   return fake;
 }
@@ -292,6 +326,10 @@ void main() {
 
     testWidgets('the axis text takes its colour from the theme', (tester) async {
       final fake = _Dairy();
+      tester.view.physicalSize = const Size(1080, 4800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(
         MaterialApp(
           theme: ThemeData(colorScheme: const ColorScheme.dark(onSurfaceVariant: Color(0xFFABCDEF))),
@@ -314,6 +352,73 @@ void main() {
     test('names the weekday Monday-first', () {
       expect(weekdayOf('2026-09-02'), 2); // a Wednesday
       expect(weekdayOf('2026-08-31'), 0); // a Monday
+    });
+  });
+
+  group('the home shows what the organisation has (D-31 / WO-85 §7)', () {
+    testWidgets('a dairy that does both sees the intake tiles AND the round', (tester) async {
+      final fake = await _pump(tester);
+      expect(find.byKey(const ValueKey('mgr-unit')), findsOneWidget);
+      expect(find.byKey(const ValueKey('mgr-round-delivered')), findsOneWidget);
+      expect(find.text('9'), findsOneWidget);
+      expect(find.byKey(const ValueKey('mgr-round-remaining')), findsOneWidget);
+      expect(find.text('12'), findsOneWidget);
+      expect(find.byKey(const ValueKey('mgr-owed')), findsOneWidget);
+      expect(fake.calls, contains('deliveryReport'));
+      expect(fake.calls, contains('receivablesSummary'));
+      expect(fake.calls, contains('dailyReport(today)'));
+    });
+
+    testWidgets('a shop sees its round and its receivables instead of four zeroes', (tester) async {
+      final shop = _session(_owner.permissions, modules: const ['sales']);
+      final fake = await _pump(tester, session: shop);
+      expect(find.byKey(const ValueKey('mgr-round-delivered')), findsOneWidget);
+      expect(find.byKey(const ValueKey('mgr-round-skipped')), findsOneWidget);
+      expect(find.text('3'), findsOneWidget);
+      expect(find.byKey(const ValueKey('mgr-owed')), findsOneWidget);
+      // No intake hero, no farmers, no week chart — and none of their calls.
+      expect(find.byKey(const ValueKey('mgr-unit')), findsNothing);
+      expect(find.byKey(const ValueKey('mgr-progress')), findsNothing);
+      expect(find.byKey(const ValueKey('chart-max')), findsNothing);
+      expect(fake.calls.where((c) => c.startsWith('dailyReport')), isEmpty);
+      expect(fake.calls, isNot(contains('listSuppliers')));
+    });
+
+    testWidgets('a classic dairy sees exactly what it saw before', (tester) async {
+      final dairy = _session(_owner.permissions, modules: const ['collection']);
+      final fake = await _pump(tester, session: dairy);
+      expect(find.byKey(const ValueKey('mgr-unit')), findsOneWidget);
+      expect(find.byKey(const ValueKey('mgr-payable-today')), findsOneWidget);
+      expect(find.byKey(const ValueKey('mgr-round-delivered')), findsNothing);
+      expect(find.byKey(const ValueKey('mgr-owed')), findsNothing);
+      expect(fake.calls, isNot(contains('deliveryReport')));
+      expect(fake.calls, isNot(contains('receivablesSummary')));
+    });
+  });
+
+  group('the session carries the modules (D-31)', () {
+    test('absent means both — nothing said is not a shop', () {
+      final org = OrgLocale.fromJson({'name': 'X', 'country_code': 'IN'});
+      expect(org.modules, ['collection', 'sales']);
+      expect(org.collects && org.sells, isTrue);
+      expect(org.salesOnly, isFalse);
+    });
+
+    test('sent, it is read back as sent, and round-trips through the cache', () {
+      final org = OrgLocale.fromJson({'name': 'X', 'country_code': 'IN', 'modules': ['sales']});
+      expect(org.modules, ['sales']);
+      expect(org.salesOnly, isTrue);
+      expect(OrgLocale.fromJson(org.toJson()).modules, ['sales']);
+    });
+
+    test('a shop reads "Shop" where a dairy reads "Centre" — and nowhere else', () {
+      final shop = L10n.of(_session(const {}, modules: const ['sales']));
+      final both = L10n.of(_session(const {}));
+      expect(shop.t('hub.centres'), 'Shop');
+      expect(both.t('hub.centres'), 'Centres');
+      expect(shop.t('center.fallback'), 'Shop');
+      expect(shop.t('nav.today'), both.t('nav.today'));
+      expect(shop.t('mgr.round'), both.t('mgr.round'));
     });
   });
 }

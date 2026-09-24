@@ -36,6 +36,7 @@ from platform_core.core.errors import (
 from platform_core.core.http_security import client_ip
 from platform_core.core.keys import get_key_registry
 from platform_core.core.locales import country_choices, currency_symbol, language_choices
+from platform_core.core.modules import DEFAULT_MODULES
 from platform_core.core.org_context import tenant_timezone, tenant_units
 from platform_core.core.security_audit import record_security_event
 from platform_core.core.tenancy import require_current_tenant
@@ -558,6 +559,10 @@ class MeOrganization(BaseModel):
     trade_unit: str | None = None
     trade_unit_label: str | None = None
     conversion_factor: str | None = None
+    #: D-31 / WO-85. Which of the product's modules this organisation runs —
+    #: `collection`, `sales`, or both — so both clients shape their
+    #: navigation from the session they already fetch. Presentation only.
+    modules: list[str] = Field(default_factory=lambda: list(DEFAULT_MODULES))
     conversion_effective_from: date | None = None
 
 
@@ -687,6 +692,7 @@ async def me(
                     str(org.conversion_factor) if org.conversion_factor is not None else None
                 ),
                 conversion_effective_from=org.conversion_effective_from,
+                modules=list(org.modules or DEFAULT_MODULES),
             )
         row = await session.scalar(
             select(Membership).where(

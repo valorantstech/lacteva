@@ -3,10 +3,10 @@ id: LACTEVA-ONBOARDING-PLAYBOOK
 title: Onboarding Playbook — from signed dairy to first parchi
 type: reference
 status: Draft
-version: "0.1"
+version: "0.2"
 owner: Product & Platform Engineering
 created: 2026-09-01
-last-updated: 2026-09-01
+last-updated: 2026-09-25
 related: [LACTEVA-DEMO-ACCOUNTS, LACTEVA-GO-LIVE-READINESS, LACTEVA-HARDWARE-INTEGRATION-SPEC]
 baseline: ARCH-BASELINE-V1
 ---
@@ -44,6 +44,23 @@ Done by the Lacteva platform administrator (Phoenix staff), in the portal:
    (India → litres). If the dairy weighs (question 8 above), set
    `quantity_unit: kg` at creation. A 30-day trial starts; activation
    beyond trial is a Lacteva act (no self-serve payment yet).
+   **Which of the product's modules does it run (D-31 / WO-85)?** Two
+   questions, both may be yes: *does it collect milk from suppliers?*
+   (`collection` — centres, suppliers, intake, rate cards, settlements) and
+   *does it sell milk to customers?* (`sales` — customers, deliveries,
+   routes, bills). A dairy firm that also retails says yes to both and sees
+   the whole product; a classic dairy says collection only; a milk shop like
+   Gavyam says sales only. Set `modules` at creation, or afterwards under
+   Admin → Settings. It hides navigation and nothing else — no data is
+   deleted or refused by switching a module off, and everything is where it
+   was when it is switched back on. Products (WO-81): a new organisation's
+   catalogue holds only "Other shop item"; add the milk it sells before the
+   first standing order.
+   **A sales-only organisation still needs exactly ONE collection centre**
+   — routes, runs and the subscription hang off one. Create it in step 2.1
+   named after the shop; the shop's owner never sees the word "centre"
+   (the portal and the app say "Shop" for a sales-only organisation), so
+   nobody should wonder why a shop has one.
 2. Invite the dairy owner as tenant admin: /admin/users → Invite →
    role "tenant-admin". The owner receives a real email, opens the accept
    link, sets their password. **Login #1 exists.**
@@ -167,3 +184,4 @@ The product never claims these before they exist; neither should sales.
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 0.1 | 2026-09-01 | Product & Platform Engineering | Committed into the governed tree from the Master workspace (BATCH B7.2 rider). Content unchanged apart from front matter and this log. |
+| 0.2 | 2026-09-25 | Engineering | D-31 / WO-85: provisioning asks which modules the organisation runs (collection, sales, both), says switching one off hides navigation only, and notes that a sales-only organisation still needs one centre; WO-81: the catalogue starts with "Other shop item". |

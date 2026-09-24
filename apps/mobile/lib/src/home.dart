@@ -225,7 +225,11 @@ class _HomeRouterState extends State<HomeRouter>
         session: session,
         roots: {
           'today': (_) => ManagerHomeScreen(client: client, session: session),
-          'farmers': (_) => SuppliersListScreen(client: client, session: session),
+          // D-31 / WO-85: farmers are the collection side. An organisation
+          // that only sells has none, and a tab of nobody is not offered —
+          // absent, never disabled. Everything else on this bar is shared.
+          if (session.organization?.collects ?? true)
+            'farmers': (_) => SuppliersListScreen(client: client, session: session),
           'money': (_) => HubScreen(
             client: client,
             session: session,

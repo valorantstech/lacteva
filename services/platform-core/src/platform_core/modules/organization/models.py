@@ -46,6 +46,19 @@ class Organization(Base, IdMixin):
     supported_languages: Mapped[list] = mapped_column(JSON, default=lambda: ["en"])
     #: BCP-47. Widened from the pre-DEMO-013 `en` to hold `en-IN`.
     default_locale: Mapped[str] = mapped_column(String(16), default="en")
+    #: D-31 / WO-85. The product modules this organisation has turned on —
+    #: `collection` (milk in from suppliers), `sales` (milk out to customers),
+    #: or both — a list exactly as `supported_languages` is. The registry is
+    #: `core/modules.py`.
+    #:
+    #: A PRESENTATION fact: it decides what the navigation shows and nothing
+    #: else. No permission, policy or business rule may branch on it, and
+    #: turning a module off deletes nothing — a dairy that switches
+    #: `collection` off for a month and back on finds every farmer, rate card
+    #: and settlement exactly where they were. `test_modules.py` greps for a
+    #: branch. The default is BOTH, because that is what every organisation
+    #: created before this column had.
+    modules: Mapped[list] = mapped_column(JSON, default=lambda: ["collection", "sales"])
     #: D-21 / WO-70. The unit this organisation MEASURES intake in — `litre`
     #: or `kg` (`core/units.UNITS`) — resolved from `country_code` at creation
     #: exactly as `currency_code` is, and written onto every transaction at

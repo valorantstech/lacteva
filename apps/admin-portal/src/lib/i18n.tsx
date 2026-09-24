@@ -34,6 +34,7 @@ import {
   useMemo,
 } from "react";
 
+import { overridesFor } from "@/lib/module-labels";
 import { CATALOGS, type Catalog, isRtl } from "./messages";
 
 /** `hi-IN` → `hi`. Catalogs are per language; the region carries money and time. */
@@ -103,10 +104,17 @@ function interpolate(
  * navigation is exactly the text that must be translated. Same catalog, same
  * fallback, no second implementation.
  */
-export function translatorFor(locale: string | null | undefined): Translate {
-  const catalog: Catalog = CATALOGS[baseLanguage(locale)] ?? CATALOGS.en;
+export function translatorFor(
+  locale: string | null | undefined,
+  options: { salesOnly?: boolean } = {},
+): Translate {
+  const language = baseLanguage(locale);
+  const catalog: Catalog = CATALOGS[language] ?? CATALOGS.en;
+  // D-31 / WO-85 §6: a few words read differently for an organisation that
+  // sells and does not collect; every other key falls through.
+  const overrides = overridesFor(language, options.salesOnly === true);
   return (key, vars) =>
-    interpolate(catalog[key] ?? CATALOGS.en[key] ?? key, vars);
+    interpolate(overrides[key] ?? catalog[key] ?? CATALOGS.en[key] ?? key, vars);
 }
 
 export function LocaleProvider({
@@ -114,20 +122,25 @@ export function LocaleProvider({
   currency,
   timezone,
   quantityUnit,
+  salesOnly = false,
   children,
 }: {
   locale: string | null | undefined;
   currency?: string | null;
   timezone?: string | null;
   quantityUnit?: string | null;
+  /** D-31 / WO-85 §6: the organisation sells and does not collect. */
+  salesOnly?: boolean;
   children: React.ReactNode;
 }) {
   const language = baseLanguage(locale);
   const catalog: Catalog = CATALOGS[language] ?? CATALOGS.en;
+  const overrides = useMemo(() => overridesFor(language, salesOnly), [language, salesOnly]);
 
   const t = useCallback<Translate>(
-    (key, vars) => interpolate(catalog[key] ?? CATALOGS.en[key] ?? key, vars),
-    [catalog],
+    (key, vars) =>
+      interpolate(overrides[key] ?? catalog[key] ?? CATALOGS.en[key] ?? key, vars),
+    [catalog, overrides],
   );
 
   const rtl = isRtl(language);

@@ -343,6 +343,53 @@ export default function OrganizationSettingsPage() {
             )}
           </section>
 
+          {/* --- D-31 / WO-85: which of the product's modules this organisation runs */}
+          <section className="flex flex-col gap-3" aria-labelledby="modules-title">
+            <h2 id="modules-title" className="text-sm font-semibold">
+              {t("modules.title")}
+            </h2>
+            <p className="text-xs text-muted-foreground">{t("modules.help")}</p>
+            <div className="flex flex-col gap-2">
+              {(settings.available_modules ?? []).map((module) => {
+                const current = settings.modules ?? [];
+                const enabled = current.includes(module.key);
+                const last = enabled && current.length === 1;
+                return (
+                  <label
+                    key={module.key}
+                    className="flex items-start gap-3 rounded-md border border-border p-3 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={enabled}
+                      disabled={!mayManage || saving || last}
+                      onChange={(e) =>
+                        void saveOrganization({
+                          modules: e.target.checked
+                            ? [...current, module.key]
+                            : current.filter((m) => m !== module.key),
+                        })
+                      }
+                      data-testid={`toggle-module-${module.key}`}
+                    />
+                    <span className="flex flex-col gap-0.5">
+                      <span>{t(`modules.${module.key}`)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {t(`modules.${module.key}Detail`)}
+                      </span>
+                      {last ? (
+                        <span className="text-xs text-muted-foreground">
+                          {t("modules.atLeastOne")}
+                        </span>
+                      ) : null}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </section>
+
           <section className="flex flex-col gap-3 border-t border-border pt-6">
             <h2 className="text-sm font-semibold">
               {t("settings.myTimezone")}
