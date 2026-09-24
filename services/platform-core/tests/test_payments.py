@@ -159,7 +159,11 @@ async def _second_tenant(client):
             },
         )
     ).json()
-    return {"Authorization": f"Bearer {pair['access_token']}"}
+    headers = {"Authorization": f"Bearer {pair['access_token']}"}
+    from tests.test_org_structure import add_milk_product
+
+    await add_milk_product(client, headers)
+    return headers
 
 
 # --- creation & allocation ---------------------------------------------------

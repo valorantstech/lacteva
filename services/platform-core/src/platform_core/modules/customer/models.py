@@ -9,11 +9,15 @@ the other would put a receivable in a payable's clothing — so this is a
 separate bounded context with its own vocabulary, referenced elsewhere by UUID
 like every other module.
 
-What it deliberately does NOT hold: prices for products in general (CAP-0006
-CMA.PRI.02), contracts (CMA.PRI.01), or credit scoring. A `DeliveryPlan`
-carries the agreed rate for the one product this customer takes, which is what
-a household or a tea shop actually has, and what the daily delivery needs to
-price itself.
+What it deliberately does NOT hold: contracts (CAP-0006 CMA.PRI.01) or
+credit scoring. Products are the `catalog` module's since WO-81 — a list of
+what the organisation sells, each with a name, a unit and a SUGGESTED price —
+and this module names them by code. A `DeliveryPlan` carries the agreed rate
+for one product this customer takes on a standing basis, which is what a
+household or a tea shop actually has, and what the daily delivery needs to
+price itself; the catalogue's price never overrides it. A customer may hold
+one plan per product and slot, so a flat that takes cow and buffalo milk on
+the same mornings is one customer with two plans, not two customers.
 """
 
 import uuid

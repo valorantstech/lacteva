@@ -234,6 +234,7 @@ Iterable<Semantics> _dayCells(WidgetTester tester) => tester
     );
 
 void main() {
+  billLineTests();
   group('the week, as calendar arithmetic and nothing more', () {
     test('runs Monday to Sunday around the day it is given', () {
       // 2026-08-26 is a Wednesday.
@@ -627,6 +628,45 @@ void main() {
         ),
       );
       expect(platform.calls.length, 6);
+    });
+  });
+}
+
+// --- WO-81: a bill line is the milk, or a thing bought beside it ----------------
+
+void billLineTests() {
+  group('a bill line says what it is (WO-81)', () {
+    test('milk carries its slot and its product NAME, not the code', () {
+      expect(
+        billLineTitle({
+          'line_kind': 'delivery',
+          'delivery_date': '2026-08-10',
+          'slot': 'morning',
+          'product': 'BUFFALO-MILK',
+          'product_name': 'Buffalo milk',
+        }),
+        '2026-08-10 · morning · Buffalo milk',
+      );
+    });
+
+    test('an item has no slot, and reads by its name', () {
+      expect(
+        billLineTitle({
+          'line_kind': 'item',
+          'delivery_date': '2026-08-10',
+          'slot': '',
+          'product': 'OTHER',
+          'product_name': 'Other shop item',
+        }),
+        '2026-08-10 · Other shop item',
+      );
+    });
+
+    test('a line written before the catalogue falls back to its code', () {
+      expect(
+        billLineTitle({'delivery_date': '2026-07-01', 'slot': 'evening', 'product': 'RAW-COW-MILK'}),
+        '2026-07-01 · evening · RAW-COW-MILK',
+      );
     });
   });
 }

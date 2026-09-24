@@ -303,7 +303,12 @@ async def _tenant_admin_for(client, *, country: str, slug: str, email: str):
         json={"email": email, "password": "admin-password-1", "tenant_id": org["id"]},
     )
     assert pair.status_code == 200, pair.text
-    return org, {"Authorization": f"Bearer {pair.json()['access_token']}"}
+    headers = {"Authorization": f"Bearer {pair.json()['access_token']}"}
+    # WO-81: every plan below names the milk; add it the way onboarding would.
+    from tests.test_org_structure import add_milk_product
+
+    await add_milk_product(client, headers)
+    return org, headers
 
 
 async def test_an_administrator_can_read_the_organizations_locale(client):

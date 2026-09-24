@@ -23,7 +23,17 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Index, Numeric, String, UniqueConstraint, Uuid, text
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    Index,
+    Numeric,
+    String,
+    UniqueConstraint,
+    Uuid,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.core.db import Base, IdMixin, utcnow
@@ -102,24 +112,44 @@ class CustomerInvoice(Base, IdMixin):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class CustomerInvoiceLine(Base, IdMixin):
-    """One delivery on one statement.
+#: What a line is a line OF (WO-81). A delivery is the morning milk, priced
+#: by a standing order; an item is a thing sold beside it, priced by the
+#: catalogue or the owner.
+LINE_KINDS = ("delivery", "item")
 
-    The figures are COPIED from the delivery rather than joined at read time,
-    for the same reason a settlement line copies its calculation: a statement
-    handed to a customer must still say what it said, even if the delivery is
-    later corrected.
+
+class CustomerInvoiceLine(Base, IdMixin):
+    """One delivery — or one sale item — on one statement.
+
+    The figures are COPIED from the source row rather than joined at read
+    time, for the same reason a settlement line copies its calculation: a
+    statement handed to a customer must still say what it said, even if the
+    delivery is later corrected.
+
+    WO-81: `delivery_id` OR `item_id`, never both and never neither — the
+    CHECK below is the database agreeing. `line_kind` says which, so a reader
+    of the row (and the bill) does not infer it from a null.
     """
 
     __tablename__ = "customer_invoice_line"
     __table_args__ = (
         # A delivery appears on at most one invoice. The mirror of BR-0012.
         UniqueConstraint("tenant_id", "delivery_id", name="uq_invoice_line_delivery"),
+        # And an item too.
+        UniqueConstraint("tenant_id", "item_id", name="uq_invoice_line_item"),
+        CheckConstraint(
+            "(delivery_id IS NOT NULL AND item_id IS NULL) "
+            "OR (delivery_id IS NULL AND item_id IS NOT NULL)",
+            name="ck_invoice_line_one_source",
+        ),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     invoice_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
-    delivery_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    line_kind: Mapped[str] = mapped_column(String(10), default="delivery")
+    delivery_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
+    item_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
+    #: The date of the delivery, or of the sale. Named for its history.
     delivery_date: Mapped[date] = mapped_column(Date)
     slot: Mapped[str] = mapped_column(String(10), default="morning")
     product: Mapped[str] = mapped_column(String(40))

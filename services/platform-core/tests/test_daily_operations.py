@@ -46,6 +46,11 @@ async def _customer(client, admin, *, name, quantity, price, code=None):
     }
     if code:
         body["code"] = code
+    # WO-81: the plan names a catalogue product; add the milk the way
+    # onboarding would (idempotent) for whichever tenant `admin` is.
+    from tests.test_org_structure import add_milk_product
+
+    await add_milk_product(client, admin)
     r = await client.post("/v1/customers", json=body, headers=admin)
     assert r.status_code == 201, r.text
     return r.json()

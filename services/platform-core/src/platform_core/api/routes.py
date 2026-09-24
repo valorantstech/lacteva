@@ -68,6 +68,13 @@ from platform_core.modules.business_calendar.service import (
     centre_exception_is_working,
     resolve_working_day,
 )
+from platform_core.modules.catalog.service import (
+    CatalogService,
+    CreateProductCommand,
+    ProductPage,
+    ProductView,
+    UpdateProductCommand,
+)
 from platform_core.modules.collection_center.service import (
     CalendarEntryInput,
     CalendarEntryView,
@@ -281,6 +288,13 @@ from platform_core.modules.reporting.service import (
     SalesSummary,
     SettlementSummary,
     SummaryPage,
+)
+from platform_core.modules.sale_item.service import (
+    CancelItemCommand,
+    RecordItemCommand,
+    SaleItemPage,
+    SaleItemService,
+    SaleItemView,
 )
 from platform_core.modules.settlement.service import (
     AddCalculationCommand,
@@ -3165,6 +3179,125 @@ async def get_dispatch(dispatch_id: uuid.UUID, service: DispatchSvc, _: Dispatch
     return await service.view(dispatch_id)
 
 
+# --- Catalogue and sale items (WO-81 · LACTEVA-SALES-001) --------------------
+
+catalog_router = APIRouter(tags=["sales-catalog"], route_class=IdempotentRoute)
+CatalogRead = Annotated[Principal, Depends(require_permission("catalog.read"))]
+CatalogManage = Annotated[Principal, Depends(require_permission("catalog.manage"))]
+CatalogSvc = Annotated[CatalogService, Depends(deps.get_catalog_service)]
+
+
+@catalog_router.get("/products", response_model=ProductPage)
+async def list_products(service: CatalogSvc, _: CatalogRead, active: bool | None = True) -> Any:
+    """The catalogue: what this organisation sells, in its own order.
+
+    `active` defaults to true, which is what every form wants; `active=false`
+    lists the retired ones and `active=` (empty) lists everything.
+    """
+    return await service.list(active=active)
+
+
+@catalog_router.post("/products", response_model=ProductView, status_code=201)
+async def create_product(cmd: CreateProductCommand, service: CatalogSvc, p: CatalogManage) -> Any:
+    """Add a product. The default price is a suggestion for forms and the
+    price of a sale item recorded without one — never a standing order's rate."""
+    return await service.create(cmd, actor_id=p.id)
+
+
+@catalog_router.get("/products/{product_id}", response_model=ProductView)
+async def get_product(product_id: uuid.UUID, service: CatalogSvc, _: CatalogRead) -> Any:
+    return await service.view(product_id)
+
+
+@catalog_router.patch("/products/{product_id}", response_model=ProductView)
+async def update_product(
+    product_id: uuid.UUID, cmd: UpdateProductCommand, service: CatalogSvc, p: CatalogManage
+) -> Any:
+    """Edit or deactivate. There is deliberately no DELETE: a product on an
+    issued invoice line must keep resolving to its name."""
+    return await service.update(product_id, cmd, actor_id=p.id)
+
+
+item_router = APIRouter(tags=["sales-item"], route_class=IdempotentRoute)
+ItemRecord = Annotated[Principal, Depends(require_permission("sales.item.record"))]
+ItemRead = Annotated[Principal, Depends(require_permission("sales.delivery.read"))]
+ItemSvc = Annotated[SaleItemService, Depends(deps.get_sale_item_service)]
+
+
+@item_router.post("/customers/{customer_id}/items", response_model=SaleItemView, status_code=201)
+async def record_sale_item(
+    customer_id: uuid.UUID,
+    cmd: RecordItemCommand,
+    service: ItemSvc,
+    p: ItemRecord,
+    engine: Annotated[PermissionEngine, Depends(deps.get_permission_engine)],
+) -> Any:
+    """Sell a shop item to a customer on a date.
+
+    Priced from the catalogue unless the command carries a price, and a price
+    in the command needs `sales.item.price` — the owner may quote a household
+    a different rate, the delivery boy may not. The service refuses rather
+    than ignoring the price, so nobody is told one figure and billed another.
+    """
+    may_price = await engine.check(p.id, p.tenant_id, "sales.item.price")
+    return await service.record(customer_id, cmd, actor_id=p.id, may_price=may_price)
+
+
+@item_router.get("/customers/{customer_id}/items", response_model=SaleItemPage)
+async def list_customer_items(
+    customer_id: uuid.UUID,
+    service: ItemSvc,
+    _: ItemRead,
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+    status: str | None = None,
+    invoiced: bool | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> Any:
+    return await service.list(
+        customer_id=customer_id,
+        date_from=date_from,
+        date_to=date_to,
+        status=status,
+        invoiced=invoiced,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@item_router.get("/items", response_model=SaleItemPage)
+async def list_sale_items(
+    service: ItemSvc,
+    _: ItemRead,
+    customer_id: uuid.UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    status: str | None = None,
+    invoiced: bool | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> Any:
+    """Every item in a window — the deliveries day view's other table."""
+    return await service.list(
+        customer_id=customer_id,
+        date_from=date_from,
+        date_to=date_to,
+        status=status,
+        invoiced=invoiced,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@item_router.post("/items/{item_id}/cancel", response_model=SaleItemView)
+async def cancel_sale_item(
+    item_id: uuid.UUID, cmd: CancelItemCommand, service: ItemSvc, p: ItemRecord
+) -> Any:
+    """Withdraw an item recorded in error, with a reason. Refused once billed."""
+    return await service.cancel(item_id, cmd, actor_id=p.id)
+
+
 # --- Reports (read-only operational summaries — REP-001) --------------------
 report_router = APIRouter(prefix="/reports", tags=["reporting"], route_class=IdempotentRoute)
 ReportRead = Annotated[Principal, Depends(require_permission("reporting.read"))]
@@ -4606,6 +4739,8 @@ for sub in (
     dispatch_router,
     logistics_router,
     billing_router,
+    catalog_router,
+    item_router,
     locale_router,
     calendar_router,
     subscription_router,

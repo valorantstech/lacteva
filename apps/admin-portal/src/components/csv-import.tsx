@@ -113,7 +113,7 @@ const SPEC: Record<
       "plan_unit",
       "plan_price",
     ],
-    hint: "customer_type e.g. shop/household. The plan_* columns together create the standing order (e.g. RAW-COW-MILK, 20, L, 58.00); leave all four empty for no order.",
+    hint: "customer_type e.g. shop/household. The plan_* columns together create the standing order (e.g. COW-MILK, 20, L, 58.00); plan_product must be a code from Admin → Products — the import refuses a code the catalogue does not know. Leave all four empty for no order.",
     toRow: (r) => ({
       name: r.name ?? "",
       ...(r.customer_type ? { customer_type: r.customer_type } : {}),
@@ -132,6 +132,9 @@ const SPEC: Record<
     }),
   },
 };
+
+/** WO-81: what the customers import expects, for the test that pins its hint. */
+export const CUSTOMER_IMPORT_SPEC = SPEC.customers;
 
 export function CsvImport({ kind }: { kind: Kind }) {
   const spec = SPEC[kind];

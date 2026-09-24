@@ -183,6 +183,10 @@ def test_no_source_file_assumes_kilograms_outside_the_declared_places():
         "modules/settlement/models.py",  # column default for pre-WO-70 rows
         "modules/milk_collection/service.py",  # `_paid_unit` last resort for unweighed rows
         "core/types.py",  # a docstring example of a Quantity
+        # WO-81: the catalogue's own unit vocabulary — a product is DECLARED
+        # in L, kg or pc by the shop that sells it; nothing here assumes one.
+        "modules/catalog/models.py",
+        "modules/catalog/service.py",
     }
     offenders = []
     for path in SRC.rglob("*.py"):

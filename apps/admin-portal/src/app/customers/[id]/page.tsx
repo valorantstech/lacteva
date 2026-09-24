@@ -27,6 +27,12 @@ import {
   listInvoices,
   recordCustomerPayment,
   recordDelivery,
+  type Product,
+  type SaleItemPage,
+  cancelSaleItem,
+  listCustomerItems,
+  listProducts,
+  recordSaleItem,
   setCustomerStatus,
   updateCustomer,
   describeError,
@@ -105,6 +111,9 @@ export default function CustomerDetailPage({
   const [payments, setPayments] = useState<CustomerPayment[]>([]);
   const [receipts, setReceipts] = useState<CustomerReceipt[]>([]);
   const [statement, setStatement] = useState<CustomerStatement | null>(null);
+  // WO-81: the things sold beside the milk, and the catalogue to sell from.
+  const [items, setItems] = useState<SaleItemPage | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -143,6 +152,12 @@ export default function CustomerDetailPage({
     getCustomerStatement(id)
       .then(setStatement)
       .catch(() => setStatement(null));
+    listCustomerItems(id, { limit: 100 })
+      .then(setItems)
+      .catch(() => setItems(null));
+    listProducts(true)
+      .then((p) => setProducts(p.items))
+      .catch(() => setProducts([]));
   }, [id]);
 
   useEffect(() => {
@@ -190,7 +205,11 @@ export default function CustomerDetailPage({
     );
 
   const { customer, plans } = detail.data;
-  const plan = plans.find((p) => p.active) ?? null;
+  // WO-81: a household may hold one active plan PER PRODUCT — flat C-1603
+  // takes cow and buffalo milk on the same mornings. The record form offers
+  // the product when there is more than one.
+  const activePlans = plans.filter((p) => p.active);
+  const plan = activePlans[0] ?? null;
   const currency = customer.currency;
 
   return (
@@ -400,6 +419,7 @@ export default function CustomerDetailPage({
             {plan ? (
               <RecordDeliveryForm
                 customerId={customer.id}
+                plans={activePlans}
                 defaultQuantity={String(plan.default_quantity)}
                 unit={plan.quantity_unit}
                 busy={busy !== null}
@@ -593,6 +613,106 @@ export default function CustomerDetailPage({
                 </table>
               </div>
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* --- things sold beside the milk (WO-81) ----------------------------- */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Items</CardTitle>
+          <CardDescription>
+            Anything this customer bought that is not the morning milk — dahi,
+            sweets, a cold drink. Priced from the catalogue unless you type a
+            price; billed with the milk at month end. To write one figure for
+            the month the way a paper sheet does, record it against
+            &ldquo;Other shop item&rdquo; with the amount as its price.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <RecordItemForm
+            customerId={customer.id}
+            products={products}
+            busy={busy !== null}
+            onDone={(message) => {
+              setNotice(message);
+              void load();
+            }}
+          />
+          {!items || items.items.length === 0 ? (
+            <EmptyState
+              title="No items yet"
+              description="Only the milk so far. Record an item above when a household takes something with it."
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <caption className="sr-only">Items sold to this customer</caption>
+                <thead>
+                  <tr className="border-b text-start text-muted-foreground">
+                    <th className="py-2 pe-4 font-medium">Date</th>
+                    <th className="py-2 pe-4 font-medium">Item</th>
+                    <th className="py-2 pe-4 text-end font-medium">Quantity</th>
+                    <th className="py-2 pe-4 text-end font-medium">Amount</th>
+                    <th className="py-2 pe-4 font-medium">Status</th>
+                    <th className="py-2 font-medium" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.items.map((item) => (
+                    <tr key={item.id} className="border-b last:border-0">
+                      <td className="py-2 pe-4 tabular-nums">{item.sale_date}</td>
+                      <td className="py-2 pe-4">
+                        {item.product_name}
+                        {item.notes ? (
+                          <span className="text-muted-foreground"> — {item.notes}</span>
+                        ) : null}
+                      </td>
+                      <td className="py-2 pe-4 text-end tabular-nums">
+                        {String(item.quantity)} {item.unit}
+                      </td>
+                      <td className="py-2 pe-4 text-end">
+                        <Money amount={item.amount} currency={item.currency} />
+                      </td>
+                      <td className="py-2 pe-4">
+                        {item.status === "cancelled" ? (
+                          <span className="text-muted-foreground">cancelled</span>
+                        ) : item.invoice_id ? (
+                          <Link className="hover:underline" href={`/invoices/${item.invoice_id}`}>
+                            on a bill
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground">not yet billed</span>
+                        )}
+                      </td>
+                      <td className="py-2 text-end">
+                        {item.status === "recorded" && !item.invoice_id ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy !== null}
+                            onClick={() =>
+                              void run(
+                                `cancel-item-${item.id}`,
+                                () => cancelSaleItem(item.id, "recorded in error"),
+                                `${item.product_name} cancelled.`,
+                              )
+                            }
+                          >
+                            Cancel
+                          </Button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="pt-3 text-sm">
+                <span className="text-muted-foreground">Across all {items.total} items: </span>
+                <Money amount={items.total_amount} currency={items.currency ?? currency} />
+              </p>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -910,6 +1030,7 @@ export default function CustomerDetailPage({
 
 function RecordDeliveryForm({
   customerId,
+  plans,
   defaultQuantity,
   unit,
   busy,
@@ -917,6 +1038,8 @@ function RecordDeliveryForm({
   onSubmit,
 }: {
   customerId: string;
+  /** WO-81: the household's active plans, one per product. */
+  plans: DeliveryPlan[];
   defaultQuantity: string;
   unit: string;
   busy: boolean;
@@ -927,6 +1050,7 @@ function RecordDeliveryForm({
     slot: string;
     quantity: string;
     status: string;
+    product: string;
   }) => Promise<unknown>;
 }) {
   // The DAIRY's today, not UTC's. An operator in Bengaluru recording the
@@ -940,6 +1064,7 @@ function RecordDeliveryForm({
   const day = chosenDay ?? businessToday;
   const setDay = setChosenDay;
   const [slot, setSlot] = useState("morning");
+  const [product, setProduct] = useState(plans[0]?.product ?? "");
   const [quantity, setQuantity] = useState(defaultQuantity);
   const [status, setStatus] = useState("delivered");
   const [working, setWorking] = useState(false);
@@ -959,6 +1084,7 @@ function RecordDeliveryForm({
             slot,
             quantity,
             status,
+            product,
           });
           onDone(`Delivery recorded for ${day} (${slot}).`);
         } catch (err) {
@@ -988,6 +1114,27 @@ function RecordDeliveryForm({
           <option value="evening">evening</option>
         </Select>
       </div>
+      {plans.length > 1 ? (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="d-product">Product</Label>
+          <Select
+            id="d-product"
+            value={product}
+            onChange={(e) => {
+              setProduct(e.target.value);
+              const chosen = plans.find((p) => p.product === e.target.value);
+              if (chosen) setQuantity(String(chosen.default_quantity));
+            }}
+          >
+            {plans.map((p) => (
+              <option key={p.id} value={p.product}>
+                {p.product} — {String(p.default_quantity)} {p.quantity_unit} at{" "}
+                {String(p.unit_price)}
+              </option>
+            ))}
+          </Select>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="d-qty">Quantity ({unit})</Label>
         <Input
@@ -1012,6 +1159,148 @@ function RecordDeliveryForm({
       </div>
       <Button type="submit" disabled={busy || working}>
         {working ? "Recording…" : "Record delivery"}
+      </Button>
+      {error ? (
+        <p role="alert" className="w-full text-sm text-destructive">
+          The platform refused: {error}
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
+/**
+ * Sell a shop item to this household (WO-81).
+ *
+ * The price box is prefilled from the catalogue and may be changed by
+ * whoever holds `sales.item.price`; a product with no default price needs
+ * one typed — the platform refuses a zero-rupee line. Sent only when it
+ * differs from the catalogue's, so a delivery boy's portal (if he had one)
+ * would still be refused rather than silently re-priced.
+ */
+function RecordItemForm({
+  customerId,
+  products,
+  busy,
+  onDone,
+}: {
+  customerId: string;
+  products: Product[];
+  busy: boolean;
+  onDone: (message: string) => void;
+}) {
+  const businessToday = useBusinessToday();
+  const [chosenDay, setChosenDay] = useState<string | null>(null);
+  const day = chosenDay ?? businessToday;
+  // "" means "the first product" until the reader chooses: the catalogue
+  // arrives after the first render, and this stays a derivation rather than
+  // an effect that sets state.
+  const [code, setCode] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  // null means "the catalogue's price"; a string is what the reader typed.
+  const [price, setPrice] = useState<string | null>(null);
+  const [notes, setNotes] = useState("");
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const chosen = products.find((p) => p.code === code) ?? products[0] ?? null;
+  const effectiveCode = chosen?.code ?? "";
+  const catalogued =
+    chosen === null || chosen.default_price === null ? "" : String(chosen.default_price);
+  const shownPrice = price ?? catalogued;
+
+  if (products.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        The catalogue is empty. Add products under Admin → Products first.
+      </p>
+    );
+  }
+
+  return (
+    <form
+      className="flex flex-wrap items-end gap-3"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setWorking(true);
+        setError(null);
+        try {
+          const typed = shownPrice.trim();
+          const item = await recordSaleItem(customerId, {
+            sale_date: day,
+            product_code: effectiveCode,
+            quantity,
+            ...(typed && typed !== catalogued ? { unit_price: typed } : {}),
+            ...(notes.trim() ? { notes: notes.trim() } : {}),
+          });
+          setNotes("");
+          onDone(`${item.product_name} recorded for ${day}.`);
+        } catch (err) {
+          setError(describe(err));
+        } finally {
+          setWorking(false);
+        }
+      }}
+    >
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="i-date">Date</Label>
+        <Input
+          id="i-date"
+          type="date"
+          value={day}
+          onChange={(e) => setChosenDay(e.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="i-product">Item</Label>
+        <Select
+          id="i-product"
+          value={effectiveCode}
+          onChange={(e) => {
+            setCode(e.target.value);
+            setPrice(null);
+          }}
+        >
+          {products.map((p) => (
+            <option key={p.id} value={p.code}>
+              {p.name}
+              {p.default_price === null ? " (no price — type one)" : ""}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="i-qty">Quantity ({chosen?.unit ?? "pc"})</Label>
+        <Input
+          id="i-qty"
+          className="w-24"
+          inputMode="decimal"
+          value={quantity}
+          onChange={(e) => setQuantity(e.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="i-price">Price each</Label>
+        <Input
+          id="i-price"
+          className="w-28"
+          inputMode="decimal"
+          value={shownPrice}
+          onChange={(e) => setPrice(e.target.value)}
+          placeholder={catalogued || "required"}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="i-notes">Note</Label>
+        <Input
+          id="i-notes"
+          className="w-40"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="sweets"
+        />
+      </div>
+      <Button type="submit" disabled={busy || working || !effectiveCode}>
+        {working ? "Recording…" : "Record item"}
       </Button>
       {error ? (
         <p role="alert" className="w-full text-sm text-destructive">

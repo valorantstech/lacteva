@@ -412,6 +412,14 @@ class CustomerService:
         """
         customer = await self.get(customer_id)
         tenant_id = require_current_tenant()
+        # WO-81: the product is one the catalogue knows and has not retired.
+        # A service call, not a foreign key — the column stays a string so
+        # every plan already written is untouched. Imported here rather than
+        # at module level because the catalogue service imports nothing of
+        # this module, and keeping it so is what stops a cycle.
+        from platform_core.modules.catalog.service import CatalogService
+
+        await CatalogService(self._session).require_active(plan.product)
         existing = (
             await self._session.scalars(
                 select(DeliveryPlan).where(

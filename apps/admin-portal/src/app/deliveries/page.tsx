@@ -27,6 +27,8 @@ import {
   listCustomers,
   listDeliveries,
   describeError,
+  type SaleItemPage,
+  listSaleItems,
 } from "@/lib/api";
 import { EntityPicker } from "@/components/entity-picker";
 import { useCustomerNames } from "@/lib/names";
@@ -122,6 +124,9 @@ function DeliveriesView() {
   const [generating, setGenerating] = useState(false);
   const [generated, setGenerated] = useState<GenerationResult | null>(null);
   const [lastRun, setLastRun] = useState<GenerationRun | null>(null);
+  // WO-81: the things sold beside the milk in the same window. Context, not
+  // the page — a failure here leaves the deliveries untouched.
+  const [items, setItems] = useState<SaleItemPage | null>(null);
 
   const filtered = Boolean(customerId || status || billed);
 
@@ -170,6 +175,22 @@ function DeliveriesView() {
 
   // P1-PORTAL-SCALE-001: resolve exactly the customer ids on this page.
   const names = useCustomerNames((page?.items ?? []).map((d) => d.customer_id));
+  const itemNames = useCustomerNames((items?.items ?? []).map((i) => i.customer_id));
+
+  useEffect(() => {
+    let cancelled = false;
+    listSaleItems({
+      customer_id: customerId || undefined,
+      date_from: range.from,
+      date_to: range.to,
+      limit: 200,
+    })
+      .then((p) => !cancelled && setItems(p))
+      .catch(() => !cancelled && setItems(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId, range.from, range.to]);
 
   const columns: Column<Delivery>[] = [
     {
@@ -861,6 +882,84 @@ function DeliveriesView() {
               <Money amount={page.total_amount} currency={page.currency} />
             </p>
           ) : null}
+        </CardContent>
+      </Card>
+
+      {/* --- things sold beside the milk (WO-81) ----------------------------- */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Items sold in this period</CardTitle>
+          <CardDescription>
+            Dahi, sweets, a cold drink — recorded against a household beside its
+            milk, priced from the catalogue, and billed with the milk at month
+            end. Never counted as litres.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!items || items.items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No items in this period{customerId ? " for this customer" : ""}.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <caption className="sr-only">Items sold in this period</caption>
+                <thead>
+                  <tr className="border-b text-start text-muted-foreground">
+                    <th className="py-2 pe-4 font-medium">Date</th>
+                    <th className="py-2 pe-4 font-medium">Customer</th>
+                    <th className="py-2 pe-4 font-medium">Kind</th>
+                    <th className="py-2 pe-4 font-medium">Item</th>
+                    <th className="py-2 pe-4 text-end font-medium">Quantity</th>
+                    <th className="py-2 pe-4 text-end font-medium">Amount</th>
+                    <th className="py-2 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.items.map((item) => (
+                    <tr key={item.id} className="border-b last:border-0">
+                      <td className="py-2 pe-4 tabular-nums">{item.sale_date}</td>
+                      <td className="py-2 pe-4">
+                        <Link className="hover:underline" href={`/customers/${item.customer_id}`}>
+                          {itemNames[item.customer_id] ?? `${item.customer_id.slice(0, 8)}…`}
+                        </Link>
+                      </td>
+                      <td className="py-2 pe-4 text-muted-foreground">item</td>
+                      <td className="py-2 pe-4">
+                        {item.product_name}
+                        {item.notes ? (
+                          <span className="text-muted-foreground"> — {item.notes}</span>
+                        ) : null}
+                      </td>
+                      <td className="py-2 pe-4 text-end tabular-nums">
+                        {String(item.quantity)} {item.unit}
+                      </td>
+                      <td className="py-2 pe-4 text-end">
+                        <Money amount={item.amount} currency={item.currency} />
+                      </td>
+                      <td className="py-2">
+                        {item.status === "cancelled" ? (
+                          <span className="text-muted-foreground">cancelled</span>
+                        ) : item.invoice_id ? (
+                          <Link className="hover:underline" href={`/invoices/${item.invoice_id}`}>
+                            on a bill
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">not yet</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="pt-3 text-sm">
+                <span className="text-muted-foreground">
+                  Across all {items.total} items:{" "}
+                </span>
+                <Money amount={items.total_amount} currency={items.currency} />
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </PageContainer>

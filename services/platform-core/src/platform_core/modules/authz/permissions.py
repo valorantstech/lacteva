@@ -144,6 +144,14 @@ PERMISSIONS: dict[str, str] = {
     "sales.payment.read": "Read customer payments and outstanding balances",
     "sales.payment.record": "Record money received from a customer",
     "sales.receipt.read": "Read and download customer receipts",
+    # WO-81 · LACTEVA-SALES-001. The catalogue, and the thing sold that is not
+    # a delivery. Recording an item and PRICING one are separate on purpose:
+    # the owner may quote a household a different rate; the delivery boy
+    # records at the catalogue price and may not type one.
+    "catalog.read": "Read the organisation's product catalogue",
+    "catalog.manage": "Add, edit and deactivate catalogue products",
+    "sales.item.record": "Record a shop item sold to a customer, at the catalogue price",
+    "sales.item.price": "Record a shop item at a price other than the catalogue's",
     "platform.security.manage": (
         "Inspect signing keys and security configuration — platform staff only"
     ),
@@ -219,6 +227,10 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "sales.payment.read",
         "sales.payment.record",
         "sales.receipt.read",
+        "catalog.read",
+        "catalog.manage",
+        "sales.item.record",
+        "sales.item.price",
         # DEMO-034: the round's physical layer is part of running the business.
         "logistics.route.read",
         "logistics.route.manage",
@@ -258,6 +270,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "sales.invoice.read",
         "sales.payment.read",
         "sales.receipt.read",
+        "catalog.read",
         "logistics.route.read",
         "logistics.fleet.read",
         "logistics.run.read",
@@ -308,6 +321,7 @@ _FINANCE_OFFICER = [
 ]
 
 _SALES_READS = [
+    "catalog.read",
     "sales.customer.read",
     "sales.delivery.read",
     "sales.invoice.read",
@@ -410,6 +424,7 @@ NAMED_ROLES: dict[str, list[str]] = {
         "collection.transaction.record",
         "reporting.read",
         "settlement.read",
+        "catalog.read",
     ],
     # The person at the intake bay. Records collections; administers nothing.
     "COLLECTION_OPERATOR": [
@@ -432,6 +447,7 @@ NAMED_ROLES: dict[str, list[str]] = {
         # Issuing a bill is the receivable mirror of finalizing a settlement:
         # irreversible, and therefore the manager's.
         "sales.invoice.issue",
+        "catalog.read",
     ],
     # DEMO-009: the person who runs the milk round and the customer book.
     # Records deliveries and takes money at the door; does not issue bills,
@@ -447,6 +463,10 @@ NAMED_ROLES: dict[str, list[str]] = {
         "sales.payment.read",
         "sales.payment.record",
         "sales.receipt.read",
+        "catalog.read",
+        "catalog.manage",
+        "sales.item.record",
+        "sales.item.price",
         # DEMO-034. The roundsman sees the route and moves today's run along.
         # Deliberately WITHOUT `route.manage` and `fleet.manage`: redrawing
         # tomorrow's round and buying a van are the office's, not the gate's.
@@ -467,6 +487,8 @@ NAMED_ROLES: dict[str, list[str]] = {
     # consulted, which is what keeps the personas separate.
     "DRIVER": [
         "logistics.run.execute",
+        "catalog.read",
+        "sales.item.record",
     ],
     # Reads everything, changes nothing. Asserted by test rather than by
     # inspection: no key in this list ends in manage/record/finalize/retry.
@@ -486,6 +508,7 @@ NAMED_ROLES: dict[str, list[str]] = {
     # dairy, so read is the entire surface.
     "CUSTOMER_PORTAL": [
         "sales.customer.read",
+        "catalog.read",
         "sales.delivery.read",
         "sales.invoice.read",
         "sales.payment.read",

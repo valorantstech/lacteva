@@ -5,6 +5,21 @@ import uuid
 from tests.conftest import invite, register_and_login
 
 
+#: WO-81: the product every test in this suite has always assumed. A new
+#: organisation starts with a catalogue holding only `OTHER`, so the fixture
+#: that builds a test dairy adds the milk the way onboarding would — through
+#: the API, as the dairy's own administrator. Tests that want another product
+#: add it the same way.
+async def add_milk_product(client, headers, *, code="RAW-COW-MILK", unit="L", name=None):
+    r = await client.post(
+        "/v1/products",
+        json={"code": code, "name": name or code.replace("-", " ").title(), "unit": unit},
+        headers=headers,
+    )
+    assert r.status_code in (201, 409), r.text
+    return r.json()
+
+
 async def _tenant_admin(client):
     """Platform admin creates an org; invites a tenant-admin; returns their auth."""
     _, admin_headers = await register_and_login(client, "root@example.com", admin=True)
@@ -41,7 +56,9 @@ async def _tenant_admin(client):
             },
         )
     ).json()
-    return org, {"Authorization": f"Bearer {pair['access_token']}"}
+    headers = {"Authorization": f"Bearer {pair['access_token']}"}
+    await add_milk_product(client, headers)
+    return org, headers
 
 
 async def test_invitation_grants_tenant_scoped_admin(client):

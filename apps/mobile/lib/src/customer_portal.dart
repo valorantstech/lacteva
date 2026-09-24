@@ -1387,12 +1387,20 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
                           style: Theme.of(context).textTheme.labelLarge,
                         ),
                       ),
+                      // WO-81: a line is the morning milk OR a thing bought
+                      // beside it, and the household reads the product's NAME
+                      // ("Dahi 500 g"), never a code. An item has no slot.
                       for (final line in lines)
                         ListTile(
+                          key: ValueKey('bill-line-${line['id']}'),
                           dense: true,
-                          title: Text(
-                            '${line['delivery_date']} · ${line['slot']}',
+                          leading: Icon(
+                            line['line_kind'] == 'item'
+                                ? Icons.shopping_bag_outlined
+                                : Icons.water_drop_outlined,
+                            size: 20,
                           ),
+                          title: Text(billLineTitle(line)),
                           subtitle: Text(
                             '${line['quantity']} ${line['quantity_unit'] ?? 'L'} '
                             '@ ${line['unit_price']}',
@@ -1432,4 +1440,15 @@ class _Row extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What a bill line is called (WO-81): the date, the slot for milk and none
+/// for an item, then the product's name — falling back to its code for a
+/// line written before the catalogue existed.
+String billLineTitle(Map<String, dynamic> line) {
+  final name = (line['product_name'] ?? line['product'] ?? '').toString();
+  final slot = (line['slot'] ?? '').toString();
+  final isItem = line['line_kind'] == 'item' || slot.isEmpty;
+  final where = isItem ? '' : ' · $slot';
+  return '${line['delivery_date']}$where · $name';
 }

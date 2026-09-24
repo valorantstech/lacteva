@@ -52,15 +52,23 @@ PENDING_STATUSES = ("scheduled",)
 class MilkDelivery(Base, IdMixin):
     __tablename__ = "milk_delivery"
     __table_args__ = (
-        # One delivery per customer, per day, per slot. A dairy round visits
-        # once in the morning and once in the evening; a second morning
-        # delivery to the same customer is a correction, not another sale, and
-        # would double the bill if it were allowed to be both.
+        # One delivery per customer, per day, per slot, PER PRODUCT. A dairy
+        # round visits once in the morning and once in the evening; a second
+        # morning delivery of the same milk to the same customer is a
+        # correction, not another sale, and would double the bill if it were
+        # allowed to be both.
+        #
+        # WO-81: the product is part of the identity, because the client's
+        # own month sheet proves the case — flat C-1603 appears twice, at ₹74
+        # and at ₹56, taking cow AND buffalo milk on the same mornings. Two
+        # standing orders, two deliveries, one household, one bill. Before
+        # this the second one was refused by the database.
         UniqueConstraint(
             "tenant_id",
             "customer_id",
             "delivery_date",
             "slot",
+            "product",
             name="uq_delivery_customer_date_slot",
         ),
     )

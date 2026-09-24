@@ -29,6 +29,7 @@ from platform_core.core.org_context import tenant_currency, tenant_timezone
 from platform_core.core.tenancy import enforce_customer_scope, require_current_tenant
 from platform_core.infrastructure.events import EventEnvelope
 from platform_core.modules.audit.service import AuditService
+from platform_core.modules.catalog.service import CatalogService
 from platform_core.modules.customer.service import CustomerName, CustomerService
 from platform_core.modules.delivery.generation import GenerationResult, generate_for_day
 from platform_core.modules.delivery.models import (
@@ -369,6 +370,7 @@ class DeliveryService:
         self._bus = bus
         self._audit = audit
         self._customers = CustomerService(session, audit)
+        self._catalog = CatalogService(session, audit)
 
     # --- commands ----------------------------------------------------------
 
@@ -378,6 +380,10 @@ class DeliveryService:
         if customer.status != "active":
             raise ConflictError(f"customer {customer.code} is {customer.status}")
 
+        # WO-81: a delivery names a product the catalogue knows. The plan
+        # lookup below would refuse an unknown code anyway, but with a message
+        # about rates; this one says what to do about the catalogue.
+        await self._catalog.require_active(cmd.product)
         plan = await self._customers.active_plan(customer.id, cmd.product)
         if plan is None:
             raise ConflictError(
@@ -395,6 +401,9 @@ class DeliveryService:
                 MilkDelivery.customer_id == customer.id,
                 MilkDelivery.delivery_date == cmd.delivery_date,
                 MilkDelivery.slot == cmd.slot,
+                # WO-81: per product. A household taking cow and buffalo milk
+                # on the same morning has two rows here, and each is its own.
+                MilkDelivery.product == cmd.product,
             )
         )
         if existing is not None and existing.status in PENDING_STATUSES:
@@ -408,7 +417,8 @@ class DeliveryService:
             return await self._confirm(existing, cmd, plan=plan, actor_id=actor_id)
         if existing is not None:
             raise ConflictError(
-                f"{customer.code} already has a {cmd.slot} delivery on {cmd.delivery_date}"
+                f"{customer.code} already has a {cmd.slot} delivery of {cmd.product} "
+                f"on {cmd.delivery_date}"
             )
 
         unit_price = Decimal(plan.unit_price)

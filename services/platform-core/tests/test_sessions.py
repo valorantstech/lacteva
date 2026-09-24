@@ -108,7 +108,10 @@ async def test_a_session_slides_thirty_days_from_its_last_use(client):
             rows = (await session.scalars(select(AuthSession))).all()
             return sorted(as_utc(row.expires_at) for row in rows)
 
-    start = datetime(2026, 9, 21, 9, 0, tzinfo=UTC)
+    # From the interpreter's own now, not a literal: the test key registry
+    # is minted at start-up and activates then, so travelling to a date
+    # before it would find "no signing key is active".
+    start = datetime.now(UTC).replace(microsecond=0) + timedelta(minutes=1)
     with time_machine.travel(start, tick=False):
         await register_and_login(client)  # session one, never refreshed
         pair = await login(client)  # session two, refreshed below

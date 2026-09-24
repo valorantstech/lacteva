@@ -367,12 +367,12 @@ export default function InvoiceDetailPage({
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <caption className="sr-only">
-                  Deliveries billed by {invoice.invoice_number}
+                  Deliveries and items billed by {invoice.invoice_number}
                 </caption>
                 <thead>
                   <tr className="border-b text-start text-muted-foreground">
                     <th className="py-2 pe-4 font-medium">Date</th>
-                    <th className="py-2 pe-4 font-medium">Slot</th>
+                    <th className="py-2 pe-4 font-medium">Kind</th>
                     <th className="py-2 pe-4 font-medium">Product</th>
                     <th className="py-2 pe-4 text-end font-medium">Quantity</th>
                     <th className="py-2 pe-4 text-end font-medium">Rate</th>
@@ -386,10 +386,14 @@ export default function InvoiceDetailPage({
                         {line.delivery_date}
                       </td>
                       <td className="py-2 pe-4 text-muted-foreground">
-                        {line.slot}
+                        {/* WO-81: the morning milk, or a thing sold beside it.
+                            A delivery says its slot; an item has none. */}
+                        {line.line_kind === "item"
+                          ? "item"
+                          : `milk · ${line.slot}`}
                       </td>
-                      <td className="py-2 pe-4 text-muted-foreground">
-                        {line.product}
+                      <td className="py-2 pe-4">
+                        {line.product_name || line.product}
                       </td>
                       <td className="py-2 pe-4 text-end">
                         <Quantity

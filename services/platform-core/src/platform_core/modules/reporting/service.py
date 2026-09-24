@@ -43,6 +43,7 @@ from platform_core.modules.milk_collection.models import TransactionEvent
 from platform_core.modules.payment.models import Payment, PaymentLine
 from platform_core.modules.pricing.models import PricingMatrix, PricingMatrixRow, RateCard
 from platform_core.modules.receipt.models import Receipt
+from platform_core.modules.sale_item.models import BILLABLE_ITEM_STATUSES, SaleItem
 from platform_core.modules.settlement.models import Settlement, SettlementLine
 from platform_core.modules.supplier.models import Supplier, SupplierProfile
 
@@ -220,6 +221,15 @@ class DayBookSales(BaseModel):
     quantity_unit: str
     attributable_to_centre: bool = False
     attributable_to_milk_type: bool = False
+    #: WO-81: the things sold beside the milk that day — a count and a value,
+    #: never litres, because a pot of dahi has none. Named "other products"
+    #: rather than "sales" so nobody adds them to the milk.
+    other_product_items: int = 0
+    other_products_value: Decimal = Decimal("0.00")
+    #: What `other_products_value` is denominated in — the items' own
+    #: currency (WO-61: a total never goes out without one), null when there
+    #: were none, "MIX" if a day ever held two.
+    currency: str | None = None
 
 
 class DayBook(BaseModel):
@@ -542,11 +552,19 @@ class SalesSummary(BaseModel):
     date_to: date
     currency: str | None
 
+    #: MILK. A delivery is always priced by a standing order for a product
+    #: the household takes on a standing basis, so these four are the milk
+    #: side of sales by construction (WO-81), and the field names say so
+    #: rather than leaving a reader to guess from a product string.
     deliveries_in_period: int
     delivered_quantity_in_period: Decimal
     quantity_unit: str
-    sales_value_in_period: Decimal
+    sales_value_in_period: Decimal  #: milk: the deliveries' value
     customers_served_in_period: int
+    #: OTHER PRODUCTS (WO-81): sale items — dahi, sweets, a cold drink —
+    #: recorded in the period. Counted and valued, never measured.
+    other_product_items_in_period: int = 0
+    other_products_value_in_period: Decimal = Decimal("0.00")
 
     active_customers: int
     total_customers: int
@@ -559,7 +577,8 @@ class SalesSummary(BaseModel):
     customers_owing: int
 
     unbilled_deliveries: int  #: delivered, billable, not yet on any bill
-    unbilled_amount: Decimal
+    unbilled_items: int = 0  #: WO-81: recorded items not yet on any bill
+    unbilled_amount: Decimal  #: milk and items together
     receipts_issued: int
 
 
@@ -748,6 +767,23 @@ class ReportingService:
             )
         ).one()
 
+        # WO-81: the other products sold that day. Like the deliveries, an
+        # organisation-wide figure with no centre — a dahi is not intake.
+        other = (
+            await self._session.execute(
+                select(
+                    func.count(),
+                    func.coalesce(func.sum(cast(SaleItem.amount, Numeric)), _EXACT_ZERO),
+                    func.min(SaleItem.currency),
+                    func.max(SaleItem.currency),
+                ).where(
+                    SaleItem.tenant_id == tenant_id,
+                    SaleItem.sale_date == day,
+                    SaleItem.status.in_(BILLABLE_ITEM_STATUSES),
+                )
+            )
+        ).one()
+
         centre_name: str | None = None
         if center_id is not None:
             centre_name = await self._session.scalar(
@@ -793,6 +829,11 @@ class ReportingService:
                 deliveries=int(sold[0] or 0),
                 quantity=Decimal(sold[1] or 0).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
                 quantity_unit=sold[2] or "L",
+                other_product_items=int(other[0] or 0),
+                other_products_value=_money(other[1]),
+                currency=(
+                    None if other[2] is None else (other[2] if other[2] == other[3] else "MIX")
+                ),
             ),
         )
 
@@ -1801,6 +1842,33 @@ class ReportingService:
                 )
             )
         ).one()
+        # 7. WO-81: the other products — sold in the period, and waiting for
+        #    a bill — kept apart from the milk in name and in number.
+        other_period = (
+            await self._session.execute(
+                select(
+                    func.count(),
+                    func.coalesce(func.sum(cast(SaleItem.amount, Numeric)), _EXACT_ZERO),
+                ).where(
+                    SaleItem.tenant_id == tenant_id,
+                    SaleItem.sale_date >= date_from,
+                    SaleItem.sale_date <= date_to,
+                    SaleItem.status.in_(BILLABLE_ITEM_STATUSES),
+                )
+            )
+        ).one()
+        other_unbilled = (
+            await self._session.execute(
+                select(
+                    func.count(),
+                    func.coalesce(func.sum(cast(SaleItem.amount, Numeric)), _EXACT_ZERO),
+                ).where(
+                    SaleItem.tenant_id == tenant_id,
+                    SaleItem.status.in_(BILLABLE_ITEM_STATUSES),
+                    SaleItem.invoice_id.is_(None),
+                )
+            )
+        ).one()
 
         customer_states = (
             await self._session.execute(
@@ -1856,8 +1924,11 @@ class ReportingService:
             by_status=by_status,
             open_invoices=sum(r.count for r in by_status if r.status == "issued"),
             customers_owing=customers_owing,
+            other_product_items_in_period=other_period[0] or 0,
+            other_products_value_in_period=_money(other_period[1]),
             unbilled_deliveries=unbilled[0] or 0,
-            unbilled_amount=_money(unbilled[1]),
+            unbilled_items=other_unbilled[0] or 0,
+            unbilled_amount=_money(Decimal(str(unbilled[1])) + Decimal(str(other_unbilled[1]))),
             receipts_issued=receipts_issued,
         )
 

@@ -70,6 +70,10 @@ async def _customer_with_plan(client, headers, name: str, center_id=None):
     }
     if center_id:
         body["plan"]["center_id"] = center_id
+    # WO-81: the plan names a catalogue product; add the milk (idempotent).
+    from tests.test_org_structure import add_milk_product
+
+    await add_milk_product(client, headers)
     r = await client.post("/v1/customers", json=body, headers=headers)
     assert r.status_code == 201, r.text
     return r.json()

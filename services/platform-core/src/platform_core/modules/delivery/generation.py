@@ -167,8 +167,12 @@ def _insert_ignoring_conflicts(session: AsyncSession, rows: list[dict]):
     dialect = session.get_bind().dialect.name
     maker = postgres_insert if dialect == "postgresql" else sqlite_insert
     statement = maker(MilkDelivery).values(rows)
+    # WO-81: the same FIVE columns as `uq_delivery_customer_date_slot`. A
+    # guard on fewer would silently drop one of a household's two milks every
+    # morning — the dedup would fire on the second product as if it were a
+    # re-run of the first.
     return statement.on_conflict_do_nothing(
-        index_elements=["tenant_id", "customer_id", "delivery_date", "slot"]
+        index_elements=["tenant_id", "customer_id", "delivery_date", "slot", "product"]
     )
 
 

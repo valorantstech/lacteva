@@ -49,6 +49,7 @@ def import_all_models() -> int:
     import platform_core.modules.authz.models
     import platform_core.modules.billing.models
     import platform_core.modules.business_calendar.models
+    import platform_core.modules.catalog.models
     import platform_core.modules.collection_center.models
     import platform_core.modules.configuration.models
     import platform_core.modules.customer.models
@@ -65,6 +66,7 @@ def import_all_models() -> int:
     import platform_core.modules.pricing.models
     import platform_core.modules.receipt.models
     import platform_core.modules.reporting.models
+    import platform_core.modules.sale_item.models
     import platform_core.modules.settlement.models
     import platform_core.modules.subscription.models
     import platform_core.modules.supplier.models

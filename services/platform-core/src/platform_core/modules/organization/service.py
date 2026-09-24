@@ -199,6 +199,14 @@ class OrganizationService:
         await SubscriptionService(self._session, org.id).ensure_trial(
             created_at=org.created_at, timezone=org.timezone
         )
+        # WO-81: a catalogue holding exactly ONE product, `OTHER`, so the
+        # first "₹160, sweets" can be written against a household before
+        # anybody has built a product list. Onboarding adds the rest.
+        from platform_core.modules.catalog.service import CatalogService
+
+        await CatalogService(self._session).seed_new_organisation(
+            tenant_id=org.id, currency=org.currency_code
+        )
         await self._audit.record(
             action="organization.created",
             resource_type="organization",

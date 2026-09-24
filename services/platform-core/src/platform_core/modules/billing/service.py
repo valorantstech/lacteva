@@ -46,8 +46,11 @@ from platform_core.modules.billing.models import (
     CustomerReceipt,
 )
 from platform_core.modules.business_calendar.service import assert_period_open
+from platform_core.modules.catalog.service import CatalogService
 from platform_core.modules.customer.models import Customer
 from platform_core.modules.delivery.models import BILLABLE_STATUSES, MilkDelivery
+from platform_core.modules.sale_item.models import BILLABLE_ITEM_STATUSES, SaleItem
+from platform_core.modules.sale_item.service import SaleItemService
 
 BUS_EVENTS = {
     "InvoiceIssued": "sales.invoice-issued.v1",
@@ -100,10 +103,17 @@ class RecordCustomerPaymentCommand(BaseModel):
 
 class InvoiceLineView(BaseModel):
     id: uuid.UUID
-    delivery_id: uuid.UUID
+    #: WO-81: `delivery` or `item`. Exactly one of the two ids is set.
+    line_kind: str = "delivery"
+    delivery_id: uuid.UUID | None = None
+    item_id: uuid.UUID | None = None
     delivery_date: date
     slot: str
     product: str
+    #: What the household reads — "Dahi 500 g", not "DAHI-500G". Resolved
+    #: from the catalogue at read time; a code the catalogue does not know
+    #: prints as itself.
+    product_name: str = ""
     quantity: Decimal
     quantity_unit: str
     unit_price: Decimal
@@ -197,6 +207,8 @@ class CustomerBalanceView(BaseModel):
     #: Delivered but not yet on any invoice — the bill still forming.
     unbilled_amount: Decimal
     unbilled_deliveries: int
+    #: WO-81: items recorded and not yet on any invoice, counted with them.
+    unbilled_items: int = 0
     open_invoices: int
 
 
@@ -257,6 +269,12 @@ class CustomerStatement(BaseModel):
     #: milk the money refers to.
     delivered_quantity: Decimal
     quantity_unit: str
+    #: WO-81: the value of shop items sold in the window (recorded, billed or
+    #: not) — the "other item" figure the client's own sheet carries per
+    #: household. Beside the litres, because it is the other thing the money
+    #: refers to.
+    items_amount: Decimal = ZERO
+    items_count: int = 0
     entries: list[StatementEntry]
 
 
@@ -283,6 +301,9 @@ class BillingService:
         self._session = session
         self._bus = bus
         self._audit = audit
+        # WO-81: the items beside the milk, and the names on the bill.
+        self._items = SaleItemService(session, bus, audit)
+        self._catalog = CatalogService(session, audit)
 
     # --- invoices ----------------------------------------------------------
 
@@ -328,8 +349,11 @@ class BillingService:
                 .order_by(MilkDelivery.delivery_date, MilkDelivery.slot)
             )
         ).all()
-        if not deliveries:
-            raise ConflictError("no unbilled deliveries in this period")
+        # WO-81: the things sold beside the milk, over the same period. The
+        # month-end job needs no change for this — it calls this function.
+        items = await self._items.unbilled_for_period(customer.id, cmd.period_from, cmd.period_to)
+        if not deliveries and not items:
+            raise ConflictError("no unbilled deliveries or items in this period")
 
         previous_balance = (await self.balance(customer.id)).outstanding
 
@@ -348,32 +372,64 @@ class BillingService:
         await self._session.flush()
 
         subtotal = ZERO
-        for delivery in deliveries:
-            self._session.add(
-                CustomerInvoiceLine(
-                    tenant_id=tenant_id,
-                    invoice_id=invoice.id,
-                    delivery_id=delivery.id,
-                    delivery_date=delivery.delivery_date,
-                    slot=delivery.slot,
-                    product=delivery.product,
-                    quantity=delivery.quantity,
-                    quantity_unit=delivery.quantity_unit,
-                    unit_price=delivery.unit_price,
-                    amount=delivery.amount,
+        # In date order, the milk before the items on the same date: a bill
+        # reads as the month happened. `(date, 0|1, sequence)` keeps a
+        # delivery's slot order and an item's recording order inside a day.
+        ordered: list[tuple[date, int, int, object]] = []
+        for index, delivery in enumerate(deliveries):
+            ordered.append((delivery.delivery_date, 0, index, delivery))
+        for index, item in enumerate(items):
+            ordered.append((item.sale_date, 1, index, item))
+        ordered.sort(key=lambda entry: (entry[0], entry[1], entry[2]))
+
+        for _day, kind, _index, source in ordered:
+            if kind == 0:
+                delivery = source
+                self._session.add(
+                    CustomerInvoiceLine(
+                        tenant_id=tenant_id,
+                        invoice_id=invoice.id,
+                        line_kind="delivery",
+                        delivery_id=delivery.id,
+                        delivery_date=delivery.delivery_date,
+                        slot=delivery.slot,
+                        product=delivery.product,
+                        quantity=delivery.quantity,
+                        quantity_unit=delivery.quantity_unit,
+                        unit_price=delivery.unit_price,
+                        amount=delivery.amount,
+                    )
                 )
-            )
-            # Stamped now, so the same milk cannot appear on a second invoice
-            # even if two are generated concurrently — the unique constraint on
-            # (tenant, delivery) is the backstop.
-            delivery.invoice_id = invoice.id
-            subtotal += Decimal(delivery.amount)
+                # Stamped now, so the same milk cannot appear on a second
+                # invoice even if two are generated concurrently — the unique
+                # constraint on (tenant, delivery) is the backstop.
+                delivery.invoice_id = invoice.id
+                subtotal += Decimal(delivery.amount)
+            else:
+                item = source
+                self._session.add(
+                    CustomerInvoiceLine(
+                        tenant_id=tenant_id,
+                        invoice_id=invoice.id,
+                        line_kind="item",
+                        item_id=item.id,
+                        delivery_date=item.sale_date,
+                        slot="",
+                        product=item.product_code,
+                        quantity=item.quantity,
+                        quantity_unit=item.unit,
+                        unit_price=item.unit_price,
+                        amount=item.amount,
+                    )
+                )
+                item.invoice_id = invoice.id
+                subtotal += Decimal(item.amount)
 
         invoice.subtotal = money(subtotal)
         invoice.adjustments = ZERO
         invoice.total = money(subtotal + invoice.adjustments)
         invoice.amount_due = money(invoice.total + Decimal(invoice.previous_balance))
-        invoice.line_count = len(deliveries)
+        invoice.line_count = len(ordered)
         await self._session.flush()
 
         await self._audit.record(
@@ -526,9 +582,15 @@ class BillingService:
             )
         ).all()
         for line in lines:
-            delivery = await self._session.get(MilkDelivery, line.delivery_id)
-            if delivery is not None:
-                delivery.invoice_id = None
+            if line.delivery_id is not None:
+                delivery = await self._session.get(MilkDelivery, line.delivery_id)
+                if delivery is not None:
+                    delivery.invoice_id = None
+            # WO-81: an item is released exactly as a delivery is.
+            if line.item_id is not None:
+                item = await self._session.get(SaleItem, line.item_id)
+                if item is not None:
+                    item.invoice_id = None
             await self._session.delete(line)
         invoice.line_count = 0
         await self._session.flush()
@@ -693,14 +755,29 @@ class BillingService:
             await self._session.scalars(
                 select(CustomerInvoiceLine)
                 .where(CustomerInvoiceLine.invoice_id == invoice.id)
-                .order_by(CustomerInvoiceLine.delivery_date, CustomerInvoiceLine.slot)
+                # WO-81: the milk before the items on the same date, then the
+                # slot order within the milk. `line_kind` sorts "delivery"
+                # before "item" — the order the bill is generated in.
+                .order_by(
+                    CustomerInvoiceLine.delivery_date,
+                    CustomerInvoiceLine.line_kind,
+                    CustomerInvoiceLine.slot,
+                    CustomerInvoiceLine.created_at,
+                )
             )
         ).all()
         lines_total = money(sum((Decimal(line.amount) for line in lines), ZERO))
         paid = money(Decimal(invoice.total) - await self._invoice_outstanding(invoice))
+        # WO-81: the household reads a name, not a code.
+        names = await self._catalog.names_for({line.product for line in lines})
+        views = []
+        for line in lines:
+            view = InvoiceLineView.model_validate(line)
+            view.product_name = names.get(line.product, line.product)
+            views.append(view)
         return InvoiceDetailView(
             invoice=InvoiceView.model_validate(invoice),
-            lines=[InvoiceLineView.model_validate(line) for line in lines],
+            lines=views,
             paid=paid,
             outstanding=await self._invoice_outstanding(invoice),
             totals_match_lines=lines_total == Decimal(invoice.subtotal),
@@ -779,6 +856,20 @@ class BillingService:
                 )
             )
         ).one()
+        # WO-81: items waiting for a bill count with the milk waiting for one.
+        unbilled_items = (
+            await self._session.execute(
+                select(
+                    func.count(),
+                    func.coalesce(func.sum(cast(SaleItem.amount, Numeric)), 0),
+                ).where(
+                    SaleItem.tenant_id == tenant_id,
+                    SaleItem.customer_id == customer_id,
+                    SaleItem.status.in_(BILLABLE_ITEM_STATUSES),
+                    SaleItem.invoice_id.is_(None),
+                )
+            )
+        ).one()
         open_invoices = await self._session.scalar(
             select(func.count())
             .select_from(CustomerInvoice)
@@ -794,7 +885,8 @@ class BillingService:
             invoiced=money(Decimal(invoiced or 0)),
             paid=money(Decimal(paid or 0)),
             outstanding=money(Decimal(invoiced or 0) - Decimal(paid or 0)),
-            unbilled_amount=money(Decimal(unbilled[1] or 0)),
+            unbilled_amount=money(Decimal(unbilled[1] or 0) + Decimal(unbilled_items[1] or 0)),
+            unbilled_items=int(unbilled_items[0] or 0),
             unbilled_deliveries=unbilled[0] or 0,
             open_invoices=open_invoices or 0,
         )
@@ -890,6 +982,21 @@ class BillingService:
             )
         ).one()
 
+        items = (
+            await self._session.execute(
+                select(
+                    func.count(),
+                    func.coalesce(func.sum(cast(SaleItem.amount, Numeric)), 0),
+                ).where(
+                    SaleItem.tenant_id == tenant_id,
+                    SaleItem.customer_id == customer_id,
+                    SaleItem.status.in_(BILLABLE_ITEM_STATUSES),
+                    SaleItem.sale_date >= date_from,
+                    SaleItem.sale_date <= date_to,
+                )
+            )
+        ).one()
+
         movements: list[tuple[date, int, StatementEntry]] = []
         for invoice in invoices:
             movements.append(
@@ -949,6 +1056,8 @@ class BillingService:
             closing_balance=running,
             delivered_quantity=Decimal(volume[0] or 0).quantize(Decimal("0.001")),
             quantity_unit=volume[1] or "L",
+            items_amount=money(Decimal(items[1] or 0)),
+            items_count=int(items[0] or 0),
             entries=entries,
         )
 

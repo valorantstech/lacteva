@@ -2126,6 +2126,19 @@ async def build_sales(client, built: dict) -> dict:
     """
     h, today = built["headers"], built["today"]
     market: Market = built["market"]
+    # WO-81: a standing order names a product the catalogue knows. A new
+    # organisation starts with `OTHER` alone, so the demo adds the two milks
+    # it sells the way onboarding would — through the API, as the manager.
+    # Idempotent: a re-run meets 409 and carries on.
+    # The unit is the organisation's own, as the platform states it (D-21):
+    # this script names no unit the platform did not give it.
+    milk_unit = built["org"]["quantity_unit_label"]
+    for code, name in ((PRODUCT, "Raw cow milk"), (BUFFALO_PRODUCT, "Raw buffalo milk")):
+        r = await client.post(
+            "/v1/products", json={"code": code, "name": name, "unit": milk_unit}, headers=h
+        )
+        if r.status_code not in (201, 409):
+            raise SeedError(f"product {code}: {r.status_code} {r.text}")
     customer_ids: list[str] = []
     summary = {
         "customers": 0,

@@ -33,6 +33,7 @@ from platform_core.modules.auth.service import AuthService
 from platform_core.modules.authz.service import AuthzService, PermissionEngine
 from platform_core.modules.billing.service import BillingService
 from platform_core.modules.business_calendar.service import BusinessCalendarService
+from platform_core.modules.catalog.service import CatalogService
 from platform_core.modules.collection_center.service import CollectionCenterService
 from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.customer.service import CustomerService
@@ -61,6 +62,7 @@ from platform_core.modules.pricing.resolution import PricingResolutionService
 from platform_core.modules.pricing.service import RateCardService
 from platform_core.modules.receipt.service import ReceiptService
 from platform_core.modules.reporting.service import ReportingService
+from platform_core.modules.sale_item.service import SaleItemService
 from platform_core.modules.settlement.service import SettlementService
 from platform_core.modules.subscription.billing import SubscriptionBillingService
 from platform_core.modules.subscription.service import SubscriptionService
@@ -228,6 +230,16 @@ def get_logistics_service(session: Session, bus: Bus, audit: Audit) -> Logistics
 
 def get_billing_service(session: Session, bus: Bus, audit: Audit) -> BillingService:
     return BillingService(session, bus, audit)
+
+
+def get_catalog_service(session: Session, audit: Audit) -> CatalogService:
+    """WO-81. No bus: a catalogue edit is an audited fact nobody consumes."""
+    return CatalogService(session, audit)
+
+
+def get_sale_item_service(session: Session, bus: Bus, audit: Audit) -> SaleItemService:
+    """WO-81. A sale item is money-shaped like a delivery: audited, on the outbox."""
+    return SaleItemService(session, bus, audit)
 
 
 def get_settlement_service(session: Session, bus: Bus, audit: Audit) -> SettlementService:

@@ -245,6 +245,14 @@ const PLATFORM: Entry[] = [
     icon: Users,
   },
   {
+    // WO-81: what the organisation sells. Milk on a standing order is a
+    // product too and must be here.
+    href: "/admin/products",
+    labelKey: "nav.products",
+    permission: "catalog.read",
+    icon: Tags,
+  },
+  {
     href: "/admin/roles",
     labelKey: "nav.roles",
     permission: "authz.role.read",

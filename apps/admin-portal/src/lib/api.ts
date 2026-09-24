@@ -3249,10 +3249,16 @@ export type Invoice = {
 
 export type InvoiceLine = {
   id: string;
-  delivery_id: string;
+  /** WO-81: the morning milk, or a thing sold beside it. Exactly one of the
+   *  two ids is set. */
+  line_kind: "delivery" | "item";
+  delivery_id: string | null;
+  item_id: string | null;
   delivery_date: string;
   slot: string;
   product: string;
+  /** What the household reads — "Dahi 500 g", not "DAHI-500G". */
+  product_name: string;
   quantity: string | number;
   quantity_unit: string;
   unit_price: string | number;
@@ -3389,11 +3395,139 @@ export type CustomerBalance = {
   outstanding: string | number;
   unbilled_amount: string | number;
   unbilled_deliveries: number;
+  /** WO-81: items recorded and not yet on a bill. */
+  unbilled_items?: number;
   open_invoices: number;
 };
 
 export const getCustomerBalance = (id: string) =>
   api<CustomerBalance>(`/v1/customers/${id}/balance`);
+
+// --- The catalogue, and things sold that are not a delivery (WO-81) ---------
+
+export type Product = {
+  id: string;
+  code: string;
+  name: string;
+  unit: string;
+  /** A suggestion for forms and the price of an item recorded without one.
+   *  Never a standing order's rate — the plan's `unit_price` wins. */
+  default_price: string | number | null;
+  currency: string;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProductPage = { items: Product[]; total: number };
+
+/** `active` true (default) for forms, false for the retired ones, null for all. */
+export function listProducts(active: boolean | null = true): Promise<ProductPage> {
+  const query = active === null ? "active=" : `active=${active}`;
+  return api<ProductPage>(`/v1/products?${query}`);
+}
+
+export const createProduct = (body: {
+  code: string;
+  name: string;
+  unit: string;
+  default_price?: string;
+  sort_order?: number;
+}) => api<Product>("/v1/products", { method: "POST", body: JSON.stringify(body) });
+
+export const updateProduct = (
+  id: string,
+  body: {
+    name?: string;
+    unit?: string;
+    default_price?: string;
+    clear_default_price?: boolean;
+    active?: boolean;
+    sort_order?: number;
+  },
+) => api<Product>(`/v1/products/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+
+export type SaleItem = {
+  id: string;
+  customer_id: string;
+  sale_date: string;
+  product_code: string;
+  product_name: string;
+  quantity: string | number;
+  unit: string;
+  unit_price: string | number;
+  amount: string | number;
+  currency: string;
+  status: string;
+  notes: string;
+  recorded_by: string | null;
+  recorded_via: string;
+  invoice_id: string | null;
+  created_at: string;
+  cancelled_at: string | null;
+  cancel_reason: string;
+};
+
+export type SaleItemPage = {
+  items: SaleItem[];
+  total: number;
+  /** Recorded value across the whole filtered set. */
+  total_amount: string | number;
+  currency: string | null;
+};
+
+export function listCustomerItems(
+  customerId: string,
+  params?: { from?: string; to?: string; status?: string; limit?: number },
+): Promise<SaleItemPage> {
+  const search = new URLSearchParams();
+  if (params?.from) search.set("from", params.from);
+  if (params?.to) search.set("to", params.to);
+  if (params?.status) search.set("status", params.status);
+  if (params?.limit) search.set("limit", String(params.limit));
+  const query = search.toString();
+  return api<SaleItemPage>(`/v1/customers/${customerId}/items${query ? `?${query}` : ""}`);
+}
+
+export function listSaleItems(params: {
+  customer_id?: string;
+  date_from?: string;
+  date_to?: string;
+  status?: string;
+  limit?: number;
+}): Promise<SaleItemPage> {
+  const search = new URLSearchParams();
+  if (params.customer_id) search.set("customer_id", params.customer_id);
+  if (params.date_from) search.set("date_from", params.date_from);
+  if (params.date_to) search.set("date_to", params.date_to);
+  if (params.status) search.set("status", params.status);
+  if (params.limit) search.set("limit", String(params.limit));
+  return api<SaleItemPage>(`/v1/items?${search.toString()}`);
+}
+
+/** Priced by the catalogue unless `unit_price` is sent — which needs
+ *  `sales.item.price`; the platform refuses rather than ignores it. */
+export const recordSaleItem = (
+  customerId: string,
+  body: {
+    sale_date: string;
+    product_code: string;
+    quantity: string;
+    unit_price?: string;
+    notes?: string;
+  },
+) =>
+  api<SaleItem>(`/v1/customers/${customerId}/items`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const cancelSaleItem = (id: string, reason: string) =>
+  api<SaleItem>(`/v1/items/${id}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
 
 export type StatementEntry = {
   entry_date: string;
@@ -3419,6 +3553,9 @@ export type CustomerStatement = {
   /** How much milk the money is for (DEMO-019 §7). */
   delivered_quantity?: string | number;
   quantity_unit?: string;
+  /** WO-81: the shop items sold in the window — the "other item" figure. */
+  items_amount?: string | number;
+  items_count?: number;
   entries: StatementEntry[];
 };
 

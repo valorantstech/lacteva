@@ -203,6 +203,7 @@ const en: Catalog = {
   "nav.subscription": "Subscription",
   "nav.calendar": "Business calendar",
   "nav.users": "Users",
+  "nav.products": "Products",
 
   // --- dashboard -----------------------------------------------------
   "dashboard.activeCentres": "Active centres",
@@ -897,6 +898,7 @@ const hi: Catalog = {
   "nav.subscription": "सदस्यता",
   "nav.calendar": "व्यावसायिक कैलेंडर",
   "nav.users": "उपयोगकर्ता",
+  "nav.products": "उत्पाद",
 
   // --- dashboard -----------------------------------------------------
   "dashboard.activeCentres": "सक्रिय केंद्र",
@@ -1587,6 +1589,7 @@ const ar: Catalog = {
   "nav.subscription": "الاشتراك",
   "nav.calendar": "التقويم التجاري",
   "nav.users": "المستخدمون",
+  "nav.products": "المنتجات",
 
   // --- dashboard -----------------------------------------------------
   "dashboard.activeCentres": "المراكز النشطة",
