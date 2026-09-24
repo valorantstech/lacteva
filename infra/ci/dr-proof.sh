@@ -186,7 +186,7 @@ step "10/10  recovery hardening: corruption, schema drift, isolation"
 LACTEVA_TEST_POSTGRES_URL="$(app_url "${RESTORE_DIR}" "${RESTORE_DB}")" \
 LACTEVA_TEST_POSTGRES_ADMIN_URL="$(url "${RESTORE_DIR}" "${RESTORE_DB}")" \
   "${PYTHON}" -m pytest tests/test_disaster_recovery_postgres.py \
-  -q --no-header --junitxml="${WORKDIR}/dr-tests.xml" >/dev/null 2>&1 \
+  -n 0 -q --no-header --junitxml="${WORKDIR}/dr-tests.xml" >/dev/null 2>&1 \
   || fail "the disaster recovery test suite failed"
 DR_COUNTS="$("${PYTHON}" - "${WORKDIR}/dr-tests.xml" <<'PYCHECK'
 import sys, xml.etree.ElementTree as ET

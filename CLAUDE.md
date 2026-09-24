@@ -43,7 +43,7 @@ the checked-in venv. CI runs the same commands via `uv run`.
 
 ```bash
 cd services/platform-core
-.venv/bin/python -m pytest tests/ -q                  # full suite (~10–15 min — background it)
+.venv/bin/python -m pytest tests/                     # full suite, PARALLEL by default (WO-90): ~9 min on 16 cores; 49 min serial
 .venv/bin/python -m pytest tests/test_pricing_matrix.py -q          # one file
 .venv/bin/python -m pytest tests/test_payments.py::test_name -q     # one test
 .venv/bin/python -m pytest -k "settlement and not e2e" -q           # by expression
@@ -55,6 +55,14 @@ LACTEVA_DATABASE_URL=sqlite+aiosqlite:///./scratch.db \
 
 Tests need **no infrastructure**: `conftest.py` pins in-memory SQLite, the
 in-memory bus and inline outbox before any import.
+
+**The suite runs on every core by default** (WO-90 / D-37): `pyproject.toml`'s
+`addopts` carries `-n auto --dist loadfile`, so `pytest`, `make test-backend`
+and CI all parallelise, and `--dist loadfile` keeps every test in one file on
+one worker so the autouse fixtures that reset process-global state keep their
+semantics. `-n 0` runs serially (the PostgreSQL proof scripts pass it, because
+they share one live database). Measured on 2026-09-25: 48 min 53 s serial,
+9 min 13 s parallel, identical counts.
 
 PostgreSQL-only suites (`test_rls_postgres.py`, `test_exact_aggregation_postgres.py`,
 `test_disaster_recovery_postgres.py`) skip silently without a database, which is
@@ -173,19 +181,27 @@ problem+json. Another tenant's resource is a 404, never a 403.
   `services/platform-core/.venv/bin/python` and `.venv/bin/ruff`.
 - Flutter 3.38 at `/mnt/data/programfiles/flutter`; Node 22 available.
 - Admin portal is **Next.js 16** with **shadcn/ui on Base UI — no `asChild`**.
-- The full test suite takes ~10–15 minutes; run it in the background.
+- The full backend suite takes ~9 minutes in parallel (the default); the
+  portal ~3 minutes, the mobile suite ~8. Run them in the background.
 
-## Gates before every commit
+## Gates: fast per work order, full per batch (D-37, 2026-09-25)
 
-`ruff format` + `ruff check` + full `pytest`, then
-`python3 tools/validate/validate_docs.py` and
-`python3 tools/xref/generate_xref.py`. Portal build + lint and
-`flutter analyze` + `flutter test` when those trees changed. Update
-`CHANGELOG.md` for every increment. All green, no exceptions — never "CI will
-catch it", and never weaken a test to pass.
+**Per work order, before its local commit — the fast gate:** the tests that
+can fail because of the change (the module's own test files plus the files
+that exercise what was touched; when in doubt, more), and type-check + lint
+of the changed files. Commit locally; **do not push**.
 
-**Standing instruction:** every file-changing turn ends with a Conventional
-Commit pushed to `origin main`.
+**Per batch, once, at the end — the full gate, non-negotiable:** `ruff format`
++ `ruff check` + the complete `pytest`; portal `vitest` + `eslint` + `tsc` +
+the production `next build`; `flutter analyze` + `flutter test` and a release
+build if mobile was touched; `python3 tools/validate/validate_docs.py`,
+`python3 tools/xref/generate_xref.py` and `check_inline`. Only then push, and
+only if every one is green. A batch-end failure may belong to any work order
+in the batch: fix it and say which. Update `CHANGELOG.md` for every
+increment. Never "CI will catch it", and never weaken a test to pass.
+
+**Standing instruction:** every work order ends with a Conventional Commit;
+every batch ends with the full gate and a push to `origin main`.
 
 ## Related workspace
 

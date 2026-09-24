@@ -25,6 +25,10 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    # WO-90 / D-37. The suite is one in-memory SQLite per test with no shared
+    # server, so it parallelises cleanly; on one core it took 49 minutes at
+    # 152% CPU on a 16-core machine while the owner waited.
+    "pytest-xdist>=3.6",
     "httpx>=0.27",
     "aiosqlite>=0.20",
     "ruff>=0.6",
@@ -103,7 +107,14 @@ ignore = ["S101"]  # assert is fine in tests; S101 scoped below
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-q"
+# WO-90 / D-37: every worker the machine has, and `--dist loadfile` so every
+# test in one FILE runs on one worker — the autouse fixtures that reset
+# process-global state (`_reset_health_snapshot`, `_reset_rate_limiter`) and
+# the `time_machine` traveller in `pytest_sessionfinish` keep the semantics
+# they were written for. This is the one place; `make test-backend`, CI and a
+# bare `pytest` all read it. The PostgreSQL proof scripts pass `-n 0`, because
+# they share one live database per run.
+addopts = "-q -n auto --dist loadfile"
 filterwarnings = ["error::DeprecationWarning:platform_core.*"]
 
 [tool.uv]

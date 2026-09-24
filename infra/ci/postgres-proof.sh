@@ -285,9 +285,12 @@ JUNIT="${WORKDIR}/pg-tests.xml"
 # files on disk, which is the check that would have caught it — and which
 # found a SECOND absent suite the moment it was written:
 # `test_scheduler_concurrency_postgres.py`, DEMO-018's four-worker race proof.
+#
+# WO-90: `-n 0` — these suites share ONE live PostgreSQL per run, so the
+# parallel default from pyproject would have two files racing on one schema.
 LACTEVA_TEST_POSTGRES_URL="$(app_url_for "${TESTS_DB}")" \
   LACTEVA_TEST_POSTGRES_ADMIN_URL="$(url_for "${TESTS_DB}")" \
-  ${RUN} pytest tests/test_rls_postgres.py tests/test_exact_aggregation_postgres.py \
+  ${RUN} pytest -n 0 tests/test_rls_postgres.py tests/test_exact_aggregation_postgres.py \
   tests/test_disaster_recovery_postgres.py tests/test_payment_concurrency_postgres.py \
   tests/test_consumer_concurrency_postgres.py tests/test_pricing_precision_postgres.py \
   tests/test_business_date_sql_postgres.py tests/test_business_calendar_postgres.py \
