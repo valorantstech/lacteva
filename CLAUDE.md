@@ -195,7 +195,9 @@ of the changed files. Commit locally; **do not push**.
 + `ruff check` + the complete `pytest`; portal `vitest` + `eslint` + `tsc` +
 the production `next build`; `flutter analyze` + `flutter test` and a release
 build if mobile was touched; `python3 tools/validate/validate_docs.py`,
-`python3 tools/xref/generate_xref.py` and `check_inline`. Only then push, and
+`python3 tools/xref/generate_xref.py`, `check_inline` and
+`python3 tools/validate/check_secrets.py` (no private key or service-account
+identity anywhere in the tree — WO-77). Only then push, and
 only if every one is green. A batch-end failure may belong to any work order
 in the batch: fix it and say which. Update `CHANGELOG.md` for every
 increment. Never "CI will catch it", and never weaken a test to pass.

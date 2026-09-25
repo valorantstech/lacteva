@@ -13,6 +13,14 @@
       is what stops it being dropped again.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!--
+      WO-77. Android 13+ shows no notification without this runtime
+      permission. It is ASKED after sign-in, with one sentence, never on first
+      launch — and a refusal changes nothing else: every screen still opens.
+      Firebase's own manifest contributes what messaging itself needs
+      (wake lock, the receiver, Play services); nothing more is declared here.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="Lacteva"
         android:name="${applicationName}"

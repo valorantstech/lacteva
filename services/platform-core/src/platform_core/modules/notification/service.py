@@ -42,6 +42,7 @@ from platform_core.modules.notification.models import (
     NotificationRecipient,
 )
 from platform_core.modules.notification.providers import (
+    DeadTokenError,
     OutboundMessage,
     PermanentSendError,
     ProviderSendError,
@@ -615,11 +616,13 @@ class NotificationService:
             self._record_failure(
                 notification, str(exc)[:500], now=now, forced=forced, permanent=True
             )
-            # DEMO-012 §10: a push that failed permanently usually failed
-            # because the token is dead — the app was uninstalled, or the
-            # token rotated. Keeping it means every future notification for
-            # that user spends a gateway call to learn the same thing.
-            await self._forget_dead_token(notification)
+            # DEMO-012 §10: a push whose TOKEN is dead — the app was
+            # uninstalled, or the token rotated — is forgotten, so no future
+            # notification spends a gateway call to learn the same thing.
+            # WO-77: only when the gateway said the address is gone
+            # (`DeadTokenError`); a 400 about the message keeps the handset.
+            if isinstance(exc, DeadTokenError):
+                await self._forget_dead_token(notification)
             return
         except (TemplateRenderError, TemplateNotFoundError) as exc:
             # A missing template or an unrenderable one is a DEPLOYMENT fault,

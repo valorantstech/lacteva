@@ -172,8 +172,14 @@ class Settings(BaseSettings):
     #: record it as delivered. `http` speaks the vendor-neutral contract in
     #: `HttpPushProvider`.
     notification_push_provider: Literal[
-        "logging", "placeholder", "http", "dry_run", "disabled", "sandbox"
+        "logging", "placeholder", "http", "fcm", "dry_run", "disabled", "sandbox"
     ] = "disabled"
+    # WO-77: Firebase Cloud Messaging, HTTP v1. The project id is public (it is
+    # inside every APK); the credentials path names a service-account key on
+    # the host, which is the one real secret of the push channel and is never
+    # read by anything but `FcmPushProvider`.
+    notification_fcm_project_id: str = ""
+    notification_fcm_credentials_path: str = ""
     #: DEMO-025. Defaults to `disabled` for the same reason push does: no
     #: WhatsApp gateway has been contracted, and a deployment that has not
     #: made that decision must FAIL visibly rather than record a message as
@@ -509,6 +515,14 @@ class Settings(BaseSettings):
             problems.append(
                 "LACTEVA_NOTIFICATION_PUSH_PROVIDER is 'http' but LACTEVA_PUSH_API_URL / "
                 "LACTEVA_PUSH_API_KEY are not both set"
+            )
+        if self.notification_push_provider == "fcm" and not (
+            self.notification_fcm_project_id and self.notification_fcm_credentials_path
+        ):
+            problems.append(
+                "LACTEVA_NOTIFICATION_PUSH_PROVIDER is 'fcm' but "
+                "LACTEVA_NOTIFICATION_FCM_PROJECT_ID / "
+                "LACTEVA_NOTIFICATION_FCM_CREDENTIALS_PATH are not both set"
             )
         if self.notification_whatsapp_provider == "http" and not (
             self.whatsapp_api_url and self.whatsapp_api_key

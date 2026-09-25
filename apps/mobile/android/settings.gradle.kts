@@ -21,6 +21,10 @@ plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "8.11.1" apply false
     id("org.jetbrains.kotlin.android") version "2.2.20" apply false
+    // WO-77: reads android/app/google-services.json at build time so the app
+    // knows its Firebase project. The file is NOT a secret (it ships inside
+    // every APK); the service-account key that can SEND never enters this tree.
+    id("com.google.gms.google-services") version "4.5.0" apply false
 }
 
 include(":app")

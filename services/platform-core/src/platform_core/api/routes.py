@@ -2789,6 +2789,63 @@ async def my_notifications(
     return await service.mine(recipient_refs=refs, limit=limit, offset=offset)
 
 
+class DispatchEventView(BaseModel):
+    """One entry of the dispatch registry, as an operator reads it (WO-77 Part C)."""
+
+    event: str
+    template_key: str
+    #: The channel the registry names when the tenant has chosen nothing.
+    default_channel: str
+    #: What THIS tenant's messages actually go on: the tenant's choice when
+    #: the mapping is selectable and one is configured, else the default.
+    channel: str
+    #: May a tenant choose a different channel for it? (DEMO-025)
+    selectable: bool
+    #: Does it also leave an in-app notice the recipient reads back? (WO-86)
+    inapp: bool
+    #: Whether this deployment can send on `channel` right now — the same
+    #: answer `messaging-posture` gives for that channel, joined here so the
+    #: list says per EVENT what an operator otherwise had to work out.
+    can_send: bool
+
+
+@notification_router.get("/notifications/events", response_model=list[DispatchEventView])
+async def list_dispatch_events(
+    session: deps.Session, service: NotificationSvc, _: NotificationRead
+) -> Any:
+    """Which notifications are ON, and where each one goes (WO-77 Part C).
+
+    Read from the dispatch registry and the messaging posture, never from a
+    list kept by hand: the honest answer to "does the household get a push
+    when the bill is issued?" is whatever `MAPPINGS` and the gateway
+    configuration say, and this is them saying it.
+    """
+    from platform_core.consumers.notification_dispatch import MAPPINGS
+    from platform_core.modules.notification.service import resolve_channel
+
+    posture = {c.channel: c.can_send for c in service.posture().channels}
+    tenant_id = require_current_tenant()
+    views = []
+    for event, mapping in sorted(MAPPINGS.items()):
+        channel = (
+            await resolve_channel(session, mapping.template_key, mapping.channel, tenant_id)
+            if mapping.selectable
+            else mapping.channel
+        )
+        views.append(
+            DispatchEventView(
+                event=event,
+                template_key=mapping.template_key,
+                default_channel=mapping.channel,
+                channel=channel,
+                selectable=mapping.selectable,
+                inapp=mapping.inapp,
+                can_send=bool(posture.get(channel, False)),
+            )
+        )
+    return views
+
+
 @notification_router.get("/notification-templates", response_model=list[TemplateView])
 async def list_notification_templates(service: NotificationSvc, _: NotificationRead) -> Any:
     """The template registry — every message the platform can send."""

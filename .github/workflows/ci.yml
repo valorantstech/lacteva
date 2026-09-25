@@ -18,6 +18,8 @@ jobs:
         run: python3 tools/validate/validate_docs.py
       - name: Check XREF freshness
         run: python3 tools/xref/generate_xref.py --check
+      - name: No private key or service-account identity in the tree (WO-77)
+        run: python3 tools/validate/check_secrets.py
 
   platform-core:
     name: platform-core (lint + tests)

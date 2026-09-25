@@ -41,14 +41,18 @@ const applicationId = 'com.phoenix.lacteva';
 
 void main() {
   group('the release manifest', () {
-    test('grants INTERNET, because every screen in this app is a network call', () {
-      final xml = _manifest('main').readAsStringSync();
-      expect(
-        xml,
-        contains('android.permission.INTERNET'),
-        reason: 'a release build without INTERNET cannot reach the platform at all',
-      );
-    });
+    test(
+      'grants INTERNET, because every screen in this app is a network call',
+      () {
+        final xml = _manifest('main').readAsStringSync();
+        expect(
+          xml,
+          contains('android.permission.INTERNET'),
+          reason:
+              'a release build without INTERNET cannot reach the platform at all',
+        );
+      },
+    );
 
     test('declares it at manifest level, not inside <application>', () {
       // `<uses-permission>` is only honoured as a direct child of <manifest>.
@@ -61,7 +65,8 @@ void main() {
       expect(
         permission,
         lessThan(application),
-        reason: '<uses-permission> must precede <application> as a child of <manifest>',
+        reason:
+            '<uses-permission> must precede <application> as a child of <manifest>',
       );
     });
   });
@@ -99,32 +104,45 @@ void main() {
       expect(gradle, isNot(contains('com.lacteva')));
     });
 
-    test('MainActivity lives in the matching package, and the old tree is gone', () {
-      // A wrong `package` line compiles and then dies at runtime with a
-      // missing-class error — exactly the failure a green build hides.
-      final activity = _inApp(
-        'android/app/src/main/kotlin/com/phoenix/lacteva/MainActivity.kt',
-      ).readAsStringSync();
-      expect(activity, startsWith('package $applicationId\n'));
-      expect(activity, contains('class MainActivity : FlutterActivity()'));
-      for (final base in ['.', '..']) {
+    test(
+      'MainActivity lives in the matching package, and the old tree is gone',
+      () {
+        // A wrong `package` line compiles and then dies at runtime with a
+        // missing-class error — exactly the failure a green build hides.
+        final activity = _inApp(
+          'android/app/src/main/kotlin/com/phoenix/lacteva/MainActivity.kt',
+        ).readAsStringSync();
+        expect(activity, startsWith('package $applicationId\n'));
+        expect(activity, contains('class MainActivity : FlutterActivity()'));
+        for (final base in ['.', '..']) {
+          expect(
+            Directory(
+              '$base/android/app/src/main/kotlin/com/lacteva',
+            ).existsSync(),
+            isFalse,
+            reason:
+                'the old package directory must be deleted, not left behind',
+          );
+        }
+        // The manifest names the activity relative to the namespace, so it
+        // follows the rename without an edit — pinned so it stays that way.
         expect(
-          Directory('$base/android/app/src/main/kotlin/com/lacteva').existsSync(),
-          isFalse,
-          reason: 'the old package directory must be deleted, not left behind',
+          _manifest('main').readAsStringSync(),
+          contains('android:name=".MainActivity"'),
         );
-      }
-      // The manifest names the activity relative to the namespace, so it
-      // follows the rename without an edit — pinned so it stays that way.
-      expect(_manifest('main').readAsStringSync(), contains('android:name=".MainActivity"'));
-    });
+      },
+    );
 
     test('iOS carries the same identity, and only that one', () {
       // iOS does not ship yet; one identity, not a second one for someone to
       // discover later.
-      final project = _inApp('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
+      final project = _inApp(
+        'ios/Runner.xcodeproj/project.pbxproj',
+      ).readAsStringSync();
       expect(
-        RegExp(r'PRODUCT_BUNDLE_IDENTIFIER = com\.phoenix\.lacteva;').allMatches(project).length,
+        RegExp(
+          r'PRODUCT_BUNDLE_IDENTIFIER = com\.phoenix\.lacteva;',
+        ).allMatches(project).length,
         3,
       );
       expect(
@@ -144,14 +162,20 @@ void main() {
     // these were latent rather than live — pinned the way the caption is.
     test('the iOS bundle name is Lacteva', () {
       final plist = _inApp('ios/Runner/Info.plist').readAsStringSync();
-      expect(plist, contains('<key>CFBundleName</key>\n\t<string>Lacteva</string>'));
+      expect(
+        plist,
+        contains('<key>CFBundleName</key>\n\t<string>Lacteva</string>'),
+      );
       expect(plist, isNot(contains('lacteva_mobile')));
     });
 
     test('the web title and home-screen name are Lacteva', () {
       final html = _inApp('web/index.html').readAsStringSync();
       expect(html, contains('<title>Lacteva</title>'));
-      expect(html, contains('<meta name="apple-mobile-web-app-title" content="Lacteva">'));
+      expect(
+        html,
+        contains('<meta name="apple-mobile-web-app-title" content="Lacteva">'),
+      );
       expect(html, isNot(contains('lacteva_mobile')));
       final manifest = _inApp('web/manifest.json').readAsStringSync();
       expect(manifest, contains('"name": "Lacteva"'));
@@ -171,5 +195,50 @@ void main() {
         reason: '$flavour still needs it for the Flutter tooling',
       );
     }
+  });
+
+  group('push (WO-77)', () {
+    test(
+      'the release manifest asks for POST_NOTIFICATIONS, and nothing else new',
+      () {
+        final xml = _manifest('main').readAsStringSync();
+        final permissions = RegExp(
+          r'<uses-permission android:name="([^"]+)"',
+        ).allMatches(xml).map((m) => m.group(1)).toList();
+        expect(permissions, [
+          'android.permission.INTERNET',
+          'android.permission.POST_NOTIFICATIONS',
+        ]);
+      },
+    );
+
+    test('the Firebase project file is present and names this package', () {
+      final json = _inApp(
+        'android/app/google-services.json',
+      ).readAsStringSync();
+      expect(json, contains('"package_name": "$applicationId"'));
+      expect(json, contains('"project_id": "lacteva-2987d"'));
+      // It ships in every APK and is not a secret; the key that can SEND is
+      // a different file and must never be here.
+      expect(json, isNot(contains('private_key')));
+    });
+
+    test('the Google services plugin is applied to the app', () {
+      final app = _inApp('android/app/build.gradle.kts').readAsStringSync();
+      expect(app, contains('id("com.google.gms.google-services")'));
+      final settings = _inApp('android/settings.gradle.kts').readAsStringSync();
+      expect(
+        settings,
+        contains('id("com.google.gms.google-services") version'),
+      );
+    });
+
+    test('the notification channel is created with a readable name', () {
+      final activity = _inApp(
+        'android/app/src/main/kotlin/com/phoenix/lacteva/MainActivity.kt',
+      ).readAsStringSync();
+      expect(activity, contains('createNotificationChannel'));
+      expect(activity, contains('CHANNEL_ID = "lacteva"'));
+    });
   });
 }

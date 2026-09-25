@@ -42,26 +42,29 @@ import 'sign_out.dart';
 
 /// Resolves the session, then shows the experience it earns.
 class HomeRouter extends StatefulWidget {
-  const HomeRouter({
-    super.key,
-    required this.client,
-    this.pushTokens = const NoPushConfigured(),
-  });
+  const HomeRouter({super.key, required this.client, this.pushTokens});
 
   final OfflineApiClient client;
 
-  /// Where this build's push token comes from (DEMO-012 §10). The default
-  /// supplies none, because no messaging vendor is wired — see `push.dart`.
-  final PushTokenSource pushTokens;
+  /// Where this installation's push token comes from (DEMO-012 §10). Null
+  /// means whatever `main.dart` installed in [installedPush] — Firebase on a
+  /// real build (WO-77), the silent default everywhere else. Tests pass a
+  /// fixed source.
+  final PushTokenSource? pushTokens;
 
   @override
   State<HomeRouter> createState() => _HomeRouterState();
 }
 
-class _HomeRouterState extends State<HomeRouter>
-    with WidgetsBindingObserver {
+class _HomeRouterState extends State<HomeRouter> with WidgetsBindingObserver {
   Session? _session;
   String? _error;
+  final List<StreamSubscription<Object?>> _push = [];
+
+  PushTokenSource get _tokens => widget.pushTokens ?? installedPush;
+  PushRuntime get _runtime => _tokens is PushRuntime
+      ? _tokens as PushRuntime
+      : const NoPushConfigured();
 
   @override
   void initState() {
@@ -73,7 +76,91 @@ class _HomeRouterState extends State<HomeRouter>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    for (final s in _push) {
+      s.cancel();
+    }
     super.dispose();
+  }
+
+  /// WO-77 Part B: everything push, after the session and never before.
+  ///
+  /// Register the token (the platform binds it to THIS principal); ask the
+  /// person once, with one sentence, if Android has not been asked; follow
+  /// rotation; say one line for a message that arrives while the app is
+  /// open; and open the right list when a notification is tapped. Every
+  /// step is best-effort — push is an extra, and a refusal or a failure
+  /// leaves every screen exactly as it was.
+  Future<void> _wirePush(Session session) async {
+    final client = widget.client;
+    final id = await registerForPush(
+      client,
+      source: _tokens,
+      label: session.email,
+    );
+    client.pushDeviceId = id;
+    final runtime = _runtime;
+    try {
+      if (await runtime.permissionState() == null && mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text(L10n.of(session).t('push.why'))),
+        );
+        await runtime.requestPermission();
+      }
+    } catch (_) {
+      // A refusal or a failure to ask changes nothing.
+    }
+    _push.add(
+      runtime.tokenRefreshes.listen((token) async {
+        client.pushDeviceId = await registerForPush(
+          client,
+          source: _tokens,
+          label: session.email,
+          token: token,
+        );
+      }),
+    );
+    _push.add(
+      runtime.foreground.listen((message) {
+        if (!mounted) return;
+        final line = [
+          message.title,
+          message.body,
+        ].where((s) => s != null && s.isNotEmpty).join(' — ');
+        if (line.isEmpty) return;
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text(line),
+            action: pushTargetFor(message, session) == 'bills'
+                ? SnackBarAction(
+                    label: L10n.of(session).t('nav.bill'),
+                    onPressed: () => _openForPush(message, session),
+                  )
+                : null,
+          ),
+        );
+      }),
+    );
+    _push.add(
+      runtime.opened.listen((message) => _openForPush(message, session)),
+    );
+    final initial = await runtime.initialMessage();
+    if (initial != null) _openForPush(initial, session);
+  }
+
+  void _openForPush(PushMessage message, Session session) {
+    if (!mounted) return;
+    switch (pushTargetFor(message, session)) {
+      case 'bills':
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                CustomerBillsScreen(client: widget.client, session: session),
+          ),
+        );
+      default:
+        // The round is the home screen; a staff notification lands there.
+        Navigator.of(context).popUntil((route) => route.isFirst);
+    }
   }
 
   /// Sync-on-resume (P1-MOBILE-COUNTER-001; audit D-13). The queue used to
@@ -114,18 +201,10 @@ class _HomeRouterState extends State<HomeRouter>
       // has nobody to belong to. Deliberately not awaited into the screen's
       // loading state — being reachable by push is a nice-to-have and must
       // not hold up a rider's round.
-      unawaited(
-        registerForPush(
-          widget.client,
-          source: widget.pushTokens,
-          label: session.email,
-        ),
-      );
+      unawaited(_wirePush(session));
     } catch (e) {
       if (!mounted) return;
-      setState(
-        () => _error = L10n.of(_session).t('home.sessionUnclear'),
-      );
+      setState(() => _error = L10n.of(_session).t('home.sessionUnclear'));
     }
   }
 
@@ -176,7 +255,8 @@ class _HomeRouterState extends State<HomeRouter>
         client: client,
         session: session,
         roots: {
-          'deliveries': (_) => CustomerHomeScreen(client: client, session: session),
+          'deliveries': (_) =>
+              CustomerHomeScreen(client: client, session: session),
           'bill': (_) => CustomerBillsScreen(client: client, session: session),
           'more': (_) => HubScreen(
             client: client,
@@ -192,7 +272,8 @@ class _HomeRouterState extends State<HomeRouter>
         session: session,
         roots: {
           'round': (_) => DriverHomeScreen(client: client, session: session),
-          'deliver': (_) => DeliveryRoundScreen(client: client, session: session),
+          'deliver': (_) =>
+              DeliveryRoundScreen(client: client, session: session),
           'more': (_) => HubScreen(
             client: client,
             session: session,
@@ -235,7 +316,8 @@ class _HomeRouterState extends State<HomeRouter>
           // that only sells has none, and a tab of nobody is not offered —
           // absent, never disabled. Everything else on this bar is shared.
           if (session.organization?.collects ?? true)
-            'farmers': (_) => SuppliersListScreen(client: client, session: session),
+            'farmers': (_) =>
+                SuppliersListScreen(client: client, session: session),
           'money': (_) => HubScreen(
             client: client,
             session: session,
@@ -265,8 +347,10 @@ class _HomeRouterState extends State<HomeRouter>
         session: session,
         roots: runsTheWholeDairy(session)
             ? {
-                'today': (_) => CollectionHomeScreen(client: client, session: session),
-                'farmers': (_) => SuppliersListScreen(client: client, session: session),
+                'today': (_) =>
+                    CollectionHomeScreen(client: client, session: session),
+                'farmers': (_) =>
+                    SuppliersListScreen(client: client, session: session),
                 'money': (_) => HubScreen(
                   client: client,
                   session: session,
@@ -288,14 +372,16 @@ class _HomeRouterState extends State<HomeRouter>
                 ),
               }
             : {
-                'collect': (_) => CollectionHomeScreen(client: client, session: session),
+                'collect': (_) =>
+                    CollectionHomeScreen(client: client, session: session),
                 'today': (_) => HubScreen(
                   client: client,
                   session: session,
                   titleKey: 'nav.today',
                   items: operatorTodayItems,
                 ),
-                'farmers': (_) => SuppliersListScreen(client: client, session: session),
+                'farmers': (_) =>
+                    SuppliersListScreen(client: client, session: session),
                 'more': (_) => HubScreen(
                   client: client,
                   session: session,

@@ -14,6 +14,13 @@ dist/
 # DEP-001: the production TEMPLATE is committed (it documents every variable
 # and contains only placeholders); the filled-in file never is.
 !.env.production.example
+# WO-77: the Firebase service-account key can push to every handset in the
+# project. It lives on the host at /etc/lacteva/fcm-service-account.json and
+# nowhere in this tree; `tools/validate/check_secrets.py` fails the build if
+# its contents appear anywhere. `google-services.json` is NOT a secret (it
+# ships inside every APK) and is committed on purpose.
+*fcm-service-account*.json
+*firebase-adminsdk*.json
 
 # Node / Next.js (admin portal)
 node_modules/

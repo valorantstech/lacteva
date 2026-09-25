@@ -10,7 +10,7 @@
  * been in a position to make — and it was on the screen, as a headline figure,
  * where an operator would read it as proof a farmer had been told.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
@@ -137,6 +137,26 @@ function stubApi(messages: api.Notification[] = [MESSAGE]) {
       },
     ],
   } as never);
+  vi.spyOn(api, "getDispatchEvents").mockResolvedValue([
+    {
+      event: "sales.invoice-issued.v1",
+      template_key: "invoice_issued",
+      default_channel: "push",
+      channel: "push",
+      selectable: true,
+      inapp: true,
+      can_send: false,
+    },
+    {
+      event: "supplier.registered.v1",
+      template_key: "supplier_registered",
+      default_channel: "sms",
+      channel: "sms",
+      selectable: false,
+      inapp: false,
+      can_send: false,
+    },
+  ] as never);
   vi.spyOn(api, "getMessagingPosture").mockResolvedValue({
     mode: "test",
     sends_real_messages: false,
@@ -402,6 +422,22 @@ describe("the messaging gateway panel", () => {
     // panel says it for a provider mapping. Both are legitimate, so scope this
     // to the gateway row.
     expect(screen.getByText("disabled-whatsapp")).toBeInTheDocument();
+  });
+
+  it("lists every event with its channel and whether it can be sent (WO-77)", async () => {
+    stubApi();
+    render(<NotificationsPage />);
+    const panel = await screen.findByTestId("dispatch-events");
+    expect(within(panel).getByText("What is sent, and where")).toBeInTheDocument();
+    const bill = within(panel).getByTestId("dispatch-event-sales.invoice-issued.v1");
+    expect(bill.textContent).toContain("invoice_issued");
+    expect(bill.textContent).toContain("push (selectable)");
+    // In-app notice yes; cannot send while the gateway is disabled.
+    expect(within(bill).getAllByText("yes").length).toBe(1);
+    expect(within(bill).getAllByText("no").length).toBe(1);
+    const supplier = within(panel).getByTestId("dispatch-event-supplier.registered.v1");
+    expect(supplier.textContent).toContain("sms");
+    expect(within(panel).getByText(/nothing is rerouted/)).toBeInTheDocument();
   });
 
   it("never shows a credential or a gateway URL", async () => {

@@ -42,13 +42,20 @@ class OfflineApiClient extends ApiClient {
   final String deviceId;
   late final SyncEngine engine;
 
+  /// The platform's id for THIS handset's push registration, set by
+  /// `registerForPush` after sign-in and given back on sign-out (WO-77).
+  /// Not `deviceId` above, which is the offline queue's own label — sign-out
+  /// used to revoke that one, which the platform had never heard of.
+  String? pushDeviceId;
+
   /// Explicit sign-out for a shared handset (P0-PRODUCT-008 D-2): give any
   /// push token back (best effort — push.dart documents why), then forget the
   /// session. The durable queue is deliberately untouched: captured work
   /// survives, and every replayed operation is re-authorized by the platform
   /// under the next sign-in.
   Future<void> signOut() async {
-    await revokePush(this, deviceId);
+    await revokePush(this, pushDeviceId);
+    pushDeviceId = null;
     // Awaited: the saved pair is gone before the sign-in screen appears, so
     // the next launch asks for a password — which is what "sign out" means.
     await forgetSession();

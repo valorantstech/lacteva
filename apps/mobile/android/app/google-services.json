@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "501111900973",
+    "project_id": "lacteva-2987d",
+    "storage_bucket": "lacteva-2987d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:501111900973:android:97f86bc7fa2907acf721a4",
+        "android_client_info": {
+          "package_name": "com.phoenix.lacteva"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDMIEfiPyiboPlaw6t6DrqChLhEzPhsnoY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

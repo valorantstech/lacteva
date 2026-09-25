@@ -83,7 +83,7 @@ migration: ## Autogenerate a migration: make migration m="add xyz"
 	$(if $(UV),uv run,./.venv/bin/)alembic revision --autogenerate -m "$(m)"
 
 docs-validate: ## Documentation standards + cross-reference freshness
-	python3 tools/validate/validate_docs.py && python3 tools/xref/generate_xref.py --check
+	python3 tools/validate/validate_docs.py && python3 tools/xref/generate_xref.py --check && python3 tools/validate/check_secrets.py
 
 clean: ## Stop containers and remove volumes (DESTROYS local data)
 	$(COMPOSE) --profile apps --profile search down -v

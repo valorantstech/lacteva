@@ -1938,6 +1938,22 @@ export const getTemplateRegistry = () =>
 export const getMessagingPosture = () =>
   api<MessagingPosture>("/v1/notifications/messaging-posture");
 
+/** One event of the dispatch registry, with where it goes and whether this
+ *  deployment can send it there (WO-77 Part C). Read from the platform's own
+ *  registry, never a list kept here. */
+export type DispatchEvent = {
+  event: string;
+  template_key: string;
+  default_channel: string;
+  channel: string;
+  selectable: boolean;
+  inapp: boolean;
+  can_send: boolean;
+};
+
+export const getDispatchEvents = () =>
+  api<DispatchEvent[]>("/v1/notifications/events");
+
 export const getSettlementPeriodReachability = (from: string, to: string) =>
   api<ReachabilitySummary>(
     `/v1/notifications/reachability/settlement-period?period_from=${from}&period_to=${to}`,

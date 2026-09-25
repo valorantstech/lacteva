@@ -10,6 +10,7 @@ library;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lacteva_mobile/src/api.dart';
 import 'package:lacteva_mobile/src/push.dart';
+import 'package:lacteva_mobile/src/session.dart';
 
 class _RecordingClient extends ApiClient {
   final List<Map<String, dynamic>> registered = [];
@@ -41,6 +42,23 @@ class _FixedToken implements PushTokenSource {
   @override
   Future<String?> token() async => value;
 }
+
+Session _sessionWith({
+  String? customerId,
+  Set<String> permissions = const {},
+}) => Session(
+  userId: 'u1',
+  email: 'someone@example.com',
+  fullName: 'Someone',
+  tenantId: 'org-1',
+  customerId: customerId,
+  locale: 'en',
+  permissions: permissions,
+  organization: null,
+);
+
+final _customer = _sessionWith(customerId: 'cust-1');
+final _driver = _sessionWith(permissions: const {'logistics.run.execute'});
 
 void main() {
   test('with no messaging vendor wired, nothing is registered', () async {
@@ -107,5 +125,57 @@ void main() {
     final client = _RecordingClient()..failWith = ApiException(404, 'gone');
     await revokePush(client, 'dev-1');
     expect(client.revoked, isEmpty);
+  });
+
+  group('WO-77 — the vendor is behind an interface', () {
+    test('the silent default answers everything with nothing', () async {
+      const none = NoPushConfigured();
+      expect(await none.token(), isNull);
+      expect(await none.requestPermission(), isFalse);
+      expect(await none.permissionState(), isFalse);
+      expect(await none.initialMessage(), isNull);
+      expect(await none.tokenRefreshes.isEmpty, isTrue);
+      expect(await none.foreground.isEmpty, isTrue);
+      expect(await none.opened.isEmpty, isTrue);
+      // And it is what the process runs with until main.dart says otherwise.
+      expect(installedPush, isA<NoPushConfigured>());
+    });
+
+    test('a rotated token is registered as given, not fetched again', () async {
+      final client = _RecordingClient();
+      final id = await registerForPush(
+        client,
+        source: const _FixedToken('old-token'),
+        token: 'rotated-token',
+      );
+      expect(id, 'dev-1');
+      expect(client.registered.single['token'], 'rotated-token');
+    });
+
+    test(
+      'a tapped notification opens the bills for a household and the round for staff',
+      () {
+        const bill = PushMessage(
+          data: {'template': 'invoice_issued', 'notification_id': 'n1'},
+        );
+        const paid = PushMessage(
+          data: {'template': 'customer_payment_recorded'},
+        );
+        const nothing = PushMessage(title: 'Hello');
+        expect(pushTargetFor(bill, _customer), 'bills');
+        expect(pushTargetFor(paid, _customer), 'bills');
+        expect(pushTargetFor(nothing, _customer), isNull);
+        // A household is never sent to a staff screen by an unknown template.
+        expect(
+          pushTargetFor(
+            const PushMessage(data: {'template': 'month_end_drafted'}),
+            _customer,
+          ),
+          isNull,
+        );
+        expect(pushTargetFor(bill, _driver), 'round');
+        expect(pushTargetFor(nothing, _driver), isNull);
+      },
+    );
   });
 }

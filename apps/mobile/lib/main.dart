@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -11,6 +12,8 @@ import 'src/theme.dart';
 import 'src/offline/offline_client.dart';
 import 'src/offline/queue.dart';
 import 'src/offline/store.dart';
+import 'src/push.dart';
+import 'src/push_firebase.dart';
 import 'src/session_store.dart';
 import 'src/startup.dart';
 
@@ -48,6 +51,16 @@ Future<void> main() async {
     queuePath = '${dir.path}/lacteva_sync_queue.json';
   } catch (_) {
     queuePath = null; // fall through to the in-memory stand-in
+  }
+  // WO-77: push is an extra. Firebase reads its project from the
+  // google-services.json compiled into this build; if it cannot start — no
+  // Play services, an emulator, a build without the file — the app keeps the
+  // silent default and every screen works exactly as before.
+  try {
+    await Firebase.initializeApp();
+    installedPush = FirebasePushRuntime();
+  } catch (_) {
+    installedPush = const NoPushConfigured();
   }
   runApp(LactevaApp(queuePath: queuePath));
 }
@@ -148,7 +161,6 @@ class _LactevaAppState extends State<LactevaApp> {
     );
   }
 }
-
 
 /// The whole of a release build that was compiled against a developer
 /// address: one screen, one message, no sign-in to fail.

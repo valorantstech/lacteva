@@ -30,10 +30,12 @@ import {
   NotificationTemplate,
   RenderedPreview,
   MessagingPosture,
+  type DispatchEvent,
   ReachabilityEntry,
   ReachabilitySummary,
   TemplateRegistry,
   getMessagingPosture,
+  getDispatchEvents,
   getNotificationStats,
   getReachability,
   getSettlementPeriodReachability,
@@ -943,6 +945,7 @@ function RepairContactForm({
  */
 function MessagingPosturePanel() {
   const [posture, setPosture] = useState<MessagingPosture | null>(null);
+  const [events, setEvents] = useState<DispatchEvent[] | null>(null);
 
   useEffect(() => {
     // Deferred by a tick, the idiom the rest of the portal uses.
@@ -950,6 +953,11 @@ function MessagingPosturePanel() {
       getMessagingPosture()
         .then(setPosture)
         .catch(() => setPosture(null));
+      // WO-77 Part C: which notifications are on, per event, from the
+      // platform's registry — not a list kept here.
+      getDispatchEvents()
+        .then(setEvents)
+        .catch(() => setEvents(null));
     }, 0);
     return () => clearTimeout(timer);
   }, []);
@@ -1004,6 +1012,51 @@ function MessagingPosturePanel() {
             </tbody>
           </table>
         </div>
+        {events && events.length > 0 ? (
+          <div className="overflow-x-auto" data-testid="dispatch-events">
+            <h3 className="mb-1 font-medium">What is sent, and where</h3>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Every event the platform turns into a message, the channel this
+              organisation&apos;s copy goes on, and whether this deployment can send
+              it there today. An event whose channel cannot send fails visibly
+              in the history above; nothing is rerouted to make a row look
+              green.
+            </p>
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-4 font-medium">Event</th>
+                  <th className="py-1 pr-4 font-medium">Template</th>
+                  <th className="py-1 pr-4 font-medium">Channel</th>
+                  <th className="py-1 pr-4 font-medium">In-app notice</th>
+                  <th className="py-1 font-medium">Can send now</th>
+                </tr>
+              </thead>
+              <tbody>
+                {events.map((event) => (
+                  <tr
+                    className="border-t border-border"
+                    key={event.event}
+                    data-testid={`dispatch-event-${event.event}`}
+                  >
+                    <td className="py-2 pr-4 font-mono text-xs">{event.event}</td>
+                    <td className="py-2 pr-4">{event.template_key}</td>
+                    <td className="py-2 pr-4">
+                      {event.channel}
+                      {event.selectable && event.channel !== event.default_channel
+                        ? ` (chosen; default ${event.default_channel})`
+                        : event.selectable
+                          ? " (selectable)"
+                          : ""}
+                    </td>
+                    <td className="py-2 pr-4">{event.inapp ? "yes" : "no"}</td>
+                    <td className="py-2">{event.can_send ? "yes" : "no"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

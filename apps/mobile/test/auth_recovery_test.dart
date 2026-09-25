@@ -153,6 +153,9 @@ void main() {
     tester,
   ) async {
     final client = _SignOutProbe();
+    // WO-77: the registration sign-in made is what sign-out gives back —
+    // the platform's id for THIS handset, not the queue's own label.
+    client.pushDeviceId = 'push-dev-1';
     // A shift's captured work sits in the queue.
     await client.recordDeliveryOffline(
       customerId: 'cus-1',
@@ -174,7 +177,8 @@ void main() {
 
     expect(find.byType(LoginScreen), findsOneWidget);
     expect(client.isAuthenticated, isFalse);
-    expect(client.revoked, isTrue, reason: 'push token handed back');
+    expect(client.revoked, 'push-dev-1', reason: 'push token handed back');
+    expect(client.pushDeviceId, isNull);
     expect(
       client.pendingCount,
       1,
@@ -193,10 +197,10 @@ class _SignOutProbe extends OfflineApiClient {
         forceOffline: true,
       );
 
-  bool revoked = false;
+  String? revoked;
 
   @override
   Future<void> revokeDevice(String deviceId) async {
-    revoked = true;
+    revoked = deviceId;
   }
 }

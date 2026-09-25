@@ -16,14 +16,12 @@ import 'offline/offline_client.dart';
 import 'push.dart';
 
 class StartupGate extends StatefulWidget {
-  const StartupGate({
-    super.key,
-    required this.client,
-    this.pushTokens = const NoPushConfigured(),
-  });
+  const StartupGate({super.key, required this.client, this.pushTokens});
 
   final OfflineApiClient client;
-  final PushTokenSource pushTokens;
+
+  /// Null: whatever `main.dart` installed (WO-77). Tests pass a fixed source.
+  final PushTokenSource? pushTokens;
 
   @override
   State<StartupGate> createState() => _StartupGateState();

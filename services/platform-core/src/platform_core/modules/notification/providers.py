@@ -53,6 +53,17 @@ class PermanentSendError(ProviderSendError):
     """
 
 
+class DeadTokenError(PermanentSendError):
+    """The ADDRESS is gone, not the message (WO-77).
+
+    A push token the gateway says is unregistered: the app was uninstalled or
+    the token rotated. Permanent like its parent — and, unlike a rejected
+    message, the cue to stop holding the token at all. `NotificationService`
+    forgets the device ONLY on this, so a 400 about a malformed payload does
+    not quietly delete a live handset's registration.
+    """
+
+
 @dataclass(frozen=True)
 class OutboundMessage:
     channel: str
@@ -1206,7 +1217,7 @@ class HttpPushProvider:
             raise ProviderSendError(f"push gateway unreachable: {type(exc).__name__}") from exc
 
         if response.status_code in self.GONE_STATUSES:
-            raise PermanentSendError(f"push token is no longer registered ({response.status_code})")
+            raise DeadTokenError(f"push token is no longer registered ({response.status_code})")
         if response.status_code in self.PERMANENT_STATUSES:
             raise PermanentSendError(
                 f"push gateway rejected the message ({response.status_code}): "
@@ -1312,6 +1323,16 @@ def vendor_template_for(template_key: str, channel: str) -> str | None:
     return mapping.get(f"{template_key}.{channel}") or None
 
 
+def _fcm_builder(channel: str):
+    """Firebase Cloud Messaging, HTTP v1 (WO-77). Imported lazily so a
+    deployment that never chooses it never loads the signing code."""
+    from platform_core.modules.notification.fcm import FcmPushProvider
+
+    if channel != "push":
+        raise ValueError(f"'fcm' is a push provider and cannot serve the {channel} channel")
+    return FcmPushProvider(channel)
+
+
 def _http_builder(channel: str):
     """Which HTTP provider a channel means. One mapping, not a chain of
     conditionals that grows a branch per channel."""
@@ -1330,6 +1351,7 @@ def _build(channel: str, configured: str) -> ChannelProvider:
         "dry_run": DryRunProvider,
         "disabled": DisabledProvider,
         "http": _http_builder(channel),
+        "fcm": _fcm_builder,
         "sandbox": SandboxGatewayProvider,
         "smtp": SmtpEmailProvider,
     }
