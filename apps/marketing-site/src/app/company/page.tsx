@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { pageOpenGraph } from "@/lib/open-graph";
 import { LinkButton } from "@/components/link-button";
 import { SceneCapture } from "@/components/scenes";
 import { Section, SectionHeading } from "@/components/section";
@@ -8,7 +9,7 @@ export const metadata: Metadata = {
   description:
     "Lacteva is the flagship product of Phoenix Software — on a mission to digitize the entire dairy value chain for businesses that today run on paper.",
   alternates: { canonical: "/company" },
-  openGraph: { url: "/company" },
+  openGraph: pageOpenGraph("/company"),
 };
 
 const WHO = [

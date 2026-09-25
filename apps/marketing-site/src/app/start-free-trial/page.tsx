@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { pageOpenGraph } from "@/lib/open-graph";
 import { Section, SectionHeading } from "@/components/section";
 import { LeadForm } from "@/components/lead-form";
 
@@ -7,7 +8,7 @@ export const metadata: Metadata = {
   description:
     "Request a 30-day free trial of Lacteva — the connected dairy operations platform. Our team sets up your environment and gets you started.",
   alternates: { canonical: "/start-free-trial" },
-  openGraph: { url: "/start-free-trial" },
+  openGraph: pageOpenGraph("/start-free-trial"),
 };
 
 /**

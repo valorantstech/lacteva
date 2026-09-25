@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { pageOpenGraph } from "@/lib/open-graph";
 import {
   LegalArticle,
   LegalSection,
@@ -13,7 +14,7 @@ export const metadata: Metadata = {
   description:
     "How Lacteva handles information collected through this website and processed through the Lacteva platform.",
   alternates: { canonical: "/privacy-policy" },
-  openGraph: { url: "/privacy-policy" },
+  openGraph: pageOpenGraph("/privacy-policy"),
 };
 
 /**

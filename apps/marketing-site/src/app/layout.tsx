@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { pageOpenGraph } from "@/lib/open-graph";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ScrollMotion } from "@/components/scroll-motion";
 import { SiteHeader } from "@/components/site-header";
@@ -27,15 +28,10 @@ export const metadata: Metadata = {
   },
   description:
     "Run your dairy operations as one connected business. Lacteva connects milk procurement, collection, customers, delivery, billing, payments, and reporting in one dairy operations platform.",
-  openGraph: {
-    siteName: "Lacteva",
-    type: "website",
-    // WO-76: the two tags WhatsApp reads that were absent entirely. `url` is
-    // resolved against `metadataBase`; every page overrides it with its own
-    // canonical path.
-    url: "/",
-    locale: "en_IN",
-  },
+  // WO-99: built from the shared base, because a page's `openGraph` REPLACES
+  // this one rather than merging into it — every page builds its own the
+  // same way, with its own canonical path.
+  openGraph: pageOpenGraph("/"),
   twitter: {
     card: "summary_large_image",
   },

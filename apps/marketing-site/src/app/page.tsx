@@ -22,6 +22,7 @@ import {
   Warehouse,
 } from "lucide-react";
 import type { Metadata } from "next";
+import { pageOpenGraph } from "@/lib/open-graph";
 import type { CSSProperties } from "react";
 import { CtaBand } from "@/components/cta-band";
 import { HeroMilk } from "@/components/hero-milk";
@@ -32,7 +33,7 @@ import { Section, SectionHeading } from "@/components/section";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
-  openGraph: { url: "/" },
+  openGraph: pageOpenGraph("/"),
 };
 
 /**

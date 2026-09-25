@@ -50,11 +50,10 @@ describe("the site URL survives a rebuild", () => {
     }
   });
 
-  it("publishes the tags WhatsApp reads: og:url on every page, and og:locale", () => {
-    const layout = readFileSync(join(ROOT, "src/app/layout.tsx"), "utf8");
-    expect(layout).toMatch(/openGraph:\s*\{[^}]*url:\s*"\/"/);
-    expect(layout).toMatch(/locale:\s*"en_IN"/);
-    // Every page that names its canonical names the same og:url.
+  it("names each page's og:url from the shared base, equal to its canonical", () => {
+    // What is SERVED is asserted in open-graph.test.ts by resolving metadata
+    // the way Next does; this only pins that every page goes through the
+    // shared base, so no page can drop siteName, type or locale again.
     const pages: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
@@ -69,10 +68,12 @@ describe("the site URL survives a rebuild", () => {
       const src = readFileSync(page, "utf8");
       const canonical = /alternates:\s*\{\s*canonical:\s*"([^"]+)"/.exec(src)?.[1];
       if (!canonical) continue;
-      const og = /openGraph:\s*\{\s*url:\s*"([^"]+)"/.exec(src)?.[1];
-      expect(og, `${page} names a canonical but no og:url`).toBe(canonical);
+      const og = /openGraph:\s*pageOpenGraph\("([^"]+)"\)/.exec(src)?.[1];
+      expect(og, `${page} names a canonical but does not build its og from the shared base`).toBe(canonical);
       checked++;
     }
-    expect(checked).toBeGreaterThanOrEqual(6);
+    expect(checked).toBeGreaterThanOrEqual(9);
+    const layout = readFileSync(join(ROOT, "src/app/layout.tsx"), "utf8");
+    expect(layout).toContain('openGraph: pageOpenGraph("/")');
   });
 });

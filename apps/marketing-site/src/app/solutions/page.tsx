@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { pageOpenGraph } from "@/lib/open-graph";
 import Link from "next/link";
 import {
   Building2,
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
   description:
     "Dairy software for cooperatives, milk collection organizations, distributors, and dairy companies — one connected operations platform, fitted to how each business runs.",
   alternates: { canonical: "/solutions" },
-  openGraph: { url: "/solutions" },
+  openGraph: pageOpenGraph("/solutions"),
 };
 
 /**

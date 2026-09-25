@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { pageOpenGraph } from "@/lib/open-graph";
 import { CalendarCheck, Network, Smartphone, TrendingUp } from "lucide-react";
 import { CtaBand } from "@/components/cta-band";
 import { LinkButton } from "@/components/link-button";
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
   description:
     "Start with a 30-day free trial of Lacteva, the connected dairy operations platform, or talk to our team about the right setup for your dairy operation.",
   alternates: { canonical: "/pricing" },
-  openGraph: { url: "/pricing" },
+  openGraph: pageOpenGraph("/pricing"),
 };
 
 /**

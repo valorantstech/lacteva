@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { pageOpenGraph } from "@/lib/open-graph";
 import { ArrowRight } from "lucide-react";
 import { CtaBand } from "@/components/cta-band";
 import { LifecycleFlow } from "@/components/lifecycle-flow";
@@ -17,7 +18,7 @@ export const metadata: Metadata = {
   description:
     "Dairy operations software that connects procurement, collection, customers, delivery, billing, payments, settlements, and reporting in one platform.",
   alternates: { canonical: "/product" },
-  openGraph: { url: "/product" },
+  openGraph: pageOpenGraph("/product"),
 };
 
 /**
