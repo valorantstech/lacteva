@@ -23,7 +23,7 @@ from sqlalchemy import Numeric, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.business_time import business_today
-from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.errors import ConflictError, ForbiddenError, NotFoundError
 from platform_core.core.money import quantize_money
 from platform_core.core.org_context import tenant_currency, tenant_timezone
 from platform_core.core.tenancy import enforce_customer_scope, require_current_tenant
@@ -109,6 +109,11 @@ class RecordDeliveryCommand(BaseModel):
     product: str = Field(default="RAW-COW-MILK", max_length=40)
     status: str = "delivered"
     notes: str = Field(default="", max_length=300)
+    #: WO-89. A rate for THIS delivery, other than the plan's. Needs
+    #: `sales.delivery.price`; refused, never ignored, without it. Omitted,
+    #: the plan's rate applies exactly as before.
+    unit_price: Decimal | None = Field(default=None, gt=0)
+    override_reason: str | None = Field(default=None, max_length=300)
 
     @field_validator("slot")
     @classmethod
@@ -129,6 +134,13 @@ class AmendDeliveryCommand(BaseModel):
     quantity: Decimal | None = Field(default=None, ge=0)
     status: str | None = None
     notes: str | None = Field(default=None, max_length=300)
+    #: WO-89. Set a rate for this delivery (`sales.delivery.price`), or clear
+    #: an override back to the plan's rate. Amending the QUANTITY alone never
+    #: touches the price: an overridden delivery corrected from 1 L to 1.5 L
+    #: keeps its overridden rate.
+    unit_price: Decimal | None = Field(default=None, gt=0)
+    override_reason: str | None = Field(default=None, max_length=300)
+    clear_price: bool = False
 
     @field_validator("status")
     @classmethod
@@ -158,6 +170,10 @@ class DeliveryView(BaseModel):
     plan_id: uuid.UUID | None
     recorded_by: uuid.UUID | None
     created_at: object
+    #: WO-89: `plan` | `override`, and who priced it when it is the latter.
+    price_source: str = "plan"
+    priced_by: uuid.UUID | None = None
+    override_reason: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -377,8 +393,14 @@ class DeliveryService:
 
     # --- commands ----------------------------------------------------------
 
-    async def record(self, cmd: RecordDeliveryCommand, *, actor_id: uuid.UUID) -> MilkDelivery:
+    async def record(
+        self, cmd: RecordDeliveryCommand, *, actor_id: uuid.UUID, may_price: bool = False
+    ) -> MilkDelivery:
         tenant_id = require_current_tenant()
+        if cmd.unit_price is not None and not may_price:
+            # Refused, not ignored: a price silently dropped is a delivery the
+            # caller believes was priced one way and the bill says another.
+            raise ForbiddenError("sales.delivery.price")
         customer = await self._customers.get(cmd.customer_id)
         if customer.status != "active":
             raise ConflictError(f"customer {customer.code} is {customer.status}")
@@ -424,7 +446,11 @@ class DeliveryService:
                 f"on {cmd.delivery_date}"
             )
 
-        unit_price = Decimal(plan.unit_price)
+        # WO-89: the one place a delivery's price is decided. The plan's rate,
+        # unless the caller — already checked to hold `sales.delivery.price`
+        # — gave one for this delivery.
+        unit_price = Decimal(cmd.unit_price if cmd.unit_price is not None else plan.unit_price)
+        overridden = cmd.unit_price is not None
         # The one place this figure is ever computed.
         amount = (
             money(quantity * unit_price) if cmd.status in BILLABLE_STATUSES else Decimal("0.00")
@@ -445,6 +471,9 @@ class DeliveryService:
             notes=cmd.notes,
             plan_id=plan.id,
             recorded_by=actor_id,
+            price_source="override" if overridden else "plan",
+            priced_by=actor_id if overridden else None,
+            override_reason=cmd.override_reason if overridden else None,
         )
         self._session.add(delivery)
         await self._session.flush()
@@ -460,6 +489,9 @@ class DeliveryService:
                 "slot": cmd.slot,
                 "quantity": str(quantity),
                 "amount": str(amount),
+                "unit_price": str(unit_price),
+                "price_source": delivery.price_source,
+                **({"override_reason": cmd.override_reason} if overridden else {}),
             },
         )
         await self._bus.publish(
@@ -506,6 +538,16 @@ class DeliveryService:
         delivery.status = cmd.status
         if cmd.notes:
             delivery.notes = cmd.notes
+        # WO-89 §2. An override already written onto the scheduled row — "the
+        # rate is different tomorrow", set tonight — SURVIVES confirmation:
+        # the price is the row's, never re-read from the plan here. A price
+        # given at confirmation (with the permission, checked by `record`)
+        # is an override too.
+        if cmd.unit_price is not None:
+            delivery.unit_price = cmd.unit_price
+            delivery.price_source = "override"
+            delivery.priced_by = actor_id
+            delivery.override_reason = cmd.override_reason
         delivery.amount = (
             money(Decimal(delivery.quantity) * Decimal(delivery.unit_price), delivery.currency)
             if delivery.status in BILLABLE_STATUSES
@@ -525,6 +567,8 @@ class DeliveryService:
                 "quantity": str(delivery.quantity),
                 "amount": str(delivery.amount),
                 "from_plan": str(delivery.plan_id) if delivery.plan_id else "",
+                "unit_price": str(delivery.unit_price),
+                "price_source": delivery.price_source,
             },
         )
         await self._bus.publish(
@@ -668,7 +712,12 @@ class DeliveryService:
         return result
 
     async def amend(
-        self, delivery_id: uuid.UUID, cmd: AmendDeliveryCommand, *, actor_id: uuid.UUID
+        self,
+        delivery_id: uuid.UUID,
+        cmd: AmendDeliveryCommand,
+        *,
+        actor_id: uuid.UUID,
+        may_price: bool = False,
     ) -> MilkDelivery:
         """Correct a delivery that has not been billed.
 
@@ -679,9 +728,16 @@ class DeliveryService:
         DEMO-009-FINAL §14).
         """
         delivery = await self.get(delivery_id)
+        if (cmd.unit_price is not None or cmd.clear_price) and not may_price:
+            raise ForbiddenError("sales.delivery.price")
         if delivery.invoice_id is not None:
+            # WO-89 §4: named remedies, because the caller has two and which
+            # one applies is a fact about the invoice, not about this row.
             raise ConflictError(
-                "this delivery has been billed — correct it with an adjustment, not an edit"
+                "this delivery is on an invoice and cannot be changed here — cancel the "
+                "DRAFT invoice to release it (the delivery is billed again on the next one), "
+                "or, if the invoice is ISSUED, correct it with an adjustment: an issued "
+                "invoice is immutable (BR-0010)"
             )
         if cmd.quantity is not None:
             delivery.quantity = cmd.quantity
@@ -689,6 +745,24 @@ class DeliveryService:
             delivery.status = cmd.status
         if cmd.notes is not None:
             delivery.notes = cmd.notes
+        # WO-89 §3: the price moves ONLY when asked. Amending the quantity
+        # keeps an override verbatim; `clear_price` returns to the plan's rate.
+        if cmd.unit_price is not None:
+            delivery.unit_price = cmd.unit_price
+            delivery.price_source = "override"
+            delivery.priced_by = actor_id
+            delivery.override_reason = cmd.override_reason
+        elif cmd.clear_price and delivery.price_source == "override":
+            plan = await self._customers.active_plan(delivery.customer_id, delivery.product)
+            if plan is None:
+                raise ConflictError(
+                    "no active plan to return to — set the household's rate before clearing "
+                    "this delivery's override"
+                )
+            delivery.unit_price = Decimal(plan.unit_price)
+            delivery.price_source = "plan"
+            delivery.priced_by = None
+            delivery.override_reason = None
         delivery.amount = (
             money(Decimal(delivery.quantity) * Decimal(delivery.unit_price))
             if delivery.status in BILLABLE_STATUSES
@@ -699,7 +773,12 @@ class DeliveryService:
             resource_type="milk_delivery",
             resource_id=delivery.id,
             actor_id=actor_id,
-            detail={"quantity": str(delivery.quantity), "status": delivery.status},
+            detail={
+                "quantity": str(delivery.quantity),
+                "status": delivery.status,
+                "unit_price": str(delivery.unit_price),
+                "price_source": delivery.price_source,
+            },
         )
         return delivery
 

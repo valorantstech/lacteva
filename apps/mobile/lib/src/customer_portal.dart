@@ -1544,7 +1544,8 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
                           title: Text(billLineTitle(line)),
                           subtitle: Text(
                             '${line['quantity']} ${line['quantity_unit'] ?? 'L'} '
-                            '@ ${line['unit_price']}',
+                            '@ ${line['unit_price']}'
+                            '${line['price_source'] == 'override' ? ' · ${_t.t('customer.rateForDay')}' : ''}',
                           ),
                           trailing: Text(line['amount']?.toString() ?? ''),
                         ),

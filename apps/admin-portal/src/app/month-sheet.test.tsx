@@ -56,7 +56,17 @@ const SHEET = {
       product: "COW-MILK",
       unit_price: "74.0000",
       quantity_unit: "L",
-      days: days((i) => (i === 2 ? null : i === 3 ? cell(null, { delivery_id: "d-s", status: "scheduled" }) : i === 0 ? cell("1.000", { delivery_id: "d-billed", billed: true }) : cell("1.000"))),
+      days: days((i) =>
+        i === 2
+          ? null
+          : i === 3
+            ? cell(null, { delivery_id: "d-s", status: "scheduled" })
+            : i === 0
+              ? cell("1.000", { delivery_id: "d-billed", billed: true })
+              : i === 5
+                ? { ...cell("1.000", { delivery_id: "d-70" }), price_source: "override" as const, unit_price: "70.0000" }
+                : cell("1.000"),
+      ),
       total_quantity: "29.000",
       milk_amount: "2146.00",
       items_amount: "0.00",
@@ -198,6 +208,24 @@ describe("the month sheet", () => {
       status: "delivered",
       quantity: "1.5",
     });
+
+    // WO-89: a rate typed for the day travels with the record; the plan's is the placeholder.
+    await user.click(within(tower).getByRole("button", { name: "Tower 1-2006 COW-MILK day 5: 1" }));
+    const priced = await screen.findByTestId("month-cell-editor");
+    const rateField = within(priced).getByLabelText(/Rate for this day/) as HTMLInputElement;
+    expect(rateField.placeholder).toBe("plan: 74");
+    await user.type(rateField, "70");
+    await user.click(within(priced).getByRole("button", { name: "Correct" }));
+    await waitFor(() =>
+      expect(spy.mock.calls.some((c) => String(c[0]).endsWith("/v1/deliveries/d-x/amend"))).toBe(true),
+    );
+    const amend = spy.mock.calls.find((c) => String(c[0]).endsWith("/v1/deliveries/d-x/amend"))!;
+    expect(JSON.parse(String((amend[1] as RequestInit).body))).toMatchObject({ unit_price: "70" });
+    // Day 6 was priced away from the plan: marked on the cell, prefilled in the editor.
+    const d6 = within(tower).getByRole("button", { name: /day 6: 1 \(rate agreed for this day\)/ });
+    expect(d6.closest("td")?.getAttribute("data-override")).toBe("true");
+    await user.click(d6);
+    expect((within(await screen.findByTestId("month-cell-editor")).getByLabelText(/Rate for this day/) as HTMLInputElement).value).toBe("70");
 
     // Day 1 is on an issued invoice: no form, and the sentence says why.
     await user.click(within(tower).getByRole("button", { name: "Tower 1-2006 COW-MILK day 1: 1" }));

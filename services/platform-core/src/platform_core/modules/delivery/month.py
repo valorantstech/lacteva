@@ -74,6 +74,9 @@ class MonthCell(BaseModel):
     status: str | None = None
     #: On an invoice already: read-only in the editor, and the cell says why.
     billed: bool = False
+    #: WO-89: `override` when the day was priced away from the plan.
+    price_source: str = "plan"
+    unit_price: Decimal | None = None
 
 
 class MonthRow(BaseModel):
@@ -205,6 +208,8 @@ class MonthSheetService:
                     MilkDelivery.status,
                     MilkDelivery.invoice_id,
                     MilkDelivery.quantity_unit,
+                    MilkDelivery.price_source,
+                    MilkDelivery.unit_price,
                 ).where(*conditions)
             )
         ).all()
@@ -309,6 +314,8 @@ class MonthSheetService:
             status,
             invoice_id,
             unit,
+            price_source,
+            unit_price,
         ) in delivery_rows:
             if customer_id not in ids:
                 continue
@@ -322,6 +329,8 @@ class MonthSheetService:
                 delivery_id=did,
                 status=status,
                 billed=invoice_id is not None,
+                price_source=price_source or "plan",
+                unit_price=Decimal(unit_price) if unit_price is not None else None,
             )
             if delivered:
                 amounts[key] = amounts.get(key, ZERO) + Decimal(amount)

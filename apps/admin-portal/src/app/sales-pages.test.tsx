@@ -344,6 +344,8 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
         invoice: INVOICE,
         lines: [
           {
+            price_source: "override",
+
             id: "il-1",
             delivery_id: "de-1",
             delivery_date: "2026-08-11",
@@ -773,6 +775,14 @@ describe("deliveries and the daily report", () => {
 });
 
 describe("the monthly bill", () => {
+  it("marks a line priced away from the standing order (WO-89)", async () => {
+    routeAll();
+    await renderDetail(<InvoiceDetailPage params={Promise.resolve({ id: "in-1" })} />);
+    const marks = await screen.findAllByTestId("line-rate-override");
+    expect(marks).toHaveLength(1);
+    expect(marks[0].textContent).toContain("agreed for this day");
+  });
+
   const params = () => Promise.resolve({ id: "in-1" });
 
   it("shows the statement and the platform's reconciliation verdict", async () => {

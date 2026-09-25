@@ -3053,6 +3053,10 @@ export type Delivery = {
   notes: string;
   invoice_id: string | null;
   plan_id: string | null;
+  /** WO-89: `plan` | `override`, and who priced it when it is the latter. */
+  price_source?: "plan" | "override";
+  priced_by?: string | null;
+  override_reason?: string | null;
   created_at: string;
 };
 
@@ -3099,6 +3103,10 @@ export const recordDelivery = (body: {
   notes?: string;
   /** WO-81: which milk. Omitted, the platform's default product. */
   product?: string;
+  /** WO-89: a rate for THIS delivery, other than the plan's. Needs
+   *  `sales.delivery.price`; the platform refuses it without. */
+  unit_price?: string;
+  override_reason?: string;
 }) =>
   api<Delivery>("/v1/deliveries", {
     method: "POST",
@@ -3107,7 +3115,15 @@ export const recordDelivery = (body: {
 
 export const amendDelivery = (
   id: string,
-  body: { quantity?: string; status?: string; notes?: string },
+  body: {
+    quantity?: string;
+    status?: string;
+    notes?: string;
+    /** WO-89: set a rate for this delivery, or clear an override. */
+    unit_price?: string;
+    override_reason?: string;
+    clear_price?: boolean;
+  },
 ) =>
   api<Delivery>(`/v1/deliveries/${id}/amend`, {
     method: "POST",
@@ -3216,6 +3232,9 @@ export type MonthCell = {
   delivery_id: string | null;
   status: string | null;
   billed: boolean;
+  /** WO-89: `override` when the day was priced away from the plan. */
+  price_source?: "plan" | "override";
+  unit_price?: string | number | null;
 };
 
 export type MonthRow = {
@@ -3276,6 +3295,36 @@ function monthSheetQuery(params: MonthSheetParams): string {
 }
 
 /** The shop's register, computed: one read for the whole month (WO-84). */
+/** WO-89 §5: one new rate for one product, for many households at once. */
+export type RateChangeLine = {
+  customer_id: string;
+  code: string;
+  name: string;
+  old_rate?: string | number | null;
+  reason?: string | null;
+};
+
+export type RateChangeResult = {
+  preview: boolean;
+  product: string;
+  unit_price: string | number;
+  effective_from: string;
+  changed: RateChangeLine[];
+  skipped: RateChangeLine[];
+};
+
+export const changeCustomerRates = (body: {
+  product: string;
+  unit_price: string;
+  effective_from?: string;
+  customer_ids?: string[] | null;
+  preview?: boolean;
+}) =>
+  api<RateChangeResult>("/v1/customers/rate-change", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
 export const getMonthSheet = (params: MonthSheetParams = {}) =>
   api<MonthSheet>(`/v1/deliveries/month${monthSheetQuery(params)}`);
 
@@ -3443,6 +3492,8 @@ export type InvoiceLine = {
   quantity_unit: string;
   unit_price: string | number;
   amount: string | number;
+  /** WO-89: `override` marks a day priced away from the plan. */
+  price_source?: "plan" | "override";
 };
 
 export type InvoicePageResult = {

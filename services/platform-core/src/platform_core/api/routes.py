@@ -106,6 +106,8 @@ from platform_core.modules.customer.service import (
     DeliveryPlanInput,
     DeliveryPlanView,
     PausePlanCommand,
+    RateChangeCommand,
+    RateChangeResult,
     UpdateCustomerCommand,
 )
 from platform_core.modules.customer_access.service import (
@@ -4217,6 +4219,17 @@ async def search_customers(
     )
 
 
+@customer_router.post("/rate-change", response_model=RateChangeResult)
+async def change_customer_rates(
+    cmd: RateChangeCommand, service: CustomerSvc, p: CustomerManage
+) -> Any:
+    """WO-89 §5: a new rate for a product, for a selection or for everyone
+    holding an active plan for it, from a date — `set_plan` per customer in
+    ONE transaction. `preview=true` changes nothing and reports what would.
+    Declared before `/{customer_id}` so the literal path wins the match."""
+    return await service.change_rates(cmd, actor_id=p.id)
+
+
 @customer_router.post("/import", response_model=list[CustomerImportRowResult])
 async def import_customers(body: ImportRequest, service: CustomerSvc, p: CustomerManage) -> Any:
     """P0-PILOT-002: outlet-list onboarding, mirroring `/suppliers/import` —
@@ -4358,14 +4371,20 @@ DeliverySvc = Annotated[DeliveryService, Depends(deps.get_delivery_service)]
 
 @delivery_router.post("/deliveries", response_model=DeliveryView, status_code=201)
 async def record_delivery(
-    cmd: RecordDeliveryCommand, service: DeliverySvc, p: DeliveryRecord
+    cmd: RecordDeliveryCommand,
+    service: DeliverySvc,
+    p: DeliveryRecord,
+    engine: Annotated[PermissionEngine, Depends(deps.get_permission_engine)],
 ) -> Any:
     """Record one delivery.
 
     The rate comes from the customer's active plan and the amount is computed
     by the domain — neither is accepted from the client.
     """
-    return await service.record(cmd, actor_id=p.id)
+    # WO-89: a rate for THIS delivery needs `sales.delivery.price` — the same
+    # split WO-81 draws for items — and is refused, never ignored, without it.
+    may_price = await engine.check(p.id, p.tenant_id, "sales.delivery.price")
+    return await service.record(cmd, actor_id=p.id, may_price=may_price)
 
 
 @delivery_router.get("/deliveries", response_model=DeliveryPage)
@@ -4549,9 +4568,14 @@ async def get_delivery(delivery_id: uuid.UUID, service: DeliverySvc, _: Delivery
 
 @delivery_router.post("/deliveries/{delivery_id}/amend", response_model=DeliveryView)
 async def amend_delivery(
-    delivery_id: uuid.UUID, cmd: AmendDeliveryCommand, service: DeliverySvc, p: DeliveryRecord
+    delivery_id: uuid.UUID,
+    cmd: AmendDeliveryCommand,
+    service: DeliverySvc,
+    p: DeliveryRecord,
+    engine: Annotated[PermissionEngine, Depends(deps.get_permission_engine)],
 ) -> Any:
-    return await service.amend(delivery_id, cmd, actor_id=p.id)
+    may_price = await engine.check(p.id, p.tenant_id, "sales.delivery.price")
+    return await service.amend(delivery_id, cmd, actor_id=p.id, may_price=may_price)
 
 
 # --- Logistics: routes, fleet and the daily run (DEMO-034 / CAP-0003 MCL) ----

@@ -269,6 +269,35 @@ class CustomerDetailView(BaseModel):
     plans: list[DeliveryPlanView]
 
 
+class RateChangeCommand(BaseModel):
+    """WO-89 §5: one new rate for one product, for many households at once."""
+
+    product: str = Field(max_length=40)
+    unit_price: Decimal = Field(gt=0)
+    effective_from: date | None = None
+    #: Null means everyone holding an active plan for the product.
+    customer_ids: list[uuid.UUID] | None = None
+    #: True changes nothing and reports what would change.
+    preview: bool = False
+
+
+class RateChangeLine(BaseModel):
+    customer_id: uuid.UUID
+    code: str
+    name: str
+    old_rate: Decimal | None = None
+    reason: str | None = None
+
+
+class RateChangeResult(BaseModel):
+    preview: bool
+    product: str
+    unit_price: Decimal
+    effective_from: date
+    changed: list[RateChangeLine]
+    skipped: list[RateChangeLine]
+
+
 class CustomerService:
     def __init__(self, session: AsyncSession, audit: AuditService):
         self._session = session
@@ -495,6 +524,139 @@ class CustomerService:
             },
         )
         return row
+
+    async def change_rates(
+        self, cmd: RateChangeCommand, *, actor_id: uuid.UUID
+    ) -> RateChangeResult:
+        """A rate rise for a product, applied to a selection or to everyone
+        holding an active plan for it (WO-89 §5).
+
+        `set_plan` per customer inside the ONE transaction this session is —
+        a rate rise applied by opening four hundred customer records is not a
+        feature anybody will use. Deliveries already recorded keep their own
+        copied rate: nothing here touches `milk_delivery`, which is the whole
+        point of the plan superseding rather than editing. Skipped, and said
+        why: a paused plan, an inactive customer, a plan already at that rate,
+        no active plan for the product. With `preview`, the same answer and no
+        write at all.
+        """
+        from platform_core.modules.catalog.service import CatalogService
+
+        await CatalogService(self._session).require_active(cmd.product)
+        tenant_id = require_current_tenant()
+        today = await self._today()
+        effective_from = cmd.effective_from or today
+        conditions = [
+            DeliveryPlan.tenant_id == tenant_id,
+            DeliveryPlan.product == cmd.product,
+            DeliveryPlan.active.is_(True),
+        ]
+        if cmd.customer_ids is not None:
+            conditions.append(DeliveryPlan.customer_id.in_(cmd.customer_ids))
+        plans = (
+            await self._session.scalars(
+                select(DeliveryPlan).where(*conditions).order_by(DeliveryPlan.customer_id)
+            )
+        ).all()
+        by_customer: dict[uuid.UUID, list[DeliveryPlan]] = {}
+        for plan in plans:
+            by_customer.setdefault(plan.customer_id, []).append(plan)
+        wanted = set(cmd.customer_ids) if cmd.customer_ids is not None else set(by_customer)
+        names = await self.directory(wanted)
+        customers = {
+            c.id: c
+            for c in (
+                await self._session.scalars(
+                    select(Customer).where(Customer.tenant_id == tenant_id, Customer.id.in_(wanted))
+                )
+            ).all()
+        }
+
+        def line(customer_id, **kw) -> RateChangeLine:
+            label = names.get(customer_id)
+            return RateChangeLine(
+                customer_id=customer_id,
+                code=label.code if label else str(customer_id),
+                name=label.name if label else "",
+                **kw,
+            )
+
+        changed: list[RateChangeLine] = []
+        skipped: list[RateChangeLine] = []
+        for customer_id in sorted(wanted, key=lambda i: names[i].code if i in names else ""):
+            customer = customers.get(customer_id)
+            if customer is None:
+                skipped.append(line(customer_id, reason="not a customer of this organisation"))
+                continue
+            if customer.status != "active":
+                skipped.append(line(customer_id, reason=f"customer is {customer.status}"))
+                continue
+            active = by_customer.get(customer_id, [])
+            if not active:
+                skipped.append(line(customer_id, reason=f"no active plan for {cmd.product}"))
+                continue
+            for plan in active:
+                old = Decimal(plan.unit_price)
+                paused = (
+                    plan.paused_from is not None
+                    and plan.paused_from <= effective_from
+                    and (plan.paused_to is None or plan.paused_to >= effective_from)
+                )
+                if paused:
+                    skipped.append(
+                        line(
+                            customer_id, old_rate=old, reason="plan is paused on the effective date"
+                        )
+                    )
+                    continue
+                if old == Decimal(cmd.unit_price):
+                    skipped.append(line(customer_id, old_rate=old, reason="already at that rate"))
+                    continue
+                changed.append(line(customer_id, old_rate=old))
+                if cmd.preview:
+                    continue
+                await self.set_plan(
+                    customer_id,
+                    DeliveryPlanInput(
+                        product=plan.product,
+                        default_quantity=Decimal(plan.default_quantity),
+                        quantity_unit=plan.quantity_unit,
+                        unit_price=cmd.unit_price,
+                        effective_from=effective_from,
+                        effective_to=plan.effective_to,
+                        weekdays=plan.weekdays,
+                        slot=plan.slot,
+                        center_id=plan.center_id,
+                        quantity_overrides=(
+                            {k: Decimal(v) for k, v in plan.quantity_overrides.items()}
+                            if plan.quantity_overrides
+                            else None
+                        ),
+                    ),
+                    actor_id=actor_id,
+                )
+        if not cmd.preview:
+            await self._audit.record(
+                action="sales.customer.rates_changed",
+                resource_type="delivery_plan",
+                resource_id=cmd.product,
+                actor_id=actor_id,
+                detail={
+                    "product": cmd.product,
+                    "unit_price": str(cmd.unit_price),
+                    "effective_from": str(effective_from),
+                    "changed": len(changed),
+                    "skipped": len(skipped),
+                },
+            )
+        return RateChangeResult(
+            preview=cmd.preview,
+            product=cmd.product,
+            unit_price=cmd.unit_price,
+            effective_from=effective_from,
+            changed=changed,
+            skipped=skipped,
+        )
 
     async def pause_plan(
         self, plan_id: uuid.UUID, cmd: PausePlanCommand, *, actor_id: uuid.UUID

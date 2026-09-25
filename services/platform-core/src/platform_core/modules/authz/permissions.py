@@ -152,6 +152,11 @@ PERMISSIONS: dict[str, str] = {
     "catalog.manage": "Add, edit and deactivate catalogue products",
     "sales.item.record": "Record a shop item sold to a customer, at the catalogue price",
     "sales.item.price": "Record a shop item at a price other than the catalogue's",
+    # WO-89. A rate for ONE delivery, other than the household's plan. The boy
+    # at the door decides how much milk was poured and never what it costs —
+    # the split WO-81 already draws between `sales.item.record` and
+    # `sales.item.price`.
+    "sales.delivery.price": "Record or amend a delivery at a rate other than the plan's",
     "platform.security.manage": (
         "Inspect signing keys and security configuration — platform staff only"
     ),
@@ -231,6 +236,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "catalog.manage",
         "sales.item.record",
         "sales.item.price",
+        "sales.delivery.price",
         # DEMO-034: the round's physical layer is part of running the business.
         "logistics.route.read",
         "logistics.route.manage",
@@ -409,6 +415,10 @@ NAMED_ROLES: dict[str, list[str]] = {
     # a permission set cannot say "only centre A". It is enforced separately,
     # against `operator_assignment`, by `require_center_access`.
     "CENTRE_MANAGER": [
+        # WO-89: may price a delivery. Inert until this role can also record
+        # one (`sales.delivery.record`), which it cannot today; granted as the
+        # work order names it, so the day it can, the rate is already its to set.
+        "sales.delivery.price",
         # BR-0029. The manager, not the operator: someone who can be asked
         # afterwards why a farmer was paid a different rate.
         "pricing.rate.override",
@@ -467,6 +477,7 @@ NAMED_ROLES: dict[str, list[str]] = {
         "catalog.manage",
         "sales.item.record",
         "sales.item.price",
+        "sales.delivery.price",
         # DEMO-034. The roundsman sees the route and moves today's run along.
         # Deliberately WITHOUT `route.manage` and `fleet.manage`: redrawing
         # tomorrow's round and buying a van are the office's, not the gate's.

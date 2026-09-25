@@ -96,6 +96,14 @@ class MilkDelivery(Base, IdMixin):
     #: Which delivery plan priced it, so a rate can be explained later even
     #: after the plan is superseded.
     plan_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    #: WO-89. Where `unit_price` came from: `plan` (the standing order's rate,
+    #: copied when the row was made) or `override` (a rate somebody holding
+    #: `sales.delivery.price` gave for THIS delivery). Kept verbatim through
+    #: every later amendment until somebody clears it — the same words the
+    #: collection side uses for a rate override (BR-0029).
+    price_source: Mapped[str] = mapped_column(String(10), default="plan")
+    priced_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    override_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     #: Set once the delivery has been billed. A billed delivery is frozen:
     #: changing it would change an invoice that has already been issued.
     invoice_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)

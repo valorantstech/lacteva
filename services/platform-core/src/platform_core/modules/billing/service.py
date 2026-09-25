@@ -118,6 +118,9 @@ class InvoiceLineView(BaseModel):
     quantity_unit: str
     unit_price: Decimal
     amount: Decimal
+    #: WO-89: `plan` | `override` — so a household asking "why is the 14th
+    #: different" reads the answer on the bill.
+    price_source: str = "plan"
 
     model_config = {"from_attributes": True}
 
@@ -401,6 +404,7 @@ class BillingService:
                         quantity_unit=delivery.quantity_unit,
                         unit_price=delivery.unit_price,
                         amount=delivery.amount,
+                        price_source=delivery.price_source,
                     )
                 )
                 # Stamped now, so the same milk cannot appear on a second

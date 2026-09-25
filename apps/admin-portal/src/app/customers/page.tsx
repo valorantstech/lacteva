@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { type Column, DataTable } from "@/components/data-table";
 
 import { PageHeader } from "@/components/page-header";
+import { RateChangeCard } from "@/components/rate-change";
 import { PageContainer } from "@/components/page-container";
 import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
@@ -83,6 +84,8 @@ function CustomersView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  // WO-89 §5: the bulk rate change, previewed before anything moves.
+  const [showRates, setShowRates] = useState(false);
 
   const filtered = Boolean(q || status || customerType);
 
@@ -193,6 +196,13 @@ function CustomersView() {
             >
               Import CSV
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowRates((v) => !v)}
+            >
+              Change rate
+            </Button>
             <Button type="button" onClick={() => setShowCreate((v) => !v)}>
               <Plus aria-hidden className="me-1.5 size-4" />
               New customer
@@ -232,6 +242,13 @@ function CustomersView() {
           </span>
         </Surface>
       </section>
+
+      {showRates ? (
+        <RateChangeCard
+          onClose={() => setShowRates(false)}
+          onApplied={() => void load()}
+        />
+      ) : null}
 
       {showCreate ? (
         <CreateCustomerCard

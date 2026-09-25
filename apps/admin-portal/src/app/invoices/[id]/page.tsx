@@ -403,6 +403,15 @@ export default function InvoiceDetailPage({
                       </td>
                       <td className="py-2 pe-4 text-end tabular-nums">
                         {String(line.unit_price)}
+                        {line.price_source === "override" ? (
+                          <span
+                            className="ms-1 text-xs text-muted-foreground"
+                            title="This day was priced away from the standing order's rate"
+                            data-testid="line-rate-override"
+                          >
+                            (agreed for this day)
+                          </span>
+                        ) : null}
                       </td>
                       <td className="py-2 text-end">
                         <Money

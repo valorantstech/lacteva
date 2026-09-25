@@ -157,6 +157,9 @@ class CustomerInvoiceLine(Base, IdMixin):
     quantity_unit: Mapped[str] = mapped_column(String(8), default="L")
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4))
     amount: Mapped[Decimal] = mapped_column(Numeric(16, 2))
+    #: WO-89. Copied from the delivery with the rate, so the bill can say
+    #: "the 14th was different" without a phone call: `plan` | `override`.
+    price_source: Mapped[str] = mapped_column(String(10), default="plan")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

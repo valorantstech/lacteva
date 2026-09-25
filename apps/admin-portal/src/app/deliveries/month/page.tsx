@@ -306,11 +306,13 @@ export default function MonthSheetPage() {
                           : cell.quantity === null
                             ? cell.status ?? ""
                             : "delivered";
+                    const overridden = cell?.price_source === "override";
                     return (
                       <td
                         key={i}
                         data-day={i + 1}
                         data-kind={kind || undefined}
+                        data-override={overridden ? "true" : undefined}
                         className={`px-0 py-0 text-center ${
                           i === todayIndex ? "bg-primary/5" : ""
                         }`}
@@ -320,10 +322,15 @@ export default function MonthSheetPage() {
                           className="h-8 w-10 hover:bg-muted"
                           aria-label={`${row.name} ${row.product} day ${i + 1}${
                             text ? `: ${text}` : ""
-                          }`}
+                          }${overridden ? " (rate agreed for this day)" : ""}`}
                           onClick={() => setEditing({ row, day: i + 1, cell })}
                         >
                           {text}
+                          {overridden ? (
+                            <span aria-hidden className="ms-0.5 text-primary">
+                              •
+                            </span>
+                          ) : null}
                         </button>
                       </td>
                     );
@@ -400,6 +407,14 @@ function CellEditor({
   const [status, setStatus] = useState(
     cell?.status && cell.status !== "scheduled" ? cell.status : "delivered",
   );
+  // WO-89: a rate for THIS day. Blank means the plan's rate; the platform
+  // refuses a typed one from anybody without `sales.delivery.price`, and
+  // the refusal is shown rather than the price being quietly dropped.
+  const [price, setPrice] = useState(
+    cell?.price_source === "override" && cell.unit_price !== null && cell.unit_price !== undefined
+      ? plain(cell.unit_price)
+      : "",
+  );
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const billed = cell?.billed ?? false;
@@ -409,10 +424,13 @@ function CellEditor({
     setSaving(true);
     setFailure(null);
     try {
+      const priced = price.trim();
       if (cell?.delivery_id) {
         await amendDelivery(cell.delivery_id, {
           quantity: status === "delivered" ? quantity.trim() : "0",
           status,
+          ...(priced ? { unit_price: priced } : {}),
+          ...(!priced && cell.price_source === "override" ? { clear_price: true } : {}),
         });
         onSaved(`${row.name}, day ${day}: corrected. The platform recomputed the amount from the agreed rate.`);
       } else {
@@ -422,6 +440,7 @@ function CellEditor({
           product: row.product,
           status,
           ...(status === "delivered" && quantity.trim() ? { quantity: quantity.trim() } : {}),
+          ...(priced ? { unit_price: priced } : {}),
         });
         onSaved(`${row.name}, day ${day}: recorded.`);
       }
@@ -473,6 +492,20 @@ function CellEditor({
                   value={quantity}
                   placeholder="standing order"
                   onChange={(e) => setQuantity(e.target.value)}
+                />
+              </div>
+            ) : null}
+            {status === "delivered" ? (
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="cell-price">
+                  Rate for this day ({sheet.currency} per {row.quantity_unit})
+                </Label>
+                <Input
+                  id="cell-price"
+                  inputMode="decimal"
+                  value={price}
+                  placeholder={row.unit_price === null ? "plan's rate" : `plan: ${plain(row.unit_price)}`}
+                  onChange={(e) => setPrice(e.target.value)}
                 />
               </div>
             ) : null}
