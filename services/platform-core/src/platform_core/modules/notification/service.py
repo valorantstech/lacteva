@@ -33,7 +33,7 @@ from platform_core.core.metrics import (
     NOTIFICATIONS_SENT,
 )
 from platform_core.core.org_context import tenant_locale
-from platform_core.core.tenancy import require_current_tenant
+from platform_core.core.tenancy import get_current_tenant, require_current_tenant
 from platform_core.modules.event_relay.consumers import MAX_CONSUMER_ATTEMPTS
 from platform_core.modules.event_relay.service import backoff_delay
 from platform_core.modules.notification.models import (
@@ -497,10 +497,9 @@ class NotificationService:
         return notification
 
     async def retry(self, notification_id: uuid.UUID) -> Notification:
-        """Operator-triggered retry of a failed or dead notification."""
-        notification = await self._session.get(Notification, notification_id)
-        if notification is None:
-            raise NotFoundError("notification not found")
+        """Operator-triggered retry of a failed or dead notification. Scoped
+        like every read (WO-94): another tenant's row is NOT FOUND."""
+        notification = await self.get(notification_id)
         if notification.status == "sent":
             raise ConflictError("notification was already delivered")
         await self._attempt(notification, forced=True)
@@ -927,10 +926,33 @@ class NotificationService:
 
     # --- history queries ------------------------------------------------------
 
+    @staticmethod
+    def _scope():
+        """Whose history this session may read (WO-94 / LACTEVA-TENANT-004).
+
+        A tenant-scoped session sees ONLY rows whose tenant is its own. A
+        platform session (no tenant bound) sees only platform-level rows —
+        the ones with no tenant: platform invitations, password resets for
+        platform accounts, operator mail. "No tenant" never means "everyone":
+        the previous `OR tenant_id IS NULL` arm handed every tenant-admin
+        every platform-level address and message text, found on live the day
+        the first real tenant was provisioned. If a notice every tenant should
+        see is ever wanted, that is an explicit audience column, not NULL.
+
+        The database policy still admits NULL rows to a bound session (they
+        are how self-registration and system roles exist at all), so on this
+        table the application filter is the guard, and it must be strict.
+        """
+        tenant_id = get_current_tenant()
+        if tenant_id is None:
+            return Notification.tenant_id.is_(None)
+        return Notification.tenant_id == tenant_id
+
     async def get(self, notification_id: uuid.UUID) -> Notification:
-        tenant_id = require_current_tenant()
-        notification = await self._session.get(Notification, notification_id)
-        if notification is None or notification.tenant_id not in (tenant_id, None):
+        notification = await self._session.scalar(
+            select(Notification).where(Notification.id == notification_id, self._scope())
+        )
+        if notification is None:
             raise NotFoundError("notification not found")
         return notification
 
@@ -976,11 +998,8 @@ class NotificationService:
         limit: int = 20,
         offset: int = 0,
     ) -> NotificationPage:
-        tenant_id = require_current_tenant()
         limit = max(1, min(limit, 100))
-        stmt = select(Notification).where(
-            or_(Notification.tenant_id == tenant_id, Notification.tenant_id.is_(None))
-        )
+        stmt = select(Notification).where(self._scope())
         if q:
             like = f"%{q.lower()}%"
             stmt = stmt.where(
@@ -1255,8 +1274,7 @@ class NotificationService:
         )
 
     async def stats(self) -> NotificationStats:
-        tenant_id = require_current_tenant()
-        scope = or_(Notification.tenant_id == tenant_id, Notification.tenant_id.is_(None))
+        scope = self._scope()
         by_status = dict(
             (
                 await self._session.execute(

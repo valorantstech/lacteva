@@ -221,11 +221,11 @@ async def test_a_recovering_gateway_delivers_on_retry(client, provider_guard):  
     rows = await _notifications("invoice_issued")
     assert rows[0].status == "failed", "the premise: the first attempt failed"
 
-    from platform_core.modules.notification.service import NotificationService
-
-    async with db.get_session_factory()() as session:
-        await NotificationService(session).retry(rows[0].id)
-        await session.commit()
+    # Through the real route (WO-94): an operator's retry is a tenant-bound
+    # request, and the service now refuses an unbound one — there was never a
+    # production path that retried without a tenant.
+    r = await client.post(f"/v1/notifications/{rows[0].id}/retry", headers=headers)
+    assert r.status_code == 200, r.text
 
     rows = await _notifications("invoice_issued")
     assert len(rows) == 1, "a retry must not create a second message"
