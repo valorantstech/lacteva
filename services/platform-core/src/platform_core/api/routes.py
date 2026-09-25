@@ -4220,12 +4220,13 @@ async def customer_login_status(
     return await service.login_status(customer_id)
 
 
-@customer_router.delete("/{customer_id}/invitation", response_model=CustomerLoginView)
+@customer_router.delete("/{customer_id}/invitation", status_code=204)
 async def withdraw_customer_invitation(
     customer_id: uuid.UUID, service: CustomerAccessSvc, p: CustomerManage
-) -> Any:
-    """Withdraw a pending invitation. The code in the email stops working."""
-    return await service.withdraw_invitation(customer_id, actor_id=p.id)
+) -> None:
+    """Withdraw a pending invitation. The code in the email stops working.
+    204, as every DELETE here; `GET …/login` says where the household stands."""
+    await service.withdraw_invitation(customer_id, actor_id=p.id)
 
 
 @customer_router.post("/{customer_id}/bill-link", response_model=BillLinkMinted, status_code=201)
@@ -4245,11 +4246,12 @@ async def customer_bill_link_status(
     return await service.bill_link_status(customer_id)
 
 
-@customer_router.delete("/{customer_id}/bill-link", response_model=BillLinkView)
+@customer_router.delete("/{customer_id}/bill-link", status_code=204)
 async def revoke_customer_bill_link(
     customer_id: uuid.UUID, service: CustomerAccessSvc, p: CustomerManage
-) -> Any:
-    return await service.revoke_bill_link(customer_id, actor_id=p.id)
+) -> None:
+    """The link stops opening anything. 204; `GET …/bill-link` reads back."""
+    await service.revoke_bill_link(customer_id, actor_id=p.id)
 
 
 @customer_router.post("/{customer_id}/plan", response_model=DeliveryPlanView, status_code=201)

@@ -177,8 +177,8 @@ async def test_the_login_lifecycle_as_the_dairy_sees_it(client):
 
     # Withdraw the second by hand.
     r = await client.delete(f"{url}/invitation", headers=admin)
-    assert r.status_code == 200, r.text
-    assert r.json()["state"] == "none"
+    assert r.status_code == 204, r.text
+    assert (await client.get(f"{url}/login", headers=admin)).json()["state"] == "none"
     r = await client.post(
         "/v1/invitations/accept",
         json={"token": second_token, "password": "household-password-1", "full_name": "H"},
@@ -301,8 +301,7 @@ async def test_a_bill_link_dies_on_rotation_and_revocation_like_one_that_never_e
     assert (await client.get(f"/v1/public/bill/{second}")).status_code == 200
 
     r = await client.delete(f"/v1/customers/{mine['id']}/bill-link", headers=admin)
-    assert r.status_code == 200, r.text
-    assert r.json()["active"] is False
+    assert r.status_code == 204, r.text
     assert (await client.get(f"/v1/public/bill/{second}")).status_code == never
     assert (await client.get(f"/v1/customers/{mine['id']}/bill-link", headers=admin)).json()[
         "active"

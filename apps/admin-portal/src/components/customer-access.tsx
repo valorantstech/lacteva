@@ -162,10 +162,10 @@ function LoginCard({
                 variant="outline"
                 disabled={disabled || busy}
                 onClick={() =>
-                  void run(
-                    () => withdrawCustomerInvitation(customerId),
-                    "Invitation withdrawn. The code no longer works.",
-                  )
+                  void run(async () => {
+                    await withdrawCustomerInvitation(customerId);
+                    return getCustomerLogin(customerId);
+                  }, "Invitation withdrawn. The code no longer works.")
                 }
               >
                 Withdraw
@@ -233,7 +233,8 @@ function BillLinkCard({
     setBusy(true);
     setError(null);
     try {
-      setLink(await revokeCustomerBillLink(customerId));
+      await revokeCustomerBillLink(customerId);
+      setLink(await getCustomerBillLink(customerId));
       setMinted(null);
       onNotice?.("Bill link revoked. It no longer opens anything.");
     } catch (err) {

@@ -105,7 +105,7 @@ describe("the login card", () => {
         return json({ customer_id: "cu-1", active: false });
       if (path.endsWith("/v1/customers/cu-1/invitation") && init?.method === "DELETE") {
         state = { customer_id: "cu-1", state: "none" };
-        return json(state);
+        return new Response(null, { status: 204 });
       }
       return undefined;
     });
@@ -153,7 +153,7 @@ describe("the bill-link card", () => {
       }
       if (path.endsWith("/v1/customers/cu-1/bill-link") && init?.method === "DELETE") {
         link = { customer_id: "cu-1", active: false };
-        return json(link);
+        return new Response(null, { status: 204 });
       }
       if (path.endsWith("/v1/customers/cu-1/bill-link")) return json(link);
       return undefined;

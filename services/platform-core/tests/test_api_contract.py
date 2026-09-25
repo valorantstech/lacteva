@@ -275,6 +275,12 @@ PUBLIC = {
     ("POST", "/v1/auth/password-reset/confirm"),
     ("POST", "/v1/invitations/accept"),
     ("GET", "/v1/.well-known/jwks.json"),
+    # WO-86. A household's bills by capability link. The token in the path IS
+    # the credential — 32 random bytes, only its SHA-256 stored, compared in
+    # constant time, one 404 for never/expired/revoked, rate-limited per IP
+    # and per token, and the request is bound to the tenant and customer the
+    # token names before any read. `test_wo86_customer_access` proves each.
+    ("GET", "/v1/public/bill/{token}"),
     # DEMO-027. The payment provider's webhook. A gateway has no Lacteva
     # account, so there is nothing for it to authenticate AS — what replaces
     # authentication is a constant-time HMAC over the raw body, checked against

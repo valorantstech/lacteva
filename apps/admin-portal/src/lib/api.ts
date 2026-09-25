@@ -2893,8 +2893,9 @@ export const inviteCustomer = (id: string, email: string) =>
     body: JSON.stringify({ email }),
   });
 
+/** 204. Read `getCustomerLogin` afterwards for where the household stands. */
 export const withdrawCustomerInvitation = (id: string) =>
-  api<CustomerLogin>(`/v1/customers/${id}/invitation`, { method: "DELETE" });
+  api<void>(`/v1/customers/${id}/invitation`, { method: "DELETE" });
 
 export const getCustomerBillLink = (id: string) =>
   api<BillLink>(`/v1/customers/${id}/bill-link`);
@@ -2903,8 +2904,9 @@ export const getCustomerBillLink = (id: string) =>
 export const mintCustomerBillLink = (id: string) =>
   api<BillLinkMinted>(`/v1/customers/${id}/bill-link`, { method: "POST" });
 
+/** 204. Read `getCustomerBillLink` afterwards. */
 export const revokeCustomerBillLink = (id: string) =>
-  api<BillLink>(`/v1/customers/${id}/bill-link`, { method: "DELETE" });
+  api<void>(`/v1/customers/${id}/bill-link`, { method: "DELETE" });
 
 /** The page a bill link opens: a household's bills, no account (WO-86). */
 export type PublicBill = {
