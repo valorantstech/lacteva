@@ -2783,6 +2783,43 @@ export type Organization = {
 export const getOrganization = (id: string) =>
   api<Organization>(`/v1/organizations/${id}`);
 
+/** WO-80: the organisation types the platform records (`Organization.org_type`). */
+export const ORGANIZATION_TYPES = [
+  "cooperative",
+  "processor",
+  "collector",
+  "farm",
+  "other",
+] as const;
+
+/**
+ * WO-80: a platform session provisions a new organisation. Currency, timezone
+ * and language resolve from the country (DEMO-013 §4); the unit is the one
+ * question D-21 asks at creation.
+ */
+export const createOrganization = (body: {
+  name: string;
+  slug: string;
+  country_code: string;
+  org_type: string;
+  quantity_unit?: string;
+}) =>
+  api<Organization>("/v1/organizations", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+/** A slug proposed from a name: lower-case, letters and digits, dashes between. */
+export function proposeSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80)
+    .replace(/-+$/g, "");
+}
+
 export type AuditRecord = {
   id: string;
   action: string;

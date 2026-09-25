@@ -203,6 +203,98 @@ describe("organization / tenant context", () => {
   });
 });
 
+describe("a new organisation (WO-80)", () => {
+  const ROOT = {
+    user: { id: "u1", email: "root@example.com", full_name: "Root", locale: "en", is_active: true },
+    tenant_id: null,
+    permissions: ["*"],
+  };
+  const COUNTRIES = {
+    countries: [
+      {
+        code: "IN",
+        name: "India",
+        currency_code: "INR",
+        currency_symbol: "₹",
+        timezone: "Asia/Kolkata",
+        default_language: "en",
+        supported_languages: ["en", "hi"],
+      },
+    ],
+  };
+
+  function stubProvisioning() {
+    const calls: { url: string; method: string; body: unknown }[] = [];
+    const spy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      const body = init?.body ? JSON.parse(String(init.body)) : null;
+      calls.push({ url, method, body });
+      const json = (b: unknown, status = 200) =>
+        new Response(JSON.stringify(b), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        });
+      if (url.includes("/v1/auth/me")) return json(ROOT);
+      if (url.includes("/v1/locales/countries")) return json(COUNTRIES);
+      if (url.includes("/v1/organizations") && method === "POST")
+        return json(
+          { id: "org-9", name: body.name, slug: body.slug, country_code: body.country_code },
+          201,
+        );
+      if (url.includes("/api/auth/tenant")) return new Response(null, { status: 204 });
+      return json({ title: "not_found" }, 404);
+    });
+    vi.stubGlobal("fetch", spy);
+    return calls;
+  }
+
+  it("proposes the slug, asks the unit question, creates through the platform, then offers to act in it", async () => {
+    const calls = stubProvisioning();
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign, pathname: "/admin/organizations" });
+    const user = userEvent.setup();
+    render(<OrganizationsPage />);
+    const form = await screen.findByTestId("new-organization");
+    await user.type(within(form).getByLabelText("Name"), "Gavyam Dairy & Sweets");
+    expect(within(form).getByLabelText("Slug")).toHaveValue("gavyam-dairy-sweets");
+    await waitFor(() => expect(within(form).getByRole("option", { name: "India (INR)" })).toBeInTheDocument());
+    await user.selectOptions(within(form).getByLabelText("Country"), "in");
+    await user.selectOptions(within(form).getByLabelText("Organisation type"), "other");
+    await user.click(within(form).getByLabelText(/Weighed in kilograms/));
+    await user.click(within(form).getByRole("button", { name: "Create organisation" }));
+
+    const created = await screen.findByTestId("organization-created");
+    expect(created.textContent).toMatch(/Gavyam Dairy & Sweets is created/);
+    const post = calls.find((c) => c.method === "POST" && c.url.includes("/v1/organizations"));
+    expect(post?.body).toEqual({
+      name: "Gavyam Dairy & Sweets",
+      slug: "gavyam-dairy-sweets",
+      country_code: "in",
+      org_type: "other",
+      quantity_unit: "kg",
+    });
+
+    await user.click(within(created).getByRole("button", { name: "Act in this organisation" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.url.includes("/api/auth/tenant"))?.body).toEqual({
+        tenant_id: "org-9",
+      }),
+    );
+    expect(assign).toHaveBeenCalledWith("/admin/users");
+  });
+
+  it("is not offered to a tenant session", async () => {
+    routeFetch({
+      "/v1/auth/me": { ...ROOT, tenant_id: "org-1" },
+      "/v1/organizations/org-1": { id: "org-1", name: "Kilima", slug: "kilima", country_code: "ke" },
+    });
+    render(<OrganizationsPage />);
+    await screen.findByText("Kilima");
+    expect(screen.queryByTestId("new-organization")).toBeNull();
+  });
+});
+
 describe("audit", () => {
   const page = (items: unknown[]) => ({
     items,

@@ -3,7 +3,7 @@ id: LACTEVA-ONBOARDING-PLAYBOOK
 title: Onboarding Playbook — from signed dairy to first parchi
 type: reference
 status: Draft
-version: "0.2"
+version: "0.3"
 owner: Product & Platform Engineering
 created: 2026-09-01
 last-updated: 2026-09-25
@@ -39,11 +39,17 @@ The information-request pack (docs/20-business) asks for exactly this:
 
 ## 1 · Provisioning (Lacteva's side, ~10 minutes)
 Done by the Lacteva platform administrator (Phoenix staff), in the portal:
-1. Create the Organization (name, slug, country) — currency, timezone,
-   language **and intake unit** resolve from the country automatically
-   (India → litres). If the dairy weighs (question 8 above), set
-   `quantity_unit: kg` at creation. A 30-day trial starts; activation
-   beyond trial is a Lacteva act (no self-serve payment yet).
+1. Create the Organization: Admin → Organisations → **New organisation**
+   (a platform session; the form landed with WO-80 on 2026-09-25 — before
+   that this step was a raw `POST /v1/organizations`, whatever this
+   playbook said). Name, slug (proposed from the name, editable), country,
+   organisation type, and the unit question: "Measured in litres" (default)
+   or "Weighed in kilograms" (question 8 above). Currency, timezone and
+   language resolve from the country automatically (India → litres, INR,
+   Asia/Kolkata). On success the page offers **Act in this organisation**
+   — press it, and you are inside the new tenant for step 2. A 30-day trial
+   starts; activation beyond trial is a Lacteva act (no self-serve payment
+   yet).
    **Which of the product's modules does it run (D-31 / WO-85)?** Two
    questions, both may be yes: *does it collect milk from suppliers?*
    (`collection` — centres, suppliers, intake, rate cards, settlements) and
@@ -185,3 +191,4 @@ The product never claims these before they exist; neither should sales.
 |---------|------|--------|---------|
 | 0.1 | 2026-09-01 | Product & Platform Engineering | Committed into the governed tree from the Master workspace (BATCH B7.2 rider). Content unchanged apart from front matter and this log. |
 | 0.2 | 2026-09-25 | Engineering | D-31 / WO-85: provisioning asks which modules the organisation runs (collection, sales, both), says switching one off hides navigation only, and notes that a sales-only organisation still needs one centre; WO-81: the catalogue starts with "Other shop item". |
+| 0.3 | 2026-09-25 | Engineering | WO-80: §1 step 1 now describes the New organisation form (Admin → Organisations, platform session) and "Act in this organisation"; the previous text described a screen that did not exist. |
