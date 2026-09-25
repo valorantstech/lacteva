@@ -87,6 +87,14 @@ export default function MonthSheetPage() {
   // synchronised: the chosen month overrides it once the person moves.
   const [chosen, setChosen] = useState<{ year: number; month: number } | null>(null);
   const period = chosen ?? (today ? monthOf(today) : null);
+  // WO-95: `load` depends on these two NUMBERS, never on `period` itself.
+  // `monthOf(today)` is a fresh object every render, so a `load` keyed on it
+  // was a new function every render, the effect below fired every render,
+  // and each run's setState rendered again — 1,548 requests in 25 s on live,
+  // until nginx's per-client limiter answered 503 to everything that person
+  // opened next. Primitives are compared by value; the loop cannot start.
+  const year = period?.year;
+  const month = period?.month;
   const [product, setProduct] = useState("");
   const [routeId, setRouteId] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
@@ -110,14 +118,14 @@ export default function MonthSheetPage() {
   }, []);
 
   const load = useCallback(async () => {
-    if (!period) return;
+    if (year === undefined || month === undefined) return;
     setLoading(true);
     setError(null);
     try {
       setSheet(
         await getMonthSheet({
-          year: period.year,
-          month: period.month,
+          year,
+          month,
           product: product || undefined,
           route_id: routeId || undefined,
         }),
@@ -127,7 +135,7 @@ export default function MonthSheetPage() {
     } finally {
       setLoading(false);
     }
-  }, [period, product, routeId]);
+  }, [year, month, product, routeId]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);

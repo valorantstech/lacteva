@@ -131,10 +131,50 @@ function stub() {
   return spy;
 }
 
+/**
+ * Let the page run UNATTENDED for a while. Inside `act`, React holds every
+ * effect until the block exits, so a loop advances exactly one turn per act
+ * and looks like a single extra request — which is how the 1,548-request
+ * loop hid from a count taken inside `act`. Outside it, the page behaves as
+ * it does in a browser.
+ */
+async function settle(ms: number) {
+  const g = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+  const was = g.IS_REACT_ACT_ENVIRONMENT;
+  g.IS_REACT_ACT_ENVIRONMENT = false;
+  try {
+    await new Promise((r) => setTimeout(r, ms));
+  } finally {
+    g.IS_REACT_ACT_ENVIRONMENT = was;
+  }
+}
+
 beforeEach(() => vi.unstubAllGlobals());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the month sheet", () => {
+  it("fetches the sheet exactly once on open, and exactly once more per filter change (WO-95)", async () => {
+    // Found on live: 1,548 requests in 25 s — a render loop the two tests
+    // below could not see, because they assert WHAT was fetched, never how
+    // often. This one counts.
+    const spy = stub();
+    const sheetCalls = () =>
+      spy.mock.calls.filter(([u]) => String(u).includes("/v1/deliveries/month")).length;
+    await act(async () => {
+      render(<MonthSheetPage />);
+    });
+    await screen.findByRole("table", { name: "Month sheet" });
+    // Let anything that wants to loop have its chance — unattended.
+    await settle(400);
+    expect(sheetCalls()).toBe(1);
+
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText("Product"), "COW-MILK");
+    await waitFor(() => expect(sheetCalls()).toBe(2));
+    await settle(400);
+    expect(sheetCalls()).toBe(2);
+  });
+
   it("draws one row per household and product, blank where nothing was delivered, and marks today", async () => {
     const spy = stub();
     await act(async () => {
