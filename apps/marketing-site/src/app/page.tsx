@@ -32,6 +32,7 @@ import { Section, SectionHeading } from "@/components/section";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
+  openGraph: { url: "/" },
 };
 
 /**

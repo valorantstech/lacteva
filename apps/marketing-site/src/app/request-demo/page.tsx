@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description:
     "Book a live demo of Lacteva — see the connected dairy operations platform on your own workflows, from collection to billing.",
   alternates: { canonical: "/request-demo" },
+  openGraph: { url: "/request-demo" },
 };
 
 export default function RequestDemoPage() {

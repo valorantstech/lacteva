@@ -132,6 +132,7 @@ jobs:
             build-args: |
               NODE_HEAP_MB=4096
               NEXT_PUBLIC_PORTAL_URL=https://app.lacteva.com
+              LACTEVA_SITE_URL=https://lacteva.com
           - name: admin-portal
             context: apps/admin-portal
             dockerfile: apps/admin-portal/Dockerfile

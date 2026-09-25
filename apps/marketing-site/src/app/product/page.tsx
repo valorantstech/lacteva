@@ -17,6 +17,7 @@ export const metadata: Metadata = {
   description:
     "Dairy operations software that connects procurement, collection, customers, delivery, billing, payments, settlements, and reporting in one platform.",
   alternates: { canonical: "/product" },
+  openGraph: { url: "/product" },
 };
 
 /**

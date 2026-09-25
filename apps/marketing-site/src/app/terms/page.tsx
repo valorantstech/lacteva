@@ -14,6 +14,7 @@ export const metadata: Metadata = {
   description:
     "The terms that govern use of the Lacteva website and the Lacteva dairy operations platform.",
   alternates: { canonical: "/terms" },
+  openGraph: { url: "/terms" },
 };
 
 /**

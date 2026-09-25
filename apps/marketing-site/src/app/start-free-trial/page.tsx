@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description:
     "Request a 30-day free trial of Lacteva — the connected dairy operations platform. Our team sets up your environment and gets you started.",
   alternates: { canonical: "/start-free-trial" },
+  openGraph: { url: "/start-free-trial" },
 };
 
 /**

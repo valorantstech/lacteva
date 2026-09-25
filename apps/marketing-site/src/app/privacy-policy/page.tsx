@@ -13,6 +13,7 @@ export const metadata: Metadata = {
   description:
     "How Lacteva handles information collected through this website and processed through the Lacteva platform.",
   alternates: { canonical: "/privacy-policy" },
+  openGraph: { url: "/privacy-policy" },
 };
 
 /**

@@ -44,6 +44,14 @@ ENV NODE_OPTIONS=--max-old-space-size=${NODE_HEAP_MB}
 # gets the explanatory /login page rather than somebody else's portal.
 ARG NEXT_PUBLIC_PORTAL_URL=""
 ENV NEXT_PUBLIC_PORTAL_URL=${NEXT_PUBLIC_PORTAL_URL}
+# WO-76: the site's OWN address is the same kind of build-time constant —
+# `layout.tsx`, `sitemap.ts` and `robots.ts` read it at `next build`, so
+# without this ARG every absolute URL the live site published about itself
+# (og:image, canonical, every sitemap <loc>, the robots Sitemap: line)
+# pointed at the lacteva.example placeholder, a domain that does not resolve,
+# and WhatsApp showed a bare grey card. Empty default, for WO-65's reason.
+ARG LACTEVA_SITE_URL=""
+ENV LACTEVA_SITE_URL=${LACTEVA_SITE_URL}
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime

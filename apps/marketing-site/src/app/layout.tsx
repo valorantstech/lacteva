@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 
 // Placeholder origin until the public domain is decided (a commercial
 // decision, per Master/Vision) — set LACTEVA_SITE_URL at build time.
-const siteUrl = process.env.LACTEVA_SITE_URL ?? "https://lacteva.example";
+const siteUrl = process.env.LACTEVA_SITE_URL || "https://lacteva.example";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -30,6 +30,11 @@ export const metadata: Metadata = {
   openGraph: {
     siteName: "Lacteva",
     type: "website",
+    // WO-76: the two tags WhatsApp reads that were absent entirely. `url` is
+    // resolved against `metadataBase`; every page overrides it with its own
+    // canonical path.
+    url: "/",
+    locale: "en_IN",
   },
   twitter: {
     card: "summary_large_image",
