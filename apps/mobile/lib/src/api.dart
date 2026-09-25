@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -1221,6 +1222,37 @@ class ApiClient {
   /// re-add the lines to form its own opinion.
   Future<Map<String, dynamic>> invoiceDetail(String id) async =>
       await _send('GET', '/v1/invoices/$id') as Map<String, dynamic>;
+
+  /// The bill as the platform prints it (WO-83 §2): the same PDF the dairy
+  /// downloads from the portal, so the household holds the same document.
+  Future<Uint8List> invoicePdf(String id) =>
+      downloadBytes('/v1/invoices/$id/pdf');
+
+  /// An authenticated GET whose body is a document, not JSON. Refreshes once
+  /// on a 401 like [_send]; a refusal is an [ApiException] like any other.
+  Future<Uint8List> downloadBytes(
+    String path, {
+    bool retryAfterRefresh = true,
+  }) async {
+    final request = http.Request('GET', Uri.parse('$apiUrl$path'))
+      ..headers.addAll(_headers)
+      ..headers.remove('Content-Type');
+    final response = await http.Response.fromStream(await _http.send(request));
+    if (response.statusCode == 401 && _token != null && retryAfterRefresh) {
+      if (await _refreshOnce()) {
+        return downloadBytes(path, retryAfterRefresh: false);
+      }
+      _expire();
+      throw AuthExpiredException(_detailOf(response));
+    }
+    if (response.statusCode >= 400) {
+      throw ApiException(
+        response.statusCode,
+        'Request failed (${response.statusCode})',
+      );
+    }
+    return response.bodyBytes;
+  }
 
   Future<Map<String, dynamic>> listCustomerPayments({
     String? customerId,

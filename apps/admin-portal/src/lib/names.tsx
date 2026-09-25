@@ -32,6 +32,15 @@ const customerLookup: Lookup = async (ids) => {
   return Object.fromEntries((page.items ?? []).map((c) => [c.id, c.name]));
 };
 
+/** WO-83 §3: the phone a bill's WhatsApp link goes to; a customer without one
+ *  is left out, so the caller's "no phone" fallback stays honest. */
+const customerPhoneLookup: Lookup = async (ids) => {
+  const page = await listCustomers({ ids, limit: Math.min(ids.length, 100), offset: 0 });
+  return Object.fromEntries(
+    (page.items ?? []).filter((c) => c.phone?.trim()).map((c) => [c.id, c.phone.trim()]),
+  );
+};
+
 function useResolvedNames(ids: (string | null | undefined)[], lookup: Lookup) {
   const [names, setNames] = useState<Record<string, string>>({});
   const cache = useRef<Record<string, string>>({});
@@ -75,3 +84,7 @@ export const useSupplierNames = (ids: (string | null | undefined)[]) =>
 /** id → customer name, for exactly the ids passed. */
 export const useCustomerNames = (ids: (string | null | undefined)[]) =>
   useResolvedNames(ids, customerLookup);
+
+/** id → customer phone (only customers that have one), for exactly the ids passed. */
+export const useCustomerPhones = (ids: (string | null | undefined)[]) =>
+  useResolvedNames(ids, customerPhoneLookup);

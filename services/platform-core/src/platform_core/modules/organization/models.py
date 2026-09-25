@@ -9,7 +9,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, Date, DateTime, Numeric, String, UniqueConstraint, Uuid
+from sqlalchemy import JSON, Date, DateTime, Numeric, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.core.db import Base, IdMixin, utcnow
@@ -26,6 +26,16 @@ class Organization(Base, IdMixin):
     # operational data is gone and only anonymized financial records remain
     # (PROD-001, core/tenant_lifecycle.py).
     status: Mapped[str] = mapped_column(String(20), default="active")
+    #: WO-83 §2a. Where the shop is and how to ring it — the head of every
+    #: bill it sends. Nullable and never required by the domain: a dairy that
+    #: has run for a year without one must not start failing. GSTIN/FSSAI are
+    #: deliberately NOT here; a tax field on an invoice while empty is worse
+    #: than no field, and adding one is a decision to record first.
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    #: WO-83 §2. The "Pay to" block on the bill — a UPI id and/or a bank
+    #: line, as the shop wants it printed. Free text, the shop's own words.
+    pay_to: Mapped[str | None] = mapped_column(String(300), nullable=True)
     #: DEMO-013. The organization's locale context: what it counts money in,
     #: what clock its business days run on, and what languages its people may
     #: work in. Resolved from `country_code` at onboarding via

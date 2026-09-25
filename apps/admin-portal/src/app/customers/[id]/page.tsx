@@ -18,6 +18,7 @@ import {
   getCustomer,
   getCustomerBalance,
   getCustomerStatement,
+  customerStatementPdfUrl,
   pauseDeliveryPlan,
   setDeliveryPlan,
   resumeDeliveryPlan,
@@ -734,15 +735,30 @@ export default function CustomerDetailPage({
               {t("statement.subtitle")} — {statement.date_from} →{" "}
               {statement.date_to}
             </CardDescription>
+            {/* WO-83 §2: the same statement as a document, rendered by the platform. */}
+            <a
+              className="w-fit text-sm underline underline-offset-4"
+              href={customerStatementPdfUrl(id, {
+                date_from: statement.date_from,
+                date_to: statement.date_to,
+              })}
+              download
+            >
+              {t("statement.downloadPdf")}
+            </a>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="grid gap-4 sm:grid-cols-5">
               <Surface tone="metric">
                 <Metric
-                  label={t("statement.opening")}
+                  label={
+                    Number(statement.opening_balance) < 0
+                      ? t("statement.advance")
+                      : t("statement.opening")
+                  }
                   value={
                     <Money
-                      amount={statement.opening_balance}
+                      amount={Math.abs(Number(statement.opening_balance)).toFixed(2)}
                       currency={statement.currency}
                     />
                   }

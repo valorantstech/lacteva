@@ -102,6 +102,14 @@ function BillBody({ bill }: { bill: PublicBill }) {
       <Card>
         <CardHeader>
           <CardDescription>{bill.organization}</CardDescription>
+          {/* WO-83 §2a: the head of the bill — where the dairy is and how to reach it. */}
+          {bill.organization_address || bill.organization_phone ? (
+            <CardDescription data-testid="public-bill-head">
+              {[bill.organization_address, bill.organization_phone]
+                .filter(Boolean)
+                .join(" · ")}
+            </CardDescription>
+          ) : null}
           <CardTitle>{bill.customer.name}</CardTitle>
           <CardDescription>
             {[bill.customer.code, bill.customer.address]
@@ -110,14 +118,26 @@ function BillBody({ bill }: { bill: PublicBill }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-1">
-          <span className="text-sm text-muted-foreground">You owe</span>
+          <span className="text-sm text-muted-foreground">
+            {Number(outstanding) < 0 ? "Advance held" : "You owe"}
+          </span>
           <span className="text-3xl font-semibold" data-testid="public-bill-outstanding">
-            <Money amount={outstanding} currency={currency} />
+            <Money
+              amount={Math.abs(Number(outstanding)).toFixed(2)}
+              currency={currency}
+            />
           </span>
           <span className="text-xs text-muted-foreground">
             {bill.balance.open_invoices} open invoice(s) · not yet billed{" "}
             <Money amount={bill.balance.unbilled_amount} currency={currency} />
           </span>
+          {/* WO-83 §2: how to pay, exactly as the dairy wrote it. */}
+          {bill.pay_to ? (
+            <p className="mt-2 text-sm" data-testid="public-bill-pay-to">
+              <span className="text-muted-foreground">Pay to: </span>
+              {bill.pay_to}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -175,8 +195,12 @@ function BillBody({ bill }: { bill: PublicBill }) {
         <CardHeader>
           <CardTitle className="text-base">This month</CardTitle>
           <CardDescription>
-            {bill.statement.date_from} to {bill.statement.date_to}: opening{" "}
-            <Money amount={bill.statement.opening_balance} currency={currency} />
+            {bill.statement.date_from} to {bill.statement.date_to}:{" "}
+            {Number(bill.statement.opening_balance) < 0 ? "advance" : "opening"}{" "}
+            <Money
+              amount={Math.abs(Number(bill.statement.opening_balance)).toFixed(2)}
+              currency={currency}
+            />
             , billed <Money amount={bill.statement.billed} currency={currency} />
             , paid <Money amount={bill.statement.paid} currency={currency} />,
             closing{" "}

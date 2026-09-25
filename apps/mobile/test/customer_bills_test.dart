@@ -12,6 +12,8 @@
 ///     claim "INV-10", and a payment that closed two bills appears on both.
 library;
 
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lacteva_mobile/src/api.dart';
@@ -104,11 +106,24 @@ class _Platform extends ApiClient {
     return <String, dynamic>{'items': receipts, 'total': receipts.length};
   }
 
+  /// WO-83 §2: the bytes the share sheet is handed are the platform's.
+  final Uint8List pdf = Uint8List.fromList('%PDF-1.4 fake'.codeUnits);
+  String previousBalance = '0.00';
+
+  @override
+  Future<Uint8List> invoicePdf(String id) async {
+    calls.add('invoicePdf $id');
+    return pdf;
+  }
+
   @override
   Future<Map<String, dynamic>> invoiceDetail(String id) async {
     calls.add('invoiceDetail $id');
     return <String, dynamic>{
-      'invoice': _invoice(int.parse(id.substring(1))),
+      'invoice': {
+        ..._invoice(int.parse(id.substring(1))),
+        'previous_balance': previousBalance,
+      },
       'lines': const [],
       'paid': '1200.00',
       'outstanding': '660.00',
@@ -265,6 +280,47 @@ void main() {
         findsNothing,
       );
       expect(find.textContaining('UPI'), findsOneWidget);
+    });
+
+    testWidgets('Download hands the platform PDF to the share sheet', (
+      tester,
+    ) async {
+      final platform = _Platform();
+      final shared = <(Uint8List, String)>[];
+      await _pump(
+        tester,
+        CustomerBillScreen(
+          client: platform,
+          invoiceId: 'i30',
+          session: _session(),
+          share: (bytes, filename) async => shared.add((bytes, filename)),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('bill-download')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(platform.calls, contains('invoicePdf i30'));
+      expect(shared, hasLength(1));
+      expect(shared.single.$1, same(platform.pdf));
+      expect(shared.single.$2, 'INV-2026-000030.pdf');
+    });
+
+    testWidgets('a household in credit reads Advance, not a negative debt', (
+      tester,
+    ) async {
+      final platform = _Platform()..previousBalance = '-412.00';
+      await _pump(
+        tester,
+        CustomerBillScreen(
+          client: platform,
+          invoiceId: 'i30',
+          session: _session(),
+        ),
+      );
+      expect(find.text('Advance'), findsOneWidget);
+      expect(find.text('Brought forward'), findsNothing);
+      expect(find.text('412.00'), findsOneWidget);
+      expect(find.text('-412.00'), findsNothing);
     });
 
     testWidgets('says so when nothing has been paid against it', (

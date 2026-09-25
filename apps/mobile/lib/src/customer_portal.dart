@@ -22,6 +22,7 @@ import 'api.dart';
 import 'brand/motion.dart';
 import 'l10n.dart';
 import 'session.dart';
+import 'share_bill.dart';
 import 'sign_out.dart';
 import 'theme.dart';
 
@@ -1329,6 +1330,7 @@ class CustomerBillScreen extends StatefulWidget {
     required this.client,
     required this.invoiceId,
     this.session,
+    this.share = shareDocument,
   });
 
   final ApiClient client;
@@ -1336,6 +1338,10 @@ class CustomerBillScreen extends StatefulWidget {
 
   /// For language only (P1-LOCALE-I18N-001); null renders English.
   final Session? session;
+
+  /// WO-83 §2: where "Download this bill" hands the platform's PDF. The
+  /// real one opens the share sheet; a test records what it was given.
+  final ShareDocument share;
 
   @override
   State<CustomerBillScreen> createState() => _CustomerBillScreenState();
@@ -1351,6 +1357,31 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
   /// which is the only thing a household ever sees on either paper.
   List<Map<String, dynamic>> _receipts = const [];
   String? _error;
+  bool _downloading = false;
+
+  /// WO-83 §2: the PDF is the platform's; the phone only holds it out.
+  Future<void> _download() async {
+    final number =
+        (_detail?['invoice'] as Map?)?['invoice_number']?.toString() ??
+        widget.invoiceId;
+    setState(() => _downloading = true);
+    try {
+      final bytes = await widget.client.invoicePdf(widget.invoiceId);
+      await widget.share(bytes, '$number.pdf');
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.detail)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_t.t('customer.downloadFailed'))),
+      );
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
 
   @override
   void initState() {
@@ -1399,6 +1430,21 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
         title: Text(
           invoice?['invoice_number']?.toString() ?? _t.t('customer.bill'),
         ),
+        actions: [
+          if (d != null)
+            IconButton(
+              key: const ValueKey('bill-download'),
+              tooltip: _t.t('customer.download'),
+              icon: _downloading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.download_outlined),
+              onPressed: _downloading ? null : _download,
+            ),
+        ],
       ),
       body: _error != null
           ? Center(
@@ -1432,9 +1478,15 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
                           _t.t('customer.adjustments'),
                           '${invoice?['adjustments']}',
                         ),
+                        // WO-83 §2b: a household in credit reads "Advance",
+                        // never a negative debt.
                         _Row(
-                          _t.t('customer.broughtForward'),
-                          '${invoice?['previous_balance']}',
+                          _isCredit(invoice?['previous_balance'])
+                              ? _t.t('customer.advance')
+                              : _t.t('customer.broughtForward'),
+                          _isCredit(invoice?['previous_balance'])
+                              ? '${invoice?['previous_balance']}'.substring(1)
+                              : '${invoice?['previous_balance']}',
                         ),
                         const Divider(),
                         _Row(
@@ -1557,6 +1609,10 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
     );
   }
 }
+
+/// A negative balance is money the household paid ahead (WO-83 §2b).
+bool _isCredit(Object? amount) =>
+    amount != null && amount.toString().trim().startsWith('-');
 
 class _Row extends StatelessWidget {
   const _Row(this.label, this.value, {this.bold = false});

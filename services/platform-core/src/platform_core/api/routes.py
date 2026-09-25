@@ -64,6 +64,7 @@ from platform_core.modules.billing.service import (
     InvoiceDetailView,
     InvoicePage,
     InvoiceView,
+    IssueBatchResult,
     RecordCustomerPaymentCommand,
 )
 from platform_core.modules.business_calendar.service import (
@@ -584,6 +585,10 @@ class MeOrganization(BaseModel):
     #: navigation from the session they already fetch. Presentation only.
     modules: list[str] = Field(default_factory=lambda: list(DEFAULT_MODULES))
     conversion_effective_from: date | None = None
+    #: WO-83: the head of the bill, for the clients that print one.
+    address: str | None = None
+    phone: str | None = None
+    pay_to: str | None = None
 
 
 class MeMembership(BaseModel):
@@ -713,6 +718,9 @@ async def me(
                 ),
                 conversion_effective_from=org.conversion_effective_from,
                 modules=list(org.modules or DEFAULT_MODULES),
+                address=org.address,
+                phone=org.phone,
+                pay_to=org.pay_to,
             )
         row = await session.scalar(
             select(Membership).where(
@@ -4872,6 +4880,69 @@ async def get_invoice(invoice_id: uuid.UUID, service: BillingSvc, _: InvoiceRead
     return await service.invoice_detail(invoice_id)
 
 
+class IssueBatchRequest(BaseModel):
+    period_from: date
+    period_to: date
+    preview: bool = False
+
+
+@billing_router.post("/invoices/issue-batch", response_model=IssueBatchResult)
+async def issue_invoices_in_batch(
+    body: IssueBatchRequest, service: BillingSvc, p: InvoiceIssue
+) -> Any:
+    """WO-83 §1: month-end for four hundred households in one act. Every
+    DRAFT for the period is issued through `issue_invoice`; the exceptions
+    are listed, not hidden. `preview` counts and totals first."""
+    if body.period_to < body.period_from:
+        raise ValidationError("the period ends before it begins")
+    return await service.issue_batch(
+        period_from=body.period_from,
+        period_to=body.period_to,
+        actor_id=p.id,
+        preview=body.preview,
+    )
+
+
+@billing_router.get("/invoices/{invoice_id}/pdf")
+async def invoice_pdf(
+    invoice_id: uuid.UUID,
+    service: BillingSvc,
+    customers: CustomerSvc,
+    session: deps.Session,
+    _: InvoiceRead,
+) -> Response:
+    """The bill as a document (WO-83 §2): the organisation's name, address and
+    phone at the head, the lines with kind and quantity, totals, previous
+    balance, amount due, and the "Pay to" block from Admin → Settings."""
+    from platform_core.modules.billing.pdf import render_invoice_pdf
+    from platform_core.modules.organization.models import Organization
+
+    detail = await service.invoice_detail(invoice_id)
+    customer = await customers.get(detail.invoice.customer_id)
+    org = await session.get(Organization, require_current_tenant())
+    body = render_invoice_pdf(
+        detail.model_dump(mode="json"),
+        _bill_head(org),
+        {"name": customer.name, "code": customer.code, "address": customer.address},
+    )
+    return Response(
+        content=body,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{detail.invoice.invoice_number}.pdf"'
+        },
+    )
+
+
+def _bill_head(org) -> dict:
+    return {
+        "organization_name": org.name if org else "",
+        "organization_address": org.address if org else None,
+        "organization_phone": org.phone if org else None,
+        "pay_to": org.pay_to if org else None,
+    }
+
+
 @billing_router.post("/invoices/{invoice_id}/issue", response_model=InvoiceView)
 async def issue_invoice(invoice_id: uuid.UUID, service: BillingSvc, p: InvoiceIssue) -> Any:
     """Hand it to the customer. Irreversible — it becomes immutable and payable."""
@@ -4927,6 +4998,37 @@ async def customer_balance(
     return await service.balance(customer_id)
 
 
+@billing_router.get("/customers/{customer_id}/statement.pdf")
+async def customer_statement_pdf(
+    customer_id: uuid.UUID,
+    service: BillingSvc,
+    customers: CustomerSvc,
+    session: deps.Session,
+    _: CustomerPaymentRead,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> Response:
+    """The statement as a document (WO-83 §2). Declared before the JSON
+    statement route because `statement.pdf` is a literal path."""
+    from platform_core.modules.billing.pdf import render_statement_pdf
+    from platform_core.modules.organization.models import Organization
+
+    statement = await service.statement(customer_id, date_from=date_from, date_to=date_to)
+    customer = await customers.get(statement.customer_id)
+    org = await session.get(Organization, require_current_tenant())
+    body = render_statement_pdf(
+        statement.model_dump(mode="json"),
+        _bill_head(org),
+        {"name": customer.name, "code": customer.code, "address": customer.address},
+    )
+    name = f"statement-{customer.code}-{statement.date_from}-{statement.date_to}.pdf"
+    return Response(
+        content=body,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
 @billing_router.get("/customers/{customer_id}/statement", response_model=CustomerStatement)
 async def customer_statement(
     customer_id: uuid.UUID,
@@ -4961,6 +5063,10 @@ class PublicBillView(BaseModel):
     else — the customer scope is set from the token before any read."""
 
     organization: str
+    #: WO-83 §2a / §2: the head of the bill, and how to pay it.
+    organization_address: str | None = None
+    organization_phone: str | None = None
+    pay_to: str | None = None
     customer: PublicBillCustomer
     currency: str
     balance: CustomerBalanceView
@@ -5025,6 +5131,9 @@ async def public_bill(
                 by_invoice.setdefault(number.strip(), []).append(view)
     return PublicBillView(
         organization=org.name if org else "",
+        organization_address=org.address if org else None,
+        organization_phone=org.phone if org else None,
+        pay_to=org.pay_to if org else None,
         customer=PublicBillCustomer(
             name=customer.name, code=customer.code, address=customer.address or ""
         ),

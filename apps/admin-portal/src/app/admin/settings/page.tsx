@@ -390,6 +390,15 @@ export default function OrganizationSettingsPage() {
             </div>
           </section>
 
+          {/* --- WO-83: the head of every bill ------------------------------- */}
+          <ContactSection
+            settings={settings}
+            mayManage={mayManage}
+            saving={saving}
+            onSave={(body) => saveOrganization(body)}
+            t={t}
+          />
+
           <section className="flex flex-col gap-3 border-t border-border pt-6">
             <h2 className="text-sm font-semibold">
               {t("settings.myTimezone")}
@@ -441,6 +450,88 @@ export default function OrganizationSettingsPage() {
         </div>
       )}
     </AdminPage>
+  );
+}
+
+/**
+ * Address, phone and the "Pay to" line (WO-83 §2a, §2). Printed at the head of
+ * every bill and statement and on the household's bill link; blank prints
+ * nothing. Never required by the platform — a dairy that has run for a year
+ * without one keeps running.
+ */
+function ContactSection({
+  settings,
+  mayManage,
+  saving,
+  onSave,
+  t,
+}: {
+  settings: LocaleSettings;
+  mayManage: boolean;
+  saving: boolean;
+  onSave: (body: { address: string; phone: string; pay_to: string }) => Promise<unknown>;
+  t: (key: string) => string;
+}) {
+  const [address, setAddress] = useState(settings.address ?? "");
+  const [phone, setPhone] = useState(settings.phone ?? "");
+  const [payTo, setPayTo] = useState(settings.pay_to ?? "");
+  return (
+    <section
+      className="flex flex-col gap-3 border-t border-border pt-6"
+      aria-labelledby="contact-title"
+      data-testid="org-contact"
+    >
+      <h2 id="contact-title" className="text-sm font-semibold">
+        {t("settings.contactTitle")}
+      </h2>
+      <p className="text-xs text-muted-foreground">{t("settings.contactHelp")}</p>
+      <form
+        className="grid gap-3 sm:grid-cols-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void onSave({ address: address.trim(), phone: phone.trim(), pay_to: payTo.trim() });
+        }}
+      >
+        <div className="flex flex-col gap-1 sm:col-span-2">
+          <Label htmlFor="org-address">{t("settings.address")}</Label>
+          <textarea
+            id="org-address"
+            className="min-h-20 rounded-md border border-input bg-background px-3 py-2 text-sm"
+            value={address}
+            disabled={!mayManage || saving}
+            onChange={(e) => setAddress(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="org-phone">{t("settings.phone")}</Label>
+          <Input
+            id="org-phone"
+            value={phone}
+            disabled={!mayManage || saving}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="org-pay-to">{t("settings.payTo")}</Label>
+          <Input
+            id="org-pay-to"
+            value={payTo}
+            disabled={!mayManage || saving}
+            onChange={(e) => setPayTo(e.target.value)}
+          />
+          <span className="text-xs text-muted-foreground">{t("settings.payToHelp")}</span>
+        </div>
+        {mayManage ? (
+          <div className="sm:col-span-2">
+            <Button type="submit" size="sm" disabled={saving}>
+              {t("settings.saveContact")}
+            </Button>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground sm:col-span-2">{t("state.noPermission")}</p>
+        )}
+      </form>
+    </section>
   );
 }
 

@@ -284,6 +284,29 @@ class CustomerStatement(BaseModel):
     entries: list[StatementEntry]
 
 
+class IssueBatchLine(BaseModel):
+    invoice_id: uuid.UUID
+    invoice_number: str
+    customer_id: uuid.UUID
+    currency: str
+    amount_due: Decimal
+    reason: str | None = None
+
+
+class IssueBatchResult(BaseModel):
+    """WO-83 §1: what "Issue all" did, or would do."""
+
+    preview: bool
+    period_from: date
+    period_to: date
+    issued: list[IssueBatchLine]
+    skipped: list[IssueBatchLine]
+    #: The currency `total` is in — the drafts' own; every invoice of one
+    #: tenant carries the organisation's currency, so one figure is honest.
+    currency: str | None
+    total: Decimal
+
+
 class CustomerReceiptView(BaseModel):
     id: uuid.UUID
     receipt_number: str
@@ -452,6 +475,69 @@ class BillingService:
             },
         )
         return invoice
+
+    async def issue_batch(
+        self,
+        *,
+        period_from: date,
+        period_to: date,
+        actor_id: uuid.UUID,
+        preview: bool = False,
+    ) -> IssueBatchResult:
+        """Issue every DRAFT invoice for the period, one `issue_invoice` per
+        invoice — the same audit line, the same event, the same immutability
+        (WO-83 §1). A draft that cannot be issued (a closed period, totals that
+        no longer match, no lines) is reported with its reason and the rest
+        carry on; nothing is half-issued. `preview` counts and totals without
+        issuing anything, for the confirmation the portal shows first."""
+        tenant_id = require_current_tenant()
+        drafts = (
+            await self._session.scalars(
+                select(CustomerInvoice)
+                .where(
+                    CustomerInvoice.tenant_id == tenant_id,
+                    CustomerInvoice.status == "draft",
+                    CustomerInvoice.period_from >= period_from,
+                    CustomerInvoice.period_to <= period_to,
+                )
+                .order_by(CustomerInvoice.invoice_number)
+            )
+        ).all()
+        issued: list[IssueBatchLine] = []
+        skipped: list[IssueBatchLine] = []
+        total = ZERO
+        for draft in drafts:
+            line = IssueBatchLine(
+                invoice_id=draft.id,
+                invoice_number=draft.invoice_number,
+                customer_id=draft.customer_id,
+                currency=draft.currency,
+                amount_due=Decimal(draft.amount_due),
+            )
+            if preview:
+                if draft.line_count == 0:
+                    skipped.append(line.model_copy(update={"reason": "no lines"}))
+                    continue
+                issued.append(line)
+                total += Decimal(draft.amount_due)
+                continue
+            try:
+                async with self._session.begin_nested():
+                    await self.issue_invoice(draft.id, actor_id=actor_id)
+            except ConflictError as exc:
+                skipped.append(line.model_copy(update={"reason": str(exc)}))
+                continue
+            issued.append(line)
+            total += Decimal(draft.amount_due)
+        return IssueBatchResult(
+            preview=preview,
+            period_from=period_from,
+            period_to=period_to,
+            issued=issued,
+            skipped=skipped,
+            currency=drafts[0].currency if drafts else None,
+            total=money(total),
+        )
 
     async def issue_invoice(self, invoice_id: uuid.UUID, *, actor_id: uuid.UUID) -> CustomerInvoice:
         """Hand it to the customer. Irreversible: it becomes immutable and payable."""

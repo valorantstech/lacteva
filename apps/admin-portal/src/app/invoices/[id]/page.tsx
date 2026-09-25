@@ -2,17 +2,28 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Lock } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  Lock,
+  MessageCircle,
+  Printer,
+} from "lucide-react";
 import {
   ApiError,
   type Customer,
   type InvoiceDetail,
+  type MeOrganization,
   cancelInvoice,
   getCustomer,
   getInvoice,
+  getMe,
+  invoicePdfUrl,
   issueInvoice,
   describeError,
 } from "@/lib/api";
+import { billSummary, waMeLink } from "@/lib/whatsapp";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -67,6 +78,7 @@ export default function InvoiceDetailPage({
   const { id } = use(params);
   const [detail, setDetail] = useState<Load<InvoiceDetail>>(LOADING);
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [organization, setOrganization] = useState<MeOrganization | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -79,6 +91,10 @@ export default function InvoiceDetailPage({
       getCustomer(data.invoice.customer_id)
         .then((c) => setCustomer(c.customer))
         .catch(() => setCustomer(null));
+      // WO-83 §3: the WhatsApp summary names the dairy and how to pay it.
+      getMe()
+        .then((me) => setOrganization(me.organization ?? null))
+        .catch(() => setOrganization(null));
     } catch (err) {
       setDetail({ state: "error", message: describe(err) });
     }
@@ -145,7 +161,7 @@ export default function InvoiceDetailPage({
           customer ? ` · ${customer.name} (${customer.code})` : ""
         }`}
         actions={
-          <span className="inline-flex items-center gap-2">
+          <span className="inline-flex flex-wrap items-center gap-2">
             <StatusBadge status={invoice.status} />
             {invoice.status !== "draft" && invoice.status !== "cancelled" ? (
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
@@ -153,6 +169,28 @@ export default function InvoiceDetailPage({
                 {stamp(invoice.issued_at)}
               </span>
             ) : null}
+            {/* WO-83 §2: the bill as a document — print it, or keep the PDF. */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => window.print()}
+            >
+              <Printer aria-hidden className="size-4" /> Print
+            </Button>
+            {/* A link styled as a button — Base UI has no `asChild`. */}
+            <a
+              className="inline-flex h-8 items-center gap-1 rounded-md border border-input px-3 text-sm hover:bg-muted"
+              href={invoicePdfUrl(invoice.id)}
+              download
+            >
+              <Download aria-hidden className="size-4" /> Download PDF
+            </a>
+            <WhatsAppSend
+              customer={customer}
+              organization={organization}
+              invoice={invoice}
+            />
           </span>
         }
       />
@@ -203,15 +241,19 @@ export default function InvoiceDetailPage({
               </p>
             </div>
             <div>
-              <dt className="text-sm text-muted-foreground">Brought forward</dt>
+              <dt className="text-sm text-muted-foreground">
+                {Number(invoice.previous_balance) < 0 ? "Advance" : "Brought forward"}
+              </dt>
               <dd className="text-lg font-semibold">
                 <Money
-                  amount={invoice.previous_balance}
+                  amount={Math.abs(Number(invoice.previous_balance)).toFixed(2)}
                   currency={invoice.currency}
                 />
               </dd>
               <p className="text-xs text-muted-foreground">
-                owed before this period
+                {Number(invoice.previous_balance) < 0
+                  ? "paid ahead before this period"
+                  : "owed before this period"}
               </p>
             </div>
             <div>
@@ -428,5 +470,66 @@ export default function InvoiceDetailPage({
         </CardContent>
       </Card>
     </PageContainer>
+  );
+}
+
+
+/**
+ * "Send on WhatsApp" (WO-83 §3). The portal never sends anything: it opens a
+ * `wa.me` link with the summary already typed, and the operator presses send
+ * in WhatsApp. A customer with no phone gets a disabled control that says why,
+ * because a control that silently does nothing is the worse failure.
+ */
+function WhatsAppSend({
+  customer,
+  organization,
+  invoice,
+}: {
+  customer: Customer | null;
+  organization: MeOrganization | null;
+  invoice: InvoiceDetail["invoice"];
+}) {
+  const phone = customer?.phone?.trim() ?? "";
+  const href = phone
+    ? waMeLink(
+        phone,
+        billSummary({
+          organization: organization?.name ?? "",
+          invoice_number: invoice.invoice_number,
+          period_from: invoice.period_from,
+          period_to: invoice.period_to,
+          total: invoice.total,
+          previous_balance: invoice.previous_balance,
+          amount_due: invoice.amount_due,
+          currency: invoice.currency,
+          pay_to: organization?.pay_to ?? null,
+        }),
+      )
+    : null;
+  if (!href) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+        data-testid="whatsapp-disabled"
+      >
+        <Button type="button" variant="outline" size="sm" disabled>
+          <MessageCircle aria-hidden className="size-4" /> Send on WhatsApp
+        </Button>
+        {customer
+          ? "— no phone on this customer; add one on their page"
+          : "— loading the customer"}
+      </span>
+    );
+  }
+  return (
+    <a
+      className="inline-flex h-8 items-center gap-1 rounded-md border border-input px-3 text-sm hover:bg-muted"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="whatsapp-send"
+    >
+      <MessageCircle aria-hidden className="size-4" /> Send on WhatsApp
+    </a>
   );
 }

@@ -72,6 +72,9 @@ class CreateOrganizationCommand(BaseModel):
     #: D-31 / WO-85. Which of the product's modules this organisation runs:
     #: `collection`, `sales`, or both. `None` means both. Never empty.
     modules: list[str] | None = None
+    #: WO-83 §2a: settable at creation, optional, never required.
+    address: str | None = Field(default=None, max_length=1000)
+    phone: str | None = Field(default=None, max_length=30)
 
     @field_validator("modules")
     @classmethod
@@ -109,6 +112,11 @@ class LocaleSettingsView(BaseModel):
     #: D-31 / WO-85. The modules turned on, and the registry to choose from.
     modules: list[str] = Field(default_factory=lambda: list(DEFAULT_MODULES))
     available_modules: list[dict] = Field(default_factory=module_choices)
+    #: WO-83 §2a / §2: the head of the bill and its "Pay to" block. Null when
+    #: the organisation has not said; the bill then prints without them.
+    address: str | None = None
+    phone: str | None = None
+    pay_to: str | None = None
 
 
 class UpdateLocaleSettingsCommand(BaseModel):
@@ -124,6 +132,10 @@ class UpdateLocaleSettingsCommand(BaseModel):
     timezone: str | None = None
     default_language: str | None = None
     supported_languages: list[str] | None = None
+    #: WO-83. Absent means unchanged; an empty string clears.
+    address: str | None = Field(default=None, max_length=1000)
+    phone: str | None = Field(default=None, max_length=30)
+    pay_to: str | None = Field(default=None, max_length=300)
     #: D-21. Changing the measured unit is an owner's act and applies to
     #: FUTURE transactions only — `update_locale_settings` touches the
     #: organisation row and nothing else, and `test_units.py` proves history
@@ -164,6 +176,9 @@ class OrganizationView(BaseModel):
     supported_languages: list[str]
     quantity_unit: str
     modules: list[str] = Field(default_factory=lambda: list(DEFAULT_MODULES))
+    address: str | None = None
+    phone: str | None = None
+    pay_to: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -219,6 +234,8 @@ class OrganizationService:
             quantity_unit=locale.quantity_unit,
             # D-31: both unless the onboarding form said otherwise.
             modules=validate_modules(cmd.modules),
+            address=(cmd.address or "").strip() or None,
+            phone=(cmd.phone or "").strip() or None,
         )
         self._session.add(org)
         await self._session.flush()
@@ -359,6 +376,13 @@ class OrganizationService:
         # keep it so.
         if cmd.modules is not None:
             org.modules = list(cmd.modules)
+        # WO-83: the bill's head and its pay-to block. "" clears, None leaves.
+        if cmd.address is not None:
+            org.address = cmd.address.strip() or None
+        if cmd.phone is not None:
+            org.phone = cmd.phone.strip() or None
+        if cmd.pay_to is not None:
+            org.pay_to = cmd.pay_to.strip() or None
         await self._session.flush()
         # The memo is per-request, but this request may still go on to render
         # money in the currency it just changed.
@@ -866,4 +890,7 @@ def _locale_view(org: Organization) -> LocaleSettingsView:
         conversion_effective_from=org.conversion_effective_from,
         modules=list(org.modules or DEFAULT_MODULES),
         available_modules=module_choices(),
+        address=org.address,
+        phone=org.phone,
+        pay_to=org.pay_to,
     )

@@ -184,6 +184,9 @@ const Catalog _en = {
   'customer.subtotal': 'Subtotal',
   'customer.adjustments': 'Adjustments',
   'customer.broughtForward': 'Brought forward',
+  'customer.advance': 'Advance',
+  'customer.download': 'Download this invoice',
+  'customer.downloadFailed': 'Could not download the invoice',
   'customer.everyDelivery': 'Every delivery on this invoice',
   'customer.checked':
       'Checked by the dairy: this invoice matches the deliveries below.',
@@ -759,6 +762,9 @@ const Catalog _hi = {
   'customer.subtotal': 'उप-योग',
   'customer.adjustments': 'समायोजन',
   'customer.broughtForward': 'पिछला शेष',
+  'customer.advance': 'अग्रिम',
+  'customer.download': 'यह बिल डाउनलोड करें',
+  'customer.downloadFailed': 'बिल डाउनलोड नहीं हो सका',
   'customer.everyDelivery': 'इस बिल का प्रत्येक वितरण',
   'customer.checked':
       'डेयरी द्वारा जाँचा गया: यह बिल नीचे के वितरणों से मेल खाता है।',
@@ -1297,6 +1303,9 @@ const Catalog _ar = {
   'customer.subtotal': 'المجموع الفرعي',
   'customer.adjustments': 'التسويات',
   'customer.broughtForward': 'الرصيد السابق',
+  'customer.advance': 'دفعة مقدمة',
+  'customer.download': 'تنزيل هذه الفاتورة',
+  'customer.downloadFailed': 'تعذر تنزيل الفاتورة',
   'customer.everyDelivery': 'كل توصيلة في هذه الفاتورة',
   'customer.checked':
       'تم التحقق من قِبل الألبان: هذه الفاتورة تطابق التوصيلات أدناه.',

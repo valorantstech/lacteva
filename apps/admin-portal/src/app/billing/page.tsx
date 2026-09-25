@@ -3,13 +3,23 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FileText, Lock, Receipt as ReceiptIcon, Wallet } from "lucide-react";
+import {
+  FileText,
+  Lock,
+  MessageCircle,
+  Receipt as ReceiptIcon,
+  Wallet,
+} from "lucide-react";
 import {
   ApiError,
   type CustomerPayment,
   type CustomerReceipt,
   type Invoice,
   type InvoicePageResult,
+  type IssueBatchResult,
+  type MeOrganization,
+  getMe,
+  issueInvoicesBatch,
   listCustomerPayments,
   listCustomerReceipts,
   listCustomers,
@@ -17,7 +27,9 @@ import {
   describeError,
 } from "@/lib/api";
 import { EntityPicker } from "@/components/entity-picker";
-import { useCustomerNames } from "@/lib/names";
+import { useCustomerNames, useCustomerPhones } from "@/lib/names";
+import { billSummary, waMeLink } from "@/lib/whatsapp";
+import { useBusinessToday } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import {
@@ -136,6 +148,20 @@ function BillingView() {
     ...(page?.items ?? []).map((i) => i.customer_id),
     ...payments.map((p) => p.customer_id),
   ]);
+  // WO-83 §3: the phones the per-row WhatsApp links go to, same discipline.
+  const phones = useCustomerPhones((page?.items ?? []).map((i) => i.customer_id));
+  const [organization, setOrganization] = useState<MeOrganization | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getMe()
+      .then((me) => {
+        if (!cancelled) setOrganization(me.organization ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const columns: Column<Invoice>[] = [
     {
@@ -212,12 +238,19 @@ function BillingView() {
       header: <span className="sr-only">Actions</span>,
       align: "end",
       cell: (inv) => (
-        <Link
-          href={`/invoices/${inv.id}`}
-          className="inline-flex h-8 items-center rounded-md border border-input px-3 text-sm hover:bg-muted"
-        >
-          Open
-        </Link>
+        <span className="inline-flex items-center gap-1">
+          <RowWhatsApp
+            invoice={inv}
+            phone={phones[inv.customer_id]}
+            organization={organization}
+          />
+          <Link
+            href={`/invoices/${inv.id}`}
+            className="inline-flex h-8 items-center rounded-md border border-input px-3 text-sm hover:bg-muted"
+          >
+            Open
+          </Link>
+        </span>
       ),
     },
   ];
@@ -227,6 +260,7 @@ function BillingView() {
       <PageHeader
         title="Billing"
         description="Monthly bills, the money customers have paid, and the receipts they were given."
+        actions={<IssueAll onIssued={() => void load()} />}
       />
 
       <section
@@ -455,5 +489,237 @@ function BillingView() {
         </Card>
       </div>
     </PageContainer>
+  );
+}
+
+
+/**
+ * The per-row "Send on WhatsApp" (WO-83 §3): a `wa.me` link with the summary
+ * typed, disabled with the reason when the customer has no phone. The portal
+ * never sends; the operator presses send in WhatsApp.
+ */
+function RowWhatsApp({
+  invoice,
+  phone,
+  organization,
+}: {
+  invoice: Invoice;
+  phone: string | undefined;
+  organization: MeOrganization | null;
+}) {
+  const href = phone
+    ? waMeLink(
+        phone,
+        billSummary({
+          organization: organization?.name ?? "",
+          invoice_number: invoice.invoice_number,
+          period_from: invoice.period_from,
+          period_to: invoice.period_to,
+          currency: invoice.currency,
+          total: invoice.total,
+          previous_balance: invoice.previous_balance,
+          amount_due: invoice.amount_due,
+          pay_to: organization?.pay_to ?? null,
+        }),
+      )
+    : null;
+  if (!href)
+    return (
+      <span
+        className="inline-flex h-8 items-center rounded-md border border-input px-2 text-xs text-muted-foreground opacity-60"
+        title="No phone on this customer"
+        aria-disabled="true"
+        data-testid={`whatsapp-none-${invoice.invoice_number}`}
+      >
+        <MessageCircle aria-hidden className="size-3.5" />
+        <span className="sr-only">Send on WhatsApp — no phone on this customer</span>
+      </span>
+    );
+  return (
+    <a
+      className="inline-flex h-8 items-center rounded-md border border-input px-2 text-sm hover:bg-muted"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Send on WhatsApp"
+      data-testid={`whatsapp-${invoice.invoice_number}`}
+    >
+      <MessageCircle aria-hidden className="size-4" />
+      <span className="sr-only">Send on WhatsApp</span>
+    </a>
+  );
+}
+
+/** The first and last day of the calendar month before `today` (YYYY-MM-DD). */
+function previousMonth(today: string): { from: string; to: string } {
+  const [y, m] = today.split("-").map(Number);
+  const first = new Date(Date.UTC(y, m - 2, 1));
+  const last = new Date(Date.UTC(y, m - 1, 0));
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return { from: iso(first), to: iso(last) };
+}
+
+/**
+ * "Issue all" (WO-83 §1). The platform is asked first for a PREVIEW — how
+ * many drafts the period holds and what they come to — and that is what the
+ * confirm shows. Only a second, explicit press issues them, in one act, and
+ * the exceptions the platform declined are listed afterwards by number and
+ * reason. Nothing is summed here; the count and the total are the platform's.
+ */
+function IssueAll({ onIssued }: { onIssued: () => void }) {
+  const today = useBusinessToday();
+  const defaults = previousMonth(today);
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState(defaults.from);
+  const [to, setTo] = useState(defaults.to);
+  const [preview, setPreview] = useState<IssueBatchResult | null>(null);
+  const [result, setResult] = useState<IssueBatchResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  async function lookAhead() {
+    setBusy(true);
+    setFailure(null);
+    setResult(null);
+    try {
+      setPreview(
+        await issueInvoicesBatch({ period_from: from, period_to: to, preview: true }),
+      );
+    } catch (err) {
+      setFailure(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function issue() {
+    setBusy(true);
+    setFailure(null);
+    try {
+      const done = await issueInvoicesBatch({ period_from: from, period_to: to });
+      setResult(done);
+      setPreview(null);
+      onIssued();
+    } catch (err) {
+      setFailure(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open)
+    return (
+      <Button type="button" size="sm" onClick={() => setOpen(true)}>
+        Issue all drafts…
+      </Button>
+    );
+
+  return (
+    <div
+      className="flex w-full max-w-md flex-col gap-3 rounded-md border border-border bg-card p-3 text-sm"
+      role="group"
+      aria-label="Issue every draft bill for a period"
+    >
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="issue-all-from">Period from</Label>
+          <Input
+            id="issue-all-from"
+            type="date"
+            value={from}
+            disabled={busy}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              setPreview(null);
+            }}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="issue-all-to">Period to</Label>
+          <Input
+            id="issue-all-to"
+            type="date"
+            value={to}
+            disabled={busy}
+            onChange={(e) => {
+              setTo(e.target.value);
+              setPreview(null);
+            }}
+          />
+        </div>
+      </div>
+      {failure ? (
+        <p role="alert" className="text-destructive">
+          The platform refused: {failure}
+        </p>
+      ) : null}
+      {preview ? (
+        <div className="flex flex-col gap-2" data-testid="issue-all-confirm">
+          <p>
+            <strong>{preview.issued.length}</strong> draft
+            {preview.issued.length === 1 ? "" : "s"} will be issued, coming to{" "}
+            <strong>
+              <Money amount={preview.total} currency={preview.currency ?? ""} />
+            </strong>
+            . An issued bill cannot be edited; corrections become adjustments.
+          </p>
+          {preview.skipped.length > 0 ? (
+            <p className="text-muted-foreground">
+              {preview.skipped.length} will be left alone:{" "}
+              {preview.skipped.map((s) => `${s.invoice_number} (${s.reason})`).join(", ")}
+            </p>
+          ) : null}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || preview.issued.length === 0}
+              onClick={() => void issue()}
+            >
+              Issue all {preview.issued.length}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => setPreview(null)}
+            >
+              Not now
+            </Button>
+          </div>
+        </div>
+      ) : result ? (
+        <div className="flex flex-col gap-1" role="status" data-testid="issue-all-result">
+          <p>
+            Issued <strong>{result.issued.length}</strong>, coming to{" "}
+            <Money amount={result.total} currency={result.currency ?? ""} />.
+          </p>
+          {result.skipped.length > 0 ? (
+            <ul className="list-disc pl-5 text-muted-foreground">
+              {result.skipped.map((s) => (
+                <li key={s.invoice_id}>
+                  {s.invoice_number}: {s.reason}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground">No exceptions.</p>
+          )}
+          <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
+            Done
+          </Button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <Button type="button" size="sm" disabled={busy} onClick={() => void lookAhead()}>
+            {busy ? "Counting…" : "Count the drafts"}
+          </Button>
+          <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }

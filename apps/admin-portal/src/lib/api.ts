@@ -2372,6 +2372,10 @@ export type MeOrganization = {
   /** D-31 / WO-85: which of the product's modules this organisation runs —
    *  "collection", "sales", or both. Presentation only; absent means both. */
   modules?: string[];
+  /** WO-83: the head of the bill and how to pay it. */
+  address?: string | null;
+  phone?: string | null;
+  pay_to?: string | null;
 };
 export type MeMembership = { status: string; joined_at: string };
 export type MeRole = {
@@ -2429,6 +2433,10 @@ export type LocaleSettings = {
    *  them; the settings page treats absence as "nothing to switch". */
   modules?: string[];
   available_modules?: { key: string; label: string; description: string }[];
+  /** WO-83: address, phone and the "Pay to" line printed on every bill. */
+  address?: string | null;
+  phone?: string | null;
+  pay_to?: string | null;
 };
 
 export const getLocaleSettings = () =>
@@ -2446,6 +2454,10 @@ export const updateLocaleSettings = (body: {
   clear_conversion?: boolean;
   /** D-31: never empty — the platform refuses an organisation with no module. */
   modules?: string[];
+  /** WO-83: "" clears, absent leaves unchanged. */
+  address?: string;
+  phone?: string;
+  pay_to?: string;
 }) =>
   api<LocaleSettings>("/v1/organizations/settings/locale", {
     method: "PUT",
@@ -2927,6 +2939,9 @@ export const revokeCustomerBillLink = (id: string) =>
 /** The page a bill link opens: a household's bills, no account (WO-86). */
 export type PublicBill = {
   organization: string;
+  organization_address?: string | null;
+  organization_phone?: string | null;
+  pay_to?: string | null;
   customer: { name: string; code: string; address: string };
   currency: string;
   balance: CustomerBalance;
@@ -3577,12 +3592,31 @@ export type CustomerPaymentDetail = {
   receipt_number: string | null;
 };
 
+/**
+ * How a household pays (WO-83 §4). ONE declaration, mirrored from the
+ * platform's `billing.PAYMENT_METHODS` — `payment-methods.test.ts` reads that
+ * file and fails if the two ever disagree, because that drift is how a method
+ * becomes unofferable. `UPI` is how a Mumbai shop is actually paid;
+ * `MOBILE_MONEY` is the Kenya demo's M-Pesa and stays.
+ */
 export const CUSTOMER_PAYMENT_METHODS = [
   "CASH",
+  "UPI",
   "MOBILE_MONEY",
   "BANK_TRANSFER",
   "CHEQUE",
 ] as const;
+
+export const CUSTOMER_PAYMENT_METHOD_LABELS: Record<
+  (typeof CUSTOMER_PAYMENT_METHODS)[number],
+  { en: string; hi: string }
+> = {
+  CASH: { en: "Cash", hi: "नकद" },
+  UPI: { en: "UPI", hi: "यूपीआई" },
+  MOBILE_MONEY: { en: "Mobile money", hi: "मोबाइल मनी" },
+  BANK_TRANSFER: { en: "Bank transfer", hi: "बैंक हस्तांतरण" },
+  CHEQUE: { en: "Cheque", hi: "चेक" },
+};
 
 export function listCustomerPayments(params: {
   customer_id?: string;
@@ -3630,6 +3664,50 @@ export type CustomerBalance = {
   unbilled_items?: number;
   open_invoices: number;
 };
+
+/** WO-83 §2: the bill and the statement as documents, served by the platform. */
+export const invoicePdfUrl = (id: string) => `${PROXY_PREFIX}/v1/invoices/${id}/pdf`;
+
+export function customerStatementPdfUrl(
+  id: string,
+  params?: { date_from?: string; date_to?: string },
+): string {
+  const search = new URLSearchParams();
+  if (params?.date_from) search.set("date_from", params.date_from);
+  if (params?.date_to) search.set("date_to", params.date_to);
+  const query = search.toString();
+  return `${PROXY_PREFIX}/v1/customers/${id}/statement.pdf${query ? `?${query}` : ""}`;
+}
+
+/** WO-83 §1: "Issue all" — every draft for the period, one act, exceptions listed. */
+export type IssueBatchLine = {
+  invoice_id: string;
+  invoice_number: string;
+  customer_id: string;
+  currency: string;
+  amount_due: string | number;
+  reason?: string | null;
+};
+
+export type IssueBatchResult = {
+  preview: boolean;
+  period_from: string;
+  period_to: string;
+  issued: IssueBatchLine[];
+  skipped: IssueBatchLine[];
+  currency: string | null;
+  total: string | number;
+};
+
+export const issueInvoicesBatch = (body: {
+  period_from: string;
+  period_to: string;
+  preview?: boolean;
+}) =>
+  api<IssueBatchResult>("/v1/invoices/issue-batch", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export const getCustomerBalance = (id: string) =>
   api<CustomerBalance>(`/v1/customers/${id}/balance`);

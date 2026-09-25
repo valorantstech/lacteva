@@ -48,7 +48,20 @@ INVOICE_STATUSES = (
 #: An invoice that the customer is expected to pay.
 PAYABLE_INVOICE_STATUSES = ("issued", "paid")
 
-PAYMENT_METHODS = ("CASH", "MOBILE_MONEY", "BANK_TRANSFER", "CHEQUE")
+# WO-83 §4: `UPI` is how a Mumbai shop is actually paid ("upi online" against
+# almost every household on the client's sheet). `MOBILE_MONEY` stays: it is
+# the Kenya demo's M-Pesa. The portal derives its list from this tuple and a
+# test fails if the two ever disagree — that drift is how a method becomes
+# unofferable.
+PAYMENT_METHODS = ("CASH", "UPI", "MOBILE_MONEY", "BANK_TRANSFER", "CHEQUE")
+#: How each method reads to a person, in the two pilot languages.
+PAYMENT_METHOD_LABELS: dict[str, dict[str, str]] = {
+    "CASH": {"en": "Cash", "hi": "नकद"},
+    "UPI": {"en": "UPI", "hi": "यूपीआई"},
+    "MOBILE_MONEY": {"en": "Mobile money", "hi": "मोबाइल मनी"},
+    "BANK_TRANSFER": {"en": "Bank transfer", "hi": "बैंक हस्तांतरण"},
+    "CHEQUE": {"en": "Cheque", "hi": "चेक"},
+}
 
 PAYMENT_STATUSES = ("recorded", "cancelled")
 
