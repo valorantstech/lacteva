@@ -71,7 +71,9 @@ describe("the login card", () => {
     const user = userEvent.setup();
     render(<CustomerAccessCards customerId="cu-1" />);
     const card = await screen.findByTestId("customer-login-card");
-    expect(within(card).getByText(/No login yet/)).toBeInTheDocument();
+    // The card is on screen before its status has loaded ("Checking…"), so
+    // this must wait for the answer rather than read the first paint.
+    expect(await within(card).findByText(/No login yet/)).toBeInTheDocument();
 
     await user.type(within(card).getByLabelText("Household email"), "home@x.example");
     await user.click(within(card).getByRole("button", { name: "Invite" }));
