@@ -304,6 +304,16 @@ PASSWORD_RESET = RateLimitRule(
 INVITATION_ACCEPT = RateLimitRule(
     "invitation-accept", limit=10, window_seconds=900, scope="ip", fail_closed=True
 )
+# WO-86: the public bill page. The token is a capability, so guessing at it
+# is the attack, and the budget is per IP AND per token — a household
+# refreshing its own bill is not the same event as one host walking the
+# token space, and neither budget should be spent by the other.
+PUBLIC_BILL = RateLimitRule(
+    "public-bill", limit=60, window_seconds=60, scope="ip", fail_closed=True
+)
+PUBLIC_BILL_PER_TOKEN = RateLimitRule(
+    "public-bill-token", limit=120, window_seconds=3600, scope="user", fail_closed=True
+)
 # The rest protect the platform's own compute, not a secret. Refusing an
 # authorised operator here costs more than the extra load would.
 NOTIFICATION_PREVIEW = RateLimitRule(

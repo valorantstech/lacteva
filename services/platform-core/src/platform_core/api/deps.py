@@ -11,6 +11,7 @@ from typing import Annotated
 import jwt as pyjwt
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.backup.service import BackupService
@@ -37,6 +38,7 @@ from platform_core.modules.catalog.service import CatalogService
 from platform_core.modules.collection_center.service import CollectionCenterService
 from platform_core.modules.configuration.service import ConfigurationService
 from platform_core.modules.customer.service import CustomerService
+from platform_core.modules.customer_access.service import CustomerAccessService
 from platform_core.modules.delivery.service import DeliveryService
 from platform_core.modules.dispatch.service import DispatchService
 from platform_core.modules.event_relay.consumers import ConsumerRunner
@@ -211,6 +213,18 @@ def get_customer_service(session: Session, audit: Audit) -> CustomerService:
     return CustomerService(session, audit)
 
 
+def get_customer_access_service(session: Session, bus: Bus, audit: Audit) -> CustomerAccessService:
+    """WO-86. Composed from the services that own the pieces — the customer,
+    the invitation, the account — so this module adds no second copy of any."""
+    return CustomerAccessService(
+        session,
+        customers=get_customer_service(session, audit),
+        invitations=get_invitation_service(session, bus, audit),
+        identity=get_identity_service(session, bus, audit),
+        audit=audit,
+    )
+
+
 def get_delivery_service(session: Session, bus: Bus, audit: Audit) -> DeliveryService:
     return DeliveryService(session, bus, audit)
 
@@ -372,6 +386,17 @@ async def get_current_principal(
     # Staff accounts have NULL and are unaffected: the narrowing only ever
     # removes rows, so a scope that fails to apply cannot widen access.
     set_current_customer(user.customer_id)
+    # WO-86: a customer-role account that is bound to NO customer is refused
+    # outright. Its permissions are tenant-wide reads on every household's
+    # bill, and the scope above is the only thing that narrows them — an
+    # account holding the role with the scope missing is exactly the state
+    # DEMO-012 called out as the known limitation. The invitation path now
+    # binds at acceptance, so this fires only for a row somebody edited by
+    # hand, and it fires closed.
+    if user.customer_id is None and principal_tenant is not None:
+        if await _holds_customer_role(session, user.id, principal_tenant):
+            AUTH_FAILURES.labels("customer_role_unbound").inc()
+            raise ForbiddenError("this customer login is not bound to a customer")
     # DEMO-013 §5: the person's OWN language wins, and it is read from their
     # row rather than from a header — `Accept-Language` is a device setting,
     # and a phone left in the wrong language must not decide what a dairy's
@@ -385,6 +410,27 @@ async def get_current_principal(
         session_id=session_id,
         customer_id=user.customer_id,
     )
+
+
+async def _holds_customer_role(
+    session: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID
+) -> bool:
+    """Does this account hold the customer role in this tenant? One indexed
+    read on `user_role`, only reached for accounts with no customer scope."""
+    from platform_core.modules.authz.models import Role, UserRole
+    from platform_core.modules.organization.service import CUSTOMER_ROLE_NAME
+
+    hit = await session.scalar(
+        select(UserRole.id)
+        .join(Role, Role.id == UserRole.role_id)
+        .where(
+            UserRole.user_id == user_id,
+            (UserRole.tenant_id == tenant_id) | (UserRole.tenant_id.is_(None)),
+            Role.name == CUSTOMER_ROLE_NAME,
+        )
+        .limit(1)
+    )
+    return hit is not None
 
 
 CurrentPrincipal = Annotated[Principal, Depends(get_current_principal)]

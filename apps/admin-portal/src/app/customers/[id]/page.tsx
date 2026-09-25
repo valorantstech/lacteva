@@ -55,6 +55,7 @@ import { Metric, Surface } from "@/components/surface";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
 import { useBusinessToday } from "@/components/date-range";
+import { CustomerAccessCards } from "@/components/customer-access";
 import { useLocale } from "@/lib/i18n";
 
 /**
@@ -392,6 +393,13 @@ export default function CustomerDetailPage({
           </span>
         </Surface>
       </section>
+
+      {/* --- WO-86: how this household reaches its own bill --------------- */}
+      <CustomerAccessCards
+        customerId={customer.id}
+        disabled={busy !== null}
+        onNotice={setNotice}
+      />
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* --- record a delivery ------------------------------------------ */}

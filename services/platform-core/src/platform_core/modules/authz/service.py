@@ -96,6 +96,22 @@ class AuthzService:
         self._session = session
         self._audit = audit
 
+    async def users_with_role(self, role_name: str, tenant_id: uuid.UUID) -> list[uuid.UUID]:
+        """The accounts holding `role_name` in this tenant (WO-86). Used by
+        the month-end nudge to find the dairy's administrators; tenant-filtered
+        in SQL because the scheduler that calls it holds a platform session."""
+        rows = await self._session.scalars(
+            select(UserRole.user_id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(
+                Role.name == role_name,
+                (Role.tenant_id == tenant_id) | (Role.tenant_id.is_(None)),
+                UserRole.tenant_id == tenant_id,
+            )
+            .distinct()
+        )
+        return list(rows.all())
+
     async def _record(self, action: str, assignment: UserRole, actor_id: uuid.UUID | None) -> None:
         """Grants and revocations are the two entries an access review reads.
 

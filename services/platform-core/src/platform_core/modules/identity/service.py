@@ -88,6 +88,20 @@ class IdentityService:
         )
         return user
 
+    async def login_for_customer(self, customer_id: uuid.UUID) -> User | None:
+        """The account bound to this customer in the current tenant, if any
+        (WO-86). One household, one login: `CustomerAccessService.invite`
+        refuses a second invitation while this returns a row."""
+        tenant_id = get_current_tenant()
+        if tenant_id is None:
+            return None
+        return await self._session.scalar(
+            select(User)
+            .where(User.tenant_id == tenant_id, User.customer_id == customer_id)
+            .order_by(User.created_at)
+            .limit(1)
+        )
+
     async def register_user(
         self, cmd: RegisterUserCommand, *, tenant_id: uuid.UUID | None = None
     ) -> User:

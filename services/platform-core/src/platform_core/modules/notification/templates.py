@@ -95,6 +95,9 @@ PURPOSES: dict[str, str] = {
     "milk_rejected": "Tells a farmer a collection was rejected, and why",
     "price_unavailable": "Tells an operator no rate could be resolved for a collection",
     "invitation": "Sends a new user their one-time invitation link",
+    "month_end_drafted": (
+        "Tells the dairy's administrators that last month's bills are drafted and wait to be issued"
+    ),
     "invitation_accepted": "Confirms to an administrator that an invitation was accepted",
     "password_reset": "Sends a user a one-time password-reset code",
 }
@@ -842,6 +845,76 @@ TEMPLATES: tuple[Template, ...] = (
         "sw",
         "Malipo yamepokelewa",
         "Tumepokea malipo yako {number}. Asante.",
+    ),
+    # --- WO-86: in-app notices ---------------------------------------------
+    #
+    # `inapp` is not a delivery channel; it is the notice the recipient's own
+    # client reads back from `GET /v1/notifications/mine`. So it may say more
+    # than a lock screen (the amount is fine — the reader is signed in) and
+    # it has no address to resolve. Same four languages as the bill's other
+    # channels, so switching a dairy's language never leaves the notice in
+    # English.
+    _t(
+        "invoice_issued",
+        "inapp",
+        "en",
+        "Your bill {number} is ready",
+        "Bill {number} for {period_from} to {period_to} is {amount} {currency}. Tap to see it.",
+    ),
+    _t(
+        "invoice_issued",
+        "inapp",
+        "hi",
+        "आपका बिल {number} तैयार है",
+        "{period_from} से {period_to} तक का बिल {number} {amount} {currency} है। देखने के लिए टैप करें।",
+    ),
+    _t(
+        "invoice_issued",
+        "inapp",
+        "ar",
+        "فاتورتك {number} جاهزة",
+        "الفاتورة {number} من {period_from} إلى {period_to} هي {amount} {currency}. اضغط لعرضها.",
+    ),
+    _t(
+        "invoice_issued",
+        "inapp",
+        "sw",
+        "Bili yako {number} iko tayari",
+        "Bili {number} ya {period_from} hadi {period_to} ni {amount} {currency}. Gusa kuiona.",
+    ),
+    # The owner's nudge on the 1st: the platform drafted the bills, and a
+    # draft is not a bill until somebody issues it (WO-86 §4).
+    _t(
+        "month_end_drafted",
+        "inapp",
+        "en",
+        "{drafted} bills drafted for {period}",
+        "Last month's bills are ready to review: {drafted} drafted, {skipped} customers with "
+        "nothing to bill. Nothing has been sent — open Billing to issue them.",
+    ),
+    _t(
+        "month_end_drafted",
+        "inapp",
+        "hi",
+        "{period} के {drafted} बिल तैयार",
+        "पिछले महीने के बिल समीक्षा के लिए तैयार हैं: {drafted} ड्राफ्ट, {skipped} ग्राहकों का कोई बिल नहीं। "
+        "अभी कुछ नहीं भेजा गया — जारी करने के लिए बिलिंग खोलें।",
+    ),
+    _t(
+        "month_end_drafted",
+        "inapp",
+        "ar",
+        "{drafted} فواتير مسودة عن {period}",
+        "فواتير الشهر الماضي جاهزة للمراجعة: {drafted} مسودة، {skipped} عملاء بلا فاتورة. "
+        "لم يُرسل شيء بعد — افتح الفوترة لإصدارها.",
+    ),
+    _t(
+        "month_end_drafted",
+        "inapp",
+        "sw",
+        "Bili {drafted} zimeandaliwa kwa {period}",
+        "Bili za mwezi uliopita ziko tayari kukaguliwa: {drafted} zimeandaliwa, wateja {skipped} "
+        "hawana cha kulipa. Hakuna kilichotumwa — fungua Bili kuzitoa.",
     ),
 )
 

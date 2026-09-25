@@ -587,6 +587,12 @@ class MembershipService:
 
 INVITATION_TTL = timedelta(days=7)
 
+#: WO-86. The role a customer's own login holds — spelled here, in the module
+#: that issues invitations, so `invite` can refuse the two wrong shapes (a
+#: staff role bound to a customer; this role bound to nobody) without
+#: importing the permission catalogue.
+CUSTOMER_ROLE_NAME = "CUSTOMER_PORTAL"
+
 
 class InvitationService:
     def __init__(
@@ -600,7 +606,12 @@ class InvitationService:
         self._audit = audit
 
     async def invite(
-        self, *, email: str, role_name: str, actor_id: uuid.UUID
+        self,
+        *,
+        email: str,
+        role_name: str,
+        actor_id: uuid.UUID,
+        customer_id: uuid.UUID | None = None,
     ) -> tuple[Invitation, str]:
         """Returns (invitation, raw_token). The raw token goes to the CALLER
         (service layer) only — the API never exposes it, exactly as
@@ -619,6 +630,21 @@ class InvitationService:
         tenant_id = get_current_tenant()
         if tenant_id is None:
             raise ForbiddenError("tenant context required")
+        # WO-86: the binding is decided HERE, both ways round. A customer's
+        # account may hold only the customer role — a staff role bound to
+        # one household would be a manager who can see one customer, which
+        # is not a thing — and the customer role may not exist unbound,
+        # because an unbound CUSTOMER_PORTAL account holds tenant-wide read
+        # permissions on every household's bill (DEMO-012's premise).
+        if customer_id is not None and role_name != CUSTOMER_ROLE_NAME:
+            raise ValidationError(
+                f"a customer login can only hold the {CUSTOMER_ROLE_NAME} role, not {role_name}"
+            )
+        if role_name == CUSTOMER_ROLE_NAME and customer_id is None:
+            raise ValidationError(
+                f"a {CUSTOMER_ROLE_NAME} invitation must name the customer it speaks for — "
+                "invite from the customer's own page"
+            )
         raw = secrets.token_urlsafe(32)
         invitation = Invitation(
             tenant_id=tenant_id,
@@ -627,6 +653,7 @@ class InvitationService:
             token_hash=hashlib.sha256(raw.encode()).hexdigest(),
             invited_by=actor_id,
             expires_at=utcnow() + INVITATION_TTL,
+            customer_id=customer_id,
         )
         self._session.add(invitation)
         await self._session.flush()
@@ -635,7 +662,11 @@ class InvitationService:
             resource_type="invitation",
             resource_id=invitation.id,
             actor_id=actor_id,
-            detail={"email": invitation.email, "role": role_name},
+            detail={
+                "email": invitation.email,
+                "role": role_name,
+                "customer_id": str(customer_id) if customer_id else None,
+            },
         )
         await self._bus.publish(
             EventEnvelope.new(
@@ -645,6 +676,7 @@ class InvitationService:
                     "role": role_name,
                     "email": invitation.email,
                     "expires_days": INVITATION_TTL.days,
+                    "customer_id": str(customer_id) if customer_id else None,
                     # NOTE the absence of the token. This payload lands in
                     # `event_outbox`, which is classified critical, is never
                     # pruned, and is in every backup — the last place a live
@@ -653,8 +685,45 @@ class InvitationService:
                 actor_id=actor_id,
             )
         )
-        await self._send_invitation(invitation, raw, role_name)
+        await self._send_invitation(
+            invitation, raw, "customer" if customer_id is not None else role_name
+        )
         return invitation, raw
+
+    async def pending_for_customer(self, customer_id: uuid.UUID) -> list[Invitation]:
+        """Live invitations for this customer, newest first (WO-86)."""
+        tenant_id = get_current_tenant()
+        if tenant_id is None:
+            raise ForbiddenError("tenant context required")
+        rows = await self._session.scalars(
+            select(Invitation)
+            .where(
+                Invitation.tenant_id == tenant_id,
+                Invitation.customer_id == customer_id,
+                Invitation.accepted_at.is_(None),
+                Invitation.revoked_at.is_(None),
+            )
+            .order_by(Invitation.created_at.desc())
+        )
+        now = utcnow()
+        return [row for row in rows.all() if as_utc(row.expires_at) > now]
+
+    async def revoke(self, invitation: Invitation, *, actor_id: uuid.UUID) -> Invitation:
+        """Withdraw an invitation that has not been accepted (WO-86). The
+        token stops working at once; an accepted one is an account now and is
+        managed as one."""
+        if invitation.accepted_at is not None:
+            raise ConflictError("this invitation was already accepted")
+        if invitation.revoked_at is None:
+            invitation.revoked_at = utcnow()
+            await self._audit.record(
+                action="organization.invitation.revoked",
+                resource_type="invitation",
+                resource_id=invitation.id,
+                actor_id=actor_id,
+                detail={"email": invitation.email, "role": invitation.role_name},
+            )
+        return invitation
 
     async def _send_invitation(self, invitation: Invitation, raw_token: str, role_name: str):
         """The one place a business module sends a notification itself, and
@@ -735,6 +804,11 @@ class InvitationService:
             RegisterUserCommand(email=invitation.email, password=password, full_name=full_name),
             tenant_id=invitation.tenant_id,
         )
+        # WO-86: the scope is written to the ACCOUNT from the invitation, before
+        # the account has made a single request. There is still no request
+        # that changes it (DEMO-012): a household's login is born bound.
+        user.customer_id = invitation.customer_id
+        await self._session.flush()
         await membership.add_member(
             user_id=user.id, tenant_id=invitation.tenant_id, invited_by=invitation.invited_by
         )
@@ -763,6 +837,7 @@ class InvitationService:
                     "role": invitation.role_name,
                     "email": user.email,
                     "locale": user.locale,
+                    "customer_id": str(user.customer_id) if user.customer_id else None,
                 },
                 actor_id=user.id,
             )

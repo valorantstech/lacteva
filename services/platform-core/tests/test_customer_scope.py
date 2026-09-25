@@ -93,26 +93,22 @@ async def _customer_login(client, admin, org_id, customer_id, email):
     """
     from tests.test_org_structure import invite
 
-    _inv, token = await invite(
-        client, {**admin, "X-Tenant-ID": org_id}, email=email, role_name="CUSTOMER_PORTAL"
+    # WO-86: the invitation is issued FROM the customer, so the account it
+    # creates is bound before its first request. Until WO-86 this helper
+    # wrote `customer_id` into the row by hand — the "known limitation" in
+    # DEMO-012-FINAL.md — and there is now no reason to.
+    _status, token = await invite(
+        client,
+        {**admin, "X-Tenant-ID": org_id},
+        email=email,
+        role_name="CUSTOMER_PORTAL",
+        customer_id=customer_id,
     )
     r = await client.post(
         "/v1/invitations/accept",
         json={"token": token, "password": "household-password-1", "full_name": "Household"},
     )
     assert r.status_code == 201, r.text
-    user_id = r.json()["id"]
-
-    # Bind the account to the customer. Done directly because there is no API
-    # that lets anyone — including an administrator — change a scope from a
-    # request body; see DEMO-012-FINAL.md §Known limitations.
-    from platform_core.core.rls import platform_factory
-    from platform_core.modules.identity.models import User
-
-    async with platform_factory("test: bind a customer login")() as session:
-        user = await session.get(User, uuid.UUID(user_id))
-        user.customer_id = uuid.UUID(customer_id)
-        await session.commit()
 
     r = await client.post(
         "/v1/auth/token", json={"email": email, "password": "household-password-1"}

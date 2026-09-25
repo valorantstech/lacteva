@@ -69,17 +69,23 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(widget.session);
-    final tabs = tabsFor(widget.session).where((t) => widget.roots.containsKey(t.key)).toList();
+    final tabs = tabsFor(
+      widget.session,
+    ).where((t) => widget.roots.containsKey(t.key)).toList();
     if (tabs.length < 2) {
       // A bar of one tab is no bar: the root stands alone, exactly as before.
-      final only = tabs.isEmpty ? widget.roots.values.first : widget.roots[tabs.first.key]!;
+      final only = tabs.isEmpty
+          ? widget.roots.values.first
+          : widget.roots[tabs.first.key]!;
       return Builder(builder: only);
     }
     final index = _index.clamp(0, tabs.length - 1);
     return Scaffold(
       body: IndexedStack(
         index: index,
-        children: [for (final tab in tabs) Builder(builder: widget.roots[tab.key]!)],
+        children: [
+          for (final tab in tabs) Builder(builder: widget.roots[tab.key]!),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
@@ -179,11 +185,19 @@ class _HubScreenState extends State<HubScreen> {
       case 'rateTest':
         return centre == null
             ? null
-            : ResolutionTestScreen(client: client, centerId: centre.id, session: session);
+            : ResolutionTestScreen(
+                client: client,
+                centerId: centre.id,
+                session: session,
+              );
       case 'todaySummary':
         return centre == null
             ? null
-            : CenterTodayScreen(client: client, centerId: centre.id, session: session);
+            : CenterTodayScreen(
+                client: client,
+                centerId: centre.id,
+                session: session,
+              );
       case 'transactions':
         return centre == null
             ? null
@@ -210,11 +224,19 @@ class _HubScreenState extends State<HubScreen> {
       case 'centreCalendar':
         return centre == null
             ? null
-            : CenterDetailScreen(client: client, centerId: centre.id, session: session);
+            : CenterDetailScreen(
+                client: client,
+                centerId: centre.id,
+                session: session,
+              );
       case 'readiness':
         return centre == null
             ? null
-            : ReadinessScreen(client: client, centerId: centre.id, session: session);
+            : ReadinessScreen(
+                client: client,
+                centerId: centre.id,
+                session: session,
+              );
       case 'instruments':
         final offline = client;
         if (centre == null || offline is! OfflineApiClient) return null;
@@ -234,7 +256,9 @@ class _HubScreenState extends State<HubScreen> {
   @override
   Widget build(BuildContext context) {
     final l = _l;
-    final visible = widget.items.where((i) => i.visibleFor(widget.session)).toList();
+    final visible = widget.items
+        .where((i) => i.visibleFor(widget.session))
+        .toList();
     return Scaffold(
       appBar: AppBar(title: Text(l.t(widget.titleKey))),
       body: ListView(
@@ -251,7 +275,9 @@ class _HubScreenState extends State<HubScreen> {
                     key: ValueKey('hub-${item.key}'),
                     leading: Icon(item.icon, color: LactevaColors.dairy),
                     title: Text(l.t(item.labelKey)),
-                    subtitle: blocked && !_resolving ? Text(l.t('hub.noCentre')) : null,
+                    subtitle: blocked && !_resolving
+                        ? Text(l.t('hub.noCentre'))
+                        : null,
                     trailing: const Icon(Icons.chevron_right),
                     enabled: !blocked,
                     onTap: blocked
@@ -293,13 +319,26 @@ class _SignOutRow extends StatelessWidget {
   }
 }
 
-/// The household's bills, as a tab: the invoices the platform lists, each
-/// opening the bill it already had a screen for.
+/// The household's bills, as a tab (WO-86): the month at a glance from the
+/// platform's own statement, then EVERY invoice ever issued, a page at a
+/// time, each opening the bill screen that already existed.
+///
+/// Nothing here is computed. The opening/billed/paid/closing figures are the
+/// statement's — the same four the dairy's portal shows — and paging asks the
+/// platform for the next page rather than fetching everything and slicing.
 class CustomerBillsScreen extends StatefulWidget {
-  const CustomerBillsScreen({super.key, required this.client, required this.session});
+  const CustomerBillsScreen({
+    super.key,
+    required this.client,
+    required this.session,
+  });
 
   final ApiClient client;
   final Session session;
+
+  /// One page. Small enough for a household with years of history to open
+  /// the tab quickly; the button at the foot asks for the rest.
+  static const int pageSize = 24;
 
   @override
   State<CustomerBillsScreen> createState() => _CustomerBillsScreenState();
@@ -307,6 +346,9 @@ class CustomerBillsScreen extends StatefulWidget {
 
 class _CustomerBillsScreenState extends State<CustomerBillsScreen> {
   List<Map<String, dynamic>>? _bills;
+  int _total = 0;
+  Map<String, dynamic>? _statement;
+  bool _loadingMore = false;
   String? _error;
 
   @override
@@ -317,13 +359,57 @@ class _CustomerBillsScreenState extends State<CustomerBillsScreen> {
 
   Future<void> _load() async {
     try {
-      final page = await widget.client.listInvoices(limit: 24);
+      final page = await widget.client.listInvoices(
+        limit: CustomerBillsScreen.pageSize,
+      );
       final items = ((page['items'] as List<dynamic>?) ?? const [])
           .map((e) => (e as Map).cast<String, dynamic>())
           .toList();
-      if (mounted) setState(() => _bills = items);
+      Map<String, dynamic>? statement;
+      final customerId = widget.session.customerId;
+      if (customerId != null) {
+        try {
+          statement = await widget.client.customerStatement(customerId);
+        } catch (_) {
+          // The statement is the summary, not the list: the bills still show.
+          statement = null;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _bills = items;
+        _total = (page['total'] as num?)?.toInt() ?? items.length;
+        _statement = statement;
+      });
     } catch (_) {
-      if (mounted) setState(() => _error = L10n.of(widget.session).t('common.couldNotReach'));
+      if (mounted) {
+        setState(
+          () => _error = L10n.of(widget.session).t('common.couldNotReach'),
+        );
+      }
+    }
+  }
+
+  Future<void> _more() async {
+    final have = _bills?.length ?? 0;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await widget.client.listInvoices(
+        limit: CustomerBillsScreen.pageSize,
+        offset: have,
+      );
+      final items = ((page['items'] as List<dynamic>?) ?? const [])
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _bills = [...?_bills, ...items];
+        _total = (page['total'] as num?)?.toInt() ?? _total;
+      });
+    } catch (_) {
+      // Leave what is shown; the button stays for another try.
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -331,24 +417,78 @@ class _CustomerBillsScreenState extends State<CustomerBillsScreen> {
   Widget build(BuildContext context) {
     final l = L10n.of(widget.session);
     final bills = _bills;
+    final statement = _statement;
+    final more = bills != null && bills.length < _total;
     return Scaffold(
       appBar: AppBar(title: Text(l.t('nav.bill'))),
       body: _error != null
           ? Center(child: Text(_error!))
           : bills == null
           ? const Center(child: CircularProgressIndicator())
-          : bills.isEmpty
-          ? Center(child: Text(l.t('hub.noBills')))
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                if (statement != null)
+                  Card(
+                    key: const ValueKey('bills-statement'),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            l.t('customer.statementTitle'),
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${statement['date_from'] ?? ''} → ${statement['date_to'] ?? ''}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 12),
+                          _StatementRow(
+                            l.t('customer.opening'),
+                            money(statement['opening_balance'], widget.session),
+                          ),
+                          _StatementRow(
+                            l.t('customer.billedLabel'),
+                            money(statement['billed'], widget.session),
+                          ),
+                          _StatementRow(
+                            l.t('customer.paid'),
+                            money(statement['paid'], widget.session),
+                          ),
+                          const Divider(),
+                          _StatementRow(
+                            l.t('customer.closing'),
+                            money(statement['closing_balance'], widget.session),
+                            bold: true,
+                            valueKey: const ValueKey('bills-closing'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (bills.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(child: Text(l.t('hub.noBills'))),
+                  ),
                 for (final bill in bills)
                   Card(
+                    key: ValueKey('bill-row-${bill['id']}'),
                     child: ListTile(
                       title: Text('${bill['invoice_number'] ?? bill['id']}'),
-                      subtitle: Text('${bill['period_start'] ?? ''} → ${bill['period_end'] ?? ''}'),
+                      subtitle: Text(
+                        '${businessDate(bill['period_from']?.toString())} → '
+                        '${businessDate(bill['period_to']?.toString())} · '
+                        '${l.t('invoice.${bill['status']}')}',
+                      ),
                       trailing: Text(
-                        money(bill['total_amount'] ?? bill['total'], widget.session),
+                        money(
+                          bill['amount_due'] ?? bill['total'],
+                          widget.session,
+                        ),
                       ),
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
@@ -361,8 +501,61 @@ class _CustomerBillsScreenState extends State<CustomerBillsScreen> {
                       ),
                     ),
                   ),
+                if (more)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: OutlinedButton(
+                      key: const ValueKey('bills-more'),
+                      onPressed: _loadingMore ? null : _more,
+                      child: Text(l.t('customer.loadMore')),
+                    ),
+                  )
+                else if (bills.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Center(
+                      child: Text(
+                        l.t('customer.allLoaded'),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ),
               ],
             ),
+    );
+  }
+}
+
+class _StatementRow extends StatelessWidget {
+  const _StatementRow(
+    this.label,
+    this.value, {
+    this.bold = false,
+    this.valueKey,
+  });
+
+  final String label;
+  final String value;
+  final bool bold;
+  final Key? valueKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = bold
+        ? Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)
+        : Theme.of(context).textTheme.bodyMedium;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(child: Text(label, style: style)),
+          const SizedBox(width: 12),
+          Text(value, key: valueKey, style: style),
+        ],
+      ),
     );
   }
 }

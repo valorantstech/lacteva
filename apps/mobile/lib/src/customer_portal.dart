@@ -114,6 +114,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   List<Map<String, dynamic>> _recent = const [];
   List<Map<String, dynamic>> _bills = const [];
   List<Map<String, dynamic>> _receipts = const [];
+
+  /// WO-86: the in-app notices addressed to this household — "your bill is
+  /// ready" — read back from the platform. Empty hides the section.
+  List<Map<String, dynamic>> _notices = const [];
   bool _loading = true;
   String? _error;
 
@@ -153,6 +157,15 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       } on ApiException {
         receipts = const [];
       }
+      List<Map<String, dynamic>> notices = const [];
+      try {
+        final n = await widget.client.myNotifications(limit: 5);
+        notices = ((n['items'] as List?) ?? const [])
+            .cast<Map<String, dynamic>>();
+      } catch (_) {
+        // A notice is a convenience; the account still shows without it.
+        notices = const [];
+      }
       if (!mounted) return;
       setState(() {
         _customer = detail['customer'] as Map<String, dynamic>?;
@@ -165,6 +178,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         _bills = ((bills['items'] as List?) ?? const [])
             .cast<Map<String, dynamic>>();
         _receipts = receipts;
+        _notices = notices;
         _loading = false;
       });
     } on ApiException catch (e) {
@@ -221,6 +235,19 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),
+            _Notices(
+              t: t,
+              notices: _notices,
+              onOpen: (invoiceId) => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => CustomerBillScreen(
+                    client: widget.client,
+                    invoiceId: invoiceId,
+                    session: widget.session,
+                  ),
+                ),
+              ),
+            ),
             _Invoices(
               t: t,
               session: widget.session,
@@ -982,6 +1009,59 @@ class _Invoices extends StatelessWidget {
   }
 }
 
+/// WO-86: what the platform wanted this household to know. A notice about a
+/// bill opens that bill; the rest are read where they stand.
+class _Notices extends StatelessWidget {
+  const _Notices({
+    required this.t,
+    required this.notices,
+    required this.onOpen,
+  });
+
+  final L10n t;
+  final List<Map<String, dynamic>> notices;
+  final void Function(String invoiceId) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    if (notices.isEmpty) return const SizedBox.shrink();
+    return _Section(
+      label: t.t('customer.notices'),
+      child: Column(
+        children: [
+          for (final n in notices)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: KeyedSubtree(
+                key: ValueKey('notice-${n['id']}'),
+                child: _ListRow(
+                  onTap:
+                      n['template_key'] == 'invoice_issued' &&
+                          n['source_id'] != null
+                      ? () => onOpen(n['source_id'].toString())
+                      : null,
+                  title: n['title']?.toString() ?? '',
+                  detail: n['rendered_text']?.toString() ?? '',
+                  trailing: [
+                    Text(
+                      businessDate(
+                        n['created_at']?.toString().split('T').first,
+                      ),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: LactevaColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Receipts extends StatelessWidget {
   const _Receipts({
     required this.t,
@@ -1265,6 +1345,11 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
   L10n get _t => L10n.of(widget.session);
 
   Map<String, dynamic>? _detail;
+
+  /// WO-86: the receipts the platform applied to THIS invoice. The receipt
+  /// names the invoice(s) it paid in `applied_to`; the match is by number,
+  /// which is the only thing a household ever sees on either paper.
+  List<Map<String, dynamic>> _receipts = const [];
   String? _error;
 
   @override
@@ -1276,8 +1361,24 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
   Future<void> _load() async {
     try {
       final d = await widget.client.invoiceDetail(widget.invoiceId);
+      var receipts = const <Map<String, dynamic>>[];
+      final number = (d['invoice'] as Map?)?['invoice_number']?.toString();
+      if (number != null && number.isNotEmpty) {
+        try {
+          final page = await widget.client.listCustomerReceipts(limit: 50);
+          receipts = receiptsFor(
+            ((page['items'] as List?) ?? const []).cast<Map<String, dynamic>>(),
+            number,
+          );
+        } catch (_) {
+          receipts = const [];
+        }
+      }
       if (!mounted) return;
-      setState(() => _detail = d);
+      setState(() {
+        _detail = d;
+        _receipts = receipts;
+      });
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = e.detail);
@@ -1376,6 +1477,46 @@ class _CustomerBillScreenState extends State<CustomerBillScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                // WO-86: the money against this bill, by receipt number.
+                Card(
+                  key: const ValueKey('bill-receipts'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
+                        child: Text(
+                          _t.t('customer.receiptsFor'),
+                          style: Theme.of(context).textTheme.labelLarge,
+                        ),
+                      ),
+                      if (_receipts.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                          child: Text(
+                            _t.t('customer.noReceiptsFor'),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      for (final r in _receipts)
+                        ListTile(
+                          key: ValueKey('bill-receipt-${r['receipt_number']}'),
+                          dense: true,
+                          leading: const Icon(
+                            Icons.receipt_long_outlined,
+                            size: 20,
+                          ),
+                          title: Text(r['receipt_number']?.toString() ?? ''),
+                          subtitle: Text(
+                            '${r['method'] ?? ''} · '
+                            '${businessDate(r['generated_at']?.toString().split('T').first)}',
+                          ),
+                          trailing: Text(money(r['amount'], widget.session)),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Card(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1445,6 +1586,24 @@ class _Row extends StatelessWidget {
 /// What a bill line is called (WO-81): the date, the slot for milk and none
 /// for an item, then the product's name — falling back to its code for a
 /// line written before the catalogue existed.
+/// The receipts that paid invoice [number] (WO-86). A receipt's `applied_to`
+/// is the platform's comma-separated list of the invoice numbers a payment
+/// settled — one payment can close two bills — so the match is by member,
+/// never by substring, and "INV-1" does not claim "INV-10".
+List<Map<String, dynamic>> receiptsFor(
+  List<Map<String, dynamic>> receipts,
+  String number,
+) {
+  return [
+    for (final r in receipts)
+      if ((r['applied_to']?.toString() ?? '')
+          .split(RegExp(r'[,;]'))
+          .map((part) => part.trim())
+          .contains(number))
+        r,
+  ];
+}
+
 String billLineTitle(Map<String, dynamic> line) {
   final name = (line['product_name'] ?? line['product'] ?? '').toString();
   final slot = (line['slot'] ?? '').toString();

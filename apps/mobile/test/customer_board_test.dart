@@ -30,6 +30,7 @@ class _Platform extends ApiClient {
     this.deliveries = const [],
     this.invoices = const [],
     this.month,
+    this.notices = const [],
   });
 
   final Map<String, dynamic> balance;
@@ -37,6 +38,9 @@ class _Platform extends ApiClient {
   final List<Map<String, dynamic>> deliveries;
   final List<Map<String, dynamic>> invoices;
   final Map<String, dynamic>? month;
+
+  /// WO-86: the in-app notices the platform addressed to this household.
+  final List<Map<String, dynamic>> notices;
 
   final List<String> calls = [];
 
@@ -93,6 +97,15 @@ class _Platform extends ApiClient {
   }) async {
     calls.add('listCustomerReceipts');
     return <String, dynamic>{'items': const [], 'total': 0};
+  }
+
+  @override
+  Future<Map<String, dynamic>> myNotifications({
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    calls.add('myNotifications');
+    return <String, dynamic>{'items': notices, 'total': notices.length};
   }
 
   @override
@@ -598,8 +611,9 @@ void main() {
     testWidgets('reads its own account in a fixed number of calls', (
       tester,
     ) async {
-      // Six aggregates for the whole page, whatever the history holds — not
-      // one request per invoice and not one per delivery (§13).
+      // Seven aggregates for the whole page, whatever the history holds —
+      // not one request per invoice and not one per delivery (§13). The
+      // seventh is WO-86's notices, one page of them.
       final platform = await _pump(
         tester,
         platform: _Platform(
@@ -627,7 +641,7 @@ void main() {
           ],
         ),
       );
-      expect(platform.calls.length, 6);
+      expect(platform.calls.length, 7);
     });
   });
 }
@@ -667,6 +681,43 @@ void billLineTests() {
         billLineTitle({'delivery_date': '2026-07-01', 'slot': 'evening', 'product': 'RAW-COW-MILK'}),
         '2026-07-01 · evening · RAW-COW-MILK',
       );
+    });
+  });
+
+  group('notices (WO-86)', () {
+    final notice = <String, dynamic>{
+      'id': 'n1',
+      'template_key': 'invoice_issued',
+      'channel': 'inapp',
+      'title': 'Your bill INV-2026-000030 is ready',
+      'rendered_text':
+          'Bill INV-2026-000030 for 2026-08-01 to 2026-08-31 is 660.00 INR. Tap to see it.',
+      'source_id': 'i30',
+      'created_at': '2026-09-01T03:00:00Z',
+    };
+
+    testWidgets('a household with no notice sees no notices section', (
+      tester,
+    ) async {
+      await _pump(tester);
+      // Section labels are drawn in capitals, like every other section here.
+      expect(find.text('NOTICES'), findsNothing);
+    });
+
+    testWidgets('a bill notice is listed and opens that bill', (tester) async {
+      await _pump(
+        tester,
+        platform: _Platform(notices: [notice]),
+        size: const Size(390, 2400),
+      );
+      expect(find.text('NOTICES'), findsOneWidget);
+      final row = find.byKey(const ValueKey('notice-n1'));
+      expect(row, findsOneWidget);
+      expect(find.textContaining('660.00 INR'), findsWidgets);
+      await tester.ensureVisible(row);
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(find.byType(CustomerBillScreen), findsOneWidget);
     });
   });
 }

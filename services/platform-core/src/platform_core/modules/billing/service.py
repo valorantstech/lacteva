@@ -225,6 +225,9 @@ class StatementEntry(BaseModel):
     debit: Decimal  #: what they were billed
     credit: Decimal  #: what they paid
     balance: Decimal  #: what they owed after this line
+    #: WO-86: the receipt this payment produced, so a household reading its
+    #: statement can point at the piece of paper. None on invoice rows.
+    receipt_number: str | None = None
 
 
 class CustomerStatement(BaseModel):
@@ -1014,6 +1017,19 @@ class BillingService:
                     ),
                 )
             )
+        receipt_numbers: dict[uuid.UUID, str] = {}
+        if payments:
+            receipt_numbers = {
+                payment_id: number
+                for payment_id, number in (
+                    await self._session.execute(
+                        select(CustomerReceipt.payment_id, CustomerReceipt.receipt_number).where(
+                            CustomerReceipt.tenant_id == tenant_id,
+                            CustomerReceipt.payment_id.in_([p.id for p in payments]),
+                        )
+                    )
+                ).all()
+            }
         for payment in payments:
             movements.append(
                 (
@@ -1027,6 +1043,7 @@ class BillingService:
                         debit=ZERO,
                         credit=money(Decimal(payment.amount)),
                         balance=ZERO,
+                        receipt_number=receipt_numbers.get(payment.id),
                     ),
                 )
             )

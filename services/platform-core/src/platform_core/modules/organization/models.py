@@ -151,3 +151,9 @@ class Invitation(Base, IdMixin):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: WO-86 — the customer this invitation's account will speak for, or NULL
+    #: for a staff invitation. Set on the INVITATION, so that acceptance binds
+    #: the new account to one household before it can read anything; there
+    #: is deliberately no request that changes it afterwards (DEMO-012).
+    #: Referenced by id only — `customer` is another module's table.
+    customer_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)

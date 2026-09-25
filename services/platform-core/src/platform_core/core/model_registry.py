@@ -53,6 +53,7 @@ def import_all_models() -> int:
     import platform_core.modules.collection_center.models
     import platform_core.modules.configuration.models
     import platform_core.modules.customer.models
+    import platform_core.modules.customer_access.models
     import platform_core.modules.delivery.models
     import platform_core.modules.dispatch.models
     import platform_core.modules.event_relay.models

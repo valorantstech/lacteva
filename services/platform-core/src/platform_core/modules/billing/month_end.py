@@ -79,6 +79,57 @@ def previous_month(today: date) -> tuple[date, date]:
     return previous_month_bounds(today)
 
 
+#: WO-86. Namespace for the nudge's event id: one notice per administrator per
+#: tenant per period, however many mornings the scheduler runs on the 1st.
+MONTH_END_NUDGE_NAMESPACE = uuid.UUID("6f1e6c1a-6e0d-4d5b-9f7a-2b3c4d5e6f70")
+
+
+async def notify_month_end_drafted(
+    session: AsyncSession, *, tenant_id: uuid.UUID, result: DraftingResult
+) -> int:
+    """Tell the dairy's administrators that drafts are waiting (WO-86 §4).
+
+    A draft is not a bill: nothing reaches a household until someone presses
+    Issue, and on a platform that drafts automatically the failure mode is a
+    stack of drafts nobody knew about. So the pass that drafted them leaves an
+    in-app notice for every `tenant-admin`, once per period (the event id is
+    derived, so a second pass on the same 1st re-sends nothing). Nothing is
+    sent when nothing was drafted — there is nothing to review.
+
+    Returns how many notices were created this time.
+    """
+    if result.drafted <= 0:
+        return 0
+    from platform_core.modules.authz.service import AuthzService
+    from platform_core.modules.notification.service import (
+        NotificationRequest,
+        NotificationService,
+    )
+
+    service = NotificationService(session)
+    created = 0
+    for user_id in await AuthzService(session).users_with_role("tenant-admin", tenant_id):
+        notification = await service.dispatch(
+            NotificationRequest(
+                event_id=uuid.uuid5(
+                    MONTH_END_NUDGE_NAMESPACE, f"{tenant_id}:{result.period_from}:{user_id}"
+                ),
+                event_name="billing.month-end-drafted.v1",
+                tenant_id=tenant_id,
+                template_key="month_end_drafted",
+                channel="inapp",
+                recipient_ref=user_id,
+                variables={
+                    "drafted": result.drafted,
+                    "skipped": result.skipped,
+                    "period": f"{result.period_from} - {result.period_to}",
+                },
+            )
+        )
+        created += notification is not None
+    return created
+
+
 async def draft_month_end(
     session: AsyncSession,
     *,

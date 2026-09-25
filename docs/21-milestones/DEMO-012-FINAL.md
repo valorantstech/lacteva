@@ -316,6 +316,10 @@ recurring cost added.**
   they could set wrong, and the failure mode is one household reading
   another's bills. A safe path — an explicit, audited, permission-guarded
   binding — is worth building before customer logins are handed out widely.
+  *Closed by WO-86 (2026-09-25):* `POST /v1/customers/{id}/invite` issues an
+  invitation that names the customer, acceptance binds the account before its
+  first request, and a CUSTOMER_PORTAL account with no scope is refused at
+  authentication. There is still no request that changes a scope.
 - **Push has never been delivered.** See §6. The adapter is proven against a
   stub only.
 - **No emulator or device.** Verified in Chrome at a phone viewport, which

@@ -1,5 +1,6 @@
 """API routers for all platform modules (OpenAPI-tagged, /v1 prefix)."""
 
+import hashlib
 import uuid
 from datetime import date, datetime
 from typing import Annotated, Any
@@ -25,7 +26,7 @@ from platform_core.core.backup.service import (
     ClassificationView,
 )
 from platform_core.core.business_time import business_today, month_bounds
-from platform_core.core.db import as_utc
+from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import (
     AppError,
     ForbiddenError,
@@ -38,8 +39,13 @@ from platform_core.core.keys import get_key_registry
 from platform_core.core.locales import country_choices, currency_symbol, language_choices
 from platform_core.core.modules import DEFAULT_MODULES
 from platform_core.core.org_context import tenant_timezone, tenant_units
+from platform_core.core.rls import rebind_tenant
 from platform_core.core.security_audit import record_security_event
-from platform_core.core.tenancy import require_current_tenant
+from platform_core.core.tenancy import (
+    require_current_tenant,
+    set_current_customer,
+    set_current_tenant,
+)
 from platform_core.core.tenant_lifecycle import TenantLifecycleService
 from platform_core.core.units import unit_label
 from platform_core.modules.audit.service import AuditPage
@@ -52,6 +58,7 @@ from platform_core.modules.billing.service import (
     CustomerPaymentDetailView,
     CustomerPaymentPage,
     CustomerPaymentView,
+    CustomerReceiptView,
     CustomerStatement,
     GenerateInvoiceCommand,
     InvoiceDetailView,
@@ -100,6 +107,13 @@ from platform_core.modules.customer.service import (
     DeliveryPlanView,
     PausePlanCommand,
     UpdateCustomerCommand,
+)
+from platform_core.modules.customer_access.service import (
+    BillLinkMinted,
+    BillLinkView,
+    CustomerAccessService,
+    CustomerLoginView,
+    resolve_bill_token,
 )
 from platform_core.modules.delivery.export import filename as export_filename
 from platform_core.modules.delivery.export import to_csv
@@ -2754,6 +2768,27 @@ async def notification_stats(service: NotificationSvc, _: NotificationRead) -> N
     return await service.stats()
 
 
+@notification_router.get("/notifications/mine", response_model=NotificationPage)
+async def my_notifications(
+    service: NotificationSvc,
+    principal: CurrentPrincipal,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> NotificationPage:
+    """The in-app notices addressed to THIS principal (WO-86).
+
+    No permission beyond being signed in, because the filter is the caller's
+    own identity — its customer id when it has one, its user id — and there
+    is no parameter to ask for anybody else's. A CUSTOMER_PORTAL account
+    (which has no `notification.read`) reads its bill notices here; a
+    tenant-admin reads the month-end nudge.
+    """
+    refs = [principal.id]
+    if principal.customer_id is not None:
+        refs.append(principal.customer_id)
+    return await service.mine(recipient_refs=refs, limit=limit, offset=offset)
+
+
 @notification_router.get("/notification-templates", response_model=list[TemplateView])
 async def list_notification_templates(service: NotificationSvc, _: NotificationRead) -> Any:
     """The template registry — every message the platform can send."""
@@ -4157,6 +4192,66 @@ async def set_customer_status(
     return await service.set_status(customer_id, body.status, actor_id=p.id)
 
 
+# --- WO-86: the customer's own way in --------------------------------------
+CustomerAccessSvc = Annotated[CustomerAccessService, Depends(deps.get_customer_access_service)]
+
+
+class CustomerInviteRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+
+@customer_router.post("/{customer_id}/invite", response_model=CustomerLoginView, status_code=201)
+async def invite_customer(
+    customer_id: uuid.UUID,
+    body: CustomerInviteRequest,
+    service: CustomerAccessSvc,
+    p: CustomerManage,
+) -> Any:
+    """Invite this household to sign in to the app. The invitation carries the
+    customer, so the account it creates is bound before its first request;
+    the code travels to the invitee by email and never appears here."""
+    return await service.invite(customer_id, email=body.email, actor_id=p.id)
+
+
+@customer_router.get("/{customer_id}/login", response_model=CustomerLoginView)
+async def customer_login_status(
+    customer_id: uuid.UUID, service: CustomerAccessSvc, _: CustomerRead
+) -> Any:
+    return await service.login_status(customer_id)
+
+
+@customer_router.delete("/{customer_id}/invitation", response_model=CustomerLoginView)
+async def withdraw_customer_invitation(
+    customer_id: uuid.UUID, service: CustomerAccessSvc, p: CustomerManage
+) -> Any:
+    """Withdraw a pending invitation. The code in the email stops working."""
+    return await service.withdraw_invitation(customer_id, actor_id=p.id)
+
+
+@customer_router.post("/{customer_id}/bill-link", response_model=BillLinkMinted, status_code=201)
+async def mint_customer_bill_link(
+    customer_id: uuid.UUID, service: CustomerAccessSvc, p: CustomerManage
+) -> Any:
+    """A link that opens this household's bills without a login. The token
+    is in THIS response and nowhere else afterwards; minting again replaces
+    it, so the same button rotates a link that has travelled too far."""
+    return await service.mint_bill_link(customer_id, actor_id=p.id)
+
+
+@customer_router.get("/{customer_id}/bill-link", response_model=BillLinkView)
+async def customer_bill_link_status(
+    customer_id: uuid.UUID, service: CustomerAccessSvc, _: CustomerRead
+) -> Any:
+    return await service.bill_link_status(customer_id)
+
+
+@customer_router.delete("/{customer_id}/bill-link", response_model=BillLinkView)
+async def revoke_customer_bill_link(
+    customer_id: uuid.UUID, service: CustomerAccessSvc, p: CustomerManage
+) -> Any:
+    return await service.revoke_bill_link(customer_id, actor_id=p.id)
+
+
 @customer_router.post("/{customer_id}/plan", response_model=DeliveryPlanView, status_code=201)
 async def set_delivery_plan(
     customer_id: uuid.UUID, body: DeliveryPlanInput, service: CustomerSvc, p: CustomerManage
@@ -4715,6 +4810,103 @@ async def customer_statement(
     return await service.statement(customer_id, date_from=date_from, date_to=date_to)
 
 
+class PublicBillInvoice(InvoiceView):
+    """One bill with the receipts that paid it (WO-86)."""
+
+    receipts: list[CustomerReceiptView] = Field(default_factory=list)
+
+
+class PublicBillCustomer(BaseModel):
+    name: str
+    code: str
+    address: str
+
+
+class PublicBillView(BaseModel):
+    """Everything the bill page shows. The customer's OWN rows and nothing
+    else — the customer scope is set from the token before any read."""
+
+    organization: str
+    customer: PublicBillCustomer
+    currency: str
+    balance: CustomerBalanceView
+    invoices: list[PublicBillInvoice]
+    statement: CustomerStatement
+    generated_at: datetime
+
+
+public_router = APIRouter(prefix="/public", tags=["public"])
+
+
+@public_router.get("/bill/{token}", response_model=PublicBillView)
+async def public_bill(
+    token: str,
+    request: Request,
+    response: Response,
+    session: deps.Session,
+    billing: BillingSvc,
+    customers: CustomerSvc,
+) -> Any:
+    """A household's bills, by capability link, with no account (WO-86).
+
+    Anonymous by design and defended accordingly: two rate limits (per IP and
+    per token), the token compared by hash in constant time, one shape of 404
+    for every dead link, and headers that keep the page out of search indexes
+    and caches. After the token resolves, the request is bound to the tenant
+    it names and scoped to the customer it names, and every read below goes
+    through the same services a signed-in customer's would — so "the link
+    cannot reach another customer's invoice" is the scope's property, proven
+    by the same test that proves it for a login.
+    """
+    ip = client_ip(request)
+    await rate_limit.enforce(rate_limit.PUBLIC_BILL, ip=ip, user=None, endpoint="public-bill")
+    await rate_limit.enforce(
+        rate_limit.PUBLIC_BILL_PER_TOKEN,
+        ip=ip,
+        user=hashlib.sha256(token.encode()).hexdigest()[:24],
+        endpoint="public-bill",
+    )
+    row = await resolve_bill_token(session, token)
+    await rebind_tenant(session, row.tenant_id)
+    set_current_tenant(row.tenant_id)
+    set_current_customer(row.customer_id)
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+
+    from platform_core.modules.organization.models import Organization
+
+    org = await session.get(Organization, row.tenant_id)
+    customer = await customers.get(row.customer_id)
+    page = await billing.search_invoices(customer_id=customer.id, limit=100, offset=0)
+    receipts = await billing.search_receipts(customer_id=customer.id, limit=100, offset=0)
+    by_invoice: dict[str, list[CustomerReceiptView]] = {}
+    for receipt in receipts["items"]:
+        view = (
+            receipt
+            if isinstance(receipt, CustomerReceiptView)
+            else CustomerReceiptView.model_validate(receipt)
+        )
+        for number in str(view.applied_to).replace(";", ",").split(","):
+            if number.strip():
+                by_invoice.setdefault(number.strip(), []).append(view)
+    return PublicBillView(
+        organization=org.name if org else "",
+        customer=PublicBillCustomer(
+            name=customer.name, code=customer.code, address=customer.address or ""
+        ),
+        currency=customer.currency,
+        balance=await billing.balance(customer.id),
+        invoices=[
+            PublicBillInvoice(
+                **invoice.model_dump(), receipts=by_invoice.get(invoice.invoice_number, [])
+            )
+            for invoice in page.items
+        ],
+        statement=await billing.statement(customer.id),
+        generated_at=utcnow(),
+    )
+
+
 @billing_router.get("/customer-receipts")
 async def search_customer_receipts(
     service: BillingSvc,
@@ -4756,6 +4948,7 @@ for sub in (
     audit_router,
     tenant_data_router,
     customer_router,
+    public_router,
     delivery_router,
     dispatch_router,
     logistics_router,

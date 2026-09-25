@@ -864,6 +864,11 @@ class NotificationService:
         """
         if notification.channel == "push":
             return await self._resolve_device_token(notification)
+        if notification.channel == "inapp":
+            # WO-86. There is no address: the notice is read back by whoever
+            # authenticates as this reference (a customer id or a user id),
+            # so the reference IS the recipient, and nothing needs a directory.
+            return str(notification.recipient_ref) if notification.recipient_ref else None
         entry = await self._directory_entry(notification)
         if entry is None:
             return None
@@ -925,6 +930,37 @@ class NotificationService:
         if notification is None or notification.tenant_id not in (tenant_id, None):
             raise NotFoundError("notification not found")
         return notification
+
+    async def mine(
+        self, *, recipient_refs: list[uuid.UUID], limit: int = 20, offset: int = 0
+    ) -> NotificationPage:
+        """The in-app notices addressed to THIS principal (WO-86).
+
+        Filtered by the references the caller authenticated as — its customer
+        id, its user id — and never by anything it asked for: a household that
+        knows another household's id learns nothing here. Only the `inapp`
+        channel, so a customer never reads back the SMS log about themselves,
+        which is an operator's record and carries a phone number.
+        """
+        tenant_id = require_current_tenant()
+        limit = max(1, min(limit, 100))
+        base = select(Notification).where(
+            Notification.tenant_id == tenant_id,
+            Notification.channel == "inapp",
+            Notification.recipient_ref.in_(recipient_refs),
+        )
+        total = int(
+            await self._session.scalar(select(func.count()).select_from(base.subquery())) or 0
+        )
+        rows = await self._session.scalars(
+            base.order_by(Notification.created_at.desc()).limit(limit).offset(offset)
+        )
+        return NotificationPage(
+            items=[NotificationView.model_validate(row) for row in rows.all()],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
     async def search(
         self,

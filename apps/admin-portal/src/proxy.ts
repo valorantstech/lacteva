@@ -44,6 +44,10 @@ const PUBLIC_PREFIXES = [
   "/login",
   "/reset-password",
   "/accept-invitation",
+  // WO-86: the page a household's bill link opens. The link IS the credential
+  // — a token in the path, checked by the platform — and the reader has no
+  // account by design.
+  "/bill",
   // The portal's own session/proxy handlers. They are the thing that SETS the
   // cookie, so requiring one here would be a loop.
   "/api",

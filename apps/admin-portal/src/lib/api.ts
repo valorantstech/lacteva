@@ -2858,6 +2858,78 @@ export const updateCustomer = (id: string, body: Record<string, unknown>) =>
     body: JSON.stringify(body),
   });
 
+// --- WO-86: the customer's own way in --------------------------------------
+
+/** Where a household's app login stands: none | invited | active | suspended. */
+export type CustomerLogin = {
+  customer_id: string;
+  state: "none" | "invited" | "active" | "suspended";
+  email?: string | null;
+  invitation_id?: string | null;
+  invited_at?: string | null;
+  expires_at?: string | null;
+  user_id?: string | null;
+  full_name?: string | null;
+};
+
+export type BillLink = {
+  customer_id: string;
+  active: boolean;
+  created_at?: string | null;
+  expires_at?: string | null;
+  last_seen_at?: string | null;
+};
+
+/** The mint response — the ONLY time the raw token is ever returned. */
+export type BillLinkMinted = BillLink & { token: string };
+
+export const getCustomerLogin = (id: string) =>
+  api<CustomerLogin>(`/v1/customers/${id}/login`);
+
+/** Invite the household to sign in. The code goes to THEIR email, never here. */
+export const inviteCustomer = (id: string, email: string) =>
+  api<CustomerLogin>(`/v1/customers/${id}/invite`, {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+
+export const withdrawCustomerInvitation = (id: string) =>
+  api<CustomerLogin>(`/v1/customers/${id}/invitation`, { method: "DELETE" });
+
+export const getCustomerBillLink = (id: string) =>
+  api<BillLink>(`/v1/customers/${id}/bill-link`);
+
+/** Create — or replace — the household's bill link. Minting rotates. */
+export const mintCustomerBillLink = (id: string) =>
+  api<BillLinkMinted>(`/v1/customers/${id}/bill-link`, { method: "POST" });
+
+export const revokeCustomerBillLink = (id: string) =>
+  api<BillLink>(`/v1/customers/${id}/bill-link`, { method: "DELETE" });
+
+/** The page a bill link opens: a household's bills, no account (WO-86). */
+export type PublicBill = {
+  organization: string;
+  customer: { name: string; code: string; address: string };
+  currency: string;
+  balance: CustomerBalance;
+  invoices: (Invoice & { receipts: CustomerReceipt[] })[];
+  statement: CustomerStatement;
+  generated_at: string;
+};
+
+/**
+ * PRE-AUTH, like `acceptInvitation`: the reader has no session and the point
+ * is that they never need one. Goes to the portal's own public handler, which
+ * forwards to the platform without a cookie.
+ */
+export async function fetchPublicBill(token: string): Promise<PublicBill> {
+  const res = await fetch(`/api/public/bill/${encodeURIComponent(token)}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw await problemFrom(res);
+  return (await res.json()) as PublicBill;
+}
+
 export const setCustomerStatus = (id: string, status: string) =>
   api<Customer>(`/v1/customers/${id}/status`, {
     method: "POST",
@@ -3547,6 +3619,8 @@ export type StatementEntry = {
   debit: string | number;
   credit: string | number;
   balance: string | number;
+  /** WO-86: the receipt a payment produced, so the row can name the paper. */
+  receipt_number?: string | null;
 };
 
 export type CustomerStatement = {

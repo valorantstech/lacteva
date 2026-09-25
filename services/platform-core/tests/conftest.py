@@ -159,9 +159,18 @@ async def grant_platform_admin(user_id: uuid.UUID) -> None:
 
 
 async def invite(
-    client: AsyncClient, headers: dict[str, str], *, email: str, role_name: str
+    client: AsyncClient,
+    headers: dict[str, str],
+    *,
+    email: str,
+    role_name: str,
+    customer_id: str | None = None,
 ) -> tuple[dict, str]:
     """Issue an invitation and read the token the way the INVITEE gets it.
+
+    With `customer_id`, the invitation is the CUSTOMER'S (WO-86): it goes
+    through `POST /v1/customers/{id}/invite`, the only route that can bind an
+    account to a household, and `role_name` must be CUSTOMER_PORTAL.
 
     SEC-003 / F-04: the API used to return the raw token, and every test in
     this suite read it from there. That was the defect — whoever issued the
@@ -190,16 +199,23 @@ async def invite(
     previous = providers.get_provider("email")
     providers.register_provider("email", _CapturingEmailProvider())
     try:
-        response = await client.post(
-            "/v1/invitations",
-            json={"email": email, "role_name": role_name},
-            headers=headers,
-        )
+        if customer_id is not None:
+            assert role_name == "CUSTOMER_PORTAL"
+            response = await client.post(
+                f"/v1/customers/{customer_id}/invite", json={"email": email}, headers=headers
+            )
+        else:
+            response = await client.post(
+                "/v1/invitations",
+                json={"email": email, "role_name": role_name},
+                headers=headers,
+            )
     finally:
         providers.register_provider("email", previous)
     assert response.status_code == 201, response.text
     body = response.json()
     assert "invitation_token" not in body, "the raw token is back in the API response"
+    assert "token" not in body, "the raw token is back in the API response"
     assert "body" in captured, "no invitation message was delivered"
     match = re.search(r"registration:\s*(\S+?)\.\s", captured["body"])
     assert match, f"no token in the delivered message: {captured['body']!r}"

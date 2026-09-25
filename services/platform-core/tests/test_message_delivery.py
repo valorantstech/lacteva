@@ -80,10 +80,20 @@ class _TimeoutProvider:
         raise ProviderSendError("gateway timeout after 10s")
 
 
-async def _notifications(template_key: str) -> list[Notification]:
+async def _notifications(template_key: str, *, channel: str | None = None) -> list[Notification]:
+    """The OUTBOUND messages for a template — what a gateway was asked to
+    carry. WO-86 added an `inapp` companion row to the bill's journey, which
+    is a notice the household reads back and not a message; it is asserted on
+    its own (`test_a_bill_also_leaves_one_in_app_notice`) and excluded here,
+    so "one financial event, one message" keeps meaning what it says."""
     async with db.get_session_factory()() as session:
         rows = await session.scalars(
-            select(Notification).where(Notification.template_key == template_key)
+            select(Notification).where(
+                Notification.template_key == template_key,
+                Notification.channel == channel
+                if channel is not None
+                else Notification.channel != "inapp",
+            )
         )
         return list(rows.all())
 
@@ -139,6 +149,23 @@ def test_the_whatsapp_provider_refuses_to_start_without_configuration():
 
 
 # --- 3, 4, 5, 19: success, failure, timeout, provider reference --------------
+
+
+async def test_a_bill_also_leaves_one_in_app_notice(client, provider_guard):  # noqa: F811
+    """WO-86: beside the one outbound message, exactly one `inapp` row —
+    the notice the household reads back — and a second run adds neither."""
+    provider_guard.register_provider("sms", _RecordingProvider())
+    _org, headers = await _tenant_admin(client)
+    await _issue_invoice(client, headers)
+    await _runner().run_once()
+    await _runner().run_once()
+
+    outbound = await _notifications("invoice_issued")
+    notices = await _notifications("invoice_issued", channel="inapp")
+    assert len(outbound) == 1
+    assert len(notices) == 1
+    assert notices[0].status == "sent"
+    assert notices[0].recipient_ref == outbound[0].recipient_ref
 
 
 async def test_a_delivered_message_records_the_provider_reference(client, provider_guard):  # noqa: F811

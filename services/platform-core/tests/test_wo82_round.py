@@ -191,7 +191,7 @@ def _tenant(org) -> Tenant:
 
 
 async def test_a_route_with_auto_plan_has_its_run_at_the_generation_hour(client):
-    admin, route, customers, vehicle, driver, org = await _planned_route(client)
+    admin, route, _customers, vehicle, driver, org = await _planned_route(client)
     # 00:31 in the dairy's own zone, tomorrow: past the generation hour.
     from zoneinfo import ZoneInfo
 
@@ -240,7 +240,7 @@ async def test_a_route_with_auto_plan_has_its_run_at_the_generation_hour(client)
 
 
 async def test_a_route_with_a_default_driver_but_auto_plan_off_gets_no_run(client):
-    admin, route, customers, vehicle, driver, org = await _planned_route(client, auto_plan=False)
+    admin, route, _customers, _vehicle, _driver, org = await _planned_route(client, auto_plan=False)
     from zoneinfo import ZoneInfo
 
     zone = ZoneInfo(org["organization"]["timezone"])
@@ -261,7 +261,9 @@ async def test_a_route_with_a_default_driver_but_auto_plan_off_gets_no_run(clien
 
 
 async def test_a_route_with_auto_plan_but_no_default_driver_gets_no_run(client):
-    admin, route, customers, vehicle, driver, org = await _planned_route(client, with_driver=False)
+    admin, route, _customers, _vehicle, _driver, org = await _planned_route(
+        client, with_driver=False
+    )
     from zoneinfo import ZoneInfo
 
     zone = ZoneInfo(org["organization"]["timezone"])
@@ -282,7 +284,7 @@ async def test_a_route_with_auto_plan_but_no_default_driver_gets_no_run(client):
 
 
 async def test_a_non_working_day_plans_nothing(client):
-    admin, route, customers, vehicle, driver, org = await _planned_route(client)
+    admin, route, _customers, _vehicle, _driver, org = await _planned_route(client)
     from zoneinfo import ZoneInfo
 
     zone = ZoneInfo(org["organization"]["timezone"])
@@ -307,7 +309,7 @@ async def test_a_non_working_day_plans_nothing(client):
 
 
 async def test_the_route_defaults_are_validated_and_clearable(client):
-    admin, route, customers, vehicle, driver = await _route_env(client)
+    admin, route, _customers, _vehicle, driver = await _route_env(client)
     r = await client.patch(
         f"/v1/routes/{route['id']}",
         json={"default_driver_id": str(uuid.uuid4())},

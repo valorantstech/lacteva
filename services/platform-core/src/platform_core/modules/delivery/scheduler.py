@@ -648,7 +648,10 @@ async def draft_month_end_for_tenant(
     the previous month's bill is redrafted every morning for a customer whose
     first attempt found nothing to bill, which is thirty pointless passes.
     """
-    from platform_core.modules.billing.month_end import draft_month_end
+    from platform_core.modules.billing.month_end import (
+        draft_month_end,
+        notify_month_end_drafted,
+    )
 
     now = now or utcnow()
     today, hour = business_date_and_hour(now, tenant.timezone)
@@ -656,5 +659,9 @@ async def draft_month_end_for_tenant(
         return
     async with get_session_factory()() as session:
         await rebind_tenant(session, tenant.id)
-        await draft_month_end(session, tenant_id=tenant.id, timezone=tenant.timezone)
+        result = await draft_month_end(session, tenant_id=tenant.id, timezone=tenant.timezone)
+        # WO-86 §4: the drafts exist; now somebody has to know. In the same
+        # transaction as the drafting, so a pass that drafted and crashed
+        # before nudging retries both together.
+        await notify_month_end_drafted(session, tenant_id=tenant.id, result=result)
         await session.commit()

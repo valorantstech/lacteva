@@ -1254,6 +1254,40 @@ class ApiClient {
         as Map<String, dynamic>;
   }
 
+  /// A customer's statement — opening balance, the movement, closing — for
+  /// the dairy's own current month when no dates are given (DEMO-015 §13).
+  /// For a customer-scoped login the platform narrows it to the household
+  /// itself; asking about anybody else is a 404 (WO-86).
+  Future<Map<String, dynamic>> customerStatement(
+    String customerId, {
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    final query = <String, String>{
+      'date_from': ?dateFrom,
+      'date_to': ?dateTo,
+    };
+    final qs = Uri(queryParameters: query).query;
+    final path =
+        '/v1/customers/$customerId/statement${qs.isEmpty ? '' : '?$qs'}';
+    return await _send('GET', path) as Map<String, dynamic>;
+  }
+
+  /// The in-app notices addressed to whoever is signed in (WO-86): a bill
+  /// that was issued, for a household; the month-end drafts, for an
+  /// administrator. No parameter names anybody else — the platform filters
+  /// by the caller's own identity.
+  Future<Map<String, dynamic>> myNotifications({
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    return await _send(
+          'GET',
+          '/v1/notifications/mine?limit=$limit&offset=$offset',
+        )
+        as Map<String, dynamic>;
+  }
+
   // --- push devices (DEMO-012 §10) -----------------------------------------
   //
   // The phone registers ITSELF, for whoever is signed in. There is no user id

@@ -72,6 +72,12 @@ class EventMapping:
     #: reset link goes to an inbox, and a tenant electing to SMS it would be
     #: changing a security decision rather than a delivery preference.
     selectable: bool = False
+    #: WO-86. Also write an IN-APP notice — a row on the `inapp` channel that
+    #: the recipient's own client reads back (`GET /v1/notifications/mine`).
+    #: In addition to the delivery channel, never instead of it: a household
+    #: with no handset registered still gets a push that fails visibly, and
+    #: one that opens the app next week finds the notice waiting.
+    inapp: bool = False
 
 
 def _supplier_registered(envelope: EventEnvelope) -> dict | None:
@@ -310,7 +316,9 @@ MAPPINGS: dict[str, EventMapping] = {
     # adds is the ABILITY to reach the households that do not — a dairy sets
     # `notification.channel.invoice_issued` to `sms` or `whatsapp` and its
     # bills go there instead. New capability, no behaviour removed.
-    INVOICE_ISSUED: EventMapping("invoice_issued", "push", _invoice_issued, selectable=True),
+    INVOICE_ISSUED: EventMapping(
+        "invoice_issued", "push", _invoice_issued, selectable=True, inapp=True
+    ),
     CUSTOMER_PAYMENT_RECORDED: EventMapping(
         "customer_payment_recorded", "push", _customer_payment_recorded
     ),
@@ -336,7 +344,8 @@ class NotificationDispatchConsumer(EventConsumer):
             if mapping.selectable
             else mapping.channel
         )
-        await NotificationService(session).dispatch(
+        service = NotificationService(session)
+        await service.dispatch(
             NotificationRequest(
                 event_id=envelope.id,
                 event_name=envelope.type,
@@ -346,6 +355,19 @@ class NotificationDispatchConsumer(EventConsumer):
                 **built,
             )
         )
+        if mapping.inapp and channel != "inapp":
+            # Its own idempotency key — (event, template, `inapp`) — so a replay
+            # re-sends neither. The recipient address is the reference itself.
+            await service.dispatch(
+                NotificationRequest(
+                    event_id=envelope.id,
+                    event_name=envelope.type,
+                    tenant_id=envelope.tenant_id,
+                    template_key=mapping.template_key,
+                    channel="inapp",
+                    **{**built, "recipient": None},
+                )
+            )
 
 
 def _uuid(value) -> uuid.UUID | None:
