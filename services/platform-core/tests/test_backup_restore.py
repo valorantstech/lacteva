@@ -307,6 +307,126 @@ async def test_the_manifest_records_what_was_captured(client, backup_dir):
     assert "@" not in body, "credentials leaked into the manifest"
 
 
+async def test_the_manifest_records_the_money_at_dump_time(client, backup_dir):
+    """WO-92. The ten figures the drill used to read from LIVE are in the
+    manifest, summed from the rows as they were written — and a measure whose
+    table this backup does not carry is SAID to be unavailable, not omitted."""
+    from platform_core.core.backup.engine import MONEY_MEASURES, UNAVAILABLE
+
+    await _full_dairy(client)
+    manifest = await _engine().backup(backup_dir)
+    assert set(manifest.money) == {f"{t}.{c}" for t, c in MONEY_MEASURES}
+    assert manifest.money["payment.amount"] not in ("0", UNAVAILABLE)
+    assert manifest.money["settlement.net_amount"] == manifest.money["payment.amount"]
+    # Re-read from disk, exactly as the drill reads it.
+    reread = _engine().read_manifest(backup_dir)
+    assert reread.money == manifest.money
+
+
+async def test_a_restored_copy_matches_its_own_manifest_and_a_broken_one_does_not(
+    client, backup_dir
+):
+    """WO-92, the whole point: the drill compares the restore with the dump,
+    not with production — and it must go RED for a real reason. Watched to
+    fail twice: a truncated table, and one changed amount."""
+    from sqlalchemy import text
+
+    from platform_core.core.backup.engine import BackupEngine
+    from platform_core.modules.payment.models import Payment
+
+    await _full_dairy(client)
+    engine = _engine()
+    await engine.backup(backup_dir)
+    await engine.restore(backup_dir, allow_non_empty=True)
+
+    comparison = await engine.compare_with_manifest(backup_dir)
+    assert comparison.matches, comparison.mismatches
+    assert comparison.tables_checked > 10
+    assert comparison.money_checked == 10
+
+    # Rows written AFTER the dump — the thing that made the old drill cry
+    # wolf — are no longer part of the question: a restore is compared with
+    # what was backed up, so the platform going on living is not a mismatch
+    # of the backup. (Proven by the drill script no longer reading production;
+    # here, by the comparison reading only the manifest and the target.)
+
+    async with db.get_session_factory()() as session:
+        await session.execute(text("DELETE FROM payment"))
+        await session.commit()
+    broken = await BackupEngine(db.get_session_factory()).compare_with_manifest(backup_dir)
+    assert not broken.matches
+    assert any(m.startswith("payment: manifest 1 rows, restored 0") for m in broken.mismatches), (
+        broken.mismatches
+    )
+    assert any(m.startswith("payment.amount: manifest") for m in broken.mismatches)
+
+    await engine.restore(backup_dir, allow_non_empty=True)
+    assert (await engine.compare_with_manifest(backup_dir)).matches
+
+    async with db.get_session_factory()() as session:
+        payment = (await session.scalars(select(Payment))).first()
+        payment.amount = payment.amount + 1
+        await session.commit()
+    changed = await engine.compare_with_manifest(backup_dir)
+    assert not changed.matches
+    assert [m for m in changed.mismatches if m.startswith("payment.amount: manifest")]
+    # The row count is still right — which is exactly why rows alone were
+    # never enough.
+    assert not [m for m in changed.mismatches if m.startswith("payment: manifest")]
+
+
+async def test_a_manifest_without_money_still_compares_on_rows(client, backup_dir):
+    """A backup written before WO-92 has no `money`; it is compared on rows
+    and the missing figures are not pretended to match."""
+    import json
+
+    await _full_dairy(client)
+    engine = _engine()
+    await engine.backup(backup_dir)
+    manifest_path = backup_dir / "manifest.json"
+    data = json.loads(manifest_path.read_text())
+    data.pop("money")
+    manifest_path.write_text(json.dumps(data))
+    await engine.restore(backup_dir, allow_non_empty=True, verify_first=False)
+    comparison = await engine.compare_with_manifest(backup_dir)
+    assert comparison.matches
+    assert comparison.money_checked == 0
+
+
+async def test_the_retention_gate_refuses_a_short_shelf_once_a_real_tenant_exists(client):
+    """WO-92 / G8. `BACKUP_RETAIN_DAYS` said 30 in a document and 2 on the
+    host for weeks. A machine checks it now: below the floor is refused the
+    moment an organisation exists that is not a demo tenant."""
+    import argparse
+
+    from platform_core.core.backup.cli import _run
+    from tests.test_localization import _make_org, _platform_admin
+
+    async def gate(days: int) -> int:
+        # The CLI's own dispatch, minus `asyncio.run` (this test already has a loop).
+        return await _run(argparse.Namespace(command="retention-gate", days=days))
+
+    service = _service()
+    headers = await _platform_admin(client)
+    # Nothing but demo tenants: a short retention is a choice, not a fault.
+    for slug in ("lacteva-demo", "lacteva-india-demo"):
+        r = await _make_org(client, headers, name=slug, slug=slug, country_code="IN")
+        assert r.status_code == 201, r.text
+    assert (await service.retention_gate(2))["ok"] is True
+    assert (await service.retention_gate(30))["ok"] is True
+    assert await gate(2) == 0
+
+    r = await _make_org(client, headers, name="Gavyam", slug="gavyam", country_code="IN")
+    assert r.status_code == 201, r.text
+    verdict = await service.retention_gate(2)
+    assert verdict["ok"] is False
+    assert verdict["real_tenants"] == 1 and "gavyam" in verdict["detail"]
+    assert (await service.retention_gate(29))["ok"] is False
+    assert (await service.retention_gate(30))["ok"] is True
+    assert await gate(2) == 1
+    assert await gate(30) == 0
+
+
 async def test_a_backup_verifies_against_its_own_checksums(client, backup_dir):
     await _full_dairy(client)
     await _engine().backup(backup_dir)

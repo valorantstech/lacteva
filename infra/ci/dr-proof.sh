@@ -175,6 +175,51 @@ print(f"    {report['rows']} rows restored; {len(report['checks'])} integrity ch
 PYEOF
 
 # --- 9. fact-for-fact --------------------------------------------------------
+step "8b/10 restored copy vs the backup's OWN manifest — rows and money, and watch it fail (WO-92)"
+LACTEVA_DATABASE_URL="$(url "${RESTORE_DIR}" "${RESTORE_DB}")" \
+  "${PYTHON}" -m platform_core.core.backup.cli verify-restore "${BACKUP_DIR}" > "${WORKDIR}/compare.json" 2>/dev/null \
+  || fail "the restored copy does not hold what the backup's manifest says it holds"
+"${PYTHON}" - "${WORKDIR}/compare.json" <<'PYEOF'
+import json, sys
+lines = open(sys.argv[1]).read().splitlines()
+start = max(i for i, line in enumerate(lines) if line == "{")
+c = json.loads("\n".join(lines[start:]))
+assert c["status"] == "matches", c
+assert c["money_checked"] > 0, "no money figure was compared"
+print(f"    {c['tables_checked']} tables and {c['money_checked']} money figures match the manifest")
+PYEOF
+# Now break the restored copy on purpose and confirm the drill goes RED for
+# a real reason — the property WO-40 learned the hard way. ONE amount is
+# changed by one rupee: every row count is still right, so this is exactly
+# the damage a rows-only comparison could never see.
+"${PYTHON}" - "$(url "${RESTORE_DIR}" "${RESTORE_DB}")" <<'PYEOF'
+import asyncio, sys
+import asyncpg
+async def main():
+    conn = await asyncpg.connect(sys.argv[1].replace("postgresql+asyncpg://", "postgresql://"))
+    try:
+        await conn.execute(
+            "UPDATE payment SET amount = amount + 1 WHERE id = (SELECT id FROM payment LIMIT 1)"
+        )
+    finally:
+        await conn.close()
+asyncio.run(main())
+PYEOF
+if LACTEVA_DATABASE_URL="$(url "${RESTORE_DIR}" "${RESTORE_DB}")" \
+  "${PYTHON}" -m platform_core.core.backup.cli verify-restore "${BACKUP_DIR}" > "${WORKDIR}/compare-broken.json" 2>/dev/null; then
+  fail "a restored copy with one changed amount was reported as matching its manifest"
+fi
+grep -q '"payment.amount: manifest' "${WORKDIR}/compare-broken.json" || fail "the mismatch did not name the changed figure"
+grep -q '"payment: manifest' "${WORKDIR}/compare-broken.json" && fail "the row count was reported wrong, but no row was removed"
+echo "    one changed amount turns the comparison red, naming the figure and not the rows"
+LACTEVA_DATABASE_URL="$(url "${RESTORE_DIR}" "${RESTORE_DB}")" \
+  "${PYTHON}" -m platform_core.core.backup.cli restore "${BACKUP_DIR}" --force >/dev/null 2>&1 \
+  || fail "re-restore after the deliberate damage failed"
+LACTEVA_DATABASE_URL="$(url "${RESTORE_DIR}" "${RESTORE_DB}")" \
+  "${PYTHON}" -m platform_core.core.backup.cli verify-restore "${BACKUP_DIR}" >/dev/null 2>&1 \
+  || fail "the re-restored copy does not match its manifest"
+echo "    restored again: matches"
+
 step "9/10  source vs restored, fact for fact"
 "${PYTHON}" ../../infra/ci/dr_compare.py \
   "$(url "${SOURCE_DIR}" "${SOURCE_DB}")" \
@@ -215,6 +260,7 @@ summary "| 2-3 | A realistic dairy with real business activity, through the plat
 summary "| 4-5 | Logical backup, verified against its own checksums |"
 summary "| 6 | A **second, separate** instance migrated from empty |"
 summary "| 7-8 | Restored, and the restored data passes deep business integrity |"
+summary "| 8b | Restored copy matches the backup's OWN manifest (rows + money); a deleted payment turns it red |"
 summary "| 9 | Source and restored hold the same facts, table by table |"
 summary "| 10 | Corruption refused, schema drift refused, tenant isolation intact (${DR_TESTS} tests) |"
 

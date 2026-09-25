@@ -71,6 +71,13 @@ class ClassificationView(BaseModel):
     reason: str
 
 
+#: WO-92. The retention the go-live control sheet requires (G8), and the
+#: tenants that do not count as anybody's money. Both are checked by
+#: `retention_gate`, run by the nightly backup and the watchdog.
+RETENTION_FLOOR_DAYS = 30
+DEMO_TENANT_SLUGS = frozenset({"lacteva-demo", "lacteva-india-demo", "lacteva-isolation-demo"})
+
+
 class BackupService:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self._sf = session_factory
@@ -157,6 +164,41 @@ class BackupService:
                 stmt = stmt.where(BackupRun.kind == kind)
             runs = list((await session.scalars(stmt)).all())
         return [self._view(run) for run in runs]
+
+    async def retention_gate(self, days: int) -> dict:
+        """Is a retention of `days` acceptable for what this deployment holds?
+
+        WO-92. The go-live control sheet said `BACKUP_RETAIN_DAYS=30` and the
+        live host said 2, for weeks, because a number in a document is not
+        checked by anything. This is: below the floor is refused the moment
+        an organisation exists that is not one of the demo tenants. Demo
+        tenants are named by slug — they are the only organisations a
+        deployment may legitimately run with a short retention, because
+        nothing in them is anybody's money.
+        """
+        from platform_core.modules.organization.models import Organization
+
+        async with self._sf() as session:
+            slugs = list(await session.scalars(select(Organization.slug)))
+        real = sorted(s for s in slugs if s not in DEMO_TENANT_SLUGS)
+        ok = days >= RETENTION_FLOOR_DAYS or not real
+        return {
+            "ok": ok,
+            "days": days,
+            "floor_days": RETENTION_FLOOR_DAYS,
+            "organisations": len(slugs),
+            "real_tenants": len(real),
+            "detail": (
+                "retention is at or above the floor"
+                if days >= RETENTION_FLOOR_DAYS
+                else (
+                    "below the floor, but only demo tenants exist"
+                    if ok
+                    else f"BACKUP_RETAIN_DAYS={days} is below {RETENTION_FLOOR_DAYS} with "
+                    f"{len(real)} real tenant(s): {', '.join(real[:5])}"
+                )
+            ),
+        }
 
     async def status(self, *, stale_after_hours: float = 26.0) -> BackupStatusView:
         """Daily backups with a two-hour grace: 26 hours means a missed run is

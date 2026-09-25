@@ -6,7 +6,7 @@
 # Restores the newest logical backup into a SEPARATE, THROWAWAY PostgreSQL
 # SERVER — not a scratch database on the production one — then runs the
 # platform's own deep integrity checks on the result and compares what came
-# back against what production actually holds.
+# back against what the BACKUP'S OWN MANIFEST says it holds (WO-92).
 #
 # Why a separate server (DEMO-011 §5). The previous version created
 # `lacteva_restore_check` inside the live instance. That is isolated by
@@ -18,7 +18,8 @@
 # is rehearsing for. A throwaway container costs a few seconds and removes
 # the question.
 #
-# Production is read ONLY, and only to count rows for comparison.
+# Production is not read at all (WO-92): the comparison is the dump against
+# itself, which is the only thing a restore can honestly be asked to prove.
 #
 #   ./verify-latest-backup.sh            # newest backup
 #   BACKUP=/path/to/backup ./verify-latest-backup.sh
@@ -65,31 +66,20 @@ if [ "${AGE_HOURS}" -gt "${MAX_AGE_HOURS}" ]; then
 fi
 log "backup is ${AGE_HOURS}h old"
 
-# --- 2. what does production hold? ------------------------------------------
-# Read-only, and taken BEFORE the restore so the comparison cannot be
-# influenced by it. The tables DEMO-011 §5 names, by their real names — `audit_record`, not
-# `audit_log`, which is what the first draft guessed and what made the drill
-# fail on its own comparison query rather than on anything about the backup.
-TABLES="organization user_account role user_role customer supplier \
-collection_center milk_collection_transaction milk_delivery settlement \
-payment receipt customer_invoice customer_payment customer_receipt \
-audit_record"
-
-# PER TABLE, not a single total. Two tables wrong by +1 and -1 sum to the
-# right answer, and that is exactly the shape a partial restore takes.
-counts_sql() {
-  local first=1
-  for tbl in ${TABLES}; do
-    [ ${first} -eq 1 ] && first=0 || printf " UNION ALL "
-    printf "SELECT '%s' AS t, count(*) AS n FROM %s" "${tbl}" "${tbl}"
-  done
-  printf " ORDER BY 1"
-}
-
-log "counting production rows, per table (read only)"
-PROD_COUNTS="$(${COMPOSE} exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-  -tA -F'=' -c "$(counts_sql)" 2>/dev/null | tr -d '\r')"
-[ -n "${PROD_COUNTS}" ] || fail "could not read production row counts"
+# --- 2. what does the BACKUP hold? ------------------------------------------
+# WO-92. This step used to count rows in PRODUCTION, and step 6 compared the
+# restored copy against that. Any row written after the dump was taken made
+# the counts differ, so on a running system the drill could only pass in the
+# dead of night — protected=NO every morning, and a REAL restore failure
+# indistinguishable from the noise. The manifest now records, at dump time,
+# the per-table row counts and the money it holds; the restored copy is
+# compared with THAT (step 6), which is the only thing a restore can honestly
+# be asked to prove. Production is no longer read at all.
+MANIFEST_TABLES="$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(len(m["tables"]))' "${LATEST}/manifest.json" 2>/dev/null || echo 0)"
+MANIFEST_MONEY="$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(sum(1 for v in m.get("money",{}).values() if v!="unavailable"))' "${LATEST}/manifest.json" 2>/dev/null || echo 0)"
+[ "${MANIFEST_TABLES}" -gt 0 ] || fail "the manifest lists no tables"
+log "manifest: ${MANIFEST_TABLES} tables, ${MANIFEST_MONEY} money figures recorded at dump time"
+[ "${MANIFEST_MONEY}" -gt 0 ] || log "WARNING: this backup predates WO-92 and carries no money figures; rows only"
 
 # --- 3. stand up an isolated server -----------------------------------------
 log "starting an isolated PostgreSQL for the drill"
@@ -144,60 +134,12 @@ ${COMPOSE} run --rm --no-deps -T -e "LACTEVA_DATABASE_URL=${DRILL_URL}" api \
   python -m platform_core.core.backup.cli integrity --deep \
   || fail "the restored database does not satisfy the platform's business rules"
 
-# --- 6. does it hold what production holds? ----------------------------------
-log "comparing restored row counts against production, per table"
-DRILL_COUNTS="$(docker exec "${DRILL_NAME}" psql -U drill -d lacteva \
-  -tA -F'=' -c "$(counts_sql)" | tr -d '\r')"
-
-MISMATCH=0
-while IFS='=' read -r tbl n; do
-  [ -n "${tbl}" ] || continue
-  got="$(printf '%s\n' "${DRILL_COUNTS}" | awk -F= -v t="${tbl}" '$1==t {print $2}')"
-  if [ "${n}" = "${got}" ]; then
-    printf '    %-32s %8s  ok\n' "${tbl}" "${n}"
-  else
-    printf '    %-32s %8s  RESTORED %s  MISMATCH\n' "${tbl}" "${n}" "${got:-missing}"
-    MISMATCH=1
-  fi
-done <<< "${PROD_COUNTS}"
-
-[ "${MISMATCH}" -eq 0 ] \
-  || fail "the restored database does not hold what production holds"
-
-# --- 7. does it hold the same MONEY? -----------------------------------------
-# Row counts prove the rows arrived. They say nothing about whether the values
-# in them survived, and a backup that restores the right number of wrong
-# amounts is the worst possible outcome for a platform that settles payments.
-# Sums are exact `numeric`, compared as text, so no float ever enters this.
-MONEY_SQL="SELECT 'settlement.net'      AS k, coalesce(sum(net_amount),0)::text FROM settlement
-     UNION ALL SELECT 'settlement.gross',      coalesce(sum(gross_amount),0)::text FROM settlement
-     UNION ALL SELECT 'payment.amount',        coalesce(sum(amount),0)::text FROM payment
-     UNION ALL SELECT 'receipt.net',           coalesce(sum(net_amount),0)::text FROM receipt
-     UNION ALL SELECT 'delivery.amount',       coalesce(sum(amount),0)::text FROM milk_delivery
-     UNION ALL SELECT 'invoice.total',         coalesce(sum(total),0)::text FROM customer_invoice
-     UNION ALL SELECT 'invoice.amount_due',    coalesce(sum(amount_due),0)::text FROM customer_invoice
-     UNION ALL SELECT 'customer_payment.amt',  coalesce(sum(amount),0)::text FROM customer_payment
-     UNION ALL SELECT 'customer_receipt.amt',  coalesce(sum(amount),0)::text FROM customer_receipt
-     UNION ALL SELECT 'collection.gross',      coalesce(sum(gross_amount),0)::text FROM milk_collection_transaction
-     ORDER BY 1"
-
-log "comparing money, not just rows"
-PROD_MONEY="$(${COMPOSE} exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
-  -tA -F'=' -c "${MONEY_SQL}" 2>/dev/null | tr -d '\r')"
-DRILL_MONEY="$(docker exec "${DRILL_NAME}" psql -U drill -d lacteva -tA -F'=' -c "${MONEY_SQL}" | tr -d '\r')"
-
-while IFS='=' read -r k v; do
-  [ -n "${k}" ] || continue
-  got="$(printf '%s\n' "${DRILL_MONEY}" | awk -F= -v t="${k}" '$1==t {print $2}')"
-  if [ "${v}" = "${got}" ]; then
-    printf '    %-24s %16s  ok\n' "${k}" "${v}"
-  else
-    printf '    %-24s %16s  RESTORED %s  MISMATCH\n' "${k}" "${v}" "${got:-missing}"
-    MISMATCH=1
-  fi
-done <<< "${PROD_MONEY}"
-
-[ "${MISMATCH}" -eq 0 ] \
-  || fail "the restored database does not hold the same money as production"
-
+# --- 6. does it hold what the backup holds? ---------------------------------
+# Per table and per money figure, against the manifest's own dump-time
+# numbers. `verify-restore` names every mismatch; `test_backup_restore.py`
+# proves it goes red for a truncated table and for a changed amount.
+log "comparing the restored copy with the backup's own manifest (rows and money)"
+${COMPOSE} run --rm --no-deps -T -e "LACTEVA_DATABASE_URL=${DRILL_URL}" api \
+  python -m platform_core.core.backup.cli verify-restore "${BACKUP_ROOT}/${STAMP}" \
+  || fail "the restored database does not hold what the backup holds"
 log "RESTORE VERIFIED: ${STAMP} restores to a correct platform"

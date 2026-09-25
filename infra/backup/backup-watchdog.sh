@@ -91,6 +91,21 @@ done
 
 # --- 4. the platform's own opinion ------------------------------------------
 # It knows something the filesystem cannot: whether the backup VERIFIED.
+# WO-92 / G8. Two days of retention on a real tenant's money is not protection,
+# whatever the timers say. The deployed value is read from the same env file
+# the backup job reads; the platform decides whether a real tenant exists.
+RETAIN_DAYS="$(grep -E '^BACKUP_RETAIN_DAYS=' /etc/lacteva/.env.production 2>/dev/null | tail -1 | cut -d= -f2)"
+RETAIN_DAYS="${RETAIN_DAYS:-30}"
+if GATE_JSON="$(${COMPOSE} exec -T api python -m platform_core.core.backup.cli retention-gate --days "${RETAIN_DAYS}" 2>/dev/null | sed -n '/^{/,$p')"; then
+  GATE_OK="$(printf '%s' "${GATE_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ok"))' 2>/dev/null || echo unknown)"
+  GATE_DETAIL="$(printf '%s' "${GATE_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("detail",""))' 2>/dev/null || echo '')"
+  note "retention:       ${RETAIN_DAYS} days (${GATE_DETAIL})"
+  [ "${GATE_OK}" = "True" ] || problems+=("BACKUP_RETAIN_DAYS=${RETAIN_DAYS} is below the go-live floor: ${GATE_DETAIL}")
+else
+  note "retention:       could not ask the platform (gate unavailable)"
+  problems+=("could not run the retention gate — is the API up?")
+fi
+
 if STATUS_JSON="$(${COMPOSE} exec -T api python -m platform_core.core.backup.cli status 2>/dev/null | sed -n '/^{/,$p')"; then
   HEALTHY="$(printf '%s' "${STATUS_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("healthy"))' 2>/dev/null || echo unknown)"
   DETAIL="$(printf '%s' "${STATUS_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("detail",""))' 2>/dev/null || echo '')"

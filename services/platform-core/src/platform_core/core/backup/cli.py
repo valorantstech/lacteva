@@ -166,6 +166,27 @@ async def _run(args: argparse.Namespace) -> int:
         run = await service.verify_integrity(deep=args.deep)
         _print(service._view(run).model_dump())
         return 0 if run.status == "succeeded" else 1
+    if args.command == "verify-restore":
+        # WO-92. The database this process is configured against — the drill
+        # server, never production — held against the backup's own manifest.
+        try:
+            comparison = await service.engine.compare_with_manifest(Path(args.path))
+        except BackupError as exc:
+            _print({"status": "failed", "error": str(exc)})
+            return 1
+        _print(
+            {
+                "status": "matches" if comparison.matches else "mismatch",
+                "tables_checked": comparison.tables_checked,
+                "money_checked": comparison.money_checked,
+                "mismatches": comparison.mismatches,
+            }
+        )
+        return 0 if comparison.matches else 1
+    if args.command == "retention-gate":
+        verdict = await service.retention_gate(args.days)
+        _print(verdict)
+        return 0 if verdict["ok"] else 1
 
     if args.command == "restore":
         # The one destructive path. Say so, loudly, before doing it.
@@ -244,6 +265,16 @@ def main(argv: list[str] | None = None) -> int:
     # is one that will eventually be run by somebody who was just looking.
     prune.add_argument("--delete", action="store_true", help="actually delete (default is dry-run)")
 
+    compare = sub.add_parser(
+        "verify-restore",
+        help="compare the configured (restored) database with a backup's own manifest",
+    )
+    compare.add_argument("path")
+    gate = sub.add_parser(
+        "retention-gate",
+        help="refuse a backup retention below the floor once a real tenant exists (WO-92)",
+    )
+    gate.add_argument("--days", type=int, required=True, help="the deployed BACKUP_RETAIN_DAYS")
     integrity = sub.add_parser("integrity", help="check the live database against business rules")
     integrity.add_argument(
         "--deep", action="store_true", help="also rebuild projections from the event log"

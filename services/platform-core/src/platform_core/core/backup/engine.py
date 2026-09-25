@@ -72,6 +72,43 @@ class TableBackup:
     checksum: str  # sha256 over the serialized rows
 
 
+#: WO-92. The money a restore must bring back to the paisa, as (table,
+#: column) pairs — the same ten figures the drill used to read from the LIVE
+#: database. They are summed from the rows AS THEY ARE WRITTEN to the backup,
+#: so the manifest states what this backup holds, and a restored copy is
+#: compared with that rather than with whatever production has become since.
+MONEY_MEASURES: tuple[tuple[str, str], ...] = (
+    ("settlement", "net_amount"),
+    ("settlement", "gross_amount"),
+    ("payment", "amount"),
+    ("receipt", "net_amount"),
+    ("milk_delivery", "amount"),
+    ("customer_invoice", "total"),
+    ("customer_invoice", "amount_due"),
+    ("customer_payment", "amount"),
+    ("customer_receipt", "amount"),
+    ("milk_collection_transaction", "gross_amount"),
+)
+
+#: What the manifest says when a measure's table was not part of this backup.
+#: Said, not omitted: a comparison that silently skips a table is the drill
+#: that cries wolf's quieter twin.
+UNAVAILABLE = "unavailable"
+
+
+@dataclass
+class RestoreComparison:
+    """A restored database held against the manifest it was restored from."""
+
+    tables_checked: int
+    money_checked: int
+    mismatches: list[str]
+
+    @property
+    def matches(self) -> bool:
+        return not self.mismatches
+
+
 @dataclass
 class BackupManifest:
     """Everything needed to verify and restore, in one readable file."""
@@ -99,6 +136,10 @@ class BackupManifest:
     database_identity: str = ""
     tables: list[TableBackup] = field(default_factory=list)
     include_rebuildable: bool = False
+    #: WO-92. `"table.column" -> exact decimal as text` for every entry of
+    #: `MONEY_MEASURES`, summed from the dumped rows; `"unavailable"` for a
+    #: table this backup does not carry. Defaulted so older manifests load.
+    money: dict[str, str] = field(default_factory=dict)
 
     @property
     def total_rows(self) -> int:
@@ -259,10 +300,13 @@ class BackupEngine:
                 session
             )
 
+        measured = {t: [c for tt, c in MONEY_MEASURES if tt == t] for t, _ in MONEY_MEASURES}
         for table in Base.metadata.sorted_tables:
             if table.name not in wanted:
                 continue
-            rows, checksum = await self._dump_table(table, destination)
+            rows, checksum, sums = await self._dump_table(
+                table, destination, sum_columns=measured.get(table.name, [])
+            )
             manifest.tables.append(
                 TableBackup(
                     table=table.name,
@@ -271,6 +315,11 @@ class BackupEngine:
                     checksum=checksum,
                 )
             )
+            for column, total in sums.items():
+                manifest.money[f"{table.name}.{column}"] = str(total)
+        # WO-92: every measure is present in the manifest, captured or not.
+        for table_name, column in MONEY_MEASURES:
+            manifest.money.setdefault(f"{table_name}.{column}", UNAVAILABLE)
 
         (destination / MANIFEST).write_text(manifest.to_json())
         log.info(
@@ -281,11 +330,16 @@ class BackupEngine:
         )
         return manifest
 
-    async def _dump_table(self, table, destination: Path) -> tuple[int, str]:
+    async def _dump_table(
+        self, table, destination: Path, *, sum_columns: list[str] | None = None
+    ) -> tuple[int, str, dict[str, Decimal]]:
         digest = hashlib.sha256()
         path = destination / "tables" / f"{table.name}.jsonl"
         columns = [c.name for c in table.columns]
         count = 0
+        # WO-92: the money, summed from exactly the rows that reach the file.
+        sums = {c: Decimal(0) for c in (sum_columns or []) if c in columns}
+        positions = {c: columns.index(c) for c in sums}
         # Deterministic order: the same data must always produce the same
         # checksum, or the checksum is not evidence of anything.
         order = list(table.primary_key.columns) or list(table.columns)[:1]
@@ -300,7 +354,62 @@ class BackupEngine:
                     handle.write(line + "\n")
                     digest.update(line.encode())
                     count += 1
-        return count, digest.hexdigest()
+                    for column, position in positions.items():
+                        value = row[position]
+                        if value is not None:
+                            sums[column] += Decimal(str(value))
+        return count, digest.hexdigest(), sums
+
+    # --- compare a restored database with its own manifest (WO-92) ----------
+
+    async def compare_with_manifest(self, source: Path) -> RestoreComparison:
+        """Hold the CONFIGURED database against the manifest in `source`.
+
+        The only thing a restore can honestly be asked to prove is that it
+        brought back what the backup holds — per-table row counts and the
+        money, both recorded at dump time. The drill used to compare the
+        restored copy with the LIVE database, so every row written after the
+        dump made it fail, and a guarantee that fails every night is one
+        nobody reads. Every mismatch is named, table by table, figure by
+        figure; a measure the manifest marks `unavailable` is reported as
+        such and never silently skipped.
+        """
+        from sqlalchemy import Numeric, cast, func
+
+        manifest = self.read_manifest(Path(source))
+        by_name = {t.name: t for t in Base.metadata.sorted_tables}
+        backed_up = {t.table for t in manifest.tables}
+        mismatches: list[str] = []
+        tables_checked = money_checked = 0
+        async with self._sf() as session:
+            for entry in manifest.tables:
+                table = by_name.get(entry.table)
+                if table is None:
+                    mismatches.append(f"{entry.table}: in the manifest, not in this schema")
+                    continue
+                got = int(await session.scalar(select(func.count()).select_from(table)) or 0)
+                tables_checked += 1
+                if got != entry.rows:
+                    mismatches.append(f"{entry.table}: manifest {entry.rows} rows, restored {got}")
+            for key, expected in sorted(manifest.money.items()):
+                table_name, column = key.split(".", 1)
+                if expected == UNAVAILABLE:
+                    if table_name in backed_up:
+                        mismatches.append(f"{key}: the backup captured no figure for it")
+                    continue
+                table = by_name.get(table_name)
+                if table is None or column not in table.columns:
+                    mismatches.append(f"{key}: in the manifest, not in this schema")
+                    continue
+                total = await session.scalar(
+                    select(func.coalesce(func.sum(cast(table.c[column], Numeric)), 0))
+                )
+                money_checked += 1
+                if Decimal(str(total)) != Decimal(expected):
+                    mismatches.append(f"{key}: manifest {expected}, restored {total}")
+        return RestoreComparison(
+            tables_checked=tables_checked, money_checked=money_checked, mismatches=mismatches
+        )
 
     # --- restore -----------------------------------------------------------
 

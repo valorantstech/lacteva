@@ -29,7 +29,7 @@ down_revision = "d1e6b4a92c07"
 branch_labels = None
 depends_on = None
 
-BOTH = '["collection", "sales"]'
+BOTH = ["collection", "sales"]
 
 
 def upgrade() -> None:
@@ -38,9 +38,15 @@ def upgrade() -> None:
     # The default, spelled as data rather than as a server default a JSON
     # column cannot portably carry on both dialects: every row that exists
     # when this lands runs the whole product.
+    #
+    # Bound as JSON, not as a string. The first version bound a VARCHAR and
+    # passed every SQLite test; on PostgreSQL it failed with "column modules
+    # is of type json but expression is of type character varying" — found
+    # by the DR proof in WO-92, after the migration had been pushed. A
+    # PostgreSQL guarantee tested only on SQLite is untested.
     op.execute(
         sa.text("UPDATE organization SET modules = :both WHERE modules IS NULL").bindparams(
-            both=BOTH
+            sa.bindparam("both", value=BOTH, type_=sa.JSON())
         )
     )
 

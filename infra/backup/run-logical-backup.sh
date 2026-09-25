@@ -78,6 +78,14 @@ ${COMPOSE} exec -T api python -m platform_core.core.backup.cli offsite-prune --d
   || log "WARNING: off-site retention failed. Copies retained; investigate."
 
 # Only now.
+# WO-92 / G8. Below the floor with a real tenant, the backup is still taken —
+# a missing backup is worse than an over-long shelf — but NOTHING is pruned:
+# refusing to delete is the safe failure, and the watchdog says why.
+if ! ${COMPOSE} exec -T api python -m platform_core.core.backup.cli retention-gate --days "${RETAIN_DAYS}"; then
+  log "REFUSED to prune: BACKUP_RETAIN_DAYS=${RETAIN_DAYS} is below the go-live floor while a real tenant exists."
+  log "        Set BACKUP_RETAIN_DAYS=30 in /etc/lacteva/.env.production. Every backup is retained until then."
+  exit 1
+fi
 log "pruning backups older than ${RETAIN_DAYS} days"
 DELETED=0
 while IFS= read -r -d '' old; do
