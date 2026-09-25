@@ -593,6 +593,39 @@ class CustomerService:
         ).all()
         return {row[0]: CustomerName(id=row[0], code=row[1], name=row[2]) for row in rows}
 
+    async def roster(self, *, status: str | None = "active") -> list[CustomerName]:
+        """Every customer, or every active one, as (id, code, name) — ONE
+        query, in code order (WO-84). The month sheet's rows are this list;
+        `search` is paged to a hundred and is the wrong shape for a grid
+        that must show all four hundred households at once."""
+        tenant_id = require_current_tenant()
+        stmt = select(Customer.id, Customer.code, Customer.name).where(
+            Customer.tenant_id == tenant_id
+        )
+        if status is not None:
+            stmt = stmt.where(Customer.status == status)
+        rows = (await self._session.execute(stmt.order_by(Customer.code))).all()
+        return [CustomerName(id=r[0], code=r[1], name=r[2]) for r in rows]
+
+    async def plan_rates(
+        self, *, product: str | None = None
+    ) -> dict[tuple[uuid.UUID, str], tuple[Decimal, str]]:
+        """The ACTIVE plan's rate and unit per (customer, product) — ONE
+        query (WO-84). What the month sheet's Price column shows: the
+        household's agreed rate, which every delivery copied when it was
+        recorded and which nothing here recomputes."""
+        tenant_id = require_current_tenant()
+        stmt = select(
+            DeliveryPlan.customer_id,
+            DeliveryPlan.product,
+            DeliveryPlan.unit_price,
+            DeliveryPlan.quantity_unit,
+        ).where(DeliveryPlan.tenant_id == tenant_id, DeliveryPlan.active.is_(True))
+        if product is not None:
+            stmt = stmt.where(DeliveryPlan.product == product)
+        rows = (await self._session.execute(stmt)).all()
+        return {(r[0], r[1]): (Decimal(r[2]), r[3]) for r in rows}
+
     async def standing_orders_for(
         self, customer_ids: set[uuid.UUID], slot: str
     ) -> dict[uuid.UUID, list[StandingOrder]]:

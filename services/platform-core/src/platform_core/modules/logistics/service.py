@@ -403,6 +403,7 @@ async def route_memberships(session: AsyncSession, tenant_id: uuid.UUID) -> list
             code=route.code,
             name=route.name,
             customer_ids=frozenset(by_route.get(route.id, set())),
+            route_id=route.id,
         )
         for route in routes
     ]

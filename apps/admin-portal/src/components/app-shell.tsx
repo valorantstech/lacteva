@@ -147,6 +147,14 @@ const SALES: Entry[] = [
     permission: "sales.delivery.read",
     icon: Truck,
   },
+  // WO-84 — the shop's register: a month of litres, one row per household.
+  {
+    href: "/deliveries/month",
+    module: "sales",
+    labelKey: "nav.monthSheet",
+    permission: "sales.delivery.read",
+    icon: CalendarDays,
+  },
   // DEMO-034 — the physical layer under the round. Gated on the route grant,
   // so a finance officer never sees it.
   {

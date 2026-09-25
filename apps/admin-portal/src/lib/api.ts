@@ -3097,6 +3097,8 @@ export const recordDelivery = (body: {
   quantity?: string;
   status?: string;
   notes?: string;
+  /** WO-81: which milk. Omitted, the platform's default product. */
+  product?: string;
 }) =>
   api<Delivery>("/v1/deliveries", {
     method: "POST",
@@ -3204,6 +3206,84 @@ export function getDeliveryReport(params: {
 /** The report as a file, streamed through the proxy with its
  *  `Content-Disposition` intact — the browser saves it, nothing is built in
  *  JavaScript, and the totals are the platform's own. */
+// --- WO-84: the month sheet ---------------------------------------------------
+
+/** One day of one row. `quantity` is a number ONLY for a delivered day; a
+ *  scheduled or skipped day carries its delivery id and status so the cell
+ *  can be opened, and nothing else. */
+export type MonthCell = {
+  quantity: string | number | null;
+  delivery_id: string | null;
+  status: string | null;
+  billed: boolean;
+};
+
+export type MonthRow = {
+  customer_id: string;
+  code: string;
+  name: string;
+  product: string;
+  unit_price: string | number | null;
+  quantity_unit: string;
+  days: (MonthCell | null)[];
+  total_quantity: string | number;
+  milk_amount: string | number;
+  items_amount: string | number;
+  previous_balance: string | number;
+  total_due: string | number;
+  received: string | number;
+  method: string | null;
+  received_on: string | null;
+};
+
+export type MonthSheet = {
+  year: number;
+  month: number;
+  date_from: string;
+  date_to: string;
+  today: string;
+  currency: string;
+  quantity_unit: string;
+  product: string | null;
+  route_id: string | null;
+  rows: MonthRow[];
+  day_totals: (string | number)[];
+  totals: {
+    quantity: string | number;
+    milk_amount: string | number;
+    items_amount: string | number;
+    previous_balance: string | number;
+    total_due: string | number;
+    received: string | number;
+  };
+};
+
+export type MonthSheetParams = {
+  year?: number;
+  month?: number;
+  product?: string;
+  route_id?: string;
+};
+
+function monthSheetQuery(params: MonthSheetParams): string {
+  const search = new URLSearchParams();
+  if (params.year !== undefined) search.set("year", String(params.year));
+  if (params.month !== undefined) search.set("month", String(params.month));
+  if (params.product) search.set("product", params.product);
+  if (params.route_id) search.set("route_id", params.route_id);
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
+
+/** The shop's register, computed: one read for the whole month (WO-84). */
+export const getMonthSheet = (params: MonthSheetParams = {}) =>
+  api<MonthSheet>(`/v1/deliveries/month${monthSheetQuery(params)}`);
+
+/** The same grid as the file they already keep, same column order. */
+export function monthSheetCsvUrl(params: MonthSheetParams = {}): string {
+  return `${PROXY_PREFIX}/v1/deliveries/month.csv${monthSheetQuery(params)}`;
+}
+
 export function deliveryReportCsvUrl(params: {
   date_from: string;
   date_to: string;

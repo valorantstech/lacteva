@@ -225,6 +225,9 @@ class RouteMembership:
     code: str
     name: str
     customer_ids: frozenset[uuid.UUID]
+    #: WO-84. The route's id, so a month sheet asked for `route_id=…` can
+    #: pick the membership without this module learning what a route is.
+    route_id: uuid.UUID | None = None
 
 
 class DeliveryRouteRow(BaseModel):

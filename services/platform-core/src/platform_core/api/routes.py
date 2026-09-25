@@ -118,6 +118,9 @@ from platform_core.modules.customer_access.service import (
 from platform_core.modules.delivery.export import filename as export_filename
 from platform_core.modules.delivery.export import to_csv
 from platform_core.modules.delivery.generation import GenerationResult
+from platform_core.modules.delivery.month import MonthSheet, MonthSheetService, resolve_route
+from platform_core.modules.delivery.month import filename as month_filename
+from platform_core.modules.delivery.month import to_csv as month_to_csv
 from platform_core.modules.delivery.service import (
     AmendDeliveryCommand,
     DeliveryPage,
@@ -4461,6 +4464,54 @@ async def delivery_generation_runs(
     round should be able to check, including the person who cannot run it.
     """
     return await service.generation_runs(limit=limit)
+
+
+@delivery_router.get("/deliveries/month", response_model=MonthSheet)
+async def delivery_month_sheet(
+    session: deps.Session,
+    _: DeliveryRead,
+    year: int | None = None,
+    month: int | None = None,
+    product: str | None = None,
+    route_id: uuid.UUID | None = None,
+) -> Any:
+    """The shop's register, computed (WO-84): one row per (customer,
+    product), a cell per day holding the DELIVERED quantity or null, and the
+    month's totals in their sheet's own order. Defaults to the organisation's
+    current month; a fixed number of queries whatever the size of the dairy.
+    Declared before `/deliveries/{delivery_id}` for the same reason
+    `report.csv` is."""
+    route = None
+    if route_id is not None:
+        route = resolve_route(await route_memberships(session, require_current_tenant()), route_id)
+    return await MonthSheetService(session).sheet(
+        year=year, month=month, product=product, route=route
+    )
+
+
+@delivery_router.get("/deliveries/month.csv")
+async def delivery_month_csv(
+    session: deps.Session,
+    _: DeliveryRead,
+    year: int | None = None,
+    month: int | None = None,
+    product: str | None = None,
+    route_id: uuid.UUID | None = None,
+) -> Response:
+    """The same grid as the file they already keep, same column order, so
+    the owner can open it beside `Dailymilk Delivery 025.xlsx` and diff the
+    month (WO-84 §3)."""
+    route = None
+    if route_id is not None:
+        route = resolve_route(await route_memberships(session, require_current_tenant()), route_id)
+    sheet = await MonthSheetService(session).sheet(
+        year=year, month=month, product=product, route=route
+    )
+    return Response(
+        content=month_to_csv(sheet),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{month_filename(sheet)}"'},
+    )
 
 
 @delivery_router.get("/deliveries/report.csv")

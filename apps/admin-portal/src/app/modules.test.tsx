@@ -81,7 +81,7 @@ function offered(s: Session): string[] {
 
 const EVERYTHING = [
   "Dashboard", "Centres", "Suppliers", "Transactions", "Day book",
-  "Customers", "Deliveries", "Routes and runs", "Billing", "Who owes money",
+  "Customers", "Deliveries", "Month sheet", "Routes and runs", "Billing", "Who owes money",
   "Rate cards", "Matrices", "Playground",
   "Settlements", "Payments", "Receipts", "Reports",
   "Notifications", "Sync", "Subscription", "Business calendar", "Users", "Products",
@@ -96,7 +96,7 @@ describe("the registry", () => {
     for (const href of ["/centers", "/suppliers", "/transactions", "/day-book", "/rate-cards", "/matrices", "/resolve", "/settlements", "/payments", "/receipts"]) {
       expect(byHref[href], href).toBe("collection");
     }
-    for (const href of ["/customers", "/deliveries", "/routes", "/billing", "/receivables", "/admin/products"]) {
+    for (const href of ["/customers", "/deliveries", "/deliveries/month", "/routes", "/billing", "/receivables", "/admin/products"]) {
       expect(byHref[href], href).toBe("sales");
     }
     for (const href of ["/", "/reports", "/notifications", "/sync", "/admin/users", "/admin/settings", "/admin/audit", "/admin/subscription"]) {
@@ -128,7 +128,7 @@ describe("what a tenant-admin is offered", () => {
 
   it("a classic dairy: no Customers, Deliveries, Routes, Billing or Who owes money", () => {
     const labels = offered(session(["collection"]));
-    for (const hidden of ["Customers", "Deliveries", "Routes and runs", "Billing", "Who owes money", "Products"]) {
+    for (const hidden of ["Customers", "Deliveries", "Month sheet", "Routes and runs", "Billing", "Who owes money", "Products"]) {
       expect(labels, hidden).not.toContain(hidden);
     }
     for (const shown of ["Centres", "Suppliers", "Settlements", "Rate cards", "Payments", "Receipts", "Reports"]) {
