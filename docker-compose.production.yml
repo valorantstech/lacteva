@@ -58,6 +58,16 @@ x-api-base: &api-base
     # failed outright, and a pre-deployment backup would have been silently
     # written into a container layer that the next deploy destroys.
     - backups:/backup
+    # WO-93: the operator-placed secrets the platform reads as FILES — the
+    # Firebase service-account key above all. `env_file` is read by compose on
+    # the HOST and injected as variables; nothing else reached the container,
+    # so the key WO-77 told the operator to place was invisible to it and
+    # LACTEVA_NOTIFICATION_FCM_CREDENTIALS_PATH could only ever refuse to
+    # start. A DIRECTORY, not a file: Docker creates a missing bind source as
+    # a directory, so mounting a single file that is not there yet leaves a
+    # directory named `fcm-service-account.json` on a fresh host. Read-only.
+    # deploy.sh creates the host side as root:999 0750 (999 is the API's uid).
+    - /etc/lacteva/secrets:/run/lacteva-secrets:ro
   environment:
     LACTEVA_ENV: prod
     # VER-001: the APPLICATION role, which is deliberately not the owner and

@@ -17,7 +17,15 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --no-dev
 FROM python:3.13-slim-bookworm AS runtime
 WORKDIR /app
 # Never run as root in production.
-RUN groupadd -r app && useradd -r -g app app
+#
+# WO-93: a FIXED uid/gid, 999, not whatever `useradd -r` picks next. The
+# operator places the Firebase service-account key on the host as
+# `root:999 0640`, and that only means something if 999 is the same number
+# on every build of this image. 999 rather than a fresh number because it is
+# what every image so far has been given by chance — the production backup
+# tree under /var/lib/lacteva/backup is owned by 999 already, so this pins
+# the status quo instead of orphaning it (verified on live, 2026-09-25).
+RUN groupadd -r -g 999 app && useradd -r -u 999 -g app app
 COPY --from=builder --chown=app:app /app /app
 # AWS-001: the backup target must exist IN THE IMAGE and be owned by the
 # container user, so a named volume mounted here inherits that ownership.

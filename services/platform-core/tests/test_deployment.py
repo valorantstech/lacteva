@@ -227,6 +227,58 @@ def test_no_development_mounts_or_debug_flags_in_production():
             assert "--reload" not in str(value), f"{name} runs with reload"
 
 
+# --- WO-93: the api can see the operator-placed secrets -------------------------
+
+
+SECRETS_MOUNT = "/etc/lacteva/secrets:/run/lacteva-secrets:ro"
+
+
+def test_the_api_mounts_the_host_secrets_directory_read_only():
+    """WO-77 told the operator to place the Firebase key on the host; nothing
+    mounted the host into the container, so the key could never be seen and
+    the switch-on could only make the API refuse to start."""
+    services = _compose()["services"]
+    for name in ("api", "migrate"):
+        volumes = [
+            v if isinstance(v, str) else v.get("source", "")
+            for v in services[name].get("volumes", [])
+        ]
+        assert SECRETS_MOUNT in volumes, f"{name} does not mount the secrets directory: {volumes}"
+    # A directory, never a single file (a missing bind source becomes a directory).
+    assert not SECRETS_MOUNT.split(":")[0].endswith(".json")
+
+
+def test_the_container_user_has_a_fixed_uid():
+    """The operator's `chown root:999` means nothing unless 999 is the API's uid
+    on EVERY build; `useradd -r` without `-u` picks the next free number."""
+    dockerfile = (REPO / "services/platform-core/Dockerfile").read_text()
+    assert "groupadd -r -g 999 app" in dockerfile
+    assert "useradd -r -u 999 -g app app" in dockerfile
+
+
+def test_the_deploy_creates_the_secrets_directory_for_the_api():
+    script = (REPO / "infra/deploy/deploy.sh").read_text()
+    assert "install -d -m 0750 -o root -g 999 /etc/lacteva/secrets" in script
+
+
+def test_the_docs_and_the_example_say_how_to_switch_push_on():
+    """The three lines and the ownership, exactly — an operator copies them."""
+    three = (
+        "LACTEVA_NOTIFICATION_PUSH_PROVIDER=fcm",
+        "LACTEVA_NOTIFICATION_FCM_PROJECT_ID=lacteva-2987d",
+        "LACTEVA_NOTIFICATION_FCM_CREDENTIALS_PATH=/run/lacteva-secrets/fcm-service-account.json",
+    )
+    example = (REPO / ".env.production.example").read_text()
+    docs = (REPO / "DEPLOYMENT.md").read_text()
+    for line in three:
+        assert line in example, line
+        assert line in docs, line
+    assert "-o root -g 999" in docs and "0640" in docs
+    assert "root:999" in example and "0640" in example
+    # The old host path is gone: it named a file the container could not see.
+    assert "PATH=/etc/lacteva/fcm-service-account.json" not in example
+
+
 def test_every_service_has_a_healthcheck_or_says_why_not():
     compose = _compose()
     for name, service in compose["services"].items():

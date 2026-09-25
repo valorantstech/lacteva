@@ -555,6 +555,21 @@ secrets:
 
 **Use secrets for anything that signs or decrypts** — the JWT registry above all. A private signing key in an env file is a private signing key in every crash dump.
 
+**Operator-placed secret files (WO-93)** — some secrets are files the platform reads, not values: the Firebase service-account key above all. The `api` and `migrate` services mount the host directory `/etc/lacteva/secrets` read-only at `/run/lacteva-secrets`, and nothing else on the host is visible inside the container — a key placed anywhere else does not exist as far as the API is concerned, and a `LACTEVA_NOTIFICATION_FCM_CREDENTIALS_PATH` that names a host path makes the API refuse to start (which deploy.sh then rolls back, correctly, for a reason nobody would guess). The API runs as the fixed uid **999** (`services/platform-core/Dockerfile`); `deploy.sh` makes the directory `root:999 0750` on every deploy. To switch push on:
+
+```bash
+# on the host, as root — the key never enters the repository
+install -m 0640 -o root -g 999 ./fcm-service-account.json /etc/lacteva/secrets/fcm-service-account.json
+# in /etc/lacteva/.env.production — exactly these three lines
+LACTEVA_NOTIFICATION_PUSH_PROVIDER=fcm
+LACTEVA_NOTIFICATION_FCM_PROJECT_ID=lacteva-2987d
+LACTEVA_NOTIFICATION_FCM_CREDENTIALS_PATH=/run/lacteva-secrets/fcm-service-account.json
+# then restart the api; `docker compose exec api id` must say uid=999, and
+# `docker compose exec api head -c 20 /run/lacteva-secrets/fcm-service-account.json` must read the file
+```
+
+A 0600 root-owned file is unreadable to uid 999 — that is the failure mode this section exists to prevent, and it is silent until the first push is attempted.
+
 **Rules that are not negotiable:**
 
 - `.env.production` is git-ignored; `.env.production.example` is committed and contains only placeholders. A test asserts the second part.
@@ -621,6 +636,7 @@ In the order that closes the largest gap first:
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-06 | Architecture Board | Established by DEP-001. |
+| 1.1 | 2026-09-25 | Engineering | WO-93: §10 gains the operator-placed secret files — the `/etc/lacteva/secrets` mount, the fixed uid 999, the ownership line and the three FCM variables. |
 
 
 ## Production configuration that now FAILS CLOSED (PROD-001)

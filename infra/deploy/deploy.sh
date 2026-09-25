@@ -165,6 +165,13 @@ if [ "${ROLLBACK_ONLY}" = "1" ]; then
 fi
 
 [ -n "${TAG}" ] || die "usage: deploy.sh <image-tag> [--no-rollback] | deploy.sh --rollback"
+# WO-93: the secrets directory the api mounts read-only at /run/lacteva-secrets.
+# Created here, every deploy, so the mount never depends on cloud-init having
+# run on this host or on somebody remembering. root:999 0750 — root places
+# the files, the API (uid 999, pinned in the Dockerfile) reads them, nobody
+# else enters. Files inside are the operator's: `chown root:999 && chmod 0640`.
+install -d -m 0750 -o root -g 999 /etc/lacteva/secrets \
+  || die "could not prepare /etc/lacteva/secrets (root:999 0750) — the api mounts it"
 
 PREVIOUS="$(running_tag)"
 log "deploying ${TAG} (currently running: ${PREVIOUS:-none})"
