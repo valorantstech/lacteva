@@ -161,7 +161,9 @@ describe("Admin → Users (WO-87 §2, §3, §4)", () => {
     render(<UsersPage />);
     const help = await screen.findByTestId("users-help");
     expect(help.textContent).toMatch(/cannot be moved to a different person/);
-    expect(help.textContent).toMatch(/deactivate the account and invite the new person/);
+    // WO-88 turned the remedy into the departure checklist; the fact is the same.
+    expect(help.textContent).toMatch(/Remove from organisation.*and invite the new person/);
+    expect(help.textContent).toMatch(/reinstated, never invited again/);
   });
 });
 

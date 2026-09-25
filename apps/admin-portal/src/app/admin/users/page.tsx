@@ -29,6 +29,7 @@ import {
   setUserActive,
   describeError,
 } from "@/lib/api";
+import { DepartureChecklist } from "@/components/departure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -55,6 +56,8 @@ export default function UsersPage() {
     | { user_id: string; kind: "email"; value: string }
     | null
   >(null);
+  // WO-88 §3: the person whose departure is being walked through.
+  const [leaving, setLeaving] = useState<Person | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -275,10 +278,24 @@ export default function UsersPage() {
           A name can be corrected here, and an email changed — the new address must
           confirm from its inbox, and the old address is told. A login cannot be moved
           to a different person: when someone leaves and another takes their round,
-          deactivate the account and invite the new person, because the deliveries,
-          runs and audit lines belong to whoever made them.
+          use &ldquo;Remove from organisation&rdquo; and invite the new person, because
+          the deliveries, runs and audit lines belong to whoever made them. Someone who
+          comes back is reinstated, never invited again — the same login, with their
+          history.
         </p>
       </form>
+
+      {leaving ? (
+        <DepartureChecklist
+          person={leaving}
+          onClose={() => setLeaving(null)}
+          onDone={async (summary) => {
+            setLeaving(null);
+            setNote(summary);
+            await refresh();
+          }}
+        />
+      ) : null}
 
       <Table>
         <TableHeader>
@@ -483,6 +500,16 @@ export default function UsersPage() {
                         onClick={() => void toggle(person)}
                       >
                         {person.user.is_active ? "Deactivate" : "Reactivate"}
+                      </Button>
+                    ) : null}
+                    {person.status === "active" ? (
+                      <Button
+                        variant="outline"
+                        disabled={busy === person.user_id}
+                        onClick={() => setLeaving(person)}
+                        aria-label={`Remove ${person.user?.full_name ?? person.user_id} from organisation`}
+                      >
+                        Remove from organisation
                       </Button>
                     ) : null}
                   </div>

@@ -2347,6 +2347,8 @@ export type User = {
   /** DEMO-008 §9 — null means the account has never signed in. */
   last_login_at?: string | null;
   created_at?: string;
+  /** WO-86 / WO-88 — the household a CUSTOMER_PORTAL login speaks for. */
+  customer_id?: string | null;
 };
 
 /** DEMO-013: the organization's locale context travels with the session, so
@@ -2622,6 +2624,16 @@ export type Member = {
   /** WO-87 §4 — the email change waiting on this member's new address. */
   pending_email_change?: PendingEmailChange | null;
 };
+
+/** WO-88 §3: live staff invitations, optionally for one address. Never a code. */
+export const listInvitations = (email?: string) =>
+  api<Invitation[]>(
+    `/v1/invitations${email ? `?email=${encodeURIComponent(email)}` : ""}`,
+  );
+
+/** WO-88 §3: withdraw a pending staff invitation. 204. */
+export const revokeInvitation = (id: string) =>
+  api<void>(`/v1/invitations/${id}`, { method: "DELETE" });
 
 export const listMembers = () => api<Member[]>("/v1/members");
 
@@ -4295,6 +4307,25 @@ export const createVehicle = (body: { registration: string; label?: string }) =>
   api<Vehicle>("/v1/vehicles", { method: "POST", body: JSON.stringify(body) });
 
 export const listDrivers = () => api<Driver[]>("/v1/drivers");
+
+/** WO-88 §1: retire a driver, or bring one back. Future assignment only —
+ *  past runs keep the person's name. */
+export const setDriverActive = (id: string, active: boolean) =>
+  api<Driver>(`/v1/drivers/${id}/status`, {
+    method: "POST",
+    body: JSON.stringify({ active }),
+  });
+
+export const setVehicleActive = (id: string, active: boolean) =>
+  api<Vehicle>(`/v1/vehicles/${id}/status`, {
+    method: "POST",
+    body: JSON.stringify({ active }),
+  });
+
+/** WO-88 §3: the active routes that name this driver as default — the ones a
+ *  departure must hand over or switch auto-planning off on. */
+export const driverDefaultRoutes = (driverId: string) =>
+  api<Route[]>(`/v1/drivers/${driverId}/default-routes`);
 
 export const createDriver = (body: {
   code: string;

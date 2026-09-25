@@ -25,5 +25,9 @@ class UserView(BaseModel):
     is_active: bool
     last_login_at: datetime | None = None
     created_at: datetime
+    #: WO-86 / WO-88 §3 — the household this login speaks for, or null for
+    #: staff. Carried so the removal checklist can find the household's bill
+    #: link, which outlives the login.
+    customer_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}

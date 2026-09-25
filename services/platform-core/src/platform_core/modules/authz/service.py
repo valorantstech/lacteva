@@ -259,6 +259,13 @@ class AuthzService:
         )
         if assignment is None:
             return
+        if tenant_id is not None:
+            # WO-88 §2: taking the administrator role from the only
+            # administrator is the third way to lock a tenant out of itself.
+            from platform_core.modules.organization.service import MembershipService
+
+            if role.name in MembershipService.ADMIN_ROLE_NAMES:
+                await MembershipService(self._session).assert_not_last_admin(user_id)
         await self._record("authz.role.revoked", assignment, actor_id)
         await self._session.delete(assignment)
         await self._session.flush()

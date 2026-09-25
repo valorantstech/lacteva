@@ -289,6 +289,10 @@ class AuthService:
         reason a lie and would hand back a refresh token that may have been
         captured in the meantime.
         """
+        if not active:
+            # WO-88 §2: never the only administrator. Counted here, in the
+            # same transaction as the change, before anything is written.
+            await self._membership.assert_not_last_admin(user_id)
         user = await self._identity.set_active(
             user_id, active=active, actor_id=actor_id, tenant_id=tenant_id
         )

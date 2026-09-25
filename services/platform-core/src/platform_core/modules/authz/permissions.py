@@ -127,6 +127,13 @@ PERMISSIONS: dict[str, str] = {
     "logistics.route.manage": "Create routes and set which customers they visit, in what order",
     "logistics.fleet.read": "Read vehicles and drivers",
     "logistics.fleet.manage": "Register vehicles and drivers",
+    # WO-88 §1. Retiring is its own grant, beside registering: `Driver.active`
+    # and `Vehicle.active` existed, were filtered and were refused by
+    # `_assert_assignable`, and NO code path could set either to false — so a
+    # delivery boy who left last month was still assignable today, and WO-82's
+    # auto-planning would have kept giving him the round forever.
+    "logistics.driver.manage": "Retire a driver, or bring one back",
+    "logistics.vehicle.manage": "Retire a vehicle, or bring one back",
     "logistics.run.read": "Read daily delivery runs",
     "logistics.run.manage": "Create a daily run, assign a vehicle and driver, and move it along",
     # P0-MOB-001. The DELIVERY DRIVER's own grant, deliberately distinct from
@@ -242,6 +249,8 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "logistics.route.manage",
         "logistics.fleet.read",
         "logistics.fleet.manage",
+        "logistics.driver.manage",
+        "logistics.vehicle.manage",
         "logistics.run.read",
         "logistics.run.manage",
         "organization.calendar.read",
@@ -408,6 +417,8 @@ NAMED_ROLES: dict[str, list[str]] = {
         "logistics.route.manage",
         "logistics.fleet.read",
         "logistics.fleet.manage",
+        "logistics.driver.manage",
+        "logistics.vehicle.manage",
         "logistics.run.read",
         "logistics.run.manage",
     ],

@@ -1550,6 +1550,42 @@ class AcceptInvitationRequest(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
 
 
+class InvitationRow(BaseModel):
+    """A pending staff invitation, WITHOUT its code (SEC-003 / F-04)."""
+
+    id: uuid.UUID
+    email: str
+    role_name: str
+    status: str = "pending"
+    expires_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+@member_router.get("/invitations", response_model=list[InvitationRow])
+async def list_invitations(
+    service: Annotated[InvitationService, Depends(deps.get_invitation_service)],
+    _: Annotated[Principal, Depends(require_permission("organization.member.read"))],
+    email: str | None = None,
+) -> Any:
+    """Live staff invitations (WO-88 §3), optionally for one address. Never a
+    token: the code went to the inbox and exists nowhere a caller can read."""
+    return await service.pending(email=email)
+
+
+@member_router.delete("/invitations/{invitation_id}", status_code=204)
+async def revoke_invitation(
+    invitation_id: uuid.UUID,
+    service: Annotated[InvitationService, Depends(deps.get_invitation_service)],
+    session: deps.Session,
+    principal: Annotated[Principal, Depends(require_permission("organization.member.manage"))],
+) -> None:
+    """Withdraw a pending staff invitation (WO-88 §3). The code stops working
+    at once; an accepted one is an account now and is managed as one (409)."""
+    await service.revoke(await service.get(invitation_id), actor_id=principal.id)
+    await session.commit()
+
+
 @member_router.post("/invitations/accept", response_model=UserView, status_code=201)
 async def accept_invitation(
     body: AcceptInvitationRequest,
@@ -4869,6 +4905,54 @@ async def create_driver(
 @logistics_router.get("/drivers", response_model=list[DriverView])
 async def list_drivers(service: LogisticsSvc, p: FleetRead, active: bool | None = None) -> Any:
     return await service.list_drivers(active=active)
+
+
+class ActiveRequest(BaseModel):
+    """WO-88 §1. An end state, not a verb: retiring twice is not an error."""
+
+    active: bool
+
+
+DriverManage = Annotated[Principal, Depends(require_permission("logistics.driver.manage"))]
+VehicleManage = Annotated[Principal, Depends(require_permission("logistics.vehicle.manage"))]
+
+
+@logistics_router.post("/drivers/{driver_id}/status", response_model=DriverView)
+async def set_driver_status(
+    driver_id: uuid.UUID,
+    body: ActiveRequest,
+    service: LogisticsSvc,
+    audit: deps.Audit,
+    p: DriverManage,
+) -> Any:
+    """Retire a driver, or bring one back (WO-88 §1). Future assignment only:
+    `_assert_assignable` refuses him from now on; his past runs keep his name."""
+    return await service.set_driver_active(
+        driver_id, active=body.active, actor_id=p.id, audit=audit
+    )
+
+
+@logistics_router.get("/drivers/{driver_id}/default-routes", response_model=list[RouteView])
+async def routes_defaulting_to_driver(
+    driver_id: uuid.UUID, service: LogisticsSvc, p: FleetRead
+) -> Any:
+    """The active routes that name this driver as default (WO-88 §3) — the
+    ones the removal checklist must hand over or switch off auto-planning on."""
+    return await service.routes_defaulting_to_driver(driver_id)
+
+
+@logistics_router.post("/vehicles/{vehicle_id}/status", response_model=VehicleView)
+async def set_vehicle_status(
+    vehicle_id: uuid.UUID,
+    body: ActiveRequest,
+    service: LogisticsSvc,
+    audit: deps.Audit,
+    p: VehicleManage,
+) -> Any:
+    """Retire a vehicle, or bring one back (WO-88 §1)."""
+    return await service.set_vehicle_active(
+        vehicle_id, active=body.active, actor_id=p.id, audit=audit
+    )
 
 
 @logistics_router.get("/drivers/me", response_model=DriverView)

@@ -701,6 +701,83 @@ class LogisticsService:
         )
         return driver
 
+    async def set_driver_active(
+        self, driver_id: uuid.UUID, *, active: bool, actor_id: uuid.UUID, audit: AuditService
+    ) -> DriverView:
+        """Retire a driver, or bring one back (WO-88 §1).
+
+        The refusal in `_assert_assignable` waited for this: with no way to
+        set `active` false, a roundsman who left was assignable forever, and an
+        auto-planned route with him as default driver would have been planned
+        for him every morning. Retiring stops FUTURE assignment and nothing
+        else — his past runs, deliveries and audit lines keep his name, and a
+        route that still names him as default is left for the office to hand
+        over (the removal checklist lists them); it is not silently cleared.
+        """
+        driver = await self._session.scalar(
+            select(Driver).where(
+                Driver.tenant_id == require_current_tenant(), Driver.id == driver_id
+            )
+        )
+        if driver is None:
+            raise NotFoundError("driver not found")
+        if driver.active != active:
+            driver.active = active
+            await audit.record(
+                action="logistics.driver_retired" if not active else "logistics.driver_reinstated",
+                resource_type="driver",
+                resource_id=driver.id,
+                actor_id=actor_id,
+                detail={"code": driver.code, "active": active},
+            )
+        return DriverView.model_validate(driver)
+
+    async def set_vehicle_active(
+        self, vehicle_id: uuid.UUID, *, active: bool, actor_id: uuid.UUID, audit: AuditService
+    ) -> VehicleView:
+        """Retire a vehicle, or bring one back (WO-88 §1). Same shape, same
+        limits: future assignment only; past runs untouched."""
+        vehicle = await self._session.scalar(
+            select(Vehicle).where(
+                Vehicle.tenant_id == require_current_tenant(), Vehicle.id == vehicle_id
+            )
+        )
+        if vehicle is None:
+            raise NotFoundError("vehicle not found")
+        if vehicle.active != active:
+            vehicle.active = active
+            await audit.record(
+                action="logistics.vehicle_retired"
+                if not active
+                else "logistics.vehicle_reinstated",
+                resource_type="vehicle",
+                resource_id=vehicle.id,
+                actor_id=actor_id,
+                detail={"registration": vehicle.registration, "active": active},
+            )
+        return VehicleView.model_validate(vehicle)
+
+    async def routes_defaulting_to_driver(self, driver_id: uuid.UUID) -> list[RouteView]:
+        """The routes that would still be planned for this driver (WO-88 §3):
+        active, naming him as default. The removal checklist refuses to finish
+        while any of them is auto-planned."""
+        rows = (
+            await self._session.scalars(
+                select(Route)
+                .where(
+                    Route.tenant_id == require_current_tenant(),
+                    Route.active.is_(True),
+                    Route.default_driver_id == driver_id,
+                )
+                .order_by(Route.code)
+            )
+        ).all()
+        counts = await self._stop_counts([r.id for r in rows])
+        return [
+            RouteView.model_validate(r).model_copy(update={"stop_count": counts.get(r.id, 0)})
+            for r in rows
+        ]
+
     async def list_drivers(self, *, active: bool | None = None) -> list[DriverView]:
         conditions = [Driver.tenant_id == require_current_tenant()]
         if active is not None:

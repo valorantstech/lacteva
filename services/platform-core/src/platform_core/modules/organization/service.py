@@ -572,6 +572,57 @@ class MembershipService:
 
     MEMBERSHIP_STATUSES = ("active", "suspended", "invited")
 
+    #: WO-88 §2. The roles that make somebody an administrator of the
+    #: organisation: the system role and the DEMO-008 name for the same grant.
+    ADMIN_ROLE_NAMES = ("tenant-admin", "ORGANIZATION_ADMIN")
+
+    async def assert_not_last_admin(self, user_id: uuid.UUID) -> None:
+        """Refuse to leave the organisation with nobody who can administer it
+        (WO-88 §2).
+
+        Suspending or deactivating the only `tenant-admin`, or taking the role
+        from them, left a tenant recoverable only by a platform operator — and
+        the first customer has exactly one admin login. So: if THIS user is an
+        administrator, count the OTHER administrators who are active users
+        with an active membership, in this same transaction, and refuse when
+        there are none. The message names the remedy.
+
+        Reads `user_role`/`role` (authz) and `user_account` (identity) beside
+        this module's own `membership`: a deliberate read-only crossing, the
+        same join `GET /v1/members` already makes, because "who can administer
+        this organisation" is a fact about all three at once.
+        """
+        from platform_core.modules.authz.models import Role, UserRole
+        from platform_core.modules.identity.models import User
+
+        tenant_id = get_current_tenant()
+        if tenant_id is None:
+            return
+        admin_role_ids = select(Role.id).where(Role.name.in_(self.ADMIN_ROLE_NAMES))
+        holders = set(
+            (
+                await self._session.scalars(
+                    select(UserRole.user_id)
+                    .join(User, User.id == UserRole.user_id)
+                    .join(
+                        Membership,
+                        (Membership.user_id == UserRole.user_id)
+                        & (Membership.tenant_id == tenant_id),
+                    )
+                    .where(
+                        UserRole.tenant_id == tenant_id,
+                        UserRole.role_id.in_(admin_role_ids),
+                        User.is_active.is_(True),
+                        Membership.status == "active",
+                    )
+                )
+            ).all()
+        )
+        if user_id in holders and len(holders) == 1:
+            raise ConflictError(
+                "this is the organisation's only administrator — invite another administrator first"
+            )
+
     async def set_status(
         self, user_id: uuid.UUID, status: str, *, actor_id: uuid.UUID | None = None
     ) -> Membership:
@@ -594,6 +645,8 @@ class MembershipService:
         )
         if membership is None:
             raise NotFoundError("membership not found")
+        if status != "active" and membership.status == "active":
+            await self.assert_not_last_admin(user_id)  # WO-88 §2
         membership.status = status
         return membership
 
@@ -669,6 +722,21 @@ class InvitationService:
                 f"a {CUSTOMER_ROLE_NAME} invitation must name the customer it speaks for — "
                 "invite from the customer's own page"
             )
+        # WO-88 §4: an address that already has a login here is a MEMBER, and
+        # the way back for a member who left is reinstatement — a second
+        # invitation would, at best, be refused at acceptance ("user already
+        # exists") and, at worst, tempt somebody into a second login that
+        # splits one person's record in two.
+        from platform_core.modules.identity.models import User
+
+        existing = await self._session.scalar(
+            select(User.id).where(User.tenant_id == tenant_id, User.email == email.lower())
+        )
+        if existing is not None:
+            raise ConflictError(
+                "that address already has a login in this organisation — "
+                "reinstate the member instead of inviting them again"
+            )
         raw = secrets.token_urlsafe(32)
         invitation = Invitation(
             tenant_id=tenant_id,
@@ -713,6 +781,38 @@ class InvitationService:
             invitation, raw, "customer" if customer_id is not None else role_name
         )
         return invitation, raw
+
+    async def pending(self, *, email: str | None = None) -> list[Invitation]:
+        """Live staff invitations for this organisation, newest first (WO-88 §3),
+        optionally for one address — what the removal checklist withdraws."""
+        tenant_id = get_current_tenant()
+        if tenant_id is None:
+            raise ForbiddenError("tenant context required")
+        conditions = [
+            Invitation.tenant_id == tenant_id,
+            Invitation.accepted_at.is_(None),
+            Invitation.revoked_at.is_(None),
+        ]
+        if email is not None:
+            conditions.append(Invitation.email == email.strip().lower())
+        rows = await self._session.scalars(
+            select(Invitation).where(*conditions).order_by(Invitation.created_at.desc())
+        )
+        now = utcnow()
+        return [row for row in rows.all() if as_utc(row.expires_at) > now]
+
+    async def get(self, invitation_id: uuid.UUID) -> Invitation:
+        tenant_id = get_current_tenant()
+        if tenant_id is None:
+            raise ForbiddenError("tenant context required")
+        row = await self._session.scalar(
+            select(Invitation).where(
+                Invitation.tenant_id == tenant_id, Invitation.id == invitation_id
+            )
+        )
+        if row is None:
+            raise NotFoundError("invitation not found")
+        return row
 
     async def pending_for_customer(self, customer_id: uuid.UUID) -> list[Invitation]:
         """Live invitations for this customer, newest first (WO-86)."""
