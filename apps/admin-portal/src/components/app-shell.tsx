@@ -691,13 +691,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onLeave={load}
             />
 
-            <div className="ml-auto flex items-center gap-3">
+            {/* WO-98: `min-w-0` and `truncate` all the way down, so a long
+                organisation name ("Gavyam Dairy & Sweets") or a long person's
+                name ends in an ellipsis instead of pushing "Sign out" 21px past
+                a 320px phone — found by the committed audit on live. */}
+            <div className="ml-auto flex min-w-0 shrink items-center gap-3">
               {session?.authenticated ? (
-                <span className="hidden text-end sm:block">
-                  <span className="block text-sm leading-tight">
+                <span className="hidden min-w-0 max-w-[12rem] text-end sm:block">
+                  <span className="block truncate text-sm leading-tight" data-testid="shell-user-name">
                     {session.user.full_name || session.user.email}
                   </span>
-                  <span className="block text-xs leading-tight text-muted-foreground">
+                  <span className="block truncate text-xs leading-tight text-muted-foreground">
                     {/* WO-60: the person's ROLE, not the generic "Organization
                         member" that told everyone the same nothing. Platform
                         administrator keeps its wording. */}
@@ -711,6 +715,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 type="button"
                 variant="outline"
                 size="sm"
+                className="shrink-0"
                 onClick={async () => {
                   await logout();
                   setSession({ authenticated: false });
@@ -848,7 +853,8 @@ function OrganizationChip({
   if (session.tenant_id !== null) {
     return (
       <span
-        className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-sm"
+        className="flex min-w-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-sm"
+        data-testid="shell-organization-chip"
         // WO-60: the full name, for a dairy whose name does not fit. The
         // visible text truncates; the title does not.
         title={organization?.name ?? undefined}
@@ -861,7 +867,7 @@ function OrganizationChip({
             The chevron is gone with it: it opened nothing, and a control that
             looks interactive and is not is the same defect as a disabled
             button teasing a capability (WO-51b). */}
-        <span className="max-w-[14rem] truncate font-medium">
+        <span className="max-w-[7rem] truncate font-medium sm:max-w-[14rem]">
           {organization?.name ?? "Organization"}
         </span>
       </span>
