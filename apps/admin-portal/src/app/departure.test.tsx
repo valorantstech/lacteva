@@ -36,7 +36,7 @@ const JOSEPH = {
   is_active: true,
   last_login_at: null,
   created_at: "2026-09-01T00:00:00Z",
-  customer_id: null,
+  customer_id: null as string | null,
 };
 
 const DRIVERS = [
