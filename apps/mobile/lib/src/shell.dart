@@ -19,6 +19,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'build_info.dart';
 import 'center_summary.dart';
 import 'centers.dart';
 import 'collection_home.dart';
@@ -294,7 +295,31 @@ class _HubScreenState extends State<HubScreen> {
             const SizedBox(height: 8),
             _SignOutRow(client: widget.client, label: l.t('hub.signOut')),
           ],
+          // WO-75: which build this is, where support can ask for it.
+          const SizedBox(height: 8),
+          _BuildRow(label: l.t('hub.build')),
         ],
+      ),
+    );
+  }
+}
+
+/// "Build abc1234 · 2026-09-25T14:00Z" — the commit the artifact came from,
+/// read off the phone when support asks (WO-75). A developer build says so.
+class _BuildRow extends StatelessWidget {
+  const _BuildRow({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        key: const ValueKey('hub-build'),
+        leading: const Icon(Icons.info_outline, color: LactevaColors.muted),
+        title: Text(label),
+        subtitle: Text(buildLabel()),
+        dense: true,
       ),
     );
   }

@@ -3,10 +3,10 @@ id: CLAUDE-CONTEXT
 title: Lacteva AI Engineering Context — Permanent Onboarding Guide
 type: reference
 status: Approved
-version: "1.38"
+version: "1.39"
 owner: Engineering
 created: 2026-08-03
-last-updated: 2026-08-08
+last-updated: 2026-09-25
 related: [STD-0007, CAP-0001, PDT-0001, QR-0006]
 baseline: ARCH-BASELINE-V1
 ---
@@ -309,11 +309,13 @@ Current test posture: **845 backend tests — 792 on SQLite (fast, hermetic, eve
 | 62 | **The mobile app still presents receipts as a placeholder** (`receipt detail previews the placeholder and offers download`). The backend now returns a real `application/pdf`; the client copy and preview were not updated. | Open — frontend follow-up. |
 | 36 | ~~No connection-pool configuration~~ — **closed by ARCH-001**: pool size, overflow, timeout, pre-ping, recycle, and statement/lock/idle-in-transaction timeouts all set, with background sessions raised rather than exempted. **Still true and still load-bearing:** RLS's `SET LOCAL` requires PgBouncer **transaction** mode — statement mode would bind the wrong tenant. | Closed 2026-08-07; the pooler constraint remains a deployment rule. |
 | 86 | **Report fields named `*_kg` carry the organisation's unit** — `total_net_weight_kg`, `collected_kg`, `net_weight_kg`, `remainder_kg` were named when kilograms were the only unit the platform knew (WO-70 / D-21 corrected that: the intake unit is per organisation, India trades in litres). Every such field now sits beside a `quantity_unit` on the same DTO — `litre`, `kg`, or `mixed` when a window straddles an owner's change of unit — and clients render that, never the suffix. Renaming the wire fields is a coordinated change to the portal, the handset and the CSV export and was deliberately not made inside WO-70. | Open — recorded (WO-70). |
+| 87 | **A lost handset stays signed in until someone signs it out** (c1b851b, WO-69/D-26). The refresh pair persists in Keystore and the awaited write before rotation is correct; but the session is bounded only by the refresh TTL, and because the token rotates on every use that window slides forward indefinitely for anyone opening the app fortnightly. That is the owner's explicit, twice-stated requirement and it STANDS. What it creates is a gap the platform does not yet meet: an owner cannot list a user's active sessions and cannot end one — deactivation (every session) and the departure checklist (WO-88) are the only remedies, and both are all-or-nothing. Recorded so it is scheduled, not discovered. | Open — a per-user session list and a single-session revoke, owner-facing; not built now by decision (WO-75). |
 
 ## Change Log
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.39 | 2026-09-25 | Engineering | WO-75: divergence 87 recorded — the session-lifetime gap left by c1b851b (no per-user session list, no single-session revoke) stands by the owner's decision and is scheduled rather than discovered. |
 | 1.38 | 2026-08-09 | Engineering | DEPLOY-001 recorded: deployment toolchain executed against the real configs (terraform validate/fmt/plan-boundary, docker compose config, nginx -t on the pinned 1.27, cloud-init schema on the Terraform-rendered output, systemd-analyze). Six defects found and fixed, including a stack that could not start. Divergences 65–66 added and closed; #60 narrowed — containers remain BLOCKED BY ENVIRONMENT (no root, AppArmor denies unprivileged user namespaces). |
 | 1.37 | 2026-08-08 | Engineering | BKP-003 recorded: off-site backup replication implemented and PROVEN by disaster simulation (local backup deleted, recovered from the object store alone). Divergence 40 closed; 63–64 added for the limits that remain. |
 | 1.36 | 2026-08-08 | Engineering | `unit_price` migrated to NUMERIC(12,4) with before/after verification; divergence 61 closed. |

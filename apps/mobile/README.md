@@ -69,8 +69,12 @@ flutter build apk --debug                 # works with no keystore
 flutter build apk --release               # REFUSES without android/key.properties
 
 # WO-63: the address a distributed build must carry.
+# WO-75: and the commit it came from, shown on the More screen and read back
+# by the verifier (a missing or differing stamp is said out loud, never fatal).
 flutter build apk --release \
-  --dart-define=LACTEVA_API_URL=https://api.lacteva.com
+  --dart-define=LACTEVA_API_URL=https://api.lacteva.com \
+  --dart-define=LACTEVA_BUILD_COMMIT=$(git rev-parse --short HEAD) \
+  --dart-define=LACTEVA_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%MZ)
 # WO-67: is it signed by Phoenix Software, with the same key as last time?
 ../../infra/ci/verify-release-apk.sh build/app/outputs/flutter-apk/app-release.apk
 ```

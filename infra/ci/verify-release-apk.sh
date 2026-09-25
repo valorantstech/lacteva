@@ -76,9 +76,34 @@ dev_hits="$(strings "$apk" | grep -cE 'https?://(localhost|127\.0\.0\.1|10\.0\.2
 [ "$dev_hits" -eq 0 ] || fail "the APK carries a developer address (localhost / 127.0.0.1 / 10.0.2.2) ${dev_hits} time(s) — it would try to reach a server on the phone itself"
 api_url="$(strings "$apk" | grep -oE 'https://api\.[A-Za-z0-9.-]+' | sed 's/\.$//' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')"
 
+# WO-75: WHICH commit. `apps/mobile/lib/src/build_info.dart` folds the two
+# --dart-defines into one literal, `lacteva-build:<short sha>:<time>`, and
+# `strings` finds it the same way it finds the address. Compared with HEAD
+# when we are in a git tree, and a difference is said out loud but is NOT
+# fatal: a deliberate build from an older tag is legitimate. The goal is that
+# a mismatch is never silent, not that it is forbidden — the ALLOW_HOST_TREE
+# spirit.
+stamp="$(strings "$apk" | grep -o 'lacteva-build:[^[:space:]]*' | head -1 || true)"
+build_commit="$(printf '%s' "$stamp" | cut -d: -f2)"
+build_time="$(printf '%s' "$stamp" | cut -d: -f3-)"
+head_commit="$(git -C "$here" rev-parse --short HEAD 2>/dev/null || true)"
+build_line="unstamped"
+if [ -n "$build_commit" ]; then
+  build_line="$build_commit${build_time:+ ($build_time)}"
+  if [ -n "$head_commit" ] && [ "$build_commit" != "$head_commit" ]; then
+    build_line="$build_line — DIFFERS from HEAD $head_commit: deliberate?"
+    echo "WARN: the APK was built from $build_commit; this tree is at $head_commit" >&2
+  elif [ -n "$head_commit" ]; then
+    build_line="$build_line = HEAD"
+  fi
+else
+  echo "WARN: the APK carries no build stamp — built without --dart-define=LACTEVA_BUILD_COMMIT/LACTEVA_BUILD_TIME; the More screen will say 'unstamped'" >&2
+fi
+
 size_bytes="$(stat -c %s "$apk")"
 echo "OK: $apk"
 echo "    signer:  $dn"
 echo "    sha256:  $sha"
 echo "    api:     $api_url (no developer address present)"
+echo "    build:   $build_line"
 printf '    size:    %s bytes (%.1f MiB)\n' "$size_bytes" "$(echo "$size_bytes / 1048576" | bc -l)"

@@ -223,6 +223,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('hub-signOut')), findsOneWidget);
+      // WO-75: the build stamp is on the More screen for support to ask for.
+      expect(find.byKey(const ValueKey('hub-build')), findsOneWidget);
+      expect(find.text('unstamped (developer build)'), findsOneWidget);
       expect(find.byKey(const ValueKey('hub-sync')), findsOneWidget);
       // Instruments needs `operations.device.read`, which this operator lacks.
       expect(find.byKey(const ValueKey('hub-instruments')), findsNothing);

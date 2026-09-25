@@ -171,7 +171,11 @@ jobs:
           keyPassword=ci-throwaway
           EOF
       - name: Release build (the address a distributed build carries)
-        run: flutter build apk --release --dart-define=LACTEVA_API_URL=https://api.lacteva.com
+        run: |
+          flutter build apk --release \
+            --dart-define=LACTEVA_API_URL=https://api.lacteva.com \
+            --dart-define=LACTEVA_BUILD_COMMIT=$(git rev-parse --short HEAD) \
+            --dart-define=LACTEVA_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%MZ)
       - name: It is signed, and not with the debug key
         # The verifier's job is to reject this APK — it is a throwaway
         # signature — so the assertion here is the inverse: a throwaway
