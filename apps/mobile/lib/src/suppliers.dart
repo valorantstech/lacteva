@@ -128,8 +128,11 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
                 ),
               ),
             if (page != null && page.total > pageSize)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              // A Wrap (WO-96 / D-45): Previous · 1 / 5 · Next did not fit a
+              // 320px phone in one row even at text scale 1.0.
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   TextButton(
                     onPressed: _offset == 0

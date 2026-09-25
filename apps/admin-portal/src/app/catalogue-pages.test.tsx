@@ -431,6 +431,8 @@ describe("the customer page — items", () => {
     // The record form's own quantity box (the plan card has one too).
     expect(document.querySelector<HTMLInputElement>("#d-qty")).toHaveValue("0.500");
     await user.click(screen.getByRole("button", { name: "Record delivery" }));
+    // WO-96 §4: asked first, then recorded.
+    await user.click(await screen.findByRole("button", { name: "Yes, record it" }));
     await waitFor(() => expect(bodies(spy, "/v1/deliveries").length).toBe(1));
     expect(bodies(spy, "/v1/deliveries")[0]).toMatchObject({
       customer_id: "cu-1",

@@ -26,7 +26,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/states";
+import { ScrollHint } from "@/components/scroll-hint";
 import { useT } from "@/lib/i18n";
+import { useIsNarrow } from "@/lib/viewport";
 import { cn } from "@/lib/utils";
 
 export type Column<T> = {
@@ -38,6 +40,14 @@ export type Column<T> = {
   align?: "start" | "end";
   /** Hidden below `md`, for columns that are context rather than content. */
   secondary?: boolean;
+  /**
+   * WO-96: what the column IS, so the phone can lay a row out as a card —
+   * the identity as the heading, the money right beside it and large, the
+   * status as a chip, the actions as full-width buttons at the bottom, and
+   * everything else as a label/value line. The desktop table ignores it.
+   * Unset means "meta".
+   */
+  role?: "title" | "subtitle" | "money" | "status" | "actions" | "meta";
 };
 
 export function DataTable<T>({
@@ -65,6 +75,7 @@ export function DataTable<T>({
   page?: PaginationProps;
 }) {
   const showSkeleton = loading && rows.length === 0;
+  const narrow = useIsNarrow();
   // Shared chrome goes through the catalog (P1-PORTAL-SCALE-001): these
   // strings frame every list in the portal, so they must not stay English
   // when the session is not.
@@ -95,10 +106,13 @@ export function DataTable<T>({
           description={empty?.description}
           action={empty?.action}
         />
+      ) : rows.length > 0 && narrow ? (
+        <RowCards columns={columns} rows={rows} rowKey={rowKey} caption={caption} loading={loading} />
       ) : rows.length > 0 ? (
         // Wide business tables scroll horizontally rather than being crushed:
-        // a settlement line with eight figures is not improved by wrapping.
-        <div className="w-full overflow-x-auto">
+        // a settlement line with eight figures is not improved by wrapping —
+        // and the scroller says it scrolls (WO-96 §3).
+        <ScrollHint>
           <Table>
             <caption className="sr-only">{caption}</caption>
             <TableHeader>
@@ -144,11 +158,111 @@ export function DataTable<T>({
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollHint>
       ) : null}
 
       {page ? <Pagination {...page} /> : null}
     </div>
+  );
+}
+
+/**
+ * The same rows as cards, for a phone (WO-96 §1). Driven by the SAME column
+ * definitions as the table, so a column added later appears in both — the
+ * one thing a hand-built mobile layout per page could never promise. The
+ * header of a `meta` column becomes its label; `secondary` columns are
+ * shown here too, because on a card there is room for context.
+ */
+function RowCards<T>({
+  columns,
+  rows,
+  rowKey,
+  caption,
+  loading,
+}: {
+  columns: Column<T>[];
+  rows: T[];
+  rowKey: (row: T) => string;
+  caption: string;
+  loading: boolean;
+}) {
+  const by = (role: NonNullable<Column<T>["role"]>) => columns.filter((c) => (c.role ?? "meta") === role);
+  const title = by("title");
+  const subtitle = by("subtitle");
+  const money = by("money");
+  const status = by("status");
+  const actions = by("actions");
+  const meta = by("meta");
+  return (
+    <ul
+      aria-label={caption}
+      data-testid="row-cards"
+      className={cn("flex flex-col gap-3", loading && "opacity-60 transition-opacity")}
+    >
+      {rows.map((row) => (
+        <li
+          key={rowKey(row)}
+          data-testid="row-card"
+          className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 text-sm shadow-xs"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              {title.map((c) => (
+                <div key={c.key} className="font-medium leading-snug" data-role="title">
+                  {c.cell(row)}
+                </div>
+              ))}
+              {subtitle.map((c) => (
+                <div key={c.key} className="text-xs text-muted-foreground" data-role="subtitle">
+                  {c.cell(row)}
+                </div>
+              ))}
+            </div>
+            {money.length > 0 ? (
+              <div className="flex shrink-0 flex-col items-end gap-0.5" data-role="money">
+                {money.map((c) => (
+                  <div key={c.key} className="text-end">
+                    {money.length > 1 ? (
+                      <span className="me-1 text-xs text-muted-foreground">{c.header}</span>
+                    ) : null}
+                    <span className="text-lg font-semibold tabular-nums">{c.cell(row)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          {status.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2" data-role="status">
+              {status.map((c) => (
+                <span key={c.key}>{c.cell(row)}</span>
+              ))}
+            </div>
+          ) : null}
+          {meta.length > 0 ? (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs" data-role="meta">
+              {meta.map((c) => (
+                <div key={c.key} className="contents">
+                  <dt className="text-muted-foreground">{c.header}</dt>
+                  <dd className="min-w-0 text-end">{c.cell(row)}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+          {actions.length > 0 ? (
+            <div
+              className="flex flex-col gap-2 border-t border-border pt-2 [&_a]:w-full [&_a]:justify-center [&_button]:w-full [&_button]:justify-center"
+              data-role="actions"
+            >
+              {actions.map((c) => (
+                <div key={c.key} className="flex flex-col gap-2">
+                  {c.cell(row)}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </li>
+      ))}
+    </ul>
   );
 }
 

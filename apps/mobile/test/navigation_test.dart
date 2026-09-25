@@ -22,6 +22,7 @@ import 'package:lacteva_mobile/src/api.dart';
 import 'package:lacteva_mobile/src/navigation.dart';
 import 'package:lacteva_mobile/src/session.dart';
 import 'package:lacteva_mobile/src/shell.dart';
+import 'responsive/matrix.dart';
 
 Session _session(Set<String> permissions, {String? customerId}) => Session(
   userId: 'u1',
@@ -230,5 +231,22 @@ void main() {
       // Instruments needs `operations.device.read`, which this operator lacks.
       expect(find.byKey(const ValueKey('hub-instruments')), findsNothing);
     });
+  });
+
+  testWidgets('the More hub renders at every size and text scale (WO-96 / D-45)', (
+    tester,
+  ) async {
+    await pumpMatrix(
+      tester,
+      'HubScreen',
+      () => HubScreen(
+        key: UniqueKey(),
+        client: _Fake(),
+        session: _operator,
+        titleKey: 'nav.more',
+        items: operatorMoreItems,
+        signOut: true,
+      ),
+    );
   });
 }

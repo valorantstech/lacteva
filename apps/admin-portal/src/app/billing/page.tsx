@@ -167,6 +167,7 @@ function BillingView() {
     {
       key: "number",
       header: "Bill",
+      role: "title",
       cell: (inv) => (
         <div className="flex flex-col">
           <Link
@@ -184,6 +185,7 @@ function BillingView() {
     {
       key: "customer",
       header: "Customer",
+      role: "subtitle",
       cell: (inv) => (
         <Link
           className="hover:underline"
@@ -207,6 +209,7 @@ function BillingView() {
       key: "due",
       header: "Amount due",
       align: "end",
+      role: "money",
       cell: (inv) => (
         <div className="flex flex-col items-end">
           <Money amount={inv.amount_due} currency={inv.currency} />
@@ -221,6 +224,7 @@ function BillingView() {
     {
       key: "status",
       header: "Status",
+      role: "status",
       cell: (inv) => (
         <span className="inline-flex items-center gap-1.5">
           <StatusBadge status={inv.status} />
@@ -237,6 +241,7 @@ function BillingView() {
       key: "actions",
       header: <span className="sr-only">Actions</span>,
       align: "end",
+      role: "actions",
       cell: (inv) => (
         <span className="inline-flex items-center gap-1">
           <RowWhatsApp

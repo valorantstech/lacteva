@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lacteva_mobile/src/api.dart';
 import 'package:lacteva_mobile/src/transactions_history.dart';
+import 'responsive/matrix.dart';
 
 Map<String, dynamic> _tx(int n) => {
   'id': 'tx-$n',
@@ -152,5 +153,20 @@ void main() {
     expect(find.text('Parchi SLP-2026-000001'), findsOneWidget);
     expect(find.textContaining('Ram Kumar'), findsOneWidget);
     expect(find.text('Copy parchi text'), findsOneWidget);
+  });
+
+  testWidgets('the transaction history renders at every size and text scale (WO-96 / D-45)', (
+    tester,
+  ) async {
+    await pumpMatrix(
+      tester,
+      'TransactionHistoryScreen',
+      () => TransactionHistoryScreen(
+        key: UniqueKey(),
+        client: _Fake(),
+        centerId: 'c1',
+        centerName: 'Village Centre',
+      ),
+    );
   });
 }

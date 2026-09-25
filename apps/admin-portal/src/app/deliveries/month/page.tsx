@@ -16,6 +16,7 @@ import {
   recordDelivery,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ScrollHint } from "@/components/scroll-hint";
 import {
   Card,
   CardContent,
@@ -251,10 +252,7 @@ export default function MonthSheetPage() {
           description="A household appears once it has an active plan, or a delivery in this month."
         />
       ) : (
-        <div
-          className="overflow-x-auto rounded-md border border-border"
-          data-testid="month-sheet"
-        >
+        <ScrollHint className="rounded-md border border-border" data-testid="month-sheet">
           <table className="min-w-max text-sm tabular-nums" aria-label="Month sheet">
             <thead className="bg-muted/50 text-xs text-muted-foreground">
               <tr>
@@ -378,7 +376,7 @@ export default function MonthSheetPage() {
               </tr>
             </tfoot>
           </table>
-        </div>
+        </ScrollHint>
       )}
     </PageContainer>
   );

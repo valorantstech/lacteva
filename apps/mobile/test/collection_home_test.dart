@@ -31,6 +31,7 @@ import 'package:lacteva_mobile/src/session.dart';
 import 'package:lacteva_mobile/src/suppliers.dart';
 import 'package:lacteva_mobile/src/theme.dart';
 import 'package:lacteva_mobile/src/transactions_history.dart';
+import 'responsive/matrix.dart';
 
 /// The platform, as far as this screen is concerned.
 ///
@@ -870,5 +871,20 @@ void main() {
       expect(find.text('collected today'), findsNothing);
       expect(find.text('yesterday'), findsNothing);
     });
+  });
+
+  testWidgets('the collection home renders at every size and text scale (WO-96 / D-45)', (
+    tester,
+  ) async {
+    await pumpMatrix(
+      tester,
+      'CollectionHomeScreen',
+      () => CollectionHomeScreen(
+        key: UniqueKey(),
+        client: _OfflineFake(_Platform(), SyncQueue(MemoryOfflineStore())),
+        session: _operator,
+        hourOfDay: 7,
+      ),
+    );
   });
 }

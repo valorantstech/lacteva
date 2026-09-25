@@ -23,7 +23,8 @@ dist/
 *firebase-adminsdk*.json
 
 # Node / Next.js (admin portal)
-node_modules/
+# No trailing slash: a symlink or a file of that name is covered too (D-45 review).
+node_modules
 .next/
 out/
 

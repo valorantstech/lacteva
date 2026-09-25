@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AdminPage } from "@/components/admin-page";
+import { ScrollHint } from "@/components/scroll-hint";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -99,7 +100,7 @@ export default function ProductsPage() {
           Nothing here yet. Add the milk you deliver and anything else you sell.
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        <ScrollHint>
           <table className="w-full text-sm">
             <caption className="sr-only">Products in the catalogue</caption>
             <thead>
@@ -148,7 +149,7 @@ export default function ProductsPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollHint>
       )}
 
       {editing ? (

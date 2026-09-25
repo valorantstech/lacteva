@@ -37,6 +37,7 @@ import { PageHeader } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
 import { ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
+import { type Column, DataTable } from "@/components/data-table";
 
 /**
  * One monthly bill (DEMO-009).
@@ -406,66 +407,12 @@ export default function InvoiceDetailPage({
               Nothing billed here.
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <caption className="sr-only">
-                  Deliveries and items billed by {invoice.invoice_number}
-                </caption>
-                <thead>
-                  <tr className="border-b text-start text-muted-foreground">
-                    <th className="py-2 pe-4 font-medium">Date</th>
-                    <th className="py-2 pe-4 font-medium">Kind</th>
-                    <th className="py-2 pe-4 font-medium">Product</th>
-                    <th className="py-2 pe-4 text-end font-medium">Quantity</th>
-                    <th className="py-2 pe-4 text-end font-medium">Rate</th>
-                    <th className="py-2 text-end font-medium">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((line) => (
-                    <tr key={line.id} className="border-b last:border-0">
-                      <td className="py-2 pe-4 tabular-nums">
-                        {line.delivery_date}
-                      </td>
-                      <td className="py-2 pe-4 text-muted-foreground">
-                        {/* WO-81: the morning milk, or a thing sold beside it.
-                            A delivery says its slot; an item has none. */}
-                        {line.line_kind === "item"
-                          ? "item"
-                          : `milk · ${line.slot}`}
-                      </td>
-                      <td className="py-2 pe-4">
-                        {line.product_name || line.product}
-                      </td>
-                      <td className="py-2 pe-4 text-end">
-                        <Quantity
-                          value={line.quantity}
-                          unit={line.quantity_unit}
-                        />
-                      </td>
-                      <td className="py-2 pe-4 text-end tabular-nums">
-                        {String(line.unit_price)}
-                        {line.price_source === "override" ? (
-                          <span
-                            className="ms-1 text-xs text-muted-foreground"
-                            title="This day was priced away from the standing order's rate"
-                            data-testid="line-rate-override"
-                          >
-                            (agreed for this day)
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="py-2 text-end">
-                        <Money
-                          amount={line.amount}
-                          currency={invoice.currency}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              caption="Bill lines"
+              rowKey={(line) => line.id}
+              rows={lines}
+              columns={LINE_COLUMNS(invoice.currency)}
+            />
           )}
         </CardContent>
       </Card>
@@ -533,3 +480,57 @@ function WhatsAppSend({
     </a>
   );
 }
+
+/**
+ * The bill's lines (WO-96 §1): one column set drives the desktop table and
+ * the phone's cards, where the date is the heading and the amount sits large
+ * beside it — the two things a household asks about a line.
+ */
+const LINE_COLUMNS = (currency: string): Column<InvoiceDetail["lines"][number]>[] => [
+  { key: "date", header: "Date", role: "title", cell: (line) => <span className="tabular-nums">{line.delivery_date}</span> },
+  {
+    key: "kind",
+    header: "Kind",
+    role: "subtitle",
+    // WO-81: the morning milk, or a thing sold beside it. A delivery says
+    // its slot; an item has none.
+    cell: (line) => (
+      <span className="text-muted-foreground">
+        {line.line_kind === "item" ? "item" : `milk · ${line.slot}`}
+      </span>
+    ),
+  },
+  { key: "product", header: "Product", cell: (line) => line.product_name || line.product },
+  {
+    key: "quantity",
+    header: "Quantity",
+    align: "end",
+    cell: (line) => <Quantity value={line.quantity} unit={line.quantity_unit} />,
+  },
+  {
+    key: "rate",
+    header: "Rate",
+    align: "end",
+    cell: (line) => (
+      <span className="tabular-nums">
+        {String(line.unit_price)}
+        {line.price_source === "override" ? (
+          <span
+            className="ms-1 text-xs text-muted-foreground"
+            title="This day was priced away from the standing order's rate"
+            data-testid="line-rate-override"
+          >
+            (agreed for this day)
+          </span>
+        ) : null}
+      </span>
+    ),
+  },
+  {
+    key: "amount",
+    header: "Amount",
+    align: "end",
+    role: "money",
+    cell: (line) => <Money amount={line.amount} currency={currency} />,
+  },
+];

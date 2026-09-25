@@ -26,6 +26,7 @@ import 'package:lacteva_mobile/src/brand/auth_lockup.dart';
 import 'package:lacteva_mobile/src/brand/mark.dart';
 import 'package:lacteva_mobile/src/brand/wordmark.dart';
 import 'package:lacteva_mobile/src/password_reset.dart';
+import 'responsive/matrix.dart';
 
 class _Fake extends ApiClient {
   _Fake({this.requestError, this.confirmError});
@@ -307,5 +308,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('That reset code has expired.'), findsOneWidget);
+  });
+
+  testWidgets('password reset renders at every size and text scale (WO-96 / D-45)', (
+    tester,
+  ) async {
+    await pumpMatrix(
+      tester,
+      'PasswordResetScreen',
+      () => PasswordResetScreen(key: UniqueKey(), client: _Fake()),
+    );
   });
 }

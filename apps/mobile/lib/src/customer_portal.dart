@@ -1631,9 +1631,16 @@ class _Row extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: style),
-          Text(value, style: style),
+          // Both sides flex (WO-96 / D-45): a long label in Hindi or a long
+          // amount at text scale 2.0 wraps on a 320px phone instead of
+          // running off the card.
+          Expanded(child: Text(label, style: style)),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(value, style: style, textAlign: TextAlign.end),
+          ),
         ],
       ),
     );

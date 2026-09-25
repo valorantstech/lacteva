@@ -29,6 +29,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale } from "@/lib/i18n";
+import { ScrollHint } from "@/components/scroll-hint";
 import { BookOpen, Download, Droplets, TruckIcon } from "lucide-react";
 
 import {
@@ -316,7 +317,7 @@ export default function DayBookPage() {
               description="No accepted collection and no dispatch at this centre on this date. That is not the same as a day with no milk — a day nobody recorded looks exactly like this one."
             />
           ) : (
-            <div className="overflow-x-auto">
+            <ScrollHint>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs uppercase text-muted-foreground">
@@ -364,7 +365,7 @@ export default function DayBookPage() {
                   </tr>
                 </tbody>
               </table>
-            </div>
+            </ScrollHint>
           )}
 
           {book ? (

@@ -19,6 +19,7 @@ import {
   describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ScrollHint } from "@/components/scroll-hint";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
@@ -382,7 +383,7 @@ export default function SubscriptionPage() {
             <Card>
               <CardContent className="py-4">
                 <h2 className="mb-3 text-sm font-medium">Payment history</h2>
-                <div className="overflow-x-auto">
+                <ScrollHint>
                   <table className="w-full text-sm">
                     <thead className="text-left text-xs text-muted-foreground">
                       <tr>
@@ -420,7 +421,7 @@ export default function SubscriptionPage() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollHint>
               </CardContent>
             </Card>
           ) : null}

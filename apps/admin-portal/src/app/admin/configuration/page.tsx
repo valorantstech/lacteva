@@ -101,7 +101,7 @@ export default function ConfigurationPage() {
         <textarea
           id="value"
           rows={8}
-          className="rounded-md border border-input bg-transparent p-3 font-mono text-sm"
+          className="rounded-md border border-input bg-transparent p-3 font-mono text-base md:text-sm"
           value={value}
           onChange={(e) => setValue(e.target.value)}
         />

@@ -23,6 +23,7 @@ import 'package:lacteva_mobile/src/offline/store.dart';
 import 'package:lacteva_mobile/src/offline/sync_engine.dart';
 import 'package:lacteva_mobile/src/session.dart';
 import 'package:lacteva_mobile/src/theme.dart';
+import 'responsive/matrix.dart';
 
 /// A stop exactly as `RunStopView` sends one — no quantity, because the model
 /// has none and the tests must not pretend otherwise.
@@ -506,5 +507,32 @@ void main() {
       );
       expect(tester.binding.hasScheduledFrame, isFalse);
     });
+  });
+
+  testWidgets('the driver round renders at every size and text scale (WO-96 / D-45)', (
+    tester,
+  ) async {
+    final platform = _Platform(
+      runs: [
+        _run(
+          status: 'in_progress',
+          stops: [
+            _stop(1, 'Hotel Annapurna', outcome: 'delivered'),
+            _stop(2, 'Café Madhuban', outcome: 'delivered'),
+            _stop(3, 'Deshmukh household'),
+            _stop(4, 'Shree Tea House'),
+          ],
+        ),
+      ],
+    );
+    await pumpMatrix(
+      tester,
+      'DriverHomeScreen',
+      () => DriverHomeScreen(
+        key: UniqueKey(),
+        client: _Client(platform, SyncQueue(MemoryOfflineStore())),
+        session: _session(),
+      ),
+    );
   });
 }

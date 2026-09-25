@@ -20,6 +20,7 @@ import 'package:lacteva_mobile/src/settlements.dart';
 import 'package:lacteva_mobile/src/session_store.dart';
 import 'package:lacteva_mobile/src/suppliers.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'responsive/matrix.dart';
 
 class _FakeClient extends ApiClient {
   @override
@@ -504,6 +505,44 @@ void main() {
     expect(find.text('Edit KH-C1'), findsOneWidget);
     expect(find.text('Timezone'), findsOneWidget);
     expect(find.text('Branch'), findsNothing);
+  });
+  group('responsive matrix (WO-96 / D-45)', () {
+    testWidgets('sign-in renders at every size and text scale', (tester) async {
+      await pumpMatrix(
+        tester,
+        'LoginScreen',
+        () => LoginScreen(
+          client: OfflineApiClient(
+            queue: SyncQueue(MemoryOfflineStore()),
+            deviceId: 'matrix',
+          ),
+        ),
+      );
+    });
+
+    for (final step in [0, 1, 2, 3, 4, 5]) {
+      testWidgets('collection wizard step $step renders at every size and text scale', (
+        tester,
+      ) async {
+        await pumpMatrix(
+          tester,
+          'CollectionWizardScreen step $step',
+          () => CollectionWizardScreen(
+            client: _WizardFake(),
+            sessionId: 's1',
+            initialStep: step,
+          ),
+        );
+      });
+    }
+
+    testWidgets('centre today renders at every size and text scale', (tester) async {
+      await pumpMatrix(
+        tester,
+        'CenterTodayScreen',
+        () => CenterTodayScreen(client: _ReportFake(), centerId: 'c1'),
+      );
+    });
   });
 }
 

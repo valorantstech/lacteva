@@ -21,6 +21,7 @@ import 'package:lacteva_mobile/src/customer_portal.dart';
 import 'package:lacteva_mobile/src/session.dart';
 import 'package:lacteva_mobile/src/shell.dart';
 import 'package:lacteva_mobile/src/theme.dart';
+import 'responsive/matrix.dart';
 
 Session _session() => Session(
   userId: 'u1',
@@ -342,6 +343,30 @@ void main() {
       expect(
         find.text('No payment has been recorded against this invoice yet.'),
         findsOneWidget,
+      );
+    });
+  });
+
+  group('responsive matrix (WO-96 / D-45)', () {
+    testWidgets('the bills tab renders at every size and text scale', (tester) async {
+      final platform = _Platform(invoices: List.generate(30, _invoice));
+      await pumpMatrix(
+        tester,
+        'CustomerBillsScreen',
+        () => CustomerBillsScreen(key: UniqueKey(), client: platform, session: _session()),
+      );
+    });
+
+    testWidgets('a bill renders at every size and text scale', (tester) async {
+      await pumpMatrix(
+        tester,
+        'CustomerBillScreen',
+        () => CustomerBillScreen(
+          key: UniqueKey(),
+          client: _Platform(),
+          invoiceId: 'i30',
+          session: _session(),
+        ),
       );
     });
   });

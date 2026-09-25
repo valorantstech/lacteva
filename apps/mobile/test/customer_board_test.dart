@@ -22,6 +22,7 @@ import 'package:lacteva_mobile/src/api.dart';
 import 'package:lacteva_mobile/src/customer_portal.dart';
 import 'package:lacteva_mobile/src/session.dart';
 import 'package:lacteva_mobile/src/theme.dart';
+import 'responsive/matrix.dart';
 
 class _Platform extends ApiClient {
   _Platform({
@@ -719,5 +720,15 @@ void billLineTests() {
       await tester.pumpAndSettle();
       expect(find.byType(CustomerBillScreen), findsOneWidget);
     });
+  });
+
+  testWidgets('the household home renders at every size and text scale (WO-96 / D-45)', (
+    tester,
+  ) async {
+    await pumpMatrix(
+      tester,
+      'CustomerHomeScreen',
+      () => CustomerHomeScreen(key: UniqueKey(), client: _Platform(), session: _session()),
+    );
   });
 }

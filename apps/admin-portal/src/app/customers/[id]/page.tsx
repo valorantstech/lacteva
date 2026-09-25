@@ -55,6 +55,7 @@ import { PageContainer } from "@/components/page-container";
 import { Metric, Surface } from "@/components/surface";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { StatusBadge } from "@/components/status-badge";
+import { type Column, DataTable } from "@/components/data-table";
 import { useBusinessToday } from "@/components/date-range";
 import { CustomerAccessCards } from "@/components/customer-access";
 import { useLocale } from "@/lib/i18n";
@@ -574,53 +575,12 @@ export default function CustomerDetailPage({
                   <Money amount={deliveries.total_amount} currency={currency} />
                 </span>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <caption className="sr-only">
-                    Deliveries to {customer.name}
-                  </caption>
-                  <thead>
-                    <tr className="border-b text-start text-muted-foreground">
-                      <th className="py-2 pe-4 font-medium">Date</th>
-                      <th className="py-2 pe-4 font-medium">Slot</th>
-                      <th className="py-2 pe-4 text-end font-medium">
-                        Quantity
-                      </th>
-                      <th className="py-2 pe-4 text-end font-medium">Rate</th>
-                      <th className="py-2 pe-4 text-end font-medium">Amount</th>
-                      <th className="py-2 pe-4 font-medium">Status</th>
-                      <th className="py-2 font-medium">Invoiced</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {deliveries.items.map((d: Delivery) => (
-                      <tr key={d.id} className="border-b last:border-0">
-                        <td className="py-2 pe-4 tabular-nums">
-                          {d.delivery_date}
-                        </td>
-                        <td className="py-2 pe-4 text-muted-foreground">
-                          {d.slot}
-                        </td>
-                        <td className="py-2 pe-4 text-end">
-                          <Quantity value={d.quantity} unit={d.quantity_unit} />
-                        </td>
-                        <td className="py-2 pe-4 text-end tabular-nums">
-                          {String(d.unit_price)}
-                        </td>
-                        <td className="py-2 pe-4 text-end">
-                          <Money amount={d.amount} currency={d.currency} />
-                        </td>
-                        <td className="py-2 pe-4">
-                          <StatusBadge status={d.status} />
-                        </td>
-                        <td className="py-2 text-xs text-muted-foreground">
-                          {d.invoice_id ? "on a bill" : "not yet billed"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                caption={`Deliveries to ${customer.name}`}
+                rowKey={(d) => d.id}
+                rows={deliveries.items}
+                columns={DELIVERY_COLUMNS}
+              />
             </>
           )}
         </CardContent>
@@ -654,69 +614,19 @@ export default function CustomerDetailPage({
               description="Only the milk so far. Record an item above when a household takes something with it."
             />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <caption className="sr-only">Items sold to this customer</caption>
-                <thead>
-                  <tr className="border-b text-start text-muted-foreground">
-                    <th className="py-2 pe-4 font-medium">Date</th>
-                    <th className="py-2 pe-4 font-medium">Item</th>
-                    <th className="py-2 pe-4 text-end font-medium">Quantity</th>
-                    <th className="py-2 pe-4 text-end font-medium">Amount</th>
-                    <th className="py-2 pe-4 font-medium">Status</th>
-                    <th className="py-2 font-medium" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.items.map((item) => (
-                    <tr key={item.id} className="border-b last:border-0">
-                      <td className="py-2 pe-4 tabular-nums">{item.sale_date}</td>
-                      <td className="py-2 pe-4">
-                        {item.product_name}
-                        {item.notes ? (
-                          <span className="text-muted-foreground"> — {item.notes}</span>
-                        ) : null}
-                      </td>
-                      <td className="py-2 pe-4 text-end tabular-nums">
-                        {String(item.quantity)} {item.unit}
-                      </td>
-                      <td className="py-2 pe-4 text-end">
-                        <Money amount={item.amount} currency={item.currency} />
-                      </td>
-                      <td className="py-2 pe-4">
-                        {item.status === "cancelled" ? (
-                          <span className="text-muted-foreground">cancelled</span>
-                        ) : item.invoice_id ? (
-                          <Link className="hover:underline" href={`/invoices/${item.invoice_id}`}>
-                            on a bill
-                          </Link>
-                        ) : (
-                          <span className="text-muted-foreground">not yet billed</span>
-                        )}
-                      </td>
-                      <td className="py-2 text-end">
-                        {item.status === "recorded" && !item.invoice_id ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={busy !== null}
-                            onClick={() =>
-                              void run(
-                                `cancel-item-${item.id}`,
-                                () => cancelSaleItem(item.id, "recorded in error"),
-                                `${item.product_name} cancelled.`,
-                              )
-                            }
-                          >
-                            Cancel
-                          </Button>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div>
+              <DataTable
+                caption="Items sold to this customer"
+                rowKey={(item) => item.id}
+                rows={items.items}
+                columns={itemColumns(busy, (item) =>
+                  run(
+                    `cancel-item-${item.id}`,
+                    () => cancelSaleItem(item.id, "recorded in error"),
+                    `${item.product_name} cancelled.`,
+                  ),
+                )}
+              />
               <p className="pt-3 text-sm">
                 <span className="text-muted-foreground">Across all {items.total} items: </span>
                 <Money amount={items.total_amount} currency={items.currency ?? currency} />
@@ -815,81 +725,12 @@ export default function CustomerDetailPage({
             {statement.entries.length === 0 ? (
               <EmptyState title={t("statement.empty")} />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <caption className="sr-only">{t("statement.title")}</caption>
-                  <thead>
-                    <tr className="border-b text-start text-muted-foreground">
-                      <th className="py-2 pe-4 font-medium">
-                        {t("field.date")}
-                      </th>
-                      <th className="py-2 pe-4 font-medium">
-                        {t("statement.entry")}
-                      </th>
-                      <th className="py-2 pe-4 text-end font-medium">
-                        {t("statement.debit")}
-                      </th>
-                      <th className="py-2 pe-4 text-end font-medium">
-                        {t("statement.credit")}
-                      </th>
-                      <th className="py-2 text-end font-medium">
-                        {t("statement.runningBalance")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {statement.entries.map((entry) => (
-                      <tr
-                        key={`${entry.kind}-${entry.reference}`}
-                        className="border-b last:border-0"
-                      >
-                        <td className="py-2 pe-4 tabular-nums">
-                          {entry.entry_date}
-                        </td>
-                        <td className="py-2 pe-4">
-                          <span className="font-medium">
-                            {entry.kind === "invoice"
-                              ? t("statement.invoice")
-                              : t("statement.payment")}
-                          </span>{" "}
-                          <span className="text-muted-foreground">
-                            {entry.reference}
-                          </span>
-                          <div className="text-xs text-muted-foreground">
-                            {entry.detail}
-                          </div>
-                        </td>
-                        <td className="py-2 pe-4 text-end">
-                          {Number(entry.debit) === 0 ? (
-                            <span className="text-muted-foreground">—</span>
-                          ) : (
-                            <Money
-                              amount={entry.debit}
-                              currency={statement.currency}
-                            />
-                          )}
-                        </td>
-                        <td className="py-2 pe-4 text-end">
-                          {Number(entry.credit) === 0 ? (
-                            <span className="text-muted-foreground">—</span>
-                          ) : (
-                            <Money
-                              amount={entry.credit}
-                              currency={statement.currency}
-                            />
-                          )}
-                        </td>
-                        <td className="py-2 text-end font-medium">
-                          <Money
-                            amount={entry.balance}
-                            currency={statement.currency}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                caption={t("statement.title")}
+                rowKey={(entry) => `${entry.kind}-${entry.reference}`}
+                rows={statement.entries}
+                columns={statementColumns(t, statement.currency)}
+              />
             )}
           </CardContent>
         </Card>
@@ -1093,12 +934,22 @@ function RecordDeliveryForm({
   const [status, setStatus] = useState("delivered");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // WO-96 §4: one tap must not create a billable delivery silently. The
+  // form is prefilled — the plan's quantity, today, "delivered" — so on a
+  // phone a thumb brushing the button was a recorded, priced delivery (the
+  // audit harness made one, ₹520, expecting a form). Ask first, in words
+  // that name what will be recorded; the second tap is the act.
+  const [confirming, setConfirming] = useState(false);
 
   return (
     <form
       className="flex flex-wrap items-end gap-3"
       onSubmit={async (e) => {
         e.preventDefault();
+        if (!confirming) {
+          setConfirming(true);
+          return;
+        }
         setWorking(true);
         setError(null);
         try {
@@ -1110,6 +961,7 @@ function RecordDeliveryForm({
             status,
             product,
           });
+          setConfirming(false);
           onDone(`Delivery recorded for ${day} (${slot}).`);
         } catch (err) {
           setError(describe(err));
@@ -1181,9 +1033,30 @@ function RecordDeliveryForm({
           <option value="returned">returned</option>
         </Select>
       </div>
-      <Button type="submit" disabled={busy || working}>
-        {working ? "Recording…" : "Record delivery"}
-      </Button>
+      {confirming ? (
+        <div
+          className="flex w-full flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"
+          role="group"
+          aria-label="Confirm the delivery"
+          data-testid="record-delivery-confirm"
+        >
+          <span>
+            Record <strong>{quantity} {unit}</strong>
+            {product ? <> of <strong>{product}</strong></> : null} for <strong>{day}</strong> ({slot}), as{" "}
+            <strong>{status}</strong>? It becomes a priced line on the next bill.
+          </span>
+          <Button type="submit" size="sm" disabled={busy || working}>
+            {working ? "Recording…" : "Yes, record it"}
+          </Button>
+          <Button type="button" size="sm" variant="ghost" disabled={working} onClick={() => setConfirming(false)}>
+            Not now
+          </Button>
+        </div>
+      ) : (
+        <Button type="submit" disabled={busy || working}>
+          Record delivery
+        </Button>
+      )}
       {error ? (
         <p role="alert" className="w-full text-sm text-destructive">
           The platform refused: {error}
@@ -1784,4 +1657,102 @@ function ChangePlanCard({
       </CardContent>
     </Card>
   );
+}
+
+// --- WO-96 §1: the customer page's three lists, as columns that drive both
+// the desktop table and the phone's cards. -------------------------------------
+
+const DELIVERY_COLUMNS: Column<Delivery>[] = [
+  { key: "date", header: "Date", role: "title", cell: (d) => <span className="tabular-nums">{d.delivery_date}</span> },
+  { key: "slot", header: "Slot", role: "subtitle", cell: (d) => <span className="text-muted-foreground">{d.slot}</span> },
+  { key: "quantity", header: "Quantity", align: "end", cell: (d) => <Quantity value={d.quantity} unit={d.quantity_unit} /> },
+  { key: "rate", header: "Rate", align: "end", cell: (d) => <span className="tabular-nums">{String(d.unit_price)}</span> },
+  { key: "amount", header: "Amount", align: "end", role: "money", cell: (d) => <Money amount={d.amount} currency={d.currency} /> },
+  { key: "status", header: "Status", role: "status", cell: (d) => <StatusBadge status={d.status} /> },
+  {
+    key: "invoiced",
+    header: "Invoiced",
+    cell: (d) => (
+      <span className="text-xs text-muted-foreground">{d.invoice_id ? "on a bill" : "not yet billed"}</span>
+    ),
+  },
+];
+
+type SaleItemRow = { id: string; sale_date: string; product_name: string; notes?: string | null; quantity: string | number; unit: string; amount: string | number; currency: string; status: string; invoice_id?: string | null };
+
+function itemColumns(busy: string | null, cancel: (item: SaleItemRow) => Promise<unknown> | void): Column<SaleItemRow>[] {
+  return [
+    { key: "date", header: "Date", role: "title", cell: (item) => <span className="tabular-nums">{item.sale_date}</span> },
+    {
+      key: "item",
+      header: "Item",
+      role: "subtitle",
+      cell: (item) => (
+        <>
+          {item.product_name}
+          {item.notes ? <span className="text-muted-foreground"> — {item.notes}</span> : null}
+        </>
+      ),
+    },
+    { key: "quantity", header: "Quantity", align: "end", cell: (item) => <span className="tabular-nums">{String(item.quantity)} {item.unit}</span> },
+    { key: "amount", header: "Amount", align: "end", role: "money", cell: (item) => <Money amount={item.amount} currency={item.currency} /> },
+    {
+      key: "status",
+      header: "Status",
+      role: "status",
+      cell: (item) =>
+        item.status === "cancelled" ? (
+          <span className="text-muted-foreground">cancelled</span>
+        ) : item.invoice_id ? (
+          <Link className="hover:underline" href={`/invoices/${item.invoice_id}`}>
+            on a bill
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">not yet billed</span>
+        ),
+    },
+    {
+      key: "cancel",
+      header: <span className="sr-only">Actions</span>,
+      align: "end",
+      role: "actions",
+      cell: (item) =>
+        item.status === "recorded" && !item.invoice_id ? (
+          <Button type="button" variant="ghost" size="sm" disabled={busy !== null} onClick={() => void cancel(item)}>
+            Cancel
+          </Button>
+        ) : null,
+    },
+  ];
+}
+
+type StatementEntry = { entry_date: string; kind: string; reference: string; detail?: string | null; debit: string | number; credit: string | number; balance: string | number };
+
+function statementColumns(t: (key: string) => string, currency: string): Column<StatementEntry>[] {
+  const figure = (value: string | number) =>
+    Number(value) === 0 ? <span className="text-muted-foreground">—</span> : <Money amount={value} currency={currency} />;
+  return [
+    { key: "date", header: t("field.date"), role: "title", cell: (e) => <span className="tabular-nums">{e.entry_date}</span> },
+    {
+      key: "entry",
+      header: t("statement.entry"),
+      role: "subtitle",
+      cell: (e) => (
+        <>
+          <span className="font-medium">{e.kind === "invoice" ? t("statement.invoice") : t("statement.payment")}</span>{" "}
+          <span className="text-muted-foreground">{e.reference}</span>
+          <div className="text-xs text-muted-foreground">{e.detail}</div>
+        </>
+      ),
+    },
+    { key: "debit", header: t("statement.debit"), align: "end", cell: (e) => figure(e.debit) },
+    { key: "credit", header: t("statement.credit"), align: "end", cell: (e) => figure(e.credit) },
+    {
+      key: "balance",
+      header: t("statement.runningBalance"),
+      align: "end",
+      role: "money",
+      cell: (e) => <span className="font-medium"><Money amount={e.balance} currency={currency} /></span>,
+    },
+  ];
 }

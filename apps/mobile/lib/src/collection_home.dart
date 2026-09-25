@@ -696,7 +696,15 @@ class _HeroBand extends StatelessWidget {
                   ],
                 ),
               ),
-              _SessionPill(open: sessionOpen, label: sessionLabel),
+              // The pill scales down before the header overflows (WO-96 /
+              // D-45): at text scale 1.3 on a 320px phone it ran 7px past
+              // the band beside the centre's name.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: _SessionPill(open: sessionOpen, label: sessionLabel),
+                ),
+              ),
               onSignOut,
             ],
           ),

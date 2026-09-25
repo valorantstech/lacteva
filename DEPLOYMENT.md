@@ -393,6 +393,23 @@ Note the `--dart-define`: without it a release build defaults to
 analyzer controls out of the build (SEC-003/F-01), which `kReleaseMode`
 already does by default.
 
+### After every deploy: the phone check (WO-96 / D-45)
+
+The shop owner has no laptop. After `deploy.sh` and `verify-deployment.sh`,
+measure the portal on a phone against the deployed site — it exits non-zero
+on any page that zooms out, any money column or action off the right edge,
+any input under 16px, any wide table without its scroll cue:
+
+```bash
+cd tools/mobile-audit && npm ci
+BASE=https://app.lacteva.com EMAIL=<a manager login> PASSWORD=<its password> \
+  WIDTHS=320,360,412 node audit.js
+```
+
+It is a post-deploy step rather than a CI job because it needs a seeded full
+stack and a Chrome; the reason is written in `tools/mobile-audit/README.md`.
+A red run is a regression to fix before the deploy is called done.
+
 ### Zero-downtime deploys
 
 Compose alone cannot do them — `up -d` stops the old API container before starting the new one. Two options:
@@ -637,6 +654,7 @@ In the order that closes the largest gap first:
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-06 | Architecture Board | Established by DEP-001. |
 | 1.1 | 2026-09-25 | Engineering | WO-93: §10 gains the operator-placed secret files — the `/etc/lacteva/secrets` mount, the fixed uid 999, the ownership line and the three FCM variables. |
+| 1.2 | 2026-09-26 | Engineering | WO-96 / D-45: §3 gains the post-deploy phone check (`tools/mobile-audit`). |
 
 
 ## Production configuration that now FAILS CLOSED (PROD-001)

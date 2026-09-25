@@ -3,19 +3,18 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { ScrollHint } from "@/components/scroll-hint"
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
-    <div
-      data-slot="table-container"
-      className="relative w-full overflow-x-auto"
-    >
+    // WO-96 §3: the scroller SAYS it scrolls — a fade on the edge with more.
+    <ScrollHint data-slot="table-container">
       <table
         data-slot="table"
         className={cn("w-full caption-bottom text-sm", className)}
         {...props}
       />
-    </div>
+    </ScrollHint>
   )
 }
 

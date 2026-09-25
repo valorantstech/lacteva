@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { EmptyState } from "@/components/states";
+import { ScrollHint } from "@/components/scroll-hint";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -436,6 +437,9 @@ function FilterSelect({
   return (
     <Select
       size="sm"
+      // WO-96 / D-45: full width on a phone; the templates filter pushed
+      // the page to 339px on a 320px screen.
+      className="w-full sm:w-auto"
       value={value}
       onChange={(e) => onChange(e.target.value)}
     >
@@ -785,7 +789,7 @@ function ReachabilityPanel() {
             )}
 
             {summary.affected.length > 0 && (
-              <div className="overflow-x-auto">
+              <ScrollHint>
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-muted-foreground">
                     <tr>
@@ -831,7 +835,7 @@ function ReachabilityPanel() {
                     above are complete.
                   </p>
                 )}
-              </div>
+              </ScrollHint>
             )}
 
             {repairing && (
@@ -980,7 +984,7 @@ function MessagingPosturePanel() {
             </span>
           )}
         </div>
-        <div className="overflow-x-auto">
+        <ScrollHint>
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-muted-foreground">
               <tr>
@@ -1011,9 +1015,9 @@ function MessagingPosturePanel() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollHint>
         {events && events.length > 0 ? (
-          <div className="overflow-x-auto" data-testid="dispatch-events">
+          <ScrollHint data-testid="dispatch-events">
             <h3 className="mb-1 font-medium">What is sent, and where</h3>
             <p className="mb-2 text-xs text-muted-foreground">
               Every event the platform turns into a message, the channel this
@@ -1055,7 +1059,7 @@ function MessagingPosturePanel() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollHint>
         ) : null}
       </CardContent>
     </Card>
@@ -1131,7 +1135,7 @@ function TemplateRegistryPanel() {
           </Button>
         </div>
 
-        <div className="overflow-x-auto">
+        <ScrollHint>
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-muted-foreground">
               <tr>
@@ -1219,7 +1223,7 @@ function TemplateRegistryPanel() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollHint>
 
         <p className="text-muted-foreground">
           Templates are part of the application and are not editable here — a

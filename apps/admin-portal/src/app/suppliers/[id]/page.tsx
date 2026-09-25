@@ -21,6 +21,7 @@ import {
   describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ScrollHint } from "@/components/scroll-hint";
 import {
   Card,
   CardContent,
@@ -522,7 +523,7 @@ export default function SupplierDetailPage({
               description="Deliveries appear here once this supplier brings milk to a centre."
             />
           ) : (
-            <div className="w-full overflow-x-auto">
+            <ScrollHint>
               <table className="w-full text-sm">
                 <caption className="sr-only">
                   Recent collections for this supplier
@@ -574,7 +575,7 @@ export default function SupplierDetailPage({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollHint>
           )}
         </CardContent>
       </Card>

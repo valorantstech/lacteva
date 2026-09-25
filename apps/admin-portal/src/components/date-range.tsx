@@ -162,7 +162,7 @@ export function DateRangePicker({
             value={value.from}
             max={value.to}
             disabled={busy}
-            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+            className="h-8 rounded-md border border-input bg-background px-2 text-base md:text-sm"
             onChange={(e) =>
               e.target.value &&
               onChange({ key: "custom", from: e.target.value, to: value.to })
@@ -178,7 +178,7 @@ export function DateRangePicker({
             min={value.from}
             disabled={busy}
             className={cn(
-              "h-8 rounded-md border border-input bg-background px-2 text-sm",
+              "h-8 rounded-md border border-input bg-background px-2 text-base md:text-sm",
             )}
             onChange={(e) =>
               e.target.value &&

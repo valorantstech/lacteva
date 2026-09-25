@@ -28,6 +28,7 @@ import {
   importInChunks,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ScrollHint } from "@/components/scroll-hint";
 import {
   Card,
   CardContent,
@@ -214,6 +215,8 @@ export function CsvImport({ kind }: { kind: Kind }) {
         <CardContent className="flex flex-col gap-3">
           <input
             type="file"
+            // WO-96 / D-45: 16px on phones, like every other field.
+            className="text-base md:text-sm"
             accept=".csv,text/csv"
             aria-label="CSV file"
             onChange={(e) => {
@@ -224,7 +227,7 @@ export function CsvImport({ kind }: { kind: Kind }) {
           />
           <textarea
             aria-label="CSV content"
-            className="min-h-40 w-full rounded-md border bg-background p-2 font-mono text-xs"
+            className="min-h-40 w-full rounded-md border bg-background p-2 font-mono text-base md:text-xs"
             placeholder={`${spec.columns.join(",")}\n…`}
             value={csv}
             onChange={(e) => {
@@ -260,7 +263,7 @@ export function CsvImport({ kind }: { kind: Kind }) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            <ScrollHint>
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-start text-muted-foreground">
@@ -292,7 +295,7 @@ export function CsvImport({ kind }: { kind: Kind }) {
                   … and {parsed.rows.length - 50} more (all will be sent).
                 </p>
               ) : null}
-            </div>
+            </ScrollHint>
             <div className="mt-4">
               <Button type="button" onClick={submit} disabled={busy}>
                 <Upload aria-hidden className="me-1.5 size-4" />

@@ -39,6 +39,7 @@ import { LoadingState } from "@/components/states";
 import { Skeleton } from "@/components/skeleton";
 import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
+import { type Column, DataTable } from "@/components/data-table";
 
 /**
  * Routes, fleet and today's rounds (DEMO-034).
@@ -127,7 +128,7 @@ export default function RoutesPage() {
 
       <section
         aria-label="Route summary"
-        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+        className="grid grid-cols-2 gap-4 xl:grid-cols-4"
       >
         <Surface
           tone="metric"
@@ -272,102 +273,12 @@ export default function RoutesPage() {
           ) : routes.length === 0 ? (
             <p className="text-sm text-muted-foreground">No routes yet.</p>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-4 font-medium">Code</th>
-                  <th className="py-1 pr-4 font-medium">Name</th>
-                  <th className="py-1 pr-4 font-medium">Stops</th>
-                  <th className="py-1 pr-4 font-medium">Status</th>
-                  <th className="py-1 pr-4 font-medium">Default driver</th>
-                  <th className="py-1 pr-4 font-medium">Default vehicle</th>
-                  <th className="py-1 font-medium">Every morning</th>
-                </tr>
-              </thead>
-              <tbody>
-                {routes.map((route) => (
-                  <tr className="border-t border-border" key={route.id}>
-                    <td className="py-2 pr-4 font-mono text-xs">
-                      {route.code}
-                    </td>
-                    <td className="py-2 pr-4">{route.name}</td>
-                    <td className="py-2 pr-4">{route.stop_count}</td>
-                    <td className="py-2 pr-4">
-                      <StatusBadge
-                        status={route.active ? "active" : "inactive"}
-                      />
-                    </td>
-                    {/* WO-82 §3: the round will exist every morning without
-                        anyone creating it — when a default driver is named
-                        and the switch is on. */}
-                    <td className="py-2 pr-4">
-                      <Select
-                        aria-label={`Default driver for ${route.code}`}
-                        value={route.default_driver_id ?? ""}
-                        onChange={(e) =>
-                          act(() =>
-                            updateRoute(
-                              route.id,
-                              e.target.value
-                                ? { default_driver_id: e.target.value }
-                                : { clear_default_driver: true },
-                            ),
-                          )
-                        }
-                      >
-                        <option value="">— none —</option>
-                        {drivers.map((d) => (
-                          <option key={d.id} value={d.id}>
-                            {d.full_name}
-                          </option>
-                        ))}
-                      </Select>
-                    </td>
-                    <td className="py-2 pr-4">
-                      <Select
-                        aria-label={`Default vehicle for ${route.code}`}
-                        value={route.default_vehicle_id ?? ""}
-                        onChange={(e) =>
-                          act(() =>
-                            updateRoute(
-                              route.id,
-                              e.target.value
-                                ? { default_vehicle_id: e.target.value }
-                                : { clear_default_vehicle: true },
-                            ),
-                          )
-                        }
-                      >
-                        <option value="">— none —</option>
-                        {vehicles.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.registration}
-                          </option>
-                        ))}
-                      </Select>
-                    </td>
-                    <td className="py-2">
-                      <label className="flex items-center gap-2 text-xs">
-                        <input
-                          type="checkbox"
-                          aria-label={`Plan ${route.code} every morning`}
-                          checked={route.auto_plan === true}
-                          disabled={!route.default_driver_id}
-                          onChange={(e) =>
-                            act(() =>
-                              updateRoute(route.id, { auto_plan: e.target.checked }),
-                            )
-                          }
-                        />
-                        {route.default_driver_id
-                          ? "auto-plan"
-                          : "needs a default driver"}
-                      </label>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              caption="Routes"
+              rowKey={(route) => route.id}
+              rows={routes}
+              columns={routeColumns({ drivers, vehicles, act })}
+            />
           )}
           <p className="pt-3 text-xs text-muted-foreground">
             With a default driver and &ldquo;auto-plan&rdquo; on, the round will
@@ -606,4 +517,94 @@ function RegisterCard({
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * The route list as columns (WO-96 §1), so the phone shows each round as a
+ * card with its driver, vehicle and the every-morning switch beneath the
+ * name rather than off the right edge.
+ */
+function routeColumns({
+  drivers,
+  vehicles,
+  act,
+}: {
+  drivers: Driver[];
+  vehicles: Vehicle[];
+  act: (fn: () => Promise<unknown>) => void;
+}): Column<Route>[] {
+  return [
+    { key: "code", header: "Code", role: "title", cell: (route) => <span className="font-mono text-xs">{route.code}</span> },
+    { key: "name", header: "Name", role: "subtitle", cell: (route) => route.name },
+    { key: "stops", header: "Stops", cell: (route) => route.stop_count },
+    { key: "status", header: "Status", role: "status", cell: (route) => <StatusBadge status={route.active ? "active" : "inactive"} /> },
+    // WO-82 §3: the round will exist every morning without anyone creating
+    // it — when a default driver is named and the switch is on.
+    {
+      key: "driver",
+      header: "Default driver",
+      cell: (route) => (
+        <Select
+          aria-label={`Default driver for ${route.code}`}
+          value={route.default_driver_id ?? ""}
+          onChange={(e) =>
+            act(() =>
+              updateRoute(
+                route.id,
+                e.target.value ? { default_driver_id: e.target.value } : { clear_default_driver: true },
+              ),
+            )
+          }
+        >
+          <option value="">— none —</option>
+          {drivers.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.full_name}
+            </option>
+          ))}
+        </Select>
+      ),
+    },
+    {
+      key: "vehicle",
+      header: "Default vehicle",
+      cell: (route) => (
+        <Select
+          aria-label={`Default vehicle for ${route.code}`}
+          value={route.default_vehicle_id ?? ""}
+          onChange={(e) =>
+            act(() =>
+              updateRoute(
+                route.id,
+                e.target.value ? { default_vehicle_id: e.target.value } : { clear_default_vehicle: true },
+              ),
+            )
+          }
+        >
+          <option value="">— none —</option>
+          {vehicles.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.registration}
+            </option>
+          ))}
+        </Select>
+      ),
+    },
+    {
+      key: "auto",
+      header: "Every morning",
+      cell: (route) => (
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            aria-label={`Plan ${route.code} every morning`}
+            checked={route.auto_plan === true}
+            disabled={!route.default_driver_id}
+            onChange={(e) => act(() => updateRoute(route.id, { auto_plan: e.target.checked }))}
+          />
+          {route.default_driver_id ? "auto-plan" : "needs a default driver"}
+        </label>
+      ),
+    },
+  ];
 }

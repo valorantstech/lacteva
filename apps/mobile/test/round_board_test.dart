@@ -22,6 +22,7 @@ import 'package:lacteva_mobile/src/offline/store.dart';
 import 'package:lacteva_mobile/src/offline/sync_engine.dart';
 import 'package:lacteva_mobile/src/session.dart';
 import 'package:lacteva_mobile/src/theme.dart';
+import 'responsive/matrix.dart';
 
 class _Platform extends ApiClient {
   _Platform({
@@ -749,6 +750,36 @@ void main() {
       await tester.tap(find.text('Delivered').first);
       await tester.pumpAndSettle();
       expect(find.textContaining('nothing left to deliver'), findsOneWidget);
+    });
+  });
+
+  group('responsive matrix (WO-96 / D-45)', () {
+    testWidgets('the delivery round renders at every size and text scale', (tester) async {
+      final platform = _Platform();
+      await pumpMatrix(
+        tester,
+        'DeliveryRoundScreen',
+        () => DeliveryRoundScreen(
+          key: UniqueKey(),
+          client: _Client(platform, SyncQueue(MemoryOfflineStore())),
+          session: _session(),
+        ),
+      );
+    });
+
+    testWidgets('recording a delivery renders at every size and text scale', (tester) async {
+      final platform = _Platform();
+      await pumpMatrix(
+        tester,
+        'RecordDeliveryScreen',
+        () => RecordDeliveryScreen(
+          key: UniqueKey(),
+          client: _Client(platform, SyncQueue(MemoryOfflineStore())),
+          session: _session(),
+          customer: const {'id': 'c1', 'name': 'Joshi household', 'code': 'H-001'},
+          businessDate: '2026-08-27',
+        ),
+      );
     });
   });
 }

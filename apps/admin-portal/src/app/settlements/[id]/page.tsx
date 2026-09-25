@@ -30,6 +30,7 @@ import {
   describeError,
 } from "@/lib/api";
 import { formatStamp } from "@/components/datetime";
+import { ScrollHint } from "@/components/scroll-hint";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -692,7 +693,7 @@ export default function SettlementDetailPage({
               Nothing settled here yet.
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <ScrollHint>
               <table className="w-full text-sm">
                 <caption className="sr-only">
                   Collections settled by {s.settlement_number}
@@ -782,7 +783,7 @@ export default function SettlementDetailPage({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollHint>
           )}
         </CardContent>
       </Card>

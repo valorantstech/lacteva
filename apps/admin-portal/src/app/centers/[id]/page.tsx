@@ -36,6 +36,7 @@ import {
   useDefaultRange,
 } from "@/components/date-range";
 import { BarBreakdown, TrendChart } from "@/components/trend-chart";
+import { ScrollHint } from "@/components/scroll-hint";
 import { CurrencyTotals, Money, Quantity } from "@/components/money";
 import { PageHeader } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
@@ -549,7 +550,7 @@ export default function CenterDetailPage({
               description="Open a session at this centre to begin receiving milk."
             />
           ) : (
-            <div className="w-full overflow-x-auto">
+            <ScrollHint>
               <table className="w-full text-sm">
                 <caption className="sr-only">
                   Recent collections at this centre
@@ -598,7 +599,7 @@ export default function CenterDetailPage({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollHint>
           )}
         </CardContent>
       </Card>

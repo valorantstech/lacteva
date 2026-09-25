@@ -83,6 +83,7 @@ export default function ReceivablesPage_() {
   const columns: Column<ReceivableRow>[] = [
     {
       key: "customer",
+      role: "title",
       header: "Customer",
       cell: (row) => (
         <div className="flex flex-col">
@@ -115,6 +116,7 @@ export default function ReceivablesPage_() {
     },
     {
       key: "outstanding",
+      role: "money",
       header: "Outstanding",
       align: "end",
       cell: (row) => (
@@ -155,6 +157,7 @@ export default function ReceivablesPage_() {
     },
     {
       key: "actions",
+      role: "actions",
       header: <span className="sr-only">Actions</span>,
       align: "end",
       cell: (row) => (

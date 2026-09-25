@@ -21,6 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
+import { ScrollHint } from "@/components/scroll-hint";
 import { PageContainer } from "@/components/page-container";
 import {
   EmptyState,
@@ -294,7 +295,7 @@ export default function RateCardDetailPage({
                       No bands defined.
                     </p>
                   ) : (
-                    <div className="w-full overflow-x-auto">
+                    <ScrollHint>
                       <table className="w-full text-sm">
                         <caption className="sr-only">
                           Rate bands for {matrix.name}
@@ -341,7 +342,7 @@ export default function RateCardDetailPage({
                           falling in a gap cannot be priced.
                         </p>
                       ) : null}
-                    </div>
+                    </ScrollHint>
                   )}
                 </div>
               );

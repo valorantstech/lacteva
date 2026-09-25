@@ -188,7 +188,11 @@ function CustomersView() {
         title="Customers"
         description="The households and businesses this dairy delivers to — and what each of them owes."
         actions={
-          <div className="flex gap-2">
+          // WO-96 / D-45: the row WRAPS. Three shrink-0 buttons in a row that
+          // did not wrap made this page 376px wide on a 360px phone — and a
+          // page wider than the phone makes mobile Chrome zoom the whole
+          // thing out. This is the shop owner's most-used page.
+          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
               variant="outline"

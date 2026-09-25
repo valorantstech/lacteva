@@ -15,6 +15,7 @@ import 'package:lacteva_mobile/src/manager_home.dart';
 import 'package:lacteva_mobile/src/session.dart';
 import 'package:lacteva_mobile/src/suppliers.dart';
 import 'package:lacteva_mobile/src/transactions_history.dart';
+import 'responsive/matrix.dart';
 
 class _Dairy extends ApiClient {
   _Dairy({
@@ -419,6 +420,24 @@ void main() {
       expect(shop.t('center.fallback'), 'Shop');
       expect(shop.t('nav.today'), both.t('nav.today'));
       expect(shop.t('mgr.round'), both.t('mgr.round'));
+    });
+  });
+
+  group('responsive matrix (WO-96 / D-45)', () {
+    testWidgets('the manager home renders at every size and text scale', (tester) async {
+      await pumpMatrix(
+        tester,
+        'ManagerHomeScreen',
+        () => ManagerHomeScreen(key: UniqueKey(), client: _Dairy(), session: _owner),
+      );
+    });
+
+    testWidgets('the supplier list renders at every size and text scale', (tester) async {
+      await pumpMatrix(
+        tester,
+        'SuppliersListScreen',
+        () => SuppliersListScreen(key: UniqueKey(), client: _Dairy(), session: _owner),
+      );
     });
   });
 }

@@ -13,7 +13,7 @@
  * whole filtered set.
  */
 import { Suspense } from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -561,6 +561,16 @@ describe("customer detail — the whole workflow", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Record delivery" }),
     );
+    // WO-96 §4: the first tap asks, in words that name what will be recorded,
+    // and records NOTHING — a thumb brushing the button on a phone must not
+    // create a billable delivery.
+    const confirm = await screen.findByTestId("record-delivery-confirm");
+    expect(confirm.textContent).toMatch(/Record 2\.000 L/);
+    expect(confirm.textContent).toMatch(/priced line on the next bill/);
+    expect(
+      spy.mock.calls.find(([u]) => String(u).endsWith("/v1/deliveries")),
+    ).toBeUndefined();
+    await userEvent.click(within(confirm).getByRole("button", { name: "Yes, record it" }));
 
     await waitFor(() => {
       const call = spy.mock.calls.find(([u]) =>

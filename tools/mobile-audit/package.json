@@ -1,0 +1,12 @@
+{
+  "name": "lacteva-mobile-audit",
+  "private": true,
+  "version": "1.0.0",
+  "description": "WO-96 / D-45: the portal on a phone, measured — fails on a regression.",
+  "scripts": {
+    "audit": "node audit.js"
+  },
+  "dependencies": {
+    "playwright-core": "1.52"
+  }
+}

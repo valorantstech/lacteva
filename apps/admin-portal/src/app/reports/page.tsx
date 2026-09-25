@@ -250,6 +250,9 @@ export default function ReportsPage() {
           <Label htmlFor="r-center">Centre</Label>
           <Select
             id="r-center"
+            // WO-96 / D-45: full width on a phone — beside its label this
+            // select pushed the page to 324px on a 320px screen.
+            className="w-full sm:w-auto"
             size="sm"
             value={centerId}
             onChange={(e) => setCenterId(e.target.value)}

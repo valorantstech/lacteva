@@ -415,18 +415,26 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: sessionOpen ? LactevaColors.successTint : LactevaColors.neutralTint,
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            sessionOpen ? l.t('mgr.sessionOpen') : l.t('mgr.sessionClosed'),
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              color: sessionOpen ? LactevaColors.onSuccessTint : LactevaColors.onNeutralTint,
+        // The session pill scales down before the header overflows (WO-96 /
+        // D-45): at text scale 2.0 on a 320px phone it ran 47px past the edge.
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.topRight,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: sessionOpen ? LactevaColors.successTint : LactevaColors.neutralTint,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                sessionOpen ? l.t('mgr.sessionOpen') : l.t('mgr.sessionClosed'),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: sessionOpen ? LactevaColors.onSuccessTint : LactevaColors.onNeutralTint,
+                ),
+              ),
             ),
           ),
         ),
@@ -471,35 +479,53 @@ class _MorningCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // WO-96 / D-45: every side of these rows flexes. On a 320px phone
+          // the expectation line and the "still to come" count ran 95–181px
+          // past the card at text scale 1.0; a plain Text in a Row has no
+          // width to wrap in.
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _Label(l.t('mgr.morningCollection')),
-              if (delta != null)
-                Text(
-                  delta,
-                  key: const ValueKey('mgr-delta'),
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: delta.startsWith('▼') ? LactevaColors.warning : LactevaColors.success,
+              Expanded(child: _Label(l.t('mgr.morningCollection'))),
+              if (delta != null) ...[
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    delta,
+                    key: const ValueKey('mgr-delta'),
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: delta.startsWith('▼') ? LactevaColors.warning : LactevaColors.success,
+                    ),
                   ),
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                quantityValue(collected),
-                key: const ValueKey('mgr-hero'),
-                style: const TextStyle(
-                  fontSize: 38,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -1.3,
-                  height: 1,
-                  color: LactevaColors.ink,
+              // The hero figure scales DOWN before it overflows (WO-96 /
+              // D-45): 38px at text scale 1.3 on a 320px phone did not fit
+              // beside its unit and the expectation.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.bottomLeft,
+                  child: Text(
+                    quantityValue(collected),
+                    key: const ValueKey('mgr-hero'),
+                    style: const TextStyle(
+                      fontSize: 38,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -1.3,
+                      height: 1,
+                      color: LactevaColors.ink,
+                    ),
+                  ),
                 ),
               ),
               if (unit.isNotEmpty && collected != null)
@@ -511,14 +537,16 @@ class _MorningCard extends StatelessWidget {
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: LactevaColors.muted),
                   ),
                 ),
-              const Spacer(),
-              Text(
-                target == null
-                    ? l.t('mgr.noExpectation')
-                    : l.t('mgr.expected', {'value': quantityValue(target), 'unit': unit}),
-                key: const ValueKey('mgr-expected'),
-                style: const TextStyle(fontSize: 11, color: LactevaColors.faint),
-                textAlign: TextAlign.end,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  target == null
+                      ? l.t('mgr.noExpectation')
+                      : l.t('mgr.expected', {'value': quantityValue(target), 'unit': unit}),
+                  key: const ValueKey('mgr-expected'),
+                  style: const TextStyle(fontSize: 11, color: LactevaColors.faint),
+                  textAlign: TextAlign.end,
+                ),
               ),
             ],
           ),
@@ -539,18 +567,26 @@ class _MorningCard extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  active == null
-                      ? l.t('manager.farmersServed', {'count': served})
-                      : l.t('mgr.farmersOf', {'served': served, 'total': active}),
-                  style: const TextStyle(fontSize: 11.5, color: LactevaColors.muted),
-                ),
-                if (active != null)
-                  Text(
-                    l.t('mgr.stillToCome', {'count': (active - served).clamp(0, active)}),
+                Expanded(
+                  child: Text(
+                    active == null
+                        ? l.t('manager.farmersServed', {'count': served})
+                        : l.t('mgr.farmersOf', {'served': served, 'total': active}),
                     style: const TextStyle(fontSize: 11.5, color: LactevaColors.muted),
                   ),
+                ),
+                if (active != null) ...[
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      l.t('mgr.stillToCome', {'count': (active - served).clamp(0, active)}),
+                      textAlign: TextAlign.end,
+                      style: const TextStyle(fontSize: 11.5, color: LactevaColors.muted),
+                    ),
+                  ),
+                ],
               ],
             ),
           ],

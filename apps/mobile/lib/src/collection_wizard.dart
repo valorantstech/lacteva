@@ -659,6 +659,10 @@ class _CollectionWizardScreenState extends State<CollectionWizardScreen> {
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _milkType,
+                // WO-96 / D-45: take the row's width, so a long milk name at
+                // text scale 2.0 ellipsises inside the field instead of
+                // overflowing a 320px phone by 25px.
+                isExpanded: true,
                 decoration: InputDecoration(labelText: t.t('wizard.milkType')),
                 // The LABEL comes from the catalog; the VALUE sent to the API
                 // stays the raw code (P1-LOCALE-I18N-001).

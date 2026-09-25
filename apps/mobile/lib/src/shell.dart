@@ -578,7 +578,16 @@ class _StatementRow extends StatelessWidget {
         children: [
           Expanded(child: Text(label, style: style)),
           const SizedBox(width: 12),
-          Text(value, key: valueKey, style: style),
+          // Flexible, so a long amount at text scale 2.0 wraps rather than
+          // overflowing the card's edge (WO-96 / D-45).
+          Flexible(
+            child: Text(
+              value,
+              key: valueKey,
+              style: style,
+              textAlign: TextAlign.end,
+            ),
+          ),
         ],
       ),
     );

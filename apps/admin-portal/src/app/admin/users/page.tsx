@@ -5,14 +5,7 @@ import { AdminPage } from "@/components/admin-page";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { type Column, DataTable } from "@/components/data-table";
 import {
   type Center,
   type Member,
@@ -229,6 +222,255 @@ export default function UsersPage() {
   // uses the raw `Table` primitive. Deliberately NOT pushed into `TableHead`
   // itself — `DataTable` already styles its own heads, and doing both would
   // double the treatment on ten other pages.
+  // WO-96 §1: the same seven cells, as columns that drive both the desktop
+  // table and the phone's cards — on a phone the three buttons are full-width
+  // at the bottom of the card, not 1,100px off the right edge.
+  const columns: Column<Person>[] = [
+    {
+      key: "name",
+      header: "Name",
+      role: "title",
+      cell: (person) => (
+        <>
+        {editing?.user_id === person.user_id && editing.kind === "name" ? (
+          <form
+            className="flex items-center gap-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void saveName(person, editing.value);
+            }}
+          >
+            <Input
+              aria-label="Name"
+              className="h-8 min-w-40"
+              value={editing.value}
+              onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+              autoFocus
+            />
+            <Button type="submit" size="sm" disabled={busy === person.user_id || !editing.value.trim()}>
+              Save
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+          </form>
+        ) : (
+          <span className="inline-flex items-center gap-1">
+            {person.user?.full_name ?? "—"}
+            {person.user ? (
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline underline-offset-4"
+                aria-label={`Edit name of ${person.user.full_name}`}
+                onClick={() =>
+                  setEditing({ user_id: person.user_id, kind: "name", value: person.user!.full_name })
+                }
+              >
+                edit
+              </button>
+            ) : null}
+          </span>
+        )}
+        </>
+      ),
+    },
+    {
+      key: "email",
+      header: "Email",
+      role: "subtitle",
+      cell: (person) => (
+        <>
+        {editing?.user_id === person.user_id && editing.kind === "email" ? (
+          <form
+            className="flex flex-col gap-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void changeEmail(person, editing.value);
+            }}
+            data-testid={`email-change-${person.user_id}`}
+          >
+            <div className="flex items-center gap-1">
+              <Input
+                aria-label="New email"
+                type="email"
+                className="h-8 min-w-56"
+                value={editing.value}
+                onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                autoFocus
+              />
+              <Button type="submit" size="sm" disabled={busy === person.user_id || !editing.value.trim()}>
+                Send code
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                Cancel
+              </Button>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              The new address gets a code and must confirm from its inbox; the
+              current address is told now. Until then the current address keeps
+              signing in. On confirmation every session is signed out.
+            </span>
+          </form>
+        ) : (
+          <div className="flex flex-col gap-0.5">
+            <span className="inline-flex items-center gap-1">
+              {person.user?.email ?? <em>account unavailable</em>}
+              {person.user && !person.pending_email_change ? (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline underline-offset-4"
+                  aria-label={`Change email of ${person.user.full_name}`}
+                  onClick={() => setEditing({ user_id: person.user_id, kind: "email", value: "" })}
+                >
+                  change
+                </button>
+              ) : null}
+            </span>
+            {person.pending_email_change ? (
+              <span
+                className="text-xs text-muted-foreground"
+                data-testid={`pending-email-${person.user_id}`}
+              >
+                changing to {person.pending_email_change.new_email} — awaiting
+                confirmation, expires {stamp(person.pending_email_change.expires_at)}{" "}
+                <button
+                  type="button"
+                  className="underline underline-offset-4"
+                  disabled={busy === person.user_id}
+                  onClick={() => void cancelEmail(person)}
+                >
+                  cancel
+                </button>
+              </span>
+            ) : null}
+          </div>
+        )}
+        </>
+      ),
+    },
+    {
+      key: "roles",
+      header: "Role",
+      role: "meta",
+      cell: (person) => (
+        <>
+        {(person.roles ?? []).length === 0 ? (
+          <span className="text-muted-foreground">no role</span>
+        ) : (
+          <div className="flex flex-col gap-0.5">
+            {(person.roles ?? []).map((role) => (
+              <span
+                key={`${role.name}-${role.center_id ?? "org"}`}
+                className="text-sm"
+              >
+                {role.name}
+                <span className="ms-1 text-xs text-muted-foreground">
+                  {role.center_id
+                    ? `· ${centerName(role.center_id)}`
+                    : "· whole organization"}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
+        </>
+      ),
+    },
+    {
+      key: "membership",
+      header: "Membership",
+      role: "status",
+      cell: (person) => (
+        <>
+        <Badge
+          variant={
+            person.status === "active" ? "default" : "secondary"
+          }
+        >
+          {person.status}
+        </Badge>
+        </>
+      ),
+    },
+    {
+      key: "account",
+      header: "Account",
+      role: "status",
+      cell: (person) => (
+        <>
+        {person.user ? (
+          <Badge
+            variant={
+              person.user.is_active ? "default" : "destructive"
+            }
+          >
+            {person.user.is_active ? "active" : "deactivated"}
+          </Badge>
+        ) : (
+          "—"
+        )}
+        </>
+      ),
+    },
+    {
+      key: "seen",
+      header: "Last signed in",
+      role: "meta",
+      cell: (person) => (
+        <>
+        {stamp(person.user?.last_login_at)}
+        </>
+      ),
+    },
+    {
+      key: "actions",
+      header: (<span className="sr-only">Actions</span>),
+      role: "actions",
+      align: "end",
+      cell: (person) => (
+        <>
+        <div className="flex justify-end gap-2">
+          <Button
+            variant={
+              person.status === "active" ? "outline" : "default"
+            }
+            disabled={busy === person.user_id}
+            onClick={() =>
+              void suspend(
+                person,
+                person.status === "active" ? "suspended" : "active",
+              )
+            }
+          >
+            {person.status === "active" ? "Suspend" : "Reinstate"}
+          </Button>
+          {person.user ? (
+            <Button
+              variant={
+                person.user.is_active ? "destructive" : "default"
+              }
+              disabled={busy === person.user_id}
+              onClick={() => void toggle(person)}
+            >
+              {person.user.is_active ? "Deactivate" : "Reactivate"}
+            </Button>
+          ) : null}
+          {person.status === "active" ? (
+            <Button
+              variant="outline"
+              disabled={busy === person.user_id}
+              onClick={() => setLeaving(person)}
+              aria-label={`Remove ${person.user?.full_name ?? person.user_id} from organisation`}
+            >
+              Remove from organisation
+            </Button>
+          ) : null}
+        </div>
+        </>
+      ),
+    },
+  ];
+
   return (
     <AdminPage
       title="Users"
@@ -297,228 +539,14 @@ export default function UsersPage() {
         />
       ) : null}
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">Name</TableHead>
-            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">Email</TableHead>
-            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">Role</TableHead>
-            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">Membership</TableHead>
-            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">Account</TableHead>
-            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">Last signed in</TableHead>
-            <TableHead className="text-meta font-semibold uppercase tracking-wide text-muted-foreground text-end">Action</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {people === null ? (
-            <TableRow>
-              <TableCell colSpan={7}>Loading…</TableCell>
-            </TableRow>
-          ) : people.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={7}>No members yet.</TableCell>
-            </TableRow>
-          ) : (
-            people.map((person) => (
-              <TableRow key={person.user_id}>
-                <TableCell>
-                  {editing?.user_id === person.user_id && editing.kind === "name" ? (
-                    <form
-                      className="flex items-center gap-1"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void saveName(person, editing.value);
-                      }}
-                    >
-                      <Input
-                        aria-label="Name"
-                        className="h-8 min-w-40"
-                        value={editing.value}
-                        onChange={(e) => setEditing({ ...editing, value: e.target.value })}
-                        autoFocus
-                      />
-                      <Button type="submit" size="sm" disabled={busy === person.user_id || !editing.value.trim()}>
-                        Save
-                      </Button>
-                      <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>
-                        Cancel
-                      </Button>
-                    </form>
-                  ) : (
-                    <span className="inline-flex items-center gap-1">
-                      {person.user?.full_name ?? "—"}
-                      {person.user ? (
-                        <button
-                          type="button"
-                          className="text-xs text-muted-foreground underline underline-offset-4"
-                          aria-label={`Edit name of ${person.user.full_name}`}
-                          onClick={() =>
-                            setEditing({ user_id: person.user_id, kind: "name", value: person.user!.full_name })
-                          }
-                        >
-                          edit
-                        </button>
-                      ) : null}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {editing?.user_id === person.user_id && editing.kind === "email" ? (
-                    <form
-                      className="flex flex-col gap-1"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void changeEmail(person, editing.value);
-                      }}
-                      data-testid={`email-change-${person.user_id}`}
-                    >
-                      <div className="flex items-center gap-1">
-                        <Input
-                          aria-label="New email"
-                          type="email"
-                          className="h-8 min-w-56"
-                          value={editing.value}
-                          onChange={(e) => setEditing({ ...editing, value: e.target.value })}
-                          autoFocus
-                        />
-                        <Button type="submit" size="sm" disabled={busy === person.user_id || !editing.value.trim()}>
-                          Send code
-                        </Button>
-                        <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>
-                          Cancel
-                        </Button>
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        The new address gets a code and must confirm from its inbox; the
-                        current address is told now. Until then the current address keeps
-                        signing in. On confirmation every session is signed out.
-                      </span>
-                    </form>
-                  ) : (
-                    <div className="flex flex-col gap-0.5">
-                      <span className="inline-flex items-center gap-1">
-                        {person.user?.email ?? <em>account unavailable</em>}
-                        {person.user && !person.pending_email_change ? (
-                          <button
-                            type="button"
-                            className="text-xs text-muted-foreground underline underline-offset-4"
-                            aria-label={`Change email of ${person.user.full_name}`}
-                            onClick={() => setEditing({ user_id: person.user_id, kind: "email", value: "" })}
-                          >
-                            change
-                          </button>
-                        ) : null}
-                      </span>
-                      {person.pending_email_change ? (
-                        <span
-                          className="text-xs text-muted-foreground"
-                          data-testid={`pending-email-${person.user_id}`}
-                        >
-                          changing to {person.pending_email_change.new_email} — awaiting
-                          confirmation, expires {stamp(person.pending_email_change.expires_at)}{" "}
-                          <button
-                            type="button"
-                            className="underline underline-offset-4"
-                            disabled={busy === person.user_id}
-                            onClick={() => void cancelEmail(person)}
-                          >
-                            cancel
-                          </button>
-                        </span>
-                      ) : null}
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {(person.roles ?? []).length === 0 ? (
-                    <span className="text-muted-foreground">no role</span>
-                  ) : (
-                    <div className="flex flex-col gap-0.5">
-                      {(person.roles ?? []).map((role) => (
-                        <span
-                          key={`${role.name}-${role.center_id ?? "org"}`}
-                          className="text-sm"
-                        >
-                          {role.name}
-                          <span className="ms-1 text-xs text-muted-foreground">
-                            {role.center_id
-                              ? `· ${centerName(role.center_id)}`
-                              : "· whole organization"}
-                          </span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant={
-                      person.status === "active" ? "default" : "secondary"
-                    }
-                  >
-                    {person.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {person.user ? (
-                    <Badge
-                      variant={
-                        person.user.is_active ? "default" : "destructive"
-                      }
-                    >
-                      {person.user.is_active ? "active" : "deactivated"}
-                    </Badge>
-                  ) : (
-                    "—"
-                  )}
-                </TableCell>
-                <TableCell className="tabular-nums text-sm text-muted-foreground">
-                  {stamp(person.user?.last_login_at)}
-                </TableCell>
-                <TableCell className="text-end">
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant={
-                        person.status === "active" ? "outline" : "default"
-                      }
-                      disabled={busy === person.user_id}
-                      onClick={() =>
-                        void suspend(
-                          person,
-                          person.status === "active" ? "suspended" : "active",
-                        )
-                      }
-                    >
-                      {person.status === "active" ? "Suspend" : "Reinstate"}
-                    </Button>
-                    {person.user ? (
-                      <Button
-                        variant={
-                          person.user.is_active ? "destructive" : "default"
-                        }
-                        disabled={busy === person.user_id}
-                        onClick={() => void toggle(person)}
-                      >
-                        {person.user.is_active ? "Deactivate" : "Reactivate"}
-                      </Button>
-                    ) : null}
-                    {person.status === "active" ? (
-                      <Button
-                        variant="outline"
-                        disabled={busy === person.user_id}
-                        onClick={() => setLeaving(person)}
-                        aria-label={`Remove ${person.user?.full_name ?? person.user_id} from organisation`}
-                      >
-                        Remove from organisation
-                      </Button>
-                    ) : null}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+      <DataTable
+        caption="Members"
+        rowKey={(person) => person.user_id}
+        rows={people ?? []}
+        loading={people === null}
+        empty={{ title: "No members yet." }}
+        columns={columns}
+      />
     </AdminPage>
   );
 }

@@ -332,7 +332,7 @@ export default function Home() {
 
           <section
             aria-label="Collection summary"
-            className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+            className="grid grid-cols-2 gap-4 xl:grid-cols-3"
           >
             <Surface
               tone="metric"
@@ -478,7 +478,7 @@ export default function Home() {
 
           <section
             aria-label="Sales summary"
-            className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+            className="grid grid-cols-2 gap-4 xl:grid-cols-3"
           >
             <Surface
               tone="metric"

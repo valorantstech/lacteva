@@ -648,7 +648,7 @@ function ContactSection({
           <Label htmlFor="org-address">{t("settings.address")}</Label>
           <textarea
             id="org-address"
-            className="min-h-20 rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className="min-h-20 rounded-md border border-input bg-background px-3 py-2 text-base md:text-sm"
             value={address}
             disabled={!mayManage || saving}
             onChange={(e) => setAddress(e.target.value)}

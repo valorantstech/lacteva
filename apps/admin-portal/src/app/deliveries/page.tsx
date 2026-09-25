@@ -31,6 +31,7 @@ import {
   listSaleItems,
 } from "@/lib/api";
 import { EntityPicker } from "@/components/entity-picker";
+import { ScrollHint } from "@/components/scroll-hint";
 import { useCustomerNames } from "@/lib/names";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -195,6 +196,7 @@ function DeliveriesView() {
   const columns: Column<Delivery>[] = [
     {
       key: "date",
+      role: "title",
       header: "Delivered",
       cell: (d) => (
         <div className="flex flex-col">
@@ -205,6 +207,7 @@ function DeliveriesView() {
     },
     {
       key: "customer",
+      role: "subtitle",
       header: "Customer",
       cell: (d) => (
         <Link className="hover:underline" href={`/customers/${d.customer_id}`}>
@@ -226,6 +229,7 @@ function DeliveriesView() {
     },
     {
       key: "amount",
+      role: "money",
       header: "Amount",
       align: "end",
       cell: (d) => (
@@ -239,6 +243,7 @@ function DeliveriesView() {
     },
     {
       key: "status",
+      role: "status",
       header: "Status",
       cell: (d) => <StatusBadge status={d.status} />,
     },
@@ -260,6 +265,7 @@ function DeliveriesView() {
     },
     {
       key: "correct",
+      role: "actions",
       header: "",
       cell: (d) =>
         d.invoice_id ? (
@@ -564,7 +570,7 @@ function DeliveriesView() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            <ScrollHint>
               <table className="w-full text-sm">
                 <caption className="sr-only">By route</caption>
                 <thead className="text-left text-xs text-muted-foreground">
@@ -595,7 +601,7 @@ function DeliveriesView() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollHint>
           </CardContent>
         </Card>
       ) : null}
@@ -609,7 +615,7 @@ function DeliveriesView() {
             <CardDescription>{t("delivery.byCustomerHint")}</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            <ScrollHint>
               <table className="w-full text-sm">
                 <caption className="sr-only">
                   {t("delivery.byCustomer")}
@@ -686,7 +692,7 @@ function DeliveriesView() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollHint>
           </CardContent>
         </Card>
       ) : null}
@@ -701,7 +707,7 @@ function DeliveriesView() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            <ScrollHint>
               <table className="w-full text-sm">
                 <caption className="sr-only">Deliveries per day</caption>
                 <thead>
@@ -745,7 +751,7 @@ function DeliveriesView() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollHint>
           </CardContent>
         </Card>
       ) : null}
@@ -901,7 +907,7 @@ function DeliveriesView() {
               No items in this period{customerId ? " for this customer" : ""}.
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <ScrollHint>
               <table className="w-full text-sm">
                 <caption className="sr-only">Items sold in this period</caption>
                 <thead>
@@ -958,7 +964,7 @@ function DeliveriesView() {
                 </span>
                 <Money amount={items.total_amount} currency={items.currency} />
               </p>
-            </div>
+            </ScrollHint>
           )}
         </CardContent>
       </Card>

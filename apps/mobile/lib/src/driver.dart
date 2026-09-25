@@ -390,20 +390,23 @@ class _RunHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          // WO-96 / D-45: a Wrap, not a Row — at system text scale 2.0 on a
+          // 320px phone the state pill no longer fits beside the title and
+          // falls below it instead of overflowing the edge.
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Expanded(
-                child: Text(
-                  t.t('driver.roundTitle', {'slot': t.t('slot.$slot')}),
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.44,
-                    color: LactevaColors.ink,
-                  ),
+              Text(
+                t.t('driver.roundTitle', {'slot': t.t('slot.$slot')}),
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.44,
+                  color: LactevaColors.ink,
                 ),
               ),
-              const SizedBox(width: 8),
               // The board's chip carried a wall-clock start time. The run's
               // `started_at` is a UTC instant and this app does no timezone
               // arithmetic, so the chip says the STATE instead — which is the
@@ -431,12 +434,17 @@ class _RunHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                t.t('driver.ofStops', {'done': done, 'total': total}),
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: LactevaColors.ink,
+              // Flexible: "2 of 4 stops" at text scale 2.0 must shrink the
+              // route name, not run off the phone (WO-96 / D-45).
+              Flexible(
+                child: Text(
+                  t.t('driver.ofStops', {'done': done, 'total': total}),
+                  textAlign: TextAlign.end,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: LactevaColors.ink,
+                  ),
                 ),
               ),
             ],

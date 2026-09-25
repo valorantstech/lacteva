@@ -128,13 +128,17 @@ export function Metric({
     delta?.direction === "up" ? "▲" : delta?.direction === "down" ? "▼" : "—";
 
   return (
-    <div className={cn("flex flex-col gap-1", className)}>
+    // WO-96 / D-45: `min-w-0` so a tile in a two-column phone grid may shrink
+    // below its content, and the figure wraps or steps down rather than
+    // pushing the whole page wider than the phone — the dashboard's
+    // "276,871.50 INR" tile made a 320px phone zoom out to 384px.
+    <div className={cn("flex min-w-0 flex-col gap-1", className)}>
       <span className={cn("text-meta uppercase tracking-wide", supporting)}>
         {label}
       </span>
       <span
         className={cn(
-          "text-metric font-semibold tabular-nums tracking-tight",
+          "text-xl font-semibold tabular-nums tracking-tight [overflow-wrap:anywhere] md:text-metric",
           onBrand && "text-on-brand",
         )}
       >
