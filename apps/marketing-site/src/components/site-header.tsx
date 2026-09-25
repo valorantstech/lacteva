@@ -33,7 +33,12 @@ const NAV = [
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/90 backdrop-blur">
-      <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-6 px-4 sm:px-6 lg:px-8">
+      {/* WO-97: below `sm` the row is logo + Menu and nothing else — the CTA
+          moves into the menu (it is the hero's first button anyway). Logo,
+          "Start Free Trial" and the Menu did not fit a 360px phone: the Menu
+          button, the only way to navigate on a phone, ended 7px off the edge
+          and the whole site zoomed out. Measured on live, D-45. */}
+      <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-4 sm:gap-6 sm:px-6 lg:px-8">
         {/* WO-66: the logo keeps its link home AND now says it is one.
             `lacteva-lift` is the site's own hover affordance, used by every
             other link in this header; without it the logo was the only
@@ -56,7 +61,7 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <Link
             href="/login"
             prefetch={false}
@@ -64,9 +69,11 @@ export function SiteHeader() {
           >
             Login
           </Link>
-          <LinkButton href="/start-free-trial" size="lg">
-            Start Free Trial
-          </LinkButton>
+          <span className="hidden sm:block">
+            <LinkButton href="/start-free-trial" size="lg">
+              Start Free Trial
+            </LinkButton>
+          </span>
           {/* WO-66: the phone's way into the site. It REPLACES the scrolling
               strip that used to sit under this bar — that strip did reach
               every destination, so nothing became reachable that was not

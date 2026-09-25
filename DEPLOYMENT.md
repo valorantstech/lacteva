@@ -410,6 +410,12 @@ It is a post-deploy step rather than a CI job because it needs a seeded full
 stack and a Chrome; the reason is written in `tools/mobile-audit/README.md`.
 A red run is a regression to fix before the deploy is called done.
 
+The marketing site has its own, needing no login (WO-97):
+
+```bash
+cd tools/mobile-audit && SITE=https://lacteva.com node site.js
+```
+
 ### Zero-downtime deploys
 
 Compose alone cannot do them — `up -d` stops the old API container before starting the new one. Two options:

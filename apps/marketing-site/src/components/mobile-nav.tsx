@@ -143,7 +143,8 @@ export function MobileNav({ items }: { items: readonly NavItem[] }) {
       </summary>
       <div
         ref={panel}
-        className="absolute end-0 top-12 z-50 w-56 rounded-xl border border-border/70 bg-background p-2 shadow-lg"
+        // WO-97: never wider than the phone, whatever the width.
+        className="absolute end-0 top-12 z-50 w-56 max-w-[calc(100vw-1.5rem)] rounded-xl border border-border/70 bg-background p-2 shadow-lg"
       >
         <nav aria-label="Main mobile" className="flex flex-col">
           {items.map((item) => (
@@ -165,6 +166,16 @@ export function MobileNav({ items }: { items: readonly NavItem[] }) {
             className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             Login
+          </Link>
+          {/* WO-97: the primary call to action lives here below `sm`, where
+              the header has room only for the logo and this menu. LAST, so
+              the keyboard still lands on the first destination when the
+              menu opens; destinations first, the action to take last. */}
+          <Link
+            href="/start-free-trial"
+            className="mt-1 rounded-lg bg-primary px-3 py-2.5 text-center text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 sm:hidden"
+          >
+            Start Free Trial
           </Link>
         </nav>
       </div>

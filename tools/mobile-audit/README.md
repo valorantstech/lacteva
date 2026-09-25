@@ -57,3 +57,17 @@ would be skipped the first time it was slow, and a skipped proof is worse than
 an absent one. Running it against the deployed site after every deploy costs
 two minutes and measures the thing that matters. When the e2e harness
 (`infra/e2e/run-e2e.sh`) grows a Chrome, this is the script it should call.
+
+## The marketing site (WO-97)
+
+`site.js` does the same for lacteva.com: every public page at 320, 360, 375,
+390 and 412px — no page zoomed out, the Menu button (the only navigation on a
+phone) fully on screen, and its panel and every link inside the viewport.
+
+```bash
+SITE=https://lacteva.com node site.js
+```
+
+Locally: build the site, serve its standalone output with `.next/static` and
+`public` copied beside it (as for the portal above) on port 3100, and run with
+the default `SITE=http://127.0.0.1:3100`.
