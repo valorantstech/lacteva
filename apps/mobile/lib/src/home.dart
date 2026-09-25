@@ -207,7 +207,15 @@ class _HomeRouterState extends State<HomeRouter>
         session: session,
         roots: {
           'round': (_) => DeliveryRoundScreen(client: client, session: session),
-          'deliver': (_) => DeliveryRoundScreen(client: client, session: session),
+          // WO-91: no 'deliver' root. It used to be a SECOND instance of the
+          // round screen, loading on its own, so recording on one tab left
+          // the other stale. The run-stop flow in `driver.dart` is what the
+          // tab name promises, but it reads the driver's OWN run
+          // (`/delivery-runs/mine`, `logistics.run.execute`) — a session that
+          // holds that grant is `Experience.driver` and already gets it on
+          // its Round tab. For everyone else the round IS the delivery
+          // screen, so it is offered once; the shell hides a tab whose root
+          // is absent.
           'more': (_) => HubScreen(
             client: client,
             session: session,
@@ -216,8 +224,6 @@ class _HomeRouterState extends State<HomeRouter>
             signOut: true,
           ),
         },
-        // The round IS the delivery screen for a sales officer; one root
-        // serves both keys so the bar shape stays the driver's.
       ),
       // WO-72 Part C: whoever runs the dairy gets oversight, not the counter.
       Experience.manager => AppShell(

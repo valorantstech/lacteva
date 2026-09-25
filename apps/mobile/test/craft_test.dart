@@ -26,7 +26,9 @@ void main() {
       expect(en.t('sync.needAttention', {'count': 3}), '3 items need attention');
       expect(en.t('manager.unpriced', {'count': 1}), '1 collection is waiting for a price');
       expect(en.t('driver.remaining', {'count': 1}), '1 stop remaining');
-      expect(en.t('round.customerCount', {'count': 1}), '1 customer');
+      // WO-91: the header counts what is LEFT, not the planned total.
+      expect(en.t('round.customerCount', {'count': 1}), '1 left to deliver');
+      expect(en.t('round.customerCount', {'count': 0}), 'nothing left to deliver');
       expect(en.t('sync.sending', {'count': 1}), 'Sending 1 collection…');
     });
 

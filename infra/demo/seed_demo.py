@@ -951,7 +951,7 @@ async def make_org(
 
 
 async def invite_and_capture_token(
-    client, *, headers: dict, email: str, role_name: str
+    client, *, headers: dict, email: str, role_name: str, customer_id: str | None = None
 ) -> str:
     """Issue an invitation and read the token out of the delivered message.
 
@@ -979,15 +979,29 @@ async def invite_and_capture_token(
     previous = providers.get_provider("email")
     providers.register_provider("email", _CapturingEmailProvider())
     try:
-        await expect(
-            await client.post(
-                "/v1/invitations",
-                json={"email": email, "role_name": role_name},
-                headers=headers,
-            ),
-            201,
-            what=f"invite {email}",
-        )
+        if customer_id is not None:
+            # WO-86: a household's login is invited FROM the customer, so the
+            # account is bound before its first request. The staff route
+            # refuses CUSTOMER_PORTAL without a customer, on purpose.
+            await expect(
+                await client.post(
+                    f"/v1/customers/{customer_id}/invite",
+                    json={"email": email},
+                    headers=headers,
+                ),
+                201,
+                what=f"invite {email} as the customer's login",
+            )
+        else:
+            await expect(
+                await client.post(
+                    "/v1/invitations",
+                    json={"email": email, "role_name": role_name},
+                    headers=headers,
+                ),
+                201,
+                what=f"invite {email}",
+            )
     finally:
         providers.register_provider("email", previous)
 
@@ -998,7 +1012,14 @@ async def invite_and_capture_token(
 
 
 async def make_member(
-    client, admin: dict, org_id: str, *, email: str, full_name: str, role_name: str
+    client,
+    admin: dict,
+    org_id: str,
+    *,
+    email: str,
+    full_name: str,
+    role_name: str,
+    customer_id: str | None = None,
 ) -> dict:
     """A real member of an organization, created through the invitation flow.
 
@@ -1007,7 +1028,11 @@ async def make_member(
     like a person did the work rather than a script.
     """
     token = await invite_and_capture_token(
-        client, headers=acting(admin, org_id), email=email, role_name=role_name
+        client,
+        headers=acting(admin, org_id),
+        email=email,
+        role_name=role_name,
+        customer_id=customer_id,
     )
     user = await retrying(
         lambda: client.post(
@@ -2131,8 +2156,17 @@ async def build_sales(client, built: dict) -> dict:
     # it sells the way onboarding would — through the API, as the manager.
     # Idempotent: a re-run meets 409 and carries on.
     # The unit is the organisation's own, as the platform states it (D-21):
-    # this script names no unit the platform did not give it.
-    milk_unit = built["org"]["quantity_unit_label"]
+    # this script names no unit the platform did not give it. Read from the
+    # settings the organisation carries, not from the creation response —
+    # `OrganizationView` states the unit's KEY (`litre`), and the catalogue
+    # wants the label (`L`) the platform derives from it. WO-91 found this by
+    # running the seeder: it had failed here since WO-81 and nothing ran it.
+    locale = await expect(
+        await client.get("/v1/organizations/settings/locale", headers=h),
+        200,
+        what="read the organisation's units",
+    )
+    milk_unit = locale["quantity_unit_label"]
     for code, name in ((PRODUCT, "Raw cow milk"), (BUFFALO_PRODUCT, "Raw buffalo milk")):
         r = await client.post(
             "/v1/products", json={"code": code, "name": name, "unit": milk_unit}, headers=h
@@ -2429,17 +2463,44 @@ async def build_routes(client, built: dict) -> dict:
     )["registration"]
 
     driver_code, full_name, phone = built["market"].driver
-    summary["driver"] = (
-        await expect(
-            await client.post(
-                "/v1/drivers",
-                json={"code": driver_code, "full_name": full_name, "phone": phone},
-                headers=h,
-            ),
-            201,
-            what="register the demo driver",
-        )
-    )["code"]
+    driver = await expect(
+        await client.post(
+            "/v1/drivers",
+            json={"code": driver_code, "full_name": full_name, "phone": phone},
+            headers=h,
+        ),
+        201,
+        what="register the demo driver",
+    )
+    summary["driver"] = driver["code"]
+    # WO-91 §4: a driver who can SIGN IN. Every earlier demo registered the
+    # driver as a profile and nobody as a login, so the driver screens were
+    # reachable only after the owner signed in by hand — which is how three
+    # defects on the round screen survived every walk. The login is a real
+    # DRIVER member, created through the invitation flow like every other
+    # demo account, and linked to the profile the way the office would.
+    market = built["market"]
+    driver_login = await make_member(
+        client,
+        built["admin"],
+        built["org"]["id"],
+        email=f"driver@{market.email_domain}",
+        full_name=full_name,
+        role_name="DRIVER",
+    )
+    await expect(
+        await client.post(
+            f"/v1/drivers/{driver['id']}/user",
+            json={"user_id": driver_login["id"]},
+            headers=h,
+        ),
+        200,
+        what="give the demo driver a login",
+    )
+    summary["driver_login"] = driver_login["email"]
+    built["summary"].setdefault("users", []).append(
+        {"email": driver_login["email"], "name": full_name, "role": "DRIVER"}
+    )
 
     summary["unrouted_customers"] = len(customers) - sum(
         r["stops"] for r in summary["routes"]
@@ -2526,19 +2587,12 @@ async def seed_showcase_ledger(client, h: dict, *, customer: dict, name: str, to
 async def make_customer_login(client, built: dict, *, customer: dict) -> dict:
     """A household that can sign in to the mobile app and see its own account.
 
-    Two steps, and the second is the interesting one.
-
-    The member is invited and accepts exactly like any other member, with the
-    `CUSTOMER_PORTAL` role — five read permissions, and nothing that could
-    change anything. That part is ordinary.
-
-    The BINDING is a direct write, because there is deliberately no API that
-    sets `customer_id` from a request body. A scope that an administrator
-    could set by hand is a scope an administrator could set WRONG, and the
-    failure mode is one household reading another's bills — so DEMO-012 left
-    it out of the API surface entirely and this seeder does what a migration
-    or an operator with database access would do. The limitation is recorded
-    in DEMO-012-FINAL.md rather than worked around with a hidden endpoint.
+    Invited FROM the customer (WO-86): `POST /v1/customers/{id}/invite` issues
+    a CUSTOMER_PORTAL invitation that names the household, and acceptance
+    binds the account before its first request. Until WO-86 this seeder wrote
+    `customer_id` into the row by hand — the "known limitation" DEMO-012
+    recorded — and there is now no reason to; the staff route refuses the
+    customer role without a customer, so the old path would fail here.
     """
     market: Market = built["market"]
     email = f"household@{market.email_domain}"
@@ -2554,19 +2608,8 @@ async def make_customer_login(client, built: dict, *, customer: dict) -> dict:
         email=email,
         full_name=market.staff["household"],
         role_name="CUSTOMER_PORTAL",
+        customer_id=customer["id"],
     )
-
-    from sqlalchemy import select
-
-    from platform_core.core.rls import platform_factory
-    from platform_core.modules.identity.models import User
-
-    async with platform_factory("demo seed: bind a customer login")() as session:
-        user = await session.scalar(select(User).where(User.email == email))
-        if user is None:
-            raise SeedError("customer login was not created")
-        user.customer_id = uuid.UUID(customer["id"])
-        await session.commit()
 
     return {
         "email": email,

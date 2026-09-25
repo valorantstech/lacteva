@@ -129,15 +129,18 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
         status: 'active',
         limit: 100,
       );
-      final delivered = await widget.client.listDeliveries(
+      // EVERY row the platform holds for today, whatever its status — a
+      // generated `scheduled` placeholder as much as a delivery. The name
+      // used to be `delivered`, and the grouping below believed it (WO-91).
+      final todaysRows = await widget.client.listDeliveries(
         dateFrom: today,
         dateTo: today,
         limit: 200,
       );
-      final done = <String, Map<String, dynamic>>{};
-      for (final d in (delivered['items'] as List? ?? const [])) {
+      final byCustomer = <String, Map<String, dynamic>>{};
+      for (final d in (todaysRows['items'] as List? ?? const [])) {
         final row = d as Map<String, dynamic>;
-        done[row['customer_id'].toString()] = row;
+        byCustomer[row['customer_id'].toString()] = row;
       }
 
       // DEMO-034: which route, and in what order. A separate grant, so a
@@ -159,7 +162,7 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
       if (!mounted) return;
       setState(() {
         _customers = list;
-        _doneToday = done;
+        _doneToday = byCustomer;
         _report = report;
         _run = run;
         _businessDate = today;
@@ -214,7 +217,9 @@ class _DeliveryRoundScreenState extends State<DeliveryRoundScreen> {
                         children: [
                           _RoundHeader(
                             businessDate: _businessDate,
-                            customers: _customers.length,
+                            // WO-91: what is LEFT, not the planned total — the
+                            // number a roundsman is actually counting down.
+                            customers: groups.toDeliver.length,
                             run: _run,
                             t: t,
                             onSignOut: SignOutButton(
@@ -527,10 +532,18 @@ class RoundGroups {
   int get total => attention.length + toDeliver.length + delivered.length;
 }
 
+/// The platform's `PENDING_STATUSES` (`delivery/models.py`): a row that
+/// exists because the generator wrote it, worth 0.00, meaning nothing has
+/// happened yet. WO-91: it used to be grouped with skipped and returned, so a
+/// round auto-planned overnight (WO-82) opened with every stop under NEEDS
+/// ATTENTION — the exact opposite of what the row means.
+const Set<String> pendingStatuses = {'scheduled'};
+
 /// Split the round by what the roundsman must do about each stop.
 ///
 /// `outcomes` is the map this screen already keeps: customer id → the row the
-/// platform returned for today, or absent when nothing has been recorded.
+/// platform returned for today, or absent when nothing has been recorded. A
+/// row in `pendingStatuses` counts as absent: it is a plan, not an outcome.
 RoundGroups groupRound(
   List<Map<String, dynamic>> customers,
   Map<String, Map<String, dynamic>> outcomes,
@@ -541,12 +554,13 @@ RoundGroups groupRound(
   for (final customer in customers) {
     final row = outcomes[customer['id'].toString()];
     final status = (row?['status'] ?? '').toString();
-    if (row == null) {
+    if (row == null || pendingStatuses.contains(status)) {
+      // No row, or the generator's placeholder: nothing has happened yet.
       toDeliver.add(customer);
     } else if (status == 'delivered') {
       delivered.add(customer);
     } else {
-      // Skipped, returned, cancelled: an outcome exists and it is not a
+      // Skipped, returned, cancelled: an OUTCOME exists and it is not a
       // delivery, so it is the part of the round somebody has to look at.
       attention.add(customer);
     }
@@ -747,7 +761,10 @@ class _RoundRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final row = delivered;
-    final status = row?['status']?.toString();
+    var status = row?['status']?.toString();
+    // WO-91: a generated placeholder renders exactly as no row at all —
+    // the quiet NOT YET chip and the deliver controls, never the warning icon.
+    if (status != null && pendingStatuses.contains(status)) status = null;
     return Container(
       decoration: BoxDecoration(
         color: LactevaColors.milk,

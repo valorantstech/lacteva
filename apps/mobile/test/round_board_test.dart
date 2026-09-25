@@ -87,8 +87,20 @@ class _Platform extends ApiClient {
     String? idempotencyKey,
   }) async {
     recorded.add('$customerId:$status:${quantity ?? ""}');
+    // WO-91: a platform that KEEPS what was recorded, so the screen's reload
+    // sees the round move. Opt-in, because most tests pass a const list.
+    if (recordIntoDay) {
+      deliveries.add({
+        'customer_id': customerId,
+        'status': status,
+        'quantity': quantity ?? '1.000',
+        'quantity_unit': 'L',
+      });
+    }
     return {'id': 'd-new', 'status': status};
   }
+
+  bool recordIntoDay = false;
 }
 
 /// The real offline client over the fake platform, so a recorded delivery
@@ -219,12 +231,13 @@ Future<_Platform> _pump(
   List<Map<String, dynamic>> deliveries = const [],
   Session? session,
   Size size = const Size(390, 844),
+  bool recordIntoDay = false,
 }) async {
   final platform = _Platform(
     report: report,
     customers: customers,
     deliveries: deliveries,
-  );
+  )..recordIntoDay = recordIntoDay;
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -257,7 +270,8 @@ void main() {
       // The date is the PLATFORM's, rendered verbatim. A phone cannot turn an
       // ISO date into the dairy's "Wed 27 Aug" without a timezone database.
       expect(find.textContaining('2026-08-27'), findsOneWidget);
-      expect(find.textContaining('2 customers'), findsOneWidget);
+      // WO-91: the figure is what is LEFT — with nothing recorded, the whole round.
+      expect(find.textContaining('2 left to deliver'), findsOneWidget);
       expect(find.textContaining('from standing orders'), findsOneWidget);
     });
 
@@ -544,6 +558,24 @@ void main() {
       expect(groups.attention.map((c) => c['id']), ['c3', 'c4']);
     });
 
+    test('a generated round of ten scheduled stops is ten to deliver, none in attention', () {
+      // WO-91. The case that was never written: WO-82 auto-plans the round
+      // overnight, so at 06:00 every stop EXISTS as a `scheduled` row worth
+      // 0.00. That row is the generator's placeholder — nothing has happened
+      // — and it used to be filed with skipped and returned.
+      final customers = [for (var i = 1; i <= 10; i++) {'id': 'c$i', 'name': 'Stop $i'}];
+      final groups = groupRound(customers, {
+        for (var i = 1; i <= 10; i++)
+          'c$i': {'status': 'scheduled', 'quantity': '0.000', 'amount': '0.00'},
+      });
+      expect(groups.toDeliver.length, 10);
+      expect(groups.attention, isEmpty);
+      expect(groups.delivered, isEmpty);
+      // And the bar starts at zero, not at "ten problems".
+      expect(groups.progress, 0);
+      expect(pendingStatuses, {'scheduled'});
+    });
+
     test('route order survives inside a group — the sequence is the road', () {
       final groups = groupRound(
         const [
@@ -677,6 +709,46 @@ void main() {
         chipGround(tester, 'Not yet'),
         isNot(chipGround(tester, 'Returned')),
       );
+    });
+  });
+
+  group('WO-91 — the round opens honestly and counts down', () {
+    testWidgets('a scheduled stop looks like NOT YET, never like a warning', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        customers: const [_joshi, _patil, _tea],
+        deliveries: const [
+          {'customer_id': 'c1', 'status': 'scheduled', 'quantity': '0.000'},
+          {'customer_id': 'c2', 'status': 'delivered', 'quantity': '1.000'},
+        ],
+      );
+      // No NEEDS ATTENTION group at all; c1 and c4 are still to come.
+      expect(find.text('Needs attention'), findsNothing);
+      expect(find.byIcon(Icons.error_outline), findsNothing);
+      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(find.text('Not yet'), findsNWidgets(2));
+      // The header counts what is LEFT, not the planned three.
+      expect(find.textContaining('2 left to deliver'), findsOneWidget);
+    });
+
+    testWidgets('recording a delivery moves the header count', (tester) async {
+      await _pump(
+        tester,
+        customers: const [_joshi, _patil],
+        deliveries: [
+          {'customer_id': 'c1', 'status': 'scheduled', 'quantity': '0.000'},
+        ],
+        recordIntoDay: true,
+      );
+      expect(find.textContaining('2 left to deliver'), findsOneWidget);
+      await tester.tap(find.text('Delivered').first);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('1 left to deliver'), findsOneWidget);
+      await tester.tap(find.text('Delivered').first);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('nothing left to deliver'), findsOneWidget);
     });
   });
 }
