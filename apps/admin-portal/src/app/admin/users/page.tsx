@@ -18,10 +18,13 @@ import {
   type Member,
   type Role,
   type User,
+  cancelMemberEmailChange,
   inviteMember,
   listCenters,
   listPeople,
   listRoles,
+  requestMemberEmailChange,
+  setMemberProfile,
   setMemberStatus,
   setUserActive,
   describeError,
@@ -46,6 +49,12 @@ export default function UsersPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("tenant-viewer");
   const [inviting, setInviting] = useState(false);
+  // WO-87 §4: which row is being edited, and how.
+  const [editing, setEditing] = useState<
+    | { user_id: string; kind: "name"; value: string }
+    | { user_id: string; kind: "email"; value: string }
+    | null
+  >(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -99,6 +108,62 @@ export default function UsersPage() {
       setError(
         describeError(err, "Failed to change the membership"),
       );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** WO-87 §2: a typo fix, audited with before and after. */
+  async function saveName(person: Person, fullName: string) {
+    setBusy(person.user_id);
+    setNote(null);
+    setError(null);
+    try {
+      await setMemberProfile(person.user_id, fullName.trim());
+      setNote(`Name corrected to ${fullName.trim()}.`);
+      setEditing(null);
+      await refresh();
+    } catch (err) {
+      setError(describeError(err, "Failed to correct the name"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * WO-87 §3: start an email change. The portal never sets the address: the
+   * platform sends the NEW address a code, tells the OLD address, and only
+   * the new address confirming makes it real.
+   */
+  async function changeEmail(person: Person, newEmail: string) {
+    setBusy(person.user_id);
+    setNote(null);
+    setError(null);
+    try {
+      const pending = await requestMemberEmailChange(person.user_id, newEmail.trim());
+      setNote(
+        `A confirmation code was sent to ${pending.new_email}; ${person.user?.email ?? "the current address"} has been told. ` +
+          `Nothing changes until the new address confirms — before ${stamp(pending.expires_at)}.`,
+      );
+      setEditing(null);
+      await refresh();
+    } catch (err) {
+      setError(describeError(err, "Failed to start the email change"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function cancelEmail(person: Person) {
+    setBusy(person.user_id);
+    setNote(null);
+    setError(null);
+    try {
+      await cancelMemberEmailChange(person.user_id);
+      setNote("The email change was cancelled. The current address stays.");
+      await refresh();
+    } catch (err) {
+      setError(describeError(err, "Failed to cancel the email change"));
     } finally {
       setBusy(null);
     }
@@ -205,6 +270,14 @@ export default function UsersPage() {
           The invitation carries a one-time code to that address. Centre-scoped
           assignment happens on the Roles page once the person has joined.
         </p>
+        {/* WO-87 §5: what is NOT on offer, said before somebody tries it. */}
+        <p className="w-full text-xs text-muted-foreground" data-testid="users-help">
+          A name can be corrected here, and an email changed — the new address must
+          confirm from its inbox, and the old address is told. A login cannot be moved
+          to a different person: when someone leaves and another takes their round,
+          deactivate the account and invite the new person, because the deliveries,
+          runs and audit lines belong to whoever made them.
+        </p>
       </form>
 
       <Table>
@@ -231,9 +304,113 @@ export default function UsersPage() {
           ) : (
             people.map((person) => (
               <TableRow key={person.user_id}>
-                <TableCell>{person.user?.full_name ?? "—"}</TableCell>
                 <TableCell>
-                  {person.user?.email ?? <em>account unavailable</em>}
+                  {editing?.user_id === person.user_id && editing.kind === "name" ? (
+                    <form
+                      className="flex items-center gap-1"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void saveName(person, editing.value);
+                      }}
+                    >
+                      <Input
+                        aria-label="Name"
+                        className="h-8 min-w-40"
+                        value={editing.value}
+                        onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                        autoFocus
+                      />
+                      <Button type="submit" size="sm" disabled={busy === person.user_id || !editing.value.trim()}>
+                        Save
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                        Cancel
+                      </Button>
+                    </form>
+                  ) : (
+                    <span className="inline-flex items-center gap-1">
+                      {person.user?.full_name ?? "—"}
+                      {person.user ? (
+                        <button
+                          type="button"
+                          className="text-xs text-muted-foreground underline underline-offset-4"
+                          aria-label={`Edit name of ${person.user.full_name}`}
+                          onClick={() =>
+                            setEditing({ user_id: person.user_id, kind: "name", value: person.user!.full_name })
+                          }
+                        >
+                          edit
+                        </button>
+                      ) : null}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {editing?.user_id === person.user_id && editing.kind === "email" ? (
+                    <form
+                      className="flex flex-col gap-1"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void changeEmail(person, editing.value);
+                      }}
+                      data-testid={`email-change-${person.user_id}`}
+                    >
+                      <div className="flex items-center gap-1">
+                        <Input
+                          aria-label="New email"
+                          type="email"
+                          className="h-8 min-w-56"
+                          value={editing.value}
+                          onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                          autoFocus
+                        />
+                        <Button type="submit" size="sm" disabled={busy === person.user_id || !editing.value.trim()}>
+                          Send code
+                        </Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        The new address gets a code and must confirm from its inbox; the
+                        current address is told now. Until then the current address keeps
+                        signing in. On confirmation every session is signed out.
+                      </span>
+                    </form>
+                  ) : (
+                    <div className="flex flex-col gap-0.5">
+                      <span className="inline-flex items-center gap-1">
+                        {person.user?.email ?? <em>account unavailable</em>}
+                        {person.user && !person.pending_email_change ? (
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground underline underline-offset-4"
+                            aria-label={`Change email of ${person.user.full_name}`}
+                            onClick={() => setEditing({ user_id: person.user_id, kind: "email", value: "" })}
+                          >
+                            change
+                          </button>
+                        ) : null}
+                      </span>
+                      {person.pending_email_change ? (
+                        <span
+                          className="text-xs text-muted-foreground"
+                          data-testid={`pending-email-${person.user_id}`}
+                        >
+                          changing to {person.pending_email_change.new_email} — awaiting
+                          confirmation, expires {stamp(person.pending_email_change.expires_at)}{" "}
+                          <button
+                            type="button"
+                            className="underline underline-offset-4"
+                            disabled={busy === person.user_id}
+                            onClick={() => void cancelEmail(person)}
+                          >
+                            cancel
+                          </button>
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell>
                   {(person.roles ?? []).length === 0 ? (

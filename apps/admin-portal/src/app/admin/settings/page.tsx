@@ -32,7 +32,10 @@ import {
   getLocaleSettings,
   getSession,
   type Session,
+  cancelMyEmailChange,
+  requestMyEmailChange,
   setMyLanguage,
+  setMyProfile,
   setMyTimezone,
   updateLocaleSettings,
   describeError,
@@ -399,6 +402,57 @@ export default function OrganizationSettingsPage() {
             t={t}
           />
 
+          {/* --- WO-87: my own name and email ------------------------------- */}
+          {session?.authenticated ? (
+            <MyAccountSection
+              session={session}
+              saving={saving}
+              t={t}
+              onName={async (name) => {
+                setSaving(true);
+                setError(null);
+                setNote(null);
+                try {
+                  await setMyProfile(name);
+                  setNote(t("settings.saved"));
+                  await load();
+                } catch (err) {
+                  setError(describeError(err, t("state.error")));
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              onEmail={async (email) => {
+                setSaving(true);
+                setError(null);
+                setNote(null);
+                try {
+                  const pending = await requestMyEmailChange(email);
+                  setNote(`${t("account.codeSent")} ${pending.new_email}`);
+                  await load();
+                } catch (err) {
+                  setError(describeError(err, t("state.error")));
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              onCancelEmail={async () => {
+                setSaving(true);
+                setError(null);
+                setNote(null);
+                try {
+                  await cancelMyEmailChange();
+                  setNote(t("account.changeCancelled"));
+                  await load();
+                } catch (err) {
+                  setError(describeError(err, t("state.error")));
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            />
+          ) : null}
+
           <section className="flex flex-col gap-3 border-t border-border pt-6">
             <h2 className="text-sm font-semibold">
               {t("settings.myTimezone")}
@@ -450,6 +504,104 @@ export default function OrganizationSettingsPage() {
         </div>
       )}
     </AdminPage>
+  );
+}
+
+/**
+ * My name and my email (WO-87 §1, §3). The name saves at once; the email is a
+ * REQUEST — the new address gets a code, the current one is told, and nothing
+ * changes until the new address confirms. Every sentence here says who
+ * confirms and what happens to sessions, because an account-recovery flow
+ * that surprises people is one they route around.
+ */
+function MyAccountSection({
+  session,
+  saving,
+  t,
+  onName,
+  onEmail,
+  onCancelEmail,
+}: {
+  session: Extract<Session, { authenticated: true }>;
+  saving: boolean;
+  t: (key: string) => string;
+  onName: (name: string) => Promise<void>;
+  onEmail: (email: string) => Promise<void>;
+  onCancelEmail: () => Promise<void>;
+}) {
+  const [name, setName] = useState(session.user.full_name);
+  const [email, setEmail] = useState("");
+  const pending = session.pending_email_change ?? null;
+  return (
+    <section
+      className="flex flex-col gap-3 border-t border-border pt-6"
+      aria-labelledby="my-account-title"
+      data-testid="my-account"
+    >
+      <h2 id="my-account-title" className="text-sm font-semibold">
+        {t("account.title")}
+      </h2>
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void onName(name.trim());
+        }}
+      >
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="my-name">{t("account.name")}</Label>
+          <Input
+            id="my-name"
+            value={name}
+            disabled={saving}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <Button type="submit" size="sm" disabled={saving || !name.trim() || name.trim() === session.user.full_name}>
+          {t("account.saveName")}
+        </Button>
+      </form>
+      <p className="text-xs text-muted-foreground">
+        {t("account.email")}: <strong>{session.user.email}</strong>
+      </p>
+      {pending ? (
+        <p className="text-xs text-muted-foreground" data-testid="my-pending-email">
+          {t("account.pending")} <strong>{pending.new_email}</strong> · {t("account.expires")}{" "}
+          {pending.expires_at.slice(0, 16).replace("T", " ")}{" "}
+          <button
+            type="button"
+            className="underline underline-offset-4"
+            disabled={saving}
+            onClick={() => void onCancelEmail()}
+          >
+            {t("account.cancelChange")}
+          </button>
+        </p>
+      ) : (
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onEmail(email.trim());
+          }}
+        >
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="my-new-email">{t("account.newEmail")}</Label>
+            <Input
+              id="my-new-email"
+              type="email"
+              value={email}
+              disabled={saving}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <Button type="submit" size="sm" variant="outline" disabled={saving || !email.trim()}>
+            {t("account.sendCode")}
+          </Button>
+          <p className="w-full text-xs text-muted-foreground">{t("account.emailHelp")}</p>
+        </form>
+      )}
+    </section>
   );
 }
 

@@ -2401,7 +2401,70 @@ export type Me = {
   /** Centres this principal may act at; null means the whole organization. */
   center_scope: string[] | null;
   permissions: string[];
+  /** WO-87 §3: the email change waiting on the new address, if any. */
+  pending_email_change?: PendingEmailChange | null;
 };
+
+/** WO-87 §3. A pending change of a login's email — WITHOUT its code, which
+ *  went to the new address and exists nowhere a caller can read. */
+export type PendingEmailChange = {
+  new_email: string;
+  requested_by: string;
+  requested_at: string;
+  expires_at: string;
+};
+
+/** WO-87 §1: your own name. No permission — it is your name on your screen. */
+export const setMyProfile = (fullName: string) =>
+  api<User>("/v1/auth/me/profile", {
+    method: "PUT",
+    body: JSON.stringify({ full_name: fullName }),
+  });
+
+/** WO-87 §3: start changing your own login email. Nothing changes until the
+ *  NEW address confirms with the code it was sent; the OLD address is told now. */
+export const requestMyEmailChange = (newEmail: string) =>
+  api<PendingEmailChange>("/v1/auth/me/email-change", {
+    method: "POST",
+    body: JSON.stringify({ new_email: newEmail }),
+  });
+
+export const cancelMyEmailChange = () =>
+  api<void>("/v1/auth/me/email-change", { method: "DELETE" });
+
+/** WO-87 §2: a tenant admin corrects a member's name (a typo fix, audited). */
+export const setMemberProfile = (userId: string, fullName: string) =>
+  api<User>(`/v1/members/${userId}/profile`, {
+    method: "PUT",
+    body: JSON.stringify({ full_name: fullName }),
+  });
+
+/** WO-87 §3: a tenant admin starts an email change for a member — still the
+ *  new address that confirms, still the old one that is told. */
+export const requestMemberEmailChange = (userId: string, newEmail: string) =>
+  api<PendingEmailChange>(`/v1/members/${userId}/email-change`, {
+    method: "POST",
+    body: JSON.stringify({ new_email: newEmail }),
+  });
+
+export const cancelMemberEmailChange = (userId: string) =>
+  api<void>(`/v1/members/${userId}/email-change`, { method: "DELETE" });
+
+/**
+ * The NEW address confirms an email change (WO-87 §3). PRE-AUTH, like
+ * `confirmPasswordReset`: the person following the link may hold no session,
+ * and on success the platform revokes every session they did hold.
+ */
+export async function confirmEmailChange(token: string) {
+  const res = await fetch("/api/auth/email-change/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  if (!res.ok) throw await problemFrom(res);
+}
 
 /** Who am I? A 401 means "nobody" — an answer, not an error to escape from,
  *  so this never triggers the redirect (LOOP-001). Prefer `getSession()` for
@@ -2556,6 +2619,8 @@ export type Member = {
   /** DEMO-008 §9 — the grants this person holds, from the same rows the
    *  permission engine reads. */
   roles?: MemberRole[];
+  /** WO-87 §4 — the email change waiting on this member's new address. */
+  pending_email_change?: PendingEmailChange | null;
 };
 
 export const listMembers = () => api<Member[]>("/v1/members");

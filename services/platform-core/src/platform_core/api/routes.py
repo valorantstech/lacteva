@@ -6,7 +6,7 @@ from datetime import date, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
 
 from platform_core.api import deps
@@ -632,6 +632,20 @@ class MeView(BaseModel):
     #: customer server-side (`core/tenancy.enforce_customer_scope`), so a
     #: client that ignored this field would still be shown nothing else.
     customer_id: uuid.UUID | None = None
+    #: WO-87 §3 — the email change waiting on the new address, if any.
+    pending_email_change: "EmailChangeView | None" = None
+
+
+class EmailChangeView(BaseModel):
+    """A pending email change, WITHOUT its code (WO-87 §3). The code went to
+    the new address and exists nowhere a caller can read."""
+
+    new_email: str
+    requested_by: uuid.UUID
+    requested_at: datetime
+    expires_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class SetLanguageRequest(BaseModel):
@@ -687,6 +701,7 @@ async def me(
     principal: CurrentPrincipal,
     engine: Annotated[PermissionEngine, Depends(deps.get_permission_engine)],
     session: deps.Session,
+    identity: deps.Identity,
 ) -> MeView:
     from platform_core.modules.authz.models import Role, UserRole
     from platform_core.modules.organization.models import Membership, Organization
@@ -756,7 +771,102 @@ async def me(
         center_scope=sorted(scope) if scope is not None else None,
         permissions=sorted(perms),
         customer_id=principal.customer_id,
+        pending_email_change=_email_change_view(await identity.pending_email_change(principal.id)),
     )
+
+
+def _email_change_view(change) -> EmailChangeView | None:
+    return EmailChangeView.model_validate(change) if change is not None else None
+
+
+# --- WO-87: a login's details can be corrected ------------------------------
+
+
+class SetProfileRequest(BaseModel):
+    """The name, and only the name. Email has its own flow below."""
+
+    full_name: str = Field(min_length=1, max_length=200)
+
+
+@auth.put("/me/profile", response_model=UserView)
+async def set_my_profile(
+    body: SetProfileRequest,
+    principal: CurrentPrincipal,
+    identity: deps.Identity,
+    session: deps.Session,
+) -> Any:
+    """Correct your own name (WO-87 §1). No permission: it is your name on
+    your screen, the argument `set_my_language` makes. Audited."""
+    user = await identity.set_full_name(
+        principal.id, body.full_name, actor_id=principal.id, tenant_id=principal.user.tenant_id
+    )
+    await session.commit()
+    return user
+
+
+class EmailChangeRequest(BaseModel):
+    new_email: EmailStr
+
+
+@auth.post("/me/email-change", response_model=EmailChangeView, status_code=202)
+async def request_my_email_change(
+    body: EmailChangeRequest,
+    principal: CurrentPrincipal,
+    identity: deps.Identity,
+    session: deps.Session,
+) -> Any:
+    """Start changing your own login email (WO-87 §3). Nothing changes until
+    the NEW address confirms with the code it was sent; the OLD address is
+    told now. The response never carries the code."""
+    change = await identity.request_email_change(
+        principal.id,
+        str(body.new_email),
+        actor_id=principal.id,
+        tenant_id=principal.user.tenant_id,
+    )
+    await session.commit()
+    return change
+
+
+@auth.get("/me/email-change", response_model=EmailChangeView | None)
+async def my_pending_email_change(
+    principal: CurrentPrincipal,
+    identity: deps.Identity,
+) -> Any:
+    return await identity.pending_email_change(principal.id)
+
+
+@auth.delete("/me/email-change", status_code=204)
+async def cancel_my_email_change(
+    principal: CurrentPrincipal,
+    identity: deps.Identity,
+    session: deps.Session,
+) -> None:
+    await identity.cancel_email_change(
+        principal.id, actor_id=principal.id, tenant_id=principal.user.tenant_id
+    )
+    await session.commit()
+
+
+class EmailChangeConfirm(BaseModel):
+    token: str
+
+
+@auth.post("/email-change/confirm", status_code=204)
+async def confirm_email_change(
+    body: EmailChangeConfirm,
+    request: Request,
+    service: Annotated[AuthService, Depends(deps.get_auth_service)],
+    session: deps.Session,
+) -> None:
+    """The new address follows the link (WO-87 §3). Anonymous, rate-limited
+    like a password reset — it is a credential-shaped code — and on success
+    every live session of that login is revoked."""
+    await rate_limit.enforce(
+        rate_limit.PASSWORD_RESET, ip=client_ip(request), user=None, endpoint="email-change"
+    )
+    await service.confirm_email_change(body.token)
+    await session.commit()
 
 
 # --- Identity -------------------------------------------------------------
@@ -1283,6 +1393,59 @@ async def set_member_status(
     return {"user_id": str(user_id), "status": membership.status}
 
 
+@member_router.put("/members/{user_id}/profile", response_model=UserView)
+async def set_member_profile(
+    user_id: uuid.UUID,
+    body: SetProfileRequest,
+    identity: deps.Identity,
+    session: deps.Session,
+    principal: Annotated[Principal, Depends(require_permission("organization.member.manage"))],
+) -> Any:
+    """A tenant admin corrects a member's name (WO-87 §2): a typo fix, not an
+    identity change, audited with before and after. Another tenant's user is
+    NOT FOUND."""
+    user = await identity.set_full_name(
+        user_id, body.full_name, actor_id=principal.id, tenant_id=principal.tenant_id
+    )
+    await session.commit()
+    return user
+
+
+@member_router.post(
+    "/members/{user_id}/email-change", response_model=EmailChangeView, status_code=202
+)
+async def request_member_email_change(
+    user_id: uuid.UUID,
+    body: EmailChangeRequest,
+    identity: deps.Identity,
+    session: deps.Session,
+    principal: Annotated[Principal, Depends(require_permission("organization.member.manage"))],
+) -> Any:
+    """A tenant admin starts an email change for a member (WO-87 §3) — the
+    only person a delivery boy with a dead mailbox can ask. It is still the
+    NEW address that confirms, and the OLD one that is told. Another tenant's
+    user and a platform-level account are NOT FOUND: within the tenant this
+    is no escalation, across it it would be."""
+    change = await identity.request_email_change(
+        user_id, str(body.new_email), actor_id=principal.id, tenant_id=principal.tenant_id
+    )
+    await session.commit()
+    return change
+
+
+@member_router.delete("/members/{user_id}/email-change", status_code=204)
+async def cancel_member_email_change(
+    user_id: uuid.UUID,
+    identity: deps.Identity,
+    session: deps.Session,
+    principal: Annotated[Principal, Depends(require_permission("organization.member.manage"))],
+) -> None:
+    await identity.cancel_email_change(
+        user_id, actor_id=principal.id, tenant_id=principal.tenant_id
+    )
+    await session.commit()
+
+
 @member_router.get("/members")
 async def list_members(
     service: Annotated[MembershipService, Depends(deps.get_membership_service)],
@@ -1316,14 +1479,39 @@ async def list_members(
             by_user.setdefault(user_id, []).append(
                 {"name": name, "center_id": str(center_id) if center_id else None}
             )
+    # WO-87 §4: the email change each member has waiting, so the Users page
+    # can show it in the row with its expiry and a cancel — one query.
+    from platform_core.modules.identity.models import EmailChange
+
+    pending: dict[uuid.UUID, EmailChange] = {}
+    if user_ids:
+        now = utcnow()
+        for row in (
+            await session.scalars(
+                select(EmailChange)
+                .where(
+                    EmailChange.user_id.in_(user_ids),
+                    EmailChange.completed_at.is_(None),
+                    EmailChange.revoked_at.is_(None),
+                )
+                .order_by(EmailChange.requested_at.desc())
+            )
+        ).all():
+            if as_utc(row.expires_at) >= now and row.user_id not in pending:
+                pending[row.user_id] = row
     return [
         {
             "user_id": str(m.user_id),
             "status": m.status,
             "joined_at": m.joined_at.isoformat(),
             "roles": by_user.get(m.user_id, []),
+            "pending_email_change": (
+                EmailChangeView.model_validate(pending[m.user_id]).model_dump(mode="json")
+                if m.user_id in pending
+                else None
+            ),
         }
-        for m in await service.list_members()
+        for m in members
     ]
 
 

@@ -61,3 +61,32 @@ class User(Base, IdMixin):
     #: this is additive and changes nothing for staff.
     customer_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EmailChange(Base, IdMixin):
+    """A PENDING change of a login's email (WO-87 §3).
+
+    Email is the login and the password-reset destination, so whoever can set
+    it owns the account — which is why there is no route that writes
+    `User.email` directly, from anybody. A change is requested here, the NEW
+    address is sent a one-time code, the OLD address is told, and only the new
+    address following through makes it real. Until then the old email signs
+    in and nothing about the account has changed.
+
+    Same shape and the same secrecy discipline as `Invitation` and
+    `PasswordResetToken`: a hash of the code, never the code; the raw value
+    goes to the mail channel only (SEC-003 / F-04). No `tenant_id` — the
+    confirming caller is anonymous and discovers the tenant FROM the row, the
+    argument `password_reset_token` already makes in `core/rls.py`.
+    """
+
+    __tablename__ = "email_change"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    new_email: Mapped[str] = mapped_column(String(320))
+    requested_by: Mapped[uuid.UUID] = mapped_column(Uuid)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -13,6 +13,7 @@ from platform_core.core.config import get_settings
 from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import (
     AmbiguousTenantError,
+    ConflictError,
     InvalidCredentialsError,
     InvalidTokenError,
 )
@@ -20,6 +21,7 @@ from platform_core.core.security import create_token, hash_password, verify_pass
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.auth.models import AuthSession, PasswordResetToken
+from platform_core.modules.identity.models import EmailChange, User
 from platform_core.modules.identity.service import IdentityService
 from platform_core.modules.organization.service import MembershipService
 
@@ -431,6 +433,68 @@ class AuthService:
                     "organization": await self._organization_name(user.tenant_id),
                 },
                 secret_variables={"reset_token": raw_token},
+            )
+        )
+
+    async def confirm_email_change(self, token: str) -> None:
+        """The NEW address follows the link (WO-87 §3), and only now does the
+        login change. Anonymous by definition, so the same two-step shape as
+        `confirm_password_reset`: bypass for the indexed read that discovers
+        whose change this is, then bind to that tenant before writing.
+
+        On completion: the address moves, the row is spent, both addresses
+        go on the audit line, and EVERY live session is revoked — so the change
+        is something the person notices and re-authenticates through, and a
+        session that started the change without them does not outlive it.
+        """
+        from platform_core.core.rls import bind_platform_context, rebind_tenant
+
+        await bind_platform_context(
+            self._session, reason="email change: resolve the account from the code"
+        )
+        change = await self._session.scalar(
+            select(EmailChange).where(EmailChange.token_hash == _hash_secret(token))
+        )
+        if (
+            change is None
+            or change.completed_at is not None
+            or change.revoked_at is not None
+            or as_utc(change.expires_at) < utcnow()
+        ):
+            raise InvalidTokenError()
+        user = await self._identity.get_user(change.user_id)
+        await rebind_tenant(self._session, user.tenant_id)
+        # Bypass ends here. Somebody may have registered the address since the
+        # request; the change is refused rather than creating two logins.
+        taken = await self._session.scalar(
+            select(User).where(
+                User.tenant_id == user.tenant_id,
+                User.email == change.new_email,
+                User.id != user.id,
+            )
+        )
+        if taken is not None:
+            raise ConflictError("another login already uses that email")
+        before = user.email
+        user.email = change.new_email
+        change.completed_at = utcnow()
+        await self.revoke_all_for_user(user.id, reason="email-changed")
+        await self._audit.record(
+            action="identity.email.changed",
+            resource_type="user",
+            resource_id=user.id,
+            actor_id=user.id,
+            detail={
+                "from": before,
+                "to": change.new_email,
+                "requested_by": str(change.requested_by),
+            },
+        )
+        await self._bus.publish(
+            EventEnvelope.new(
+                "identity.email-changed.v1",
+                {"user_id": str(user.id), "from": before, "to": change.new_email},
+                actor_id=user.id,
             )
         )
 

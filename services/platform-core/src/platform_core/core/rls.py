@@ -92,6 +92,14 @@ PLATFORM_GLOBAL: dict[str, str] = {
         "every tenant-scoped user. Rows hold a hash and an expiry, never a "
         "credential, and are unreachable without the plaintext token."
     ),
+    "email_change": (
+        "WO-87: a pending change of a login's email, confirmed by an "
+        "unauthenticated caller who presents the code the NEW address "
+        "received — the same shape as `password_reset_token`, for the same "
+        "reason: the tenant is discovered from the row, not bound before it. "
+        "Rows hold a hash, an address and an expiry; every read that lists "
+        "them for an administrator goes through the member's own tenant."
+    ),
 }
 
 MIXED: dict[str, str] = {

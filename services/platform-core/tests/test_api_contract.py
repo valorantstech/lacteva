@@ -273,6 +273,8 @@ PUBLIC = {
     ("POST", "/v1/auth/refresh"),
     ("POST", "/v1/auth/password-reset/request"),
     ("POST", "/v1/auth/password-reset/confirm"),
+    # WO-87: the NEW address confirms an email change; anonymous by definition.
+    ("POST", "/v1/auth/email-change/confirm"),
     ("POST", "/v1/invitations/accept"),
     ("GET", "/v1/.well-known/jwks.json"),
     # WO-86. A household's bills by capability link. The token in the path IS

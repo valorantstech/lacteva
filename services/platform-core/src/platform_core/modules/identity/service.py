@@ -1,10 +1,14 @@
 """Identity module — application service (command/query handlers)."""
 
+import hashlib
+import secrets
 import uuid
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.db import as_utc, utcnow
 from platform_core.core.errors import (
     ConflictError,
     ForbiddenError,
@@ -17,8 +21,13 @@ from platform_core.core.security import hash_password
 from platform_core.core.tenancy import get_current_tenant
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
-from platform_core.modules.identity.models import User
+from platform_core.modules.identity.models import EmailChange, User
 from platform_core.modules.identity.schemas import RegisterUserCommand
+
+#: WO-87 §3: a pending email change is good for a day. Long enough for a
+#: delivery boy to find the message on a phone that is out all morning; short
+#: enough that a request nobody followed is forgotten by tomorrow.
+EMAIL_CHANGE_TTL = timedelta(hours=24)
 
 
 class IdentityService:
@@ -256,6 +265,211 @@ class IdentityService:
             )
         )
         return user
+
+    # --- WO-87: a login's details can be corrected --------------------------
+
+    async def set_full_name(
+        self,
+        user_id: uuid.UUID,
+        full_name: str,
+        *,
+        actor_id: uuid.UUID,
+        tenant_id: uuid.UUID | None,
+    ) -> User:
+        """Correct a name (WO-87 §1, §2).
+
+        A person may correct their OWN name with no permission — it is their
+        name on their screen, the argument `set_language` makes — and a tenant
+        admin may correct a member's, behind `organization.member.manage`
+        (the route holds the gate). Both are audited with before and after,
+        because a name is on every audit line and every screen, and "who
+        changed it" is the first question when it looks wrong.
+
+        A typo fix, not an identity change: the account, its sessions, its
+        history are untouched. Email is a different animal (`request_email_change`).
+        """
+        user = await self.get_in_tenant(user_id, tenant_id)
+        before = user.full_name
+        after = full_name.strip()
+        if not after:
+            raise ValidationError("a name cannot be blank")
+        if before == after:
+            return user
+        user.full_name = after
+        await self._session.flush()
+        await self._audit.record(
+            action="identity.name.changed",
+            resource_type="user",
+            resource_id=user.id,
+            actor_id=actor_id,
+            detail={"before": before, "after": after, "self": actor_id == user.id},
+        )
+        return user
+
+    async def pending_email_change(self, user_id: uuid.UUID) -> EmailChange | None:
+        """The one live request for this user, or None. Expired, completed
+        and revoked rows are history, not a pending change."""
+        row = await self._session.scalar(
+            select(EmailChange)
+            .where(
+                EmailChange.user_id == user_id,
+                EmailChange.completed_at.is_(None),
+                EmailChange.revoked_at.is_(None),
+            )
+            .order_by(EmailChange.requested_at.desc())
+            .limit(1)
+        )
+        if row is None or as_utc(row.expires_at) < utcnow():
+            return None
+        return row
+
+    async def request_email_change(
+        self,
+        user_id: uuid.UUID,
+        new_email: str,
+        *,
+        actor_id: uuid.UUID,
+        tenant_id: uuid.UUID | None,
+    ) -> EmailChange:
+        """Start an email change (WO-87 §3). Nothing about the account changes
+        here: a pending row is written, the NEW address is sent the one-time
+        code, and the OLD address is told — naming the new address and how to
+        stop it. That notice is the whole security argument: a stolen session
+        can start a change, and the real owner finds out while the old
+        address still signs in.
+
+        One pending change per user: asking again replaces it (the earlier
+        code stops working) and re-notifies. A tenant admin reaches a user
+        only through `get_in_tenant`, so another tenant's user and a
+        platform-level account (tenant NULL) are both NOT FOUND, never
+        forbidden — 403 would confirm the account exists.
+
+        The raw code is returned to the CALLER only so the route can refuse to
+        return it; it goes to the mail channel and nowhere else (SEC-003 /
+        F-04): not the response, not the outbox, not a log.
+        """
+        user = await self.get_in_tenant(user_id, tenant_id)
+        address = new_email.strip().lower()
+        if address == user.email.lower():
+            raise ValidationError("that is already this login's email")
+        taken = await self._session.scalar(
+            select(User).where(User.tenant_id == user.tenant_id, User.email == address)
+        )
+        if taken is not None:
+            raise ConflictError("another login already uses that email")
+        previous = await self.pending_email_change(user.id)
+        if previous is not None:
+            previous.revoked_at = utcnow()
+        raw = secrets.token_urlsafe(32)
+        change = EmailChange(
+            user_id=user.id,
+            new_email=address,
+            requested_by=actor_id,
+            token_hash=hashlib.sha256(raw.encode()).hexdigest(),
+            expires_at=utcnow() + EMAIL_CHANGE_TTL,
+        )
+        self._session.add(change)
+        await self._session.flush()
+        await self._audit.record(
+            action="identity.email-change.requested",
+            resource_type="user",
+            resource_id=user.id,
+            actor_id=actor_id,
+            detail={
+                "new_email": address,
+                "replaces": str(previous.id) if previous is not None else None,
+                "self": actor_id == user.id,
+            },
+        )
+        await self._bus.publish(
+            EventEnvelope.new(
+                "identity.email-change-requested.v1",
+                {"user_id": str(user.id), "new_email": address},
+                actor_id=actor_id,
+            )
+        )
+        await self._send_email_change(change, user, raw)
+        return change
+
+    async def cancel_email_change(
+        self,
+        user_id: uuid.UUID,
+        *,
+        actor_id: uuid.UUID,
+        tenant_id: uuid.UUID | None,
+    ) -> EmailChange | None:
+        """Stop a pending change (WO-87 §3): by the person, or by a tenant
+        admin — the "how to stop it" the old address was told about. Idempotent:
+        nothing pending is not an error, it is the state the caller wanted."""
+        user = await self.get_in_tenant(user_id, tenant_id)
+        change = await self.pending_email_change(user.id)
+        if change is None:
+            return None
+        change.revoked_at = utcnow()
+        await self._audit.record(
+            action="identity.email-change.cancelled",
+            resource_type="user",
+            resource_id=user.id,
+            actor_id=actor_id,
+            detail={"new_email": change.new_email, "self": actor_id == user.id},
+        )
+        return change
+
+    async def _organization_name(self, tenant_id: uuid.UUID | None) -> str:
+        if tenant_id is None:
+            return "Lacteva"
+        from platform_core.modules.organization.models import Organization
+
+        organization = await self._session.get(Organization, tenant_id)
+        return organization.name if organization is not None else "Lacteva"
+
+    async def _send_email_change(self, change: EmailChange, user: User, raw_token: str) -> None:
+        """Two messages, sent from here for the reason `_send_invitation` and
+        `_send_reset_code` give (SEC-003 / F-04): the consumer reads the
+        durable outbox, and a live code must never be written there.
+
+        To the NEW address: the code, as a secret variable. To the OLD address:
+        no secret at all — the new address, who asked, and how to stop it.
+        """
+        from platform_core.modules.notification.service import (
+            NotificationRequest,
+            NotificationService,
+        )
+
+        organization = await self._organization_name(user.tenant_id)
+        expires_hours = int(EMAIL_CHANGE_TTL.total_seconds() // 3600)
+        service = NotificationService(self._session)
+        await service.dispatch(
+            NotificationRequest(
+                event_id=change.id,
+                event_name="identity.email-change-requested.v1",
+                tenant_id=user.tenant_id,
+                template_key="email_change_confirm",
+                channel="email",
+                recipient=change.new_email,
+                recipient_ref=user.id,
+                language=user.locale,
+                variables={"organization": organization, "expires_hours": expires_hours},
+                secret_variables={"change_token": raw_token},
+            )
+        )
+        await service.dispatch(
+            NotificationRequest(
+                event_id=change.id,
+                event_name="identity.email-change-requested.v1",
+                tenant_id=user.tenant_id,
+                template_key="email_change_notice",
+                channel="email",
+                recipient=user.email,
+                recipient_ref=user.id,
+                language=user.locale,
+                variables={
+                    "organization": organization,
+                    "new_email": change.new_email,
+                    "expires_hours": expires_hours,
+                },
+            )
+        )
 
     # TODO(M1): password reset (token + notification), email verification,
     # invitation-based org-scoped registration (the public register endpoint

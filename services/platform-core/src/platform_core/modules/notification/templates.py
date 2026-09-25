@@ -100,6 +100,11 @@ PURPOSES: dict[str, str] = {
     ),
     "invitation_accepted": "Confirms to an administrator that an invitation was accepted",
     "password_reset": "Sends a user a one-time password-reset code",
+    "email_change_confirm": "Sends the NEW address the one-time code that confirms an email change",
+    "email_change_notice": (
+        "Tells the OLD address that an email change was requested, naming the new address "
+        "and how to stop it"
+    ),
 }
 
 #: Templates that carry a business fact to a farmer or a customer, as opposed
@@ -359,6 +364,32 @@ TEMPLATES: tuple[Template, ...] = (
         "The code expires in {expires_hours} hours. "
         "If you did not request this, ignore this message. "
         "Do not share this code with anyone.",
+    ),
+    # WO-87 §3 — the two halves of an email change. The code goes to the
+    # address that will become the login; the notice goes to the address that
+    # still is, with no secret in it, so a change the owner did not ask for is
+    # found out while the old address still works.
+    _t(
+        "email_change_confirm",
+        "email",
+        "en",
+        "Confirm your new Lacteva email",
+        "Somebody asked to make this address the login for an account in {organization}. "
+        "Use this code to confirm: {change_token}. "
+        "The code expires in {expires_hours} hours. "
+        "If you were not expecting this, ignore this message and nothing will change. "
+        "Do not share this code with anyone.",
+    ),
+    _t(
+        "email_change_notice",
+        "email",
+        "en",
+        "Your Lacteva email is being changed",
+        "A request was made to change the login for your account in {organization} "
+        "to {new_email}. Nothing has changed yet: this address keeps signing in until "
+        "the new one confirms, within {expires_hours} hours. "
+        "If this was not you, sign in and cancel it, or tell your administrator, "
+        "and change your password.",
     ),
     _t(
         "invitation",

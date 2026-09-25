@@ -37,6 +37,9 @@ const { POST: resetConfirm } = await import(
   "@/app/api/auth/password-reset/confirm/route"
 );
 const { POST: chooseTenant } = await import("@/app/api/auth/tenant/route");
+const { POST: emailChangeConfirm } = await import(
+  "@/app/api/auth/email-change/confirm/route"
+);
 const { ACCESS_COOKIE, REFRESH_COOKIE, TENANT_COOKIE } = await import("@/lib/server/backend");
 const { ACCESS_MAX_AGE, REFRESH_MAX_AGE } = await import("@/lib/server/refresh");
 
@@ -441,5 +444,54 @@ describe("the session lives thirty days from its last use (D-26)", () => {
       const text = readFileSync(resolve(repo, example), "utf8");
       expect(text).toContain(`LACTEVA_JWT_REFRESH_TTL_SECONDS=${REFRESH_MAX_AGE}`);
     }
+  });
+});
+
+describe("email-change confirm route (WO-87)", () => {
+  it("forwards the code to the platform with NO bearer, mints nothing, and passes 204 through", async () => {
+    cookieStore.set(ACCESS_COOKIE, "at-123", {});
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const response = await emailChangeConfirm(
+      request("https://portal.example/api/auth/email-change/confirm", {
+        body: JSON.stringify({ token: "code-abc" }),
+      }),
+    );
+    expect(response.status).toBe(204);
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://api.internal:8000/v1/auth/email-change/confirm");
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+    expect(JSON.parse(String(init.body))).toEqual({ token: "code-abc" });
+    expect(cookieStore.jar.get(REFRESH_COOKIE)).toBeUndefined();
+  });
+
+  it("returns the platform's refusal verbatim and refuses cross-origin", async () => {
+    const problem = { title: "invalid_token", status: 400, detail: "invalid or expired token" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(problem), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const refused = await emailChangeConfirm(
+      request("https://portal.example/api/auth/email-change/confirm", {
+        body: JSON.stringify({ token: "x" }),
+      }),
+    );
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toEqual(problem);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const crossOrigin = await emailChangeConfirm(
+      request("https://portal.example/api/auth/email-change/confirm", {
+        headers: { Origin: "https://evil.example" },
+        body: JSON.stringify({ token: "x" }),
+      }),
+    );
+    expect(crossOrigin.status).toBe(403);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

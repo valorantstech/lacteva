@@ -44,6 +44,9 @@ const PUBLIC_PREFIXES = [
   "/login",
   "/reset-password",
   "/accept-invitation",
+  // WO-87: the page the NEW address opens to confirm an email change. The
+  // person may hold no session; the code is the credential.
+  "/confirm-email",
   // WO-86: the page a household's bill link opens. The link IS the credential
   // — a token in the path, checked by the platform — and the reader has no
   // account by design.

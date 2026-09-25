@@ -63,6 +63,8 @@ describe("the public routes stay public", () => {
     "/reset-password?token=abc",
     "/accept-invitation",
     "/accept-invitation?token=abc",
+    "/confirm-email",
+    "/confirm-email?token=abc",
     "/api/auth/session",
   ])("%s is served, not redirected", (path) => {
     const response = visit(path);

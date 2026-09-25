@@ -921,6 +921,7 @@ def _code_label(message: "OutboundMessage") -> str:
     return {
         "password_reset": "Password reset code",
         "invitation": "Invitation code",
+        "email_change_confirm": "Email change code",
     }.get(message.template_key, "Code")
 
 
