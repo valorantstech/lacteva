@@ -12,3 +12,5 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+# Kotlin compiler session cache (appears on every Gradle build; not source)
+.kotlin/

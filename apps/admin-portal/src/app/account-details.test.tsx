@@ -94,6 +94,19 @@ function stubUsers(pending: typeof PENDING | null = null) {
   return calls;
 }
 
+
+/** The alert that says something in particular (LACTEVA-QA-005): a page can
+ *  hold more than one, so the singular query is never asked. */
+async function alertSaying(pattern: RegExp, container: HTMLElement = document.body) {
+  return waitFor(() => {
+    const found = within(container)
+      .getAllByRole("alert")
+      .find((el) => pattern.test(el.textContent ?? ""));
+    if (!found) throw new Error(`no alert yet matching ${pattern}`);
+    return found;
+  });
+}
+
 beforeEach(() => {
   vi.unstubAllGlobals();
   searchParams = new URLSearchParams();
@@ -333,7 +346,9 @@ describe("the confirm page (WO-87 §3)", () => {
       render(<ConfirmEmailPage />);
     });
     await user.click(screen.getByRole("button", { name: "Confirm" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/expired, been cancelled, or already been used/);
+    expect(
+      await alertSaying(/expired, been cancelled, or already been used/),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("Confirmation code")).toHaveValue("stale");
   });
 });

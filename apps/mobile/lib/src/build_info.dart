@@ -23,10 +23,22 @@ const buildTime = String.fromEnvironment('LACTEVA_BUILD_TIME');
 
 /// The literal the verifier greps for. Keep the prefix in step with
 /// `infra/ci/verify-release-apk.sh`.
+///
+/// Everything the screen shows is DERIVED from this one string, on purpose:
+/// the first stamped build had `buildLabel()` read `buildCommit` and
+/// `buildTime` directly, the AOT compiler tree-shook the unreferenced
+/// `buildStamp`, and the verifier found no stamp in an APK that carried the
+/// commit. A literal survives the snapshot only if something runs on it.
 const buildStamp = 'lacteva-build:$buildCommit:$buildTime';
 
-/// What the More screen prints beside "Build".
-String buildLabel({String commit = buildCommit, String time = buildTime}) {
+/// "abc1234 · 2026-09-25T14:00Z", or what a developer build must admit to.
+String parseBuildLabel(String stamp) {
+  final parts = stamp.split(':');
+  final commit = parts.length > 1 ? parts[1] : '';
+  final time = parts.length > 2 ? parts.sublist(2).join(':') : '';
   if (commit.isEmpty) return 'unstamped (developer build)';
   return time.isEmpty ? commit : '$commit · $time';
 }
+
+/// What the More screen prints beside "Build".
+String buildLabel() => parseBuildLabel(buildStamp);

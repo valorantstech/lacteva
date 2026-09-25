@@ -118,6 +118,19 @@ function stub(opts: {
   return calls;
 }
 
+
+/** The alert that says something in particular (LACTEVA-QA-005): a page can
+ *  hold more than one, so the singular query is never asked. */
+async function alertSaying(pattern: RegExp, container: HTMLElement = document.body) {
+  return waitFor(() => {
+    const found = within(container)
+      .getAllByRole("alert")
+      .find((el) => pattern.test(el.textContent ?? ""));
+    if (!found) throw new Error(`no alert yet matching ${pattern}`);
+    return found;
+  });
+}
+
 beforeEach(() => vi.unstubAllGlobals());
 afterEach(() => vi.unstubAllGlobals());
 
@@ -216,9 +229,9 @@ describe("the departure checklist (WO-88 §3)", () => {
     });
     const { user, panel } = await openChecklist();
     await user.click(within(panel).getByTestId("departure-finish"));
-    expect(await within(panel).findByRole("alert")).toHaveTextContent(
-      /invite another administrator first/,
-    );
+    expect(
+      await alertSaying(/invite another administrator first/, panel),
+    ).toBeInTheDocument();
     // Nothing after the refused step ran.
     expect(calls.filter((c) => c.method !== "GET").map((c) => c.url)).toEqual([
       "/api/proxy/v1/members/u-2/status",

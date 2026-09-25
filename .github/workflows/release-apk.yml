@@ -85,7 +85,8 @@ jobs:
       - name: Release build
         # The literal address, on purpose: it is compiled into the APK and a
         # reader of this file should not have to chase a variable to learn it.
-        run: flutter build apk --release --dart-define=LACTEVA_API_URL=https://api.lacteva.com
+        # WO-75: the commit and time are stamped into the build; the verifier reads them back.
+        run: flutter build apk --release --dart-define=LACTEVA_API_URL=https://api.lacteva.com --dart-define=LACTEVA_BUILD_COMMIT=$(git rev-parse --short HEAD) --dart-define=LACTEVA_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%MZ)
       - name: Signed by Phoenix Software, and by the same key as last time
         # `apksigner verify --print-certs` is what this script runs; the
         # expected fingerprint is apps/mobile/android/release-certificate.sha256.
