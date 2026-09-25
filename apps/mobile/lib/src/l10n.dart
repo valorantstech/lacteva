@@ -167,7 +167,7 @@ const Catalog _en = {
   'customer.noReceipts': 'A receipt appears here after each payment.',
   'customer.statementTitle': 'This month at a glance',
   'customer.opening': 'Brought forward',
-  'customer.billedLabel': 'Billed',
+  'customer.billedLabel': 'Invoiced',
   'customer.closing': 'You owe',
   'customer.loadMore': 'Show earlier invoices',
   'customer.allLoaded': 'That is every invoice.',
