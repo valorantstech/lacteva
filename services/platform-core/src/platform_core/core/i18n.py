@@ -14,6 +14,10 @@ from platform_core.core.config import get_settings
 CATALOGS: dict[str, dict[str, str]] = {
     "en": {
         "error.captcha_required": "Please complete the security check and try again.",
+        "error.role_out_of_scope": (
+            "That role cannot be granted here: it is a Lacteva platform role, or it holds "
+            "permissions you do not have yourself."
+        ),
         "error.not_found": "The requested resource was not found.",
         "error.conflict": "The resource already exists.",
         "error.unauthorized": "Authentication is required.",
@@ -42,6 +46,10 @@ CATALOGS: dict[str, dict[str, str]] = {
     },
     "sw": {  # Kiswahili — starter subset; full catalog is a market-pack task
         "error.captcha_required": "Tafadhali kamilisha ukaguzi wa usalama kisha ujaribu tena.",
+        "error.role_out_of_scope": (
+            "Jukumu hilo haliwezi kutolewa hapa: ni jukumu la jukwaa la Lacteva, au lina "
+            "ruhusa ambazo wewe mwenyewe hauna."
+        ),
         "error.not_found": "Rasilimali haikupatikana.",
         "error.unauthorized": "Uthibitisho unahitajika.",
         "error.forbidden": "Huna ruhusa ya kufanya kitendo hiki.",
@@ -59,6 +67,9 @@ CATALOGS: dict[str, dict[str, str]] = {
     },
     "ar": {  # Arabic — DEMO-014. RTL is a layout decision and lives in the clients.
         "error.captcha_required": "يرجى إكمال التحقق الأمني ثم المحاولة مرة أخرى.",
+        "error.role_out_of_scope": (
+            "لا يمكن منح هذا الدور هنا: إنه دور خاص بمنصة Lacteva، أو يحمل صلاحيات لا تملكها أنت."
+        ),
         "error.not_found": "لم يتم العثور على المورد المطلوب.",
         "error.conflict": "المورد موجود بالفعل.",
         "error.unauthorized": "المصادقة مطلوبة.",
@@ -83,6 +94,10 @@ CATALOGS: dict[str, dict[str, str]] = {
     },
     "hi": {  # Hindi — starter subset
         "error.captcha_required": "कृपया सुरक्षा जाँच पूरी करें और फिर से प्रयास करें।",
+        "error.role_out_of_scope": (
+            "यह भूमिका यहाँ नहीं दी जा सकती: यह Lacteva प्लेटफ़ॉर्म की भूमिका है, "
+            "या इसमें ऐसी अनुमतियाँ हैं जो आपके पास स्वयं नहीं हैं।"
+        ),
         "error.not_found": "अनुरोधित संसाधन नहीं मिला।",
         "error.unauthorized": "प्रमाणीकरण आवश्यक है।",
         "error.forbidden": "आपको यह कार्य करने की अनुमति नहीं है।",

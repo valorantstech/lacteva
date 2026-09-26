@@ -16,6 +16,7 @@ from platform_core.core.errors import (
     ForbiddenError,
     InvalidTokenError,
     NotFoundError,
+    RoleScopeError,
     ValidationError,
 )
 from platform_core.core.locales import (
@@ -713,6 +714,21 @@ class InvitationService:
         self._bus = bus
         self._audit = audit
 
+    async def _assert_inviter_may_grant(
+        self, role_name: str, *, tenant_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> None:
+        """WO-109: the invited role must exist for THIS tenant (a platform
+        role does not), and lie within the inviter's own permissions. Checked
+        at invitation time — acceptance grants what the inviter could."""
+        from platform_core.modules.authz.service import AuthzService
+
+        authz = AuthzService(self._session)
+        try:
+            role = await authz._resolve_role(role_name, tenant_id)
+        except NotFoundError as exc:
+            raise RoleScopeError(f"{role_name} is not a role this organisation can grant") from exc
+        await authz.assert_grantable(role, tenant_id=tenant_id, granter_id=actor_id)
+
     async def invite(
         self,
         *,
@@ -738,6 +754,9 @@ class InvitationService:
         tenant_id = get_current_tenant()
         if tenant_id is None:
             raise ForbiddenError("tenant context required")
+        # WO-109: a shop's owner could invite anyone as platform-admin. The
+        # role must exist for THIS tenant and lie within the inviter's reach.
+        await self._assert_inviter_may_grant(role_name, tenant_id=tenant_id, actor_id=actor_id)
         # WO-86: the binding is decided HERE, both ways round. A customer's
         # account may hold only the customer role — a staff role bound to
         # one household would be a manager who can see one customer, which

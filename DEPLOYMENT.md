@@ -636,6 +636,7 @@ A 0600 root-owned file is unreadable to uid 999 — that is the failure mode thi
 | 413 from nginx | Upload exceeded `client_max_body_size` (25m) | Raise it in `infra/nginx/nginx.conf` — this limit is invisible to the application |
 | `workers_forced` in the shutdown log | A worker overran its grace period and was cancelled | Its work will be retried on the next start. Repeated occurrences mean the grace is too short for the workload |
 | Login fails for every tenant user | Under RLS, an unbound session cannot see a tenant-scoped account | Confirm the token carries `tenant_id`; see [RLS-GUIDE](docs/03-architecture/05-security/RLS-GUIDE.md) §3c |
+| A tenant user holds `platform-admin` or `PLATFORM_SUPER_ADMIN`, or an invitation names one (WO-109) | Before WO-109 a tenant admin could invite or assign a PLATFORM role; the code now refuses, but existing grants must be looked for | Run the read-only audit inside the API container: `docker compose -f docker-compose.production.yml --env-file /etc/lacteva/.env.production exec -T api python -m platform_core.modules.authz.audit`. "Nothing found" is the good answer. For every grant listed: revoke it as a platform session (`DELETE /v1/authz/assignments` in that tenant, or delete the `user_role` row), sign that user out everywhere, and check the audit log for what the account did while it held the role. For a pending invitation: revoke it. Run the audit once after every deploy of WO-109 and after any restore from a pre-WO-109 backup |
 
 ---
 

@@ -18,6 +18,7 @@ vi.mock("next/navigation", () => ({
 
 import RolesPage from "@/app/admin/roles/page";
 import UsersPage from "@/app/admin/users/page";
+import { LocaleProvider } from "@/lib/i18n";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -251,6 +252,57 @@ describe("roles page", () => {
 });
 
 describe("users page", () => {
+  // WO-109: the platform's roles are not the shop's to hand out. The API
+  // hides them from a tenant reader and says of each remaining role whether
+  // this signed-in person's reach covers it; the invitation form offers only
+  // what may be granted, and a sales-only shop is not offered the two
+  // collection roles that would confuse a shopkeeper (D-31).
+  const roleOptions = () =>
+    within(screen.getByLabelText("Role"))
+      .getAllByRole("option")
+      .map((o) => o.textContent);
+
+  it("offers only the roles the signed-in person may grant — never a platform role", async () => {
+    routeAll({
+      "/v1/authz/roles": () =>
+        json([
+          ...ROLES.map((r) => ({ ...r, grantable: true })),
+          {
+            id: "r4",
+            name: "tenant-admin",
+            description: "",
+            tenant_id: null,
+            system: true,
+            permissions: ["organization.member.manage"],
+            assignments: 1,
+            grantable: false,
+          },
+        ]),
+    });
+    render(<UsersPage />);
+    await screen.findByText("Wanjiku Mbugua");
+    const offered = roleOptions();
+    expect(offered).toContain("Collection Operator");
+    expect(offered).toContain("Finance Manager");
+    expect(offered).not.toContain("Owner");
+    // No platform role is ever in the list the API hands a tenant; the page
+    // does not invent one from a name compiled into the bundle either.
+    expect(offered.join(" ")).not.toMatch(/platform/i);
+  });
+
+  it("does not offer a sales-only shop the collection roles", async () => {
+    routeAll();
+    render(
+      <LocaleProvider locale="en-IN" salesOnly>
+        <UsersPage />
+      </LocaleProvider>,
+    );
+    await screen.findByText("Wanjiku Mbugua");
+    const offered = roleOptions();
+    expect(offered).toContain("Finance Manager");
+    expect(offered).not.toContain("Collection Operator");
+  });
+
   it("shows each person's role and its centre scope, by name", async () => {
     routeAll();
     render(<UsersPage />);

@@ -563,3 +563,52 @@ def require_permission(permission: str):
         return principal
 
     return guard
+
+
+def require_platform_permission(permission: str):
+    """Route guard for Lacteva's OWN operations (WO-109 · LACTEVA-SEC-004):
+    the permission AND a platform session — a principal bound to no tenant.
+
+    Until WO-109 a route guarded by a permission alone was reachable by any
+    account holding it, and a tenant account could come to hold the wildcard
+    (a shop owner inviting "platform-admin"). The relay, dead letters and
+    consumer executions, security administration, creating organisations,
+    global configuration and subscription activation are Lacteva's, and this
+    is how a route says so. A tenant-bound principal is refused whatever it
+    holds — even `*` — and the refusal is a security event.
+    """
+
+    async def guard(
+        principal: CurrentPrincipal,
+        engine: Annotated[PermissionEngine, Depends(get_permission_engine)],
+        session: Session,
+    ) -> Principal:
+        from platform_core.core.security_audit import PERMISSION_DENIED, record_security_event
+
+        if principal.tenant_id is not None:
+            await record_security_event(
+                session,
+                action=PERMISSION_DENIED,
+                subject=f"{permission} (platform session required)",
+                actor_id=principal.id,
+                detail={"tenant_id": str(principal.tenant_id), "platform_only": True},
+            )
+            await session.commit()
+            AUTHZ_DENIALS.labels(permission).inc()
+            raise ForbiddenError(permission)
+        if not await engine.check(principal.id, None, permission):
+            await record_security_event(
+                session,
+                action=PERMISSION_DENIED,
+                subject=permission,
+                actor_id=principal.id,
+                detail={"tenant_id": None},
+            )
+            await session.commit()
+            AUTHZ_DENIALS.labels(permission).inc()
+            raise ForbiddenError(permission)
+        return principal
+
+    guard.platform_only = True  # type: ignore[attr-defined]
+    guard.permission = permission  # type: ignore[attr-defined]
+    return guard

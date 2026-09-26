@@ -546,3 +546,37 @@ ALL_SYSTEM_ROLES: dict[str, list[str]] = {**SYSTEM_ROLES, **NAMED_ROLES}
 
 def is_registered(key: str) -> bool:
     return key == WILDCARD or key in PERMISSIONS
+
+
+# --- WO-109 · LACTEVA-SEC-004: roles have a scope -------------------------------
+#
+# A PLATFORM role is Lacteva staff's: it holds the wildcard, a `platform.*`
+# permission, or `organization.manage` (creating organisations). It may be
+# granted only by a platform session and only to a platform (tenant-less)
+# account. Every other role — the system tenant roles and a tenant's own
+# custom roles — is a TENANT role. Until WO-109 nothing drew this line, and a
+# shop's owner could invite anyone as `platform-admin`.
+PLATFORM_ONLY_PERMISSIONS: frozenset[str] = frozenset({"organization.manage"})
+
+
+def is_platform_permission(key: str) -> bool:
+    return key == WILDCARD or key.startswith("platform.") or key in PLATFORM_ONLY_PERMISSIONS
+
+
+def is_platform_grant(permission_keys) -> bool:
+    """True when granting these permissions makes somebody platform staff."""
+    return any(is_platform_permission(key) for key in permission_keys)
+
+
+PLATFORM_ROLES: frozenset[str] = frozenset(
+    name for name, perms in ALL_SYSTEM_ROLES.items() if is_platform_grant(perms)
+)
+
+#: WO-109 (b) says nobody grants beyond their own reach. One permission is
+#: not a power but a KEY: `logistics.run.execute` selects the driver's own
+#: surface (/drivers/me, /delivery-runs/mine) and is deliberately held by no
+#: office role — `test_driver_execution.py` pins that — so an owner could
+#: never satisfy "subset" for the Delivery boy role. A key that unlocks only
+#: the holder's own screens is exempt from the reach test; everything else
+#: a role holds must lie within the granter's own permissions.
+REACH_EXEMPT_PERMISSIONS: frozenset[str] = frozenset({"logistics.run.execute"})

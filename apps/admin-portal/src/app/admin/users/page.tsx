@@ -26,6 +26,7 @@ import { DepartureChecklist } from "@/components/departure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { roleLabel } from "@/lib/roles";
+import { useLocale } from "@/lib/i18n";
 
 type Person = Member & { user: User | null };
 
@@ -41,6 +42,15 @@ export default function UsersPage() {
   // LACTEVA-ADMIN-002. Onboarding a dairy's staff needed raw API calls until
   // now: the endpoint was implemented and SMTP-proven with no client caller.
   const [roles, setRoles] = useState<Role[]>([]);
+  const { salesOnly } = useLocale();
+  // WO-109 (d): only what this person may GRANT — the platform says which,
+  // and lists no platform role to a tenant reader at all. And, as
+  // presentation only (D-31), a shop that does not collect is not offered
+  // the collection roles.
+  const COLLECTION_ROLES = new Set(["COLLECTION_OPERATOR", "CENTRE_MANAGER"]);
+  const offerable = roles.filter(
+    (role) => role.grantable !== false && !(salesOnly && COLLECTION_ROLES.has(role.name)),
+  );
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("tenant-viewer");
   const [inviting, setInviting] = useState(false);
@@ -502,7 +512,7 @@ export default function UsersPage() {
             value={inviteRole}
             onChange={(e) => setInviteRole(e.target.value)}
           >
-            {roles.map((role) => (
+            {offerable.map((role) => (
               <option key={role.id} value={role.name}>
                 {roleLabel(role.name)}
               </option>

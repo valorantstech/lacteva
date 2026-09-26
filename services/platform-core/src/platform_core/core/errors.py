@@ -83,6 +83,16 @@ class ForbiddenError(AppError):
     message_key = "error.forbidden"
 
 
+class RoleScopeError(AppError):
+    """WO-109: a role that cannot be granted here — a platform role inside a
+    tenant, or one holding permissions the granter does not have. 403, with
+    a code the clients can name."""
+
+    status_code = 403
+    code = "role_out_of_scope"
+    message_key = "error.role_out_of_scope"
+
+
 class InvalidTokenError(AppError):
     """Invalid/expired one-time token (reset, invitation)."""
 

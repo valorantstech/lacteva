@@ -56,6 +56,9 @@ type LocaleContextValue = {
   currency: string | null;
   /** The organization's IANA zone, for anything that renders a date. */
   timezone: string | null;
+  /** D-31 / WO-85: the organisation sells and does not collect — for pages
+   *  that speak the shop's vocabulary or hide the collection roles. */
+  salesOnly: boolean;
   /**
    * D-21 / WO-70: the symbol of the unit this dairy MEASURES intake in —
    * `L` or `kg` — for the labels on an input a person is about to fill
@@ -74,6 +77,7 @@ const FALLBACK: LocaleContextValue = {
   currency: null,
   timezone: null,
   quantityUnit: null,
+  salesOnly: false,
   rtl: false,
   // Interpolates, like the real one. DEMO-016 found this: the fallback used
   // to ignore `vars`, so any component rendering outside a provider — an
@@ -173,10 +177,11 @@ export function LocaleProvider({
       currency: currency ?? null,
       timezone: timezone ?? null,
       quantityUnit: quantityUnit ?? null,
+      salesOnly,
       rtl,
       t,
     }),
-    [locale, language, currency, timezone, quantityUnit, rtl, t],
+    [locale, language, currency, timezone, quantityUnit, salesOnly, rtl, t],
   );
 
   return (

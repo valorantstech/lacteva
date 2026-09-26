@@ -509,11 +509,15 @@ async def test_non_matching_events_skipped_without_ledger_entries(client):
 
 async def test_consumer_disabled_via_configuration(client):
     headers, *_ = await _one_completed_tx(client)
-    r = await client.put(
-        "/v1/config/platform.consumers.reporting-projection.enabled",
-        json={"value": False, "scope": "global"},
-        headers=headers,
-    )
+    # WO-109: a GLOBAL value is every tenant's, so a tenant admin — even the
+    # one who just completed the transaction — is refused it; the platform's
+    # own session writes it.
+    body = {"value": False, "scope": "global"}
+    key = "/v1/config/platform.consumers.reporting-projection.enabled"
+    r = await client.put(key, json=body, headers=headers)
+    assert r.status_code == 403, r.text
+    _, platform = await register_and_login(client, "platform-config@example.com", admin=True)
+    r = await client.put(key, json=body, headers=platform)
     assert r.status_code == 200, r.text
     result = await _runner().run_once()
     assert result["skipped"] >= 1

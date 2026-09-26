@@ -2699,6 +2699,9 @@ export type Role = {
   tenant_id: string | null;
   system: boolean;
   permissions: string[];
+  /** WO-109: whether the reader may grant this role — its permissions lie
+   *  within the reader's own. The platform decides; the form only filters. */
+  grantable?: boolean;
   assignments: number;
 };
 

@@ -7,11 +7,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from platform_core.core.errors import ConflictError, NotFoundError
+from platform_core.core.errors import ConflictError, NotFoundError, RoleScopeError
 from platform_core.modules.authz.models import Role, RolePermission, UserRole
 from platform_core.modules.authz.permissions import (
     ALL_SYSTEM_ROLES,
+    REACH_EXEMPT_PERMISSIONS,
     WILDCARD,
+    is_platform_grant,
+    is_platform_permission,
     is_registered,
 )
 
@@ -175,7 +178,30 @@ class AuthzService:
                         )
                     )
 
+    async def role_permissions(self, role_id: uuid.UUID) -> set[str]:
+        return set(
+            (
+                await self._session.scalars(
+                    select(RolePermission.permission_key).where(RolePermission.role_id == role_id)
+                )
+            ).all()
+        )
+
+    async def is_platform_role(self, role: Role) -> bool:
+        """WO-109: a role that makes its holder platform staff — by what it
+        GRANTS, not by its name, so a custom role smuggling `platform.*` or
+        the wildcard is a platform role too."""
+        return is_platform_grant(await self.role_permissions(role.id))
+
     async def _resolve_role(self, role_name: str, tenant_id: uuid.UUID | None) -> Role:
+        """The role this name means here.
+
+        The NULL arm is how the system TENANT roles (tenant-admin, DRIVER…)
+        resolve inside every organisation — and, until WO-109, how the global
+        `platform-admin` resolved inside one too. A tenant-bound lookup now
+        sees no platform role at all: to a shop, "platform-admin" is a role
+        that does not exist.
+        """
         role = await self._session.scalar(
             select(Role).where(
                 ((Role.tenant_id == tenant_id) | (Role.tenant_id.is_(None))),
@@ -184,7 +210,39 @@ class AuthzService:
         )
         if role is None:
             raise NotFoundError("role not found")
+        if tenant_id is not None and role.tenant_id is None and await self.is_platform_role(role):
+            raise NotFoundError("role not found")
         return role
+
+    async def assert_grantable(
+        self,
+        role: Role,
+        *,
+        tenant_id: uuid.UUID | None,
+        granter_id: uuid.UUID | None,
+    ) -> None:
+        """WO-109 (a) and (b): a platform role is never granted inside a
+        tenant, whoever asks; and nobody grants beyond their own reach — the
+        role's permissions must be a subset of the granter's effective
+        permissions in that tenant (the wildcard covers everything).
+        `granter_id=None` is the platform itself (bootstrap, system seeding)
+        and skips the reach check only."""
+        perms = await self.role_permissions(role.id)
+        if tenant_id is not None and is_platform_grant(perms):
+            raise RoleScopeError(
+                f"{role.name} is a Lacteva platform role and cannot be granted inside "
+                "an organisation"
+            )
+        if granter_id is not None:
+            engine = PermissionEngine(self._session)
+            reach = await engine.effective_permissions(granter_id, tenant_id)
+            if WILDCARD not in reach and not (perms - REACH_EXEMPT_PERMISSIONS) <= reach:
+                missing = sorted(perms - REACH_EXEMPT_PERMISSIONS - reach)
+                raise RoleScopeError(
+                    f"{role.name} holds permissions you do not have yourself: "
+                    + ", ".join(missing[:5])
+                    + (" …" if len(missing) > 5 else "")
+                )
 
     async def assign_role(
         self,
@@ -194,8 +252,14 @@ class AuthzService:
         tenant_id: uuid.UUID | None,
         center_id: uuid.UUID | None = None,
         actor_id: uuid.UUID | None = None,
+        granter_id: uuid.UUID | None = None,
     ) -> UserRole:
         """Grant a role, optionally limited to one collection centre.
+
+        WO-109: REFUSES a platform role for a tenant-bound grant regardless of
+        caller, and — when `granter_id` names who is granting — a role beyond
+        that person's own permissions. `granter_id=None` is the platform
+        itself (bootstrap and tests' `grant_platform_admin`).
 
         DEMO-008: `center_id=None` is organization-wide and is what every
         grant made before this parameter existed means. Re-granting the same
@@ -205,6 +269,7 @@ class AuthzService:
         silent, forgotten scopes.
         """
         role = await self._resolve_role(role_name, tenant_id)
+        await self.assert_grantable(role, tenant_id=tenant_id, granter_id=granter_id)
         existing = await self._session.scalar(
             select(UserRole).where(
                 UserRole.user_id == user_id,
@@ -271,11 +336,32 @@ class AuthzService:
         await self._session.flush()
 
     async def create_role(
-        self, *, tenant_id: uuid.UUID | None, name: str, permission_keys: list[str]
+        self,
+        *,
+        tenant_id: uuid.UUID | None,
+        name: str,
+        permission_keys: list[str],
+        granter_id: uuid.UUID | None = None,
     ) -> Role:
         for key in permission_keys:
             if not is_registered(key):
                 raise ConflictError(f"unknown permission key: {key}")
+        # WO-109: a tenant's custom role cannot smuggle platform permissions
+        # or the wildcard in, and its author cannot put in what they lack.
+        if tenant_id is not None and is_platform_grant(permission_keys):
+            raise RoleScopeError(
+                "an organisation's role cannot hold Lacteva platform permissions: "
+                + ", ".join(sorted(k for k in permission_keys if is_platform_permission(k)))
+            )
+        if granter_id is not None:
+            engine = PermissionEngine(self._session)
+            reach = await engine.effective_permissions(granter_id, tenant_id)
+            wanted = set(permission_keys) - REACH_EXEMPT_PERMISSIONS
+            if WILDCARD not in reach and not wanted <= reach:
+                raise RoleScopeError(
+                    "a role cannot hold permissions you do not have yourself: "
+                    + ", ".join(sorted(wanted - reach)[:5])
+                )
         existing = await self._session.scalar(
             select(Role).where(Role.tenant_id == tenant_id, Role.name == name)
         )

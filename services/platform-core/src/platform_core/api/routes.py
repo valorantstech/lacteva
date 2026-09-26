@@ -16,6 +16,7 @@ from platform_core.api.deps import (
     get_business_calendar_service,
     require_center_access,
     require_permission,
+    require_platform_permission,
 )
 from platform_core.api.idempotent_route import IdempotentRoute, idempotency_guard
 from platform_core.api.transactional_route import TransactionalRoute
@@ -392,7 +393,9 @@ async def jwks() -> dict:
 
 
 security_router = APIRouter(prefix="/_security", tags=["security"], route_class=IdempotentRoute)
-SecurityAdmin = Annotated[Principal, Depends(require_permission("platform.security.manage"))]
+SecurityAdmin = Annotated[
+    Principal, Depends(require_platform_permission("platform.security.manage"))
+]
 
 
 @security_router.get("/keys")
@@ -938,7 +941,8 @@ org_router = APIRouter(prefix="/organizations", tags=["organizations"], route_cl
 async def create_organization(
     cmd: CreateOrganizationCommand,
     service: Annotated[OrganizationService, Depends(deps.get_organization_service)],
-    principal: Annotated[Principal, Depends(require_permission("organization.manage"))],
+    # WO-109: creating organisations is Lacteva's own operation.
+    principal: Annotated[Principal, Depends(require_platform_permission("organization.manage"))],
 ) -> Any:
     return await service.create_organization(cmd, actor_id=principal.id)
 
@@ -1043,7 +1047,9 @@ async def read_entitlement(
 
 @subscription_router.post(
     "/subscription/activate",
-    dependencies=[Depends(require_permission("organization.subscription.manage"))],
+    # WO-109: putting an organisation onto a paid plan is Lacteva's decision
+    # — a platform session acting in the tenant — never the tenant's own.
+    dependencies=[Depends(require_platform_permission("organization.subscription.manage"))],
 )
 async def activate_subscription(
     service: Annotated[SubscriptionService, Depends(deps.get_subscription_service)],
@@ -3333,7 +3339,7 @@ async def retry_sync_operation(
 ops_observability_router = APIRouter(
     prefix="/_ops", tags=["operations"], route_class=IdempotentRoute
 )
-OpsRead = Annotated[Principal, Depends(require_permission("platform.relay.manage"))]
+OpsRead = Annotated[Principal, Depends(require_platform_permission("platform.relay.manage"))]
 
 
 class ComponentHealthView(BaseModel):
@@ -3917,7 +3923,7 @@ async def report_pricing(
 
 # --- Event relay (internal platform operations) -----------------------------
 relay_router = APIRouter(prefix="/_relay", tags=["event-relay"], route_class=IdempotentRoute)
-RelayOps = Annotated[Principal, Depends(require_permission("platform.relay.manage"))]
+RelayOps = Annotated[Principal, Depends(require_platform_permission("platform.relay.manage"))]
 RelaySvc = Annotated[RelayService, Depends(deps.get_relay_service)]
 
 
@@ -4145,6 +4151,9 @@ class RoleView(BaseModel):
     #: How many grants reference it — an administrator must not remove the
     #: last role that lets anyone in.
     assignments: int
+    #: WO-109: whether the reader may grant this role — its permissions lie
+    #: within the reader's own.
+    grantable: bool = True
 
 
 @authz_router.get("/roles", response_model=list[RoleView])
@@ -4189,18 +4198,36 @@ async def list_roles(
             )
         ).all():
             counts[role_id] = count
-    return [
-        RoleView(
-            id=role.id,
-            name=role.name,
-            description=role.description,
-            tenant_id=role.tenant_id,
-            system=role.tenant_id is None,
-            permissions=sorted(grants.get(role.id, [])),
-            assignments=counts.get(role.id, 0),
+    # WO-109: a tenant-bound reader sees no platform role at all, and every
+    # role says whether THIS reader may grant it — the Staff page offers
+    # only those.
+    from platform_core.modules.authz.permissions import (
+        REACH_EXEMPT_PERMISSIONS,
+        WILDCARD,
+        is_platform_grant,
+    )
+
+    reach = await deps.get_permission_engine(session).effective_permissions(
+        principal.id, principal.tenant_id
+    )
+    views = []
+    for role in roles:
+        perms = set(grants.get(role.id, []))
+        if principal.tenant_id is not None and is_platform_grant(perms):
+            continue
+        views.append(
+            RoleView(
+                id=role.id,
+                name=role.name,
+                description=role.description,
+                tenant_id=role.tenant_id,
+                system=role.tenant_id is None,
+                permissions=sorted(perms),
+                assignments=counts.get(role.id, 0),
+                grantable=WILDCARD in reach or (perms - REACH_EXEMPT_PERMISSIONS) <= reach,
+            )
         )
-        for role in roles
-    ]
+    return views
 
 
 @authz_router.post("/roles", status_code=201)
@@ -4210,7 +4237,10 @@ async def create_role(
     principal: Annotated[Principal, Depends(require_permission("authz.role.manage"))],
 ) -> dict:
     role = await service.create_role(
-        tenant_id=principal.tenant_id, name=body.name, permission_keys=body.permission_keys
+        tenant_id=principal.tenant_id,
+        name=body.name,
+        permission_keys=body.permission_keys,
+        granter_id=principal.id,
     )
     return {"id": str(role.id), "name": role.name}
 
@@ -4235,6 +4265,8 @@ async def assign_role(
         tenant_id=principal.tenant_id,
         center_id=body.center_id,
         actor_id=principal.id,
+        # WO-109: nobody grants beyond their own reach, and never a platform role here.
+        granter_id=principal.id,
     )
     return {"id": str(assignment.id)}
 
@@ -4288,6 +4320,11 @@ async def set_config(
     service: Annotated[ConfigurationService, Depends(deps.get_configuration_service)],
     principal: Annotated[Principal, Depends(require_permission("configuration.write"))],
 ) -> dict:
+    # WO-109: a GLOBAL value is every tenant's; only a platform session
+    # writes one. The docstring said "requires platform admin in practice";
+    # this is the practice.
+    if body.scope == "global" and principal.tenant_id is not None:
+        raise ForbiddenError("configuration.write:global")
     await service.set_value(key, body.value, scope=body.scope, actor_id=principal.id)
     return {"key": key, "scope": body.scope, "status": "saved"}
 

@@ -559,13 +559,24 @@ async def test_last_login_is_recorded(client):
 async def test_every_named_role_exists_in_the_database_after_bootstrap(client):
     """The roles are seeded, idempotently, and resolvable by name — which is
     what makes granting one a database operation rather than a code path."""
-    from platform_core.modules.authz.permissions import NAMED_ROLES
+    from platform_core.modules.authz.permissions import NAMED_ROLES, PLATFORM_ROLES
 
     _org, admin = await _tenant_admin(client)
+    # WO-109: a TENANT reader sees the tenant roles and no platform role at
+    # all; the platform's own session sees every seeded role.
     listed = (await client.get("/v1/authz/roles", headers=admin)).json()
     names = {r["name"] for r in listed}
     for role in NAMED_ROLES:
-        assert role in names, f"{role} was not seeded"
+        if role in PLATFORM_ROLES:
+            assert role not in names, f"{role} is a platform role and was offered to a tenant"
+        else:
+            assert role in names, f"{role} was not seeded"
+    from tests.conftest import register_and_login
+
+    _, root = await register_and_login(client, "root-roles@example.com", admin=True)
+    everything = {r["name"] for r in (await client.get("/v1/authz/roles", headers=root)).json()}
+    for role in NAMED_ROLES:
+        assert role in everything, f"{role} was not seeded"
 
 
 async def test_seeding_twice_does_not_duplicate_roles_or_permissions(client):
