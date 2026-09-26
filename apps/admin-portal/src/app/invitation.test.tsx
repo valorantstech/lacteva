@@ -166,6 +166,8 @@ describe("accepting an invitation", () => {
     let seenUrl = "";
     let seenBody = "";
     const spy = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      // WO-103: the page asks for the Turnstile site key first; none here.
+      if (String(url) === "/api/auth/turnstile") return json({ site_key: "" });
       seenUrl = String(url);
       seenBody = String(init?.body ?? "");
       return json({ id: "u9" }, 201);
@@ -179,6 +181,7 @@ describe("accepting an invitation", () => {
       screen.getByLabelText("Password"),
       "correct-horse-battery",
     );
+    await userEvent.type(screen.getByLabelText("Confirm password"), "correct-horse-battery");
     await userEvent.click(screen.getByRole("button", { name: "Join" }));
 
     await waitFor(() => expect(spy).toHaveBeenCalled());
@@ -220,6 +223,7 @@ describe("accepting an invitation", () => {
     expect(replaceState).toHaveBeenCalledWith(null, "", "/accept-invitation");
     await userEvent.type(screen.getByLabelText("Full name"), "Vikas Dangi");
     await userEvent.type(screen.getByLabelText("Password"), "correct-horse-battery");
+    await userEvent.type(screen.getByLabelText("Confirm password"), "correct-horse-battery");
     await userEvent.click(screen.getByRole("button", { name: "Join" }));
     await waitFor(() => expect(seen.length).toBeGreaterThan(0));
     // No request URL carries the token — that is the access-log guarantee.
@@ -230,7 +234,8 @@ describe("accepting an invitation", () => {
     let seenBody = "";
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (String(url) === "/api/auth/turnstile") return json({ site_key: "" });
         seenBody = String(init?.body ?? "");
         return json({ id: "u9" }, 201);
       }),
@@ -239,6 +244,7 @@ describe("accepting an invitation", () => {
     await userEvent.type(screen.getByLabelText("Invitation code"), '"code-abc-XYZ_09."');
     await userEvent.type(screen.getByLabelText("Full name"), "Asha Verma");
     await userEvent.type(screen.getByLabelText("Password"), "correct-horse-battery");
+    await userEvent.type(screen.getByLabelText("Confirm password"), "correct-horse-battery");
     await userEvent.click(screen.getByRole("button", { name: "Join" }));
     await waitFor(() => expect(seenBody).not.toBe(""));
     expect(JSON.parse(seenBody).token).toBe("code-abc-XYZ_09");
@@ -266,6 +272,7 @@ describe("accepting an invitation", () => {
       screen.getByLabelText("Password"),
       "correct-horse-battery",
     );
+    await userEvent.type(screen.getByLabelText("Confirm password"), "correct-horse-battery");
     await userEvent.click(screen.getByRole("button", { name: "Join" }));
 
     await waitFor(() =>

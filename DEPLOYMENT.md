@@ -67,6 +67,7 @@ Then fill it in. Every variable is documented in the template; the ones that wil
 - **`LACTEVA_APP_USER`** — the role the API connects as. It **must differ from `POSTGRES_USER`**; see §2b, which is the single most consequential setting on this page.
 - **`LACTEVA_CORS_ORIGINS`** — a JSON list of exact origins. Never a wildcard.
 - **`LACTEVA_PORTAL_PUBLIC_URL`** — the portal's https address, the link every invitation and password-reset email carries (WO-100). The platform refuses to start in prod without it.
+- **`LACTEVA_TURNSTILE_SITE_KEY` / `LACTEVA_TURNSTILE_SECRET_KEY`** — Cloudflare Turnstile (WO-103), the bot check on the sign-up form, the forgot-password request, sign-in after three failures in fifteen minutes, and the website's trial and demo forms; every one verified server-side against Cloudflare on each request. Create them free at dash.cloudflare.com → Turnstile → Add site, for `lacteva.com` and `app.lacteva.com`. The template leaves both empty and names Cloudflare's published always-pass test keys for a rehearsal; with both EMPTY the check is OFF and the API's `/health` report carries a `turnstile` warning — never silently.
 
 ### TLS certificates (TLS-001)
 

@@ -142,6 +142,13 @@ class MemoryRateLimiter:
             retry_after=max(int(expires - now), 1),
         )
 
+    async def count(self, key: str) -> int:
+        """How many hits `key` holds in its current window — WITHOUT charging
+        one (WO-103: the sign-in challenge asks how often this address or
+        account has FAILED, and asking must not count as failing)."""
+        count, expires = self._counters.get(key, (0, 0.0))
+        return count if time.monotonic() < expires else 0
+
     async def reset(self) -> None:
         self._counters.clear()
 
@@ -173,6 +180,11 @@ class RedisRateLimiter:
             remaining=max(rule.limit - count, 0),
             retry_after=max(int(ttl), 1) if ttl and ttl > 0 else rule.window_seconds,
         )
+
+    async def count(self, key: str) -> int:
+        client = await self._redis()
+        value = await client.get(key)
+        return int(value) if value else 0
 
     async def reset(self) -> None:  # pragma: no cover - operational tool
         client = await self._redis()
@@ -304,6 +316,52 @@ PASSWORD_RESET = RateLimitRule(
 INVITATION_ACCEPT = RateLimitRule(
     "invitation-accept", limit=10, window_seconds=900, scope="ip", fail_closed=True
 )
+# WO-103: sign-in FAILURES, per address and per account, in fifteen minutes.
+# Not a budget that refuses — the LOGIN rules above do that at ten — but the
+# count the Turnstile challenge is keyed on: from the third failure on, a
+# sign-in must carry a token Cloudflare vouches for. Charged only on failure
+# (`record_login_failure`), read without charging (`login_failures`).
+LOGIN_FAILURES = RateLimitRule("login-failures", limit=3, window_seconds=900, scope="ip")
+LOGIN_FAILURES_PER_USER = RateLimitRule(
+    "login-failures-user", limit=3, window_seconds=900, scope="user"
+)
+
+
+async def record_login_failure(*, ip: str, user: str, tenant: str | None) -> None:
+    """Charge one failure to the address and to the account. Never a 500: a
+    dead limiter falls back to the process-local one, so the challenge still
+    bites from this worker's own count."""
+    keys = (
+        (LOGIN_FAILURES.key(ip=ip, user=None, endpoint="login", tenant=None), LOGIN_FAILURES),
+        (
+            LOGIN_FAILURES_PER_USER.key(ip=ip, user=user, endpoint="login", tenant=tenant),
+            LOGIN_FAILURES_PER_USER,
+        ),
+    )
+    for key, rule in keys:
+        try:
+            await get_rate_limiter().hit(key, rule)
+        except Exception as exc:  # the counter must never turn a refusal into a 500
+            RATE_LIMITER_UNAVAILABLE.inc()
+            log.warning("rate_limit.failure_counter_degraded", key=key, error=str(exc))
+            await get_fallback_limiter().hit(key, rule)
+
+
+async def login_failures(*, ip: str, user: str, tenant: str | None) -> int:
+    """The larger of the address's and the account's recent failure counts,
+    read without charging one."""
+    by_ip_key = LOGIN_FAILURES.key(ip=ip, user=None, endpoint="login", tenant=None)
+    by_user_key = LOGIN_FAILURES_PER_USER.key(ip=ip, user=user, endpoint="login", tenant=tenant)
+    try:
+        limiter = get_rate_limiter()
+        return max(await limiter.count(by_ip_key), await limiter.count(by_user_key))
+    except Exception as exc:
+        RATE_LIMITER_UNAVAILABLE.inc()
+        log.warning("rate_limit.failure_counter_degraded", error=str(exc))
+        fallback = get_fallback_limiter()
+        return max(await fallback.count(by_ip_key), await fallback.count(by_user_key))
+
+
 # WO-86: the public bill page. The token is a capability, so guessing at it
 # is the attack, and the budget is per IP AND per token — a household
 # refreshing its own bill is not the same event as one host walking the

@@ -199,6 +199,9 @@ describe("signing in without knowing a tenant UUID", () => {
       async (input: RequestInfo | URL, init?: RequestInit) => {
         if (String(input) === "/api/auth/session")
           return new Response(JSON.stringify(NOBODY), { status: 200 });
+        // WO-103: the page asks for the Turnstile site key first; none here.
+        if (String(input) === "/api/auth/turnstile")
+          return new Response(JSON.stringify({ site_key: "" }), { status: 200 });
         if (init) calls.push(init);
         return new Response(null, { status: 204 });
       },

@@ -50,6 +50,9 @@ class LoginCommand(BaseModel):
     email: EmailStr
     password: str
     tenant_id: uuid.UUID | None = None  # omit for platform-level login
+    #: WO-103: required by the route after repeated failures, when Turnstile
+    #: is configured. Never read by the service itself.
+    turnstile_token: str | None = None
 
 
 class TokenPair(BaseModel):

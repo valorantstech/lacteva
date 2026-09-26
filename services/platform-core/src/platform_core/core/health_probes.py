@@ -286,6 +286,32 @@ async def background_workers() -> health.ComponentHealth:
     return health.healthy("background_workers", **data)
 
 
+async def turnstile() -> health.ComponentHealth:
+    """WO-103: is the bot check ON? With no secret the forms work and nothing
+    is verified — a state that must be visible in the readiness report, not
+    inferred from a missing widget. A warning, not degraded: the platform
+    serves; it is the operator who has something to do."""
+    from platform_core.core.turnstile import get_turnstile_verifier
+
+    settings = get_settings()
+    if not get_turnstile_verifier().enabled:
+        return health.warning(
+            "turnstile",
+            "bot protection is OFF: LACTEVA_TURNSTILE_SECRET_KEY is not set — invitation "
+            "acceptance, password-reset requests and repeated sign-in failures are "
+            "unverified (create keys at dash.cloudflare.com → Turnstile)",
+            configured=False,
+        )
+    if not settings.turnstile_site_key:
+        return health.warning(
+            "turnstile",
+            "LACTEVA_TURNSTILE_SECRET_KEY is set but LACTEVA_TURNSTILE_SITE_KEY is not — the "
+            "browser cannot render the widget, so every protected form will be refused",
+            configured=False,
+        )
+    return health.healthy("turnstile", configured=True)
+
+
 def register_all() -> None:
     """Install every probe. Called once at startup."""
     for name, probe in (
@@ -298,5 +324,6 @@ def register_all() -> None:
         ("jwt_keys", jwt_keys),
         ("background_workers", background_workers),
         ("backups", backups),
+        ("turnstile", turnstile),
     ):
         health.register_probe(name, probe)

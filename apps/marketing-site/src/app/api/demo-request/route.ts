@@ -4,6 +4,7 @@ import {
   LeadsNotConfiguredError,
   type DemoRequest,
 } from "@/lib/server/leads";
+import { clientIp, verifyTurnstile } from "@/lib/server/turnstile";
 
 const REQUIRED_FIELDS = ["name", "email", "organization", "country"] as const;
 const MAX_FIELD_LENGTH = 2000;
@@ -46,6 +47,19 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { code: "invalid_email", detail: "Enter a valid email address." },
       { status: 422 },
+    );
+  }
+
+  // WO-103: verified on the server, every time, when the secret is set. The
+  // widget in the browser is decoration; this answer is what counts.
+  const token = typeof body.turnstileToken === "string" ? body.turnstileToken : undefined;
+  if (!(await verifyTurnstile(token, clientIp(request)))) {
+    return NextResponse.json(
+      {
+        code: "captcha_required",
+        detail: "Please complete the security check and try again.",
+      },
+      { status: 400 },
     );
   }
 

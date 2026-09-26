@@ -131,3 +131,39 @@ def test_the_portal_address_is_required_and_https_in_prod():
         Settings(env="prod", portal_public_url="http://app.lacteva.com")
     with pytest.raises(ValueError, match="LACTEVA_PORTAL_PUBLIC_URL"):
         Settings(env="prod", portal_public_url="")
+
+
+async def test_the_invitation_names_the_tenant_and_says_owner(client):
+    """WO-103: the first real invitation read "You have been invited to join
+    Lacteva as tenant-admin" — the organisation variable was the literal
+    product name and the role its registry key. It names the tenant, whoever
+    sends it, and says "owner"; and no email tells the reader to use a phone."""
+    org, admin = await _tenant_admin(client)
+    name = org["name"]
+    capture, restore = _capturing()
+    try:
+        r = await client.post(
+            "/v1/invitations",
+            json={"email": "owner-two@kilima.example", "role_name": "tenant-admin"},
+            headers=admin,
+        )
+        assert r.status_code == 201, r.text
+    finally:
+        restore()
+    message = capture.to("owner-two@kilima.example")[-1]
+    assert f"You have been invited to join {name} as its owner." in message.body
+    assert "Click this link to join:" in message.body
+    assert "Lacteva as" not in message.body and "tenant-admin" not in message.body
+    assert "phone" not in message.body.lower()
+    assert name in message.title
+
+
+async def test_no_one_time_email_tells_the_reader_to_use_a_phone(client):
+    """The three one-time emails say "Click this link", full stop. This
+    client has no laptop; the next may have no phone on the desk."""
+    from platform_core.modules.notification.templates import TEMPLATES
+
+    for key in ("invitation", "password_reset", "email_change_confirm"):
+        for template in [t for t in TEMPLATES if t.key == key and t.channel == "email"]:
+            assert "Click this link" in template.body, (key, template.language)
+            assert "phone" not in template.body.lower(), (key, template.language)

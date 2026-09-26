@@ -273,9 +273,14 @@ export async function login(
   email: string,
   password: string,
   tenantId?: string,
+  turnstileToken?: string | null,
 ) {
   const body: Record<string, string> = { email, password };
   if (tenantId) body.tenant_id = tenantId;
+  // WO-103: only when the widget produced one — the platform asks for it
+  // after repeated failures, and a body without the key is what it has
+  // always received.
+  if (turnstileToken) body.turnstile_token = turnstileToken;
   const res = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -296,11 +301,16 @@ export async function login(
  * must not learn which. A rate limit (429) is the one refusal worth surfacing,
  * because "try again later" is actionable and silence is not.
  */
-export async function requestPasswordReset(email: string) {
+export async function requestPasswordReset(
+  email: string,
+  turnstileToken?: string | null,
+) {
+  const body: Record<string, string> = { email };
+  if (turnstileToken) body.turnstile_token = turnstileToken;
   const res = await fetch("/api/auth/password-reset/request", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify(body),
     credentials: "same-origin",
     cache: "no-store",
   });
@@ -2733,11 +2743,14 @@ export async function acceptInvitation(
   token: string,
   fullName: string,
   password: string,
+  turnstileToken?: string | null,
 ) {
+  const body: Record<string, string> = { token, full_name: fullName, password };
+  if (turnstileToken) body.turnstile_token = turnstileToken;
   const res = await fetch("/api/auth/invitation", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token, full_name: fullName, password }),
+    body: JSON.stringify(body),
     credentials: "same-origin",
     cache: "no-store",
   });

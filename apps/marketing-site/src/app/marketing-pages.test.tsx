@@ -164,9 +164,12 @@ describe("trial lead form (MKT-004E)", () => {
     expect(
       await screen.findByText(/your trial request has been received/i),
     ).toBeInTheDocument();
-    const body = JSON.parse(
-      (fetchSpy.mock.calls[0][1] as RequestInit).body as string,
-    );
+    // WO-103: the form first asks for the Turnstile site key (a GET, none
+    // here); the submission is the POST to the lead route.
+    const submission = fetchSpy.mock.calls.find(
+      (call) => String(call[0]) === "/api/demo-request",
+    )!;
+    const body = JSON.parse((submission[1] as RequestInit).body as string);
     expect(body.intent).toBe("trial");
   });
 });

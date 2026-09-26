@@ -360,7 +360,7 @@ TEMPLATES: tuple[Template, ...] = (
         "en",
         "Reset your Lacteva password",
         "A password reset was requested for your account in {organization}.\n\n"
-        "Open this link on your phone to choose a new password:\n{reset_link}\n\n"
+        "Click this link to choose a new password:\n{reset_link}\n\n"
         "Or go to {portal_url}/reset-password and paste this code:\n\n"
         "{reset_token}\n\n"
         "The code expires in {expires_hours} hours. "
@@ -377,7 +377,7 @@ TEMPLATES: tuple[Template, ...] = (
         "en",
         "Confirm your new Lacteva email",
         "Somebody asked to make this address the login for an account in {organization}.\n\n"
-        "Open this link on your phone to confirm:\n{change_link}\n\n"
+        "Click this link to confirm your new email address:\n{change_link}\n\n"
         "Or go to {portal_url}/confirm-email and paste this code:\n\n"
         "{change_token}\n\n"
         "The code expires in {expires_hours} hours. "
@@ -399,12 +399,15 @@ TEMPLATES: tuple[Template, ...] = (
         "invitation",
         "email",
         "en",
-        "You have been invited to Lacteva",
-        # WO-100: a link first — tappable on a phone, the code already filled
-        # in — then the code ALONE on its own line, so a long-press copy takes
-        # nothing but the code, and one sentence saying where it is used.
-        "You have been invited to join {organization} as {role}.\n\n"
-        "Open this link on your phone to join:\n{invite_link}\n\n"
+        "You have been invited to join {organization}",
+        # WO-100: a link first — tappable, the code already filled in — then
+        # the code ALONE on its own line, so a long-press copy takes nothing
+        # but the code, and one sentence saying where it is used.
+        # WO-103: it names the TENANT and says "owner", not "Lacteva" and
+        # "tenant-admin" — and it does not mention a phone: this client has
+        # no laptop, but the next one may have no phone on the desk.
+        "You have been invited to join {organization} as its {role}.\n\n"
+        "Click this link to join:\n{invite_link}\n\n"
         "Or go to {portal_url}/accept-invitation and paste this code:\n\n"
         "{invite_token}\n\n"
         "The invitation expires in {expires_days} days. "

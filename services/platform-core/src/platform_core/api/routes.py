@@ -47,6 +47,7 @@ from platform_core.core.tenancy import (
     set_current_tenant,
 )
 from platform_core.core.tenant_lifecycle import TenantLifecycleService
+from platform_core.core.turnstile import enforce_turnstile, turnstile_enabled
 from platform_core.core.units import unit_label
 from platform_core.modules.audit.service import AuditPage
 from platform_core.modules.auth.service import AuthService, LoginCommand, TokenPair
@@ -430,22 +431,32 @@ async def login(
     (distributed brute force) are different attacks and neither is caught by
     a purely per-IP budget."""
     ip = client_ip(request)
+    # MT-001: an email is unique per tenant, not globally. Without this, one
+    # tenant's failed logins spend another tenant's budget for the same
+    # address.
+    tenant = str(cmd.tenant_id) if cmd.tenant_id else None
     await rate_limit.enforce(rate_limit.LOGIN, ip=ip, user=None, endpoint="login")
     await rate_limit.enforce(
         rate_limit.LOGIN_PER_USER,
         ip=ip,
         user=cmd.email.lower(),
-        # MT-001: an email is unique per tenant, not globally. Without this,
-        # one tenant's failed logins spend another tenant's budget for the
-        # same address.
-        tenant=str(cmd.tenant_id) if cmd.tenant_id else None,
+        tenant=tenant,
         endpoint="login",
     )
+    # WO-103: from the third failure in fifteen minutes — by this address OR
+    # this account — the sign-in must carry a Turnstile token Cloudflare
+    # vouches for. The first attempts are free: a person who mistypes once
+    # is not a bot, and the widget is usually invisible anyway.
+    if turnstile_enabled():
+        failures = await rate_limit.login_failures(ip=ip, user=cmd.email.lower(), tenant=tenant)
+        if failures >= rate_limit.LOGIN_FAILURES.limit:
+            await enforce_turnstile(cmd.turnstile_token, remote_ip=ip, endpoint="login")
     try:
         pair = await service.login(cmd)
     except AppError:
         # A failed login is a security event whether or not the account
         # exists — and the response still must not reveal which.
+        await rate_limit.record_login_failure(ip=ip, user=cmd.email.lower(), tenant=tenant)
         await record_security_event(
             session,
             action=security_audit.LOGIN_FAILED,
@@ -501,6 +512,9 @@ async def logout(
 class PasswordResetRequest(BaseModel):
     email: str
     tenant_id: uuid.UUID | None = None
+    #: WO-103: the Turnstile token the browser's widget produced. Required
+    #: whenever the platform has a Turnstile secret configured.
+    turnstile_token: str | None = None
 
 
 @auth.post("/password-reset/request", status_code=202)
@@ -514,6 +528,8 @@ async def request_password_reset(
     the notification channel (logging adapter until M2)."""
     ip = client_ip(request)
     await rate_limit.enforce(rate_limit.PASSWORD_RESET, ip=ip, user=None, endpoint="password-reset")
+    # WO-103: a form with no secret in it, which is exactly where bots go.
+    await enforce_turnstile(body.turnstile_token, remote_ip=ip, endpoint="password-reset")
     await service.request_password_reset(body.email, body.tenant_id)
     await record_security_event(
         session,
@@ -1548,6 +1564,10 @@ class AcceptInvitationRequest(BaseModel):
     token: str
     password: str = Field(min_length=10, max_length=128)
     full_name: str = Field(min_length=1, max_length=200)
+    #: WO-103: the owner asked for a CAPTCHA on sign-up. The code already
+    #: makes this form bot-proof; the token is belt-and-braces, verified
+    #: server-side like everywhere else.
+    turnstile_token: str | None = None
 
 
 class InvitationRow(BaseModel):
@@ -1596,12 +1616,14 @@ async def accept_invitation(
     membership: Annotated[MembershipService, Depends(deps.get_membership_service)],
 ) -> Any:
     """Public: how invited people join their organization."""
+    ip = client_ip(request)
     await rate_limit.enforce(
         rate_limit.INVITATION_ACCEPT,
-        ip=client_ip(request),
+        ip=ip,
         user=None,
         endpoint="invitation-accept",
     )
+    await enforce_turnstile(body.turnstile_token, remote_ip=ip, endpoint="invitation-accept")
     return await service.accept(
         token=body.token,
         password=body.password,

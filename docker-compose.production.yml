@@ -356,6 +356,10 @@ services:
       # one image could only ever reach one backend and an unset value shipped
       # `localhost:8000` to production browsers.
       LACTEVA_API_URL: http://api:8000
+      # WO-103: the Turnstile SITE key (public), served to the browser at
+      # request time by /api/auth/turnstile. Empty = the check is off; the
+      # API holds the secret and reports the state in its `turnstile` probe.
+      LACTEVA_TURNSTILE_SITE_KEY: ${LACTEVA_TURNSTILE_SITE_KEY:-}
     expose: ["3000"]
     healthcheck:
       # The portal's own liveness. Deliberately not the API's readiness — a
@@ -400,6 +404,11 @@ services:
       # Read at REQUEST time by the demo-request handler; nothing secret is
       # ever built into the image.
       LACTEVA_LEADS_WEBHOOK_URL: ${LACTEVA_LEADS_WEBHOOK_URL:-}
+      # WO-103: the lead forms' bot check. The site key renders the widget;
+      # the secret is what the demo-request route verifies tokens with, on
+      # the server, every time. Both read at request time; empty = off.
+      LACTEVA_TURNSTILE_SITE_KEY: ${LACTEVA_TURNSTILE_SITE_KEY:-}
+      LACTEVA_TURNSTILE_SECRET_KEY: ${LACTEVA_TURNSTILE_SECRET_KEY:-}
     expose: ["3100"]
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]

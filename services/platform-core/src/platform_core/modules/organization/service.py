@@ -46,6 +46,21 @@ from platform_core.modules.organization.models import (
     Workspace,
 )
 
+#: WO-103: what a role is called in a sentence to the person receiving it.
+#: `tenant-admin` is the registry's key for the person who OWNS the
+#: organisation; "owner" is what they are. Anything else is its key read as
+#: words ("centre manager", "driver") — the registry is the authority on
+#: the names, this only lowers and spaces them.
+ROLE_LABELS = {
+    "tenant-admin": "owner",
+    "ORGANIZATION_ADMIN": "owner",
+    "customer": "customer",
+}
+
+
+def role_label(role_name: str) -> str:
+    return ROLE_LABELS.get(role_name, role_name.replace("_", " ").replace("-", " ").lower())
+
 
 class CreateOrganizationCommand(BaseModel):
     """Onboarding asks ONE locale question: where are you? (DEMO-013 §4)
@@ -871,6 +886,11 @@ class InvitationService:
             NotificationService,
         )
 
+        # WO-103: the TENANT's name, whoever sends the invitation. This said
+        # the literal word "Lacteva" — the first real invitation read "join
+        # Lacteva as tenant-admin" to a shop owner who had never heard of a
+        # tenant-admin. A platform-level invitation (no tenant) is to Lacteva.
+        organization = await self._session.get(Organization, invitation.tenant_id)
         return await NotificationService(self._session).dispatch(
             NotificationRequest(
                 event_id=invitation.id,
@@ -880,8 +900,8 @@ class InvitationService:
                 channel="email",
                 recipient=invitation.email,
                 variables={
-                    "role": role_name,
-                    "organization": "Lacteva",
+                    "role": role_label(role_name),
+                    "organization": organization.name if organization else "Lacteva",
                     "expires_days": INVITATION_TTL.days,
                     "portal_url": portal_url(),
                 },

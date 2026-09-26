@@ -101,6 +101,30 @@ def _reset_rate_limiter():
     rate_limit.set_rate_limiter(None)
 
 
+@pytest.fixture(autouse=True)
+def _turnstile_off():
+    """WO-103: no Turnstile secret in the suite by default — the check is
+    OFF, as on a deployment without keys — and never the network. A test that
+    wants it ON installs `FakeTurnstileVerifier(TEST_SECRET_ALWAYS_PASSES)`
+    (see `turnstile_on`)."""
+    from platform_core.core import turnstile
+
+    turnstile.set_turnstile_verifier(turnstile.FakeTurnstileVerifier(""))
+    yield
+    turnstile.set_turnstile_verifier(None)
+
+
+@pytest.fixture
+def turnstile_on():
+    """Turnstile ON with Cloudflare's always-pass test secret: a request must
+    carry SOME token, and the fake records every verification it was asked."""
+    from platform_core.core import turnstile
+
+    fake = turnstile.FakeTurnstileVerifier(turnstile.TEST_SECRET_ALWAYS_PASSES)
+    turnstile.set_turnstile_verifier(fake)
+    return fake
+
+
 @pytest.fixture
 async def app():
     application = create_app()

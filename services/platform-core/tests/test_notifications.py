@@ -365,7 +365,9 @@ async def test_invitation_notification_from_the_event(client, provider_guard):
         n for n in await _notifications("invitation") if n.recipient == "invitee@kilima.example"
     ]
     assert len(invitations) == 1
-    assert "tenant-viewer" in invitations[0].rendered_text
+    # WO-103: the role as a word, not the registry key — "tenant viewer".
+    assert "as its tenant viewer" in invitations[0].rendered_text
+    assert "tenant-viewer" not in invitations[0].rendered_text
     assert invitations[0].status == "sent"
 
 

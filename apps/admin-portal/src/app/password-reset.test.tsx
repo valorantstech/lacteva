@@ -137,6 +137,8 @@ describe("asking for a reset code", () => {
 describe("setting the new password", () => {
   async function reachStepTwo() {
     const spy = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      // WO-103: the page asks for the Turnstile site key first; none here.
+      if (String(url) === "/api/auth/turnstile") return json({ site_key: "" });
       if (String(url).endsWith("/request")) {
         return json({ status: "accepted" }, 202);
       }
@@ -171,6 +173,7 @@ describe("setting the new password", () => {
       screen.getByLabelText("New password"),
       "correct-horse-battery",
     );
+    await userEvent.type(screen.getByLabelText("Confirm password"), "correct-horse-battery");
     await userEvent.click(
       screen.getByRole("button", { name: "Set new password" }),
     );
@@ -206,6 +209,7 @@ describe("setting the new password", () => {
       screen.getByLabelText("New password"),
       "correct-horse-battery",
     );
+    await userEvent.type(screen.getByLabelText("Confirm password"), "correct-horse-battery");
     await userEvent.click(
       screen.getByRole("button", { name: "Set new password" }),
     );

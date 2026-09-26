@@ -353,6 +353,14 @@ class Settings(BaseSettings):
     #: API, deliberately: the marketing site's WO-76 was a build-time address
     #: that a rebuild forgot for three weeks. Required and https in prod.
     portal_public_url: str = "http://localhost:3000"
+    #: WO-103. Cloudflare Turnstile — the site key is public (the browser
+    #: renders the widget with it), the secret is what `core/turnstile.py`
+    #: verifies tokens with. Empty means the check is OFF, and the `turnstile`
+    #: health probe says so loudly rather than letting a deployment believe
+    #: it is protected. Cloudflare's published test keys are the development
+    #: values (`core/turnstile.py`).
+    turnstile_site_key: str = ""
+    turnstile_secret_key: str = ""
 
     # Observability
     otel_exporter_endpoint: str = ""  # empty = OTel hook disabled

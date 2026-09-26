@@ -12,9 +12,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LactevaLockup } from "@/components/lockup";
-import {acceptInvitation,
-  describeError,
-} from "@/lib/api";
+import { PasswordField } from "@/components/password-field";
+import { Turnstile, useTurnstileSiteKey } from "@/components/turnstile";
+import { acceptInvitation, describeError } from "@/lib/api";
 import { normaliseCode, takeCodeFromFragment } from "@/lib/one-time-code";
 
 /**
@@ -43,8 +43,14 @@ export default function AcceptInvitationPage() {
   const [code, setCode] = useState("");
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const siteKey = useTurnstileSiteKey();
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  // WO-103: refused here, before anything is sent — the platform still
+  // enforces its own rules on what it receives.
+  const mismatch = confirm.length > 0 && confirm !== password;
 
   // WO-100: the email's link carries the code in the URL FRAGMENT, which a
   // browser never sends to any server — no access log, no proxy log. Read it
@@ -64,10 +70,14 @@ export default function AcceptInvitationPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (password !== confirm) {
+      setError("The two passwords do not match. Type the same password in both fields.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await acceptInvitation(normaliseCode(code), fullName.trim(), password);
+      await acceptInvitation(normaliseCode(code), fullName.trim(), password, turnstileToken);
       // The account exists now; say so before leaving, so the navigation is
       // not the only evidence it worked.
       setDone(true);
@@ -127,19 +137,32 @@ export default function AcceptInvitationPage() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="password">Password</Label>
-              <Input
+              <PasswordField
                 id="password"
-                type="password"
-                required
                 minLength={MIN_PASSWORD}
-                autoComplete="new-password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
               />
               <p className="text-xs text-muted-foreground">
                 At least {MIN_PASSWORD} characters.
               </p>
             </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="confirm-password">Confirm password</Label>
+              <PasswordField
+                id="confirm-password"
+                minLength={MIN_PASSWORD}
+                value={confirm}
+                onChange={setConfirm}
+                aria-invalid={mismatch}
+              />
+              {mismatch ? (
+                <p className="text-xs text-destructive" role="alert">
+                  The two passwords do not match.
+                </p>
+              ) : null}
+            </div>
+            {siteKey ? <Turnstile siteKey={siteKey} onToken={setTurnstileToken} /> : null}
             {error && <p className="text-sm text-destructive">{error}</p>}
             {done && (
               <p className="text-sm text-muted-foreground">

@@ -15,6 +15,7 @@ import { ApiError, describeError, getSession, login } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { safeNext } from "@/proxy";
 import { LactevaLockup } from "@/components/lockup";
+import { Turnstile, useTurnstileSiteKey } from "@/components/turnstile";
 
 /**
  * Sign in (DEMO-010).
@@ -60,6 +61,8 @@ export default function LoginPage() {
       ? safeNext(new URLSearchParams(window.location.search).get("next"))
       : null;
   const [email, setEmail] = useState("");
+  const siteKey = useTurnstileSiteKey();
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [tenantId, setTenantId] = useState("");
   const [needsTenant, setNeedsTenant] = useState(false);
@@ -110,7 +113,7 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await login(email, password, tenantId || undefined);
+      await login(email, password, tenantId || undefined, turnstileToken);
       // A FULL navigation, not `router.push` (DEMO-010).
       //
       // `AppShell` lives in the root layout and probes the session once, when
@@ -207,6 +210,9 @@ export default function LoginPage() {
                 </p>
               </div>
             ) : null}
+            {/* WO-103: the platform asks for a token from the third failed
+                sign-in in fifteen minutes; the widget is usually invisible. */}
+            {siteKey ? <Turnstile siteKey={siteKey} onToken={setTurnstileToken} /> : null}
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" disabled={busy}>
               {busy ? t("auth.signingIn") : t("auth.signIn")}

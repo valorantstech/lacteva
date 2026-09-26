@@ -12,6 +12,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LactevaLockup } from "@/components/lockup";
+import { PasswordField } from "@/components/password-field";
+import { Turnstile, useTurnstileSiteKey } from "@/components/turnstile";
 import { ApiError, confirmPasswordReset, requestPasswordReset } from "@/lib/api";
 import { normaliseCode, takeCodeFromFragment } from "@/lib/one-time-code";
 
@@ -45,8 +47,12 @@ export default function ResetPasswordPage() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const siteKey = useTurnstileSiteKey();
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const mismatch = confirm.length > 0 && confirm !== password;
 
   // WO-100: the email's link carries the code in the URL FRAGMENT, which a
   // browser never sends to any server — no access log, no proxy log. Read it
@@ -82,7 +88,7 @@ export default function ResetPasswordPage() {
     setBusy(true);
     setError(null);
     try {
-      await requestPasswordReset(email.trim());
+      await requestPasswordReset(email.trim(), turnstileToken);
       setStep("confirm");
     } catch (err) {
       // A 429 keeps the person on step 1; anything else that is not a rate
@@ -93,8 +99,12 @@ export default function ResetPasswordPage() {
     }
   }
 
-  async function confirm(e: React.FormEvent) {
+  async function confirmReset(e: React.FormEvent) {
     e.preventDefault();
+    if (password !== confirm) {
+      setError("The two passwords do not match. Type the same password in both fields.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -142,13 +152,15 @@ export default function ResetPasswordPage() {
                   onChange={(e) => setEmail(e.target.value)}
                 />
               </div>
+              {/* WO-103: a form with no secret in it, so the one bots go for. */}
+              {siteKey ? <Turnstile siteKey={siteKey} onToken={setTurnstileToken} /> : null}
               {error && <p className="text-sm text-destructive">{error}</p>}
               <Button type="submit" disabled={busy}>
                 {busy ? "Sending…" : "Send reset code"}
               </Button>
             </form>
           ) : (
-            <form onSubmit={confirm} className="flex flex-col gap-4">
+            <form onSubmit={confirmReset} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="code">Reset code</Label>
                 <Input
@@ -161,18 +173,30 @@ export default function ResetPasswordPage() {
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="new-password">New password</Label>
-                <Input
+                <PasswordField
                   id="new-password"
-                  type="password"
-                  required
                   minLength={MIN_PASSWORD}
-                  autoComplete="new-password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={setPassword}
                 />
                 <p className="text-xs text-muted-foreground">
                   At least {MIN_PASSWORD} characters.
                 </p>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="confirm-password">Confirm password</Label>
+                <PasswordField
+                  id="confirm-password"
+                  minLength={MIN_PASSWORD}
+                  value={confirm}
+                  onChange={setConfirm}
+                  aria-invalid={mismatch}
+                />
+                {mismatch ? (
+                  <p className="text-xs text-destructive" role="alert">
+                    The two passwords do not match.
+                  </p>
+                ) : null}
               </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
               <Button type="submit" disabled={busy}>

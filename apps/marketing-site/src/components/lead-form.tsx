@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Turnstile, useTurnstileSiteKey } from "@/components/turnstile";
 
 const VOLUME_OPTIONS = [
   "Under 2,000 L/day",
@@ -40,6 +41,10 @@ export function LeadForm({
 }) {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string>("");
+  // WO-103: a form with no secret in it, so the one bots go for. The widget
+  // is usually invisible; the server route verifies its token.
+  const siteKey = useTurnstileSiteKey();
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,6 +54,7 @@ export function LeadForm({
     const data = {
       ...Object.fromEntries(new FormData(form).entries()),
       intent,
+      ...(turnstileToken ? { turnstileToken } : {}),
     };
     try {
       const response = await fetch("/api/demo-request", {
@@ -157,6 +163,7 @@ export function LeadForm({
           className="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       </label>
+      {siteKey ? <Turnstile siteKey={siteKey} onToken={setTurnstileToken} /> : null}
       {status === "error" ? (
         <p role="alert" className="text-sm text-destructive">
           {error}
