@@ -83,7 +83,7 @@ void main() {
     final client = ApiClient(
       inner: MockClient(
         (_) async => http.Response(
-          '{"type":"https://docs.lacteva.example/errors/forbidden",'
+          '{"type":"https://api.lacteva.com/errors/forbidden",'
           '"title":"forbidden","status":403,'
           '"detail":"You do not have permission to perform this action.",'
           '"extra":"pricing.ratecard.read"}',
@@ -144,6 +144,41 @@ void main() {
     } on ApiException catch (e) {
       expect(e.status, 409);
       expect(e.detail, 'a session is already open at this centre');
+    }
+  });
+
+  // The problem `type` URI is the platform's to change (it moved from a
+  // placeholder domain to api.lacteva.com after this APK shipped). The app
+  // classifies on `title`, `detail`, `extra` and the status — never on
+  // `type` — so a handset in the field reads either host identically.
+  test('the `type` URI host is irrelevant to classification', () async {
+    Future<ApiException> raise(String type) async {
+      final client = ApiClient(
+        inner: MockClient(
+          (_) async => http.Response(
+            '{"type":"$type","title":"forbidden","status":403,'
+            '"detail":"You do not have permission to perform this action.",'
+            '"extra":"pricing.ratecard.read"}',
+            403,
+            headers: {'content-type': 'application/json'},
+          ),
+        ),
+      );
+      try {
+        await client.txStep('/v1/x', body: {});
+      } on ApiException catch (e) {
+        return e;
+      }
+      fail('expected ApiException');
+    }
+
+    final old = await raise('https://docs.lacteva.example/errors/forbidden');
+    final now = await raise('https://api.lacteva.com/errors/forbidden');
+    final none = await raise('about:blank');
+    for (final e in [old, now, none]) {
+      expect(e.status, 403);
+      expect(e.detail, old.detail);
+      expect(e.extra, old.extra);
     }
   });
 }

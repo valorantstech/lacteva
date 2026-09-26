@@ -3,10 +3,10 @@ id: API-0001
 title: Platform Core REST API
 type: api
 status: Approved
-version: "1.1"
+version: "1.2"
 owner: Architecture Board
 created: 2026-08-07
-last-updated: 2026-08-07
+last-updated: 2026-09-26
 related: [SECURITY, RLS-GUIDE, DEPLOYMENT, DBD-0001]
 baseline: ARCH-BASELINE-V1
 ---
@@ -39,7 +39,7 @@ Every error, from every endpoint, has one shape:
 
 ```json
 {
-  "type": "https://docs.lacteva.example/errors/conflict",
+  "type": "https://api.lacteva.com/errors/conflict",
   "title": "conflict",
   "status": 409,
   "detail": "A published rate card cannot be modified.",
@@ -186,6 +186,7 @@ Each is a decision with a reason, not an omission:
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 1.2 | 2026-09-26 | Architecture Board | Problem `type` URIs are `https://api.lacteva.com/errors/<code>` — the API's own host, not the placeholder domain WO-76 removed from the website. Clients branch on `title`, never on `type`. |
 | 1.1 | 2026-08-07 | Architecture Board | IDM-001: `Idempotency-Key` documented as a platform capability on every mutation; §8.1 closed. |
 | 1.0 | 2026-08-07 | Architecture Board | Established by API-001. Error contract published, page sizes bounded and validated, `Idempotency-Key` on payment creation, conventions recorded. |
 

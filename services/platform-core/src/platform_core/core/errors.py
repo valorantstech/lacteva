@@ -91,13 +91,27 @@ class InvalidTokenError(AppError):
     message_key = "error.invalid_token"
 
 
+# The problem `type` URI names the API's OWN error vocabulary, so it lives under
+# the API's host — not the marketing site's — and the API may one day serve a
+# description at that path. Until WO-102's batch it carried the `.example`
+# placeholder domain that WO-76 had already removed from the website; this was
+# the last place it survived. Clients branch on `title` (the code), never on
+# this string, so changing the host does not break an APK already in the
+# field — pinned on both clients.
+PROBLEM_TYPE_BASE = "https://api.lacteva.com/errors"
+
+
+def problem_type(code: str) -> str:
+    return f"{PROBLEM_TYPE_BASE}/{code}"
+
+
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
             content={
-                "type": f"https://docs.lacteva.example/errors/{exc.code}",
+                "type": problem_type(exc.code),
                 "title": exc.code,
                 "status": exc.status_code,
                 "detail": translate(exc.message_key),
@@ -141,7 +155,7 @@ class ProblemDetail(BaseModel):
 
     type: str = Field(
         description="A URI identifying the error class. Stable; safe to branch on.",
-        examples=["https://docs.lacteva.example/errors/conflict"],
+        examples=[f"{PROBLEM_TYPE_BASE}/conflict"],
     )
     title: str = Field(description="The error code, in a fixed vocabulary.", examples=["conflict"])
     status: int = Field(description="The HTTP status code, repeated for convenience.")
@@ -162,7 +176,7 @@ class ProblemDetail(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "type": "https://docs.lacteva.example/errors/conflict",
+                "type": f"{PROBLEM_TYPE_BASE}/conflict",
                 "title": "conflict",
                 "status": 409,
                 "detail": "A published rate card cannot be modified.",

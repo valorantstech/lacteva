@@ -95,6 +95,26 @@ async def test_a_real_error_matches_its_documented_shape(client):
     assert set(body) >= {"type", "title", "status", "detail"}
     assert body["status"] == 401
     assert r.headers.get("WWW-Authenticate") == "Bearer"
+    # The type URI names the API's own vocabulary under the API's own host, and
+    # ends in the code, which is what clients actually branch on.
+    assert body["type"] == f"https://api.lacteva.com/errors/{body['title']}"
+
+
+def test_the_placeholder_domain_is_gone_from_the_contract():
+    """WO-76 removed `.example` from the website; the problem `type` URI was
+    the last place it survived. Clients must not depend on the host either
+    way — see the mobile suite's `type` host test — so the host is now the
+    API's, and nothing that ships or documents the contract names the old one."""
+    import pathlib
+
+    repo = pathlib.Path(__file__).resolve().parents[3]
+    offenders = []
+    for root in ("services/platform-core/src", "docs", "apps/admin-portal/src", "apps/mobile/lib"):
+        for path in (repo / root).rglob("*"):
+            if path.is_file() and path.suffix in {".py", ".md", ".ts", ".tsx", ".dart", ".json"}:
+                if "docs.lacteva.example" in path.read_text(errors="ignore"):
+                    offenders.append(str(path.relative_to(repo)))
+    assert offenders == [], offenders
 
 
 async def test_a_rate_limited_response_says_when_to_come_back(client):
