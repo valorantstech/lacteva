@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.business_time import business_today
+from platform_core.core.codes import unique_code
 from platform_core.core.db import utcnow
 from platform_core.core.errors import ConflictError, NotFoundError, ValidationError
 from platform_core.core.org_context import tenant_timezone
@@ -42,7 +43,8 @@ from platform_core.modules.logistics.models import (
 
 
 class RouteInput(BaseModel):
-    code: str = Field(min_length=1, max_length=24)
+    #: WO-107 §3: optional — generated from the name when omitted.
+    code: str | None = Field(default=None, min_length=1, max_length=24)
     name: str = Field(min_length=1, max_length=200)
     center_id: uuid.UUID | None = None
     notes: str = Field(default="", max_length=500)
@@ -114,7 +116,8 @@ class VehicleView(BaseModel):
 
 
 class DriverInput(BaseModel):
-    code: str = Field(min_length=1, max_length=24)
+    #: WO-107 §3: optional — generated from the name when omitted.
+    code: str | None = Field(default=None, min_length=1, max_length=24)
     full_name: str = Field(min_length=1, max_length=200)
     phone: str = Field(default="", max_length=32)
     user_id: uuid.UUID | None = None
@@ -431,9 +434,17 @@ class LogisticsService:
 
     async def create_route(self, data: RouteInput, *, actor_id: uuid.UUID, audit: AuditService):
         tenant_id = require_current_tenant()
-        if await self._session.scalar(
-            select(Route.id).where(Route.tenant_id == tenant_id, Route.code == data.code)
-        ):
+
+        async def taken(code: str) -> bool:
+            return (
+                await self._session.scalar(
+                    select(Route.id).where(Route.tenant_id == tenant_id, Route.code == code)
+                )
+            ) is not None
+
+        if data.code is None:
+            data = data.model_copy(update={"code": await unique_code(data.name, taken)})
+        elif await taken(data.code):
             raise ConflictError(f"route {data.code!r} already exists")
 
         if data.default_driver_id is not None or data.default_vehicle_id is not None:
@@ -683,9 +694,17 @@ class LogisticsService:
 
     async def create_driver(self, data: DriverInput, *, actor_id: uuid.UUID, audit: AuditService):
         tenant_id = require_current_tenant()
-        if await self._session.scalar(
-            select(Driver.id).where(Driver.tenant_id == tenant_id, Driver.code == data.code)
-        ):
+
+        async def taken(code: str) -> bool:
+            return (
+                await self._session.scalar(
+                    select(Driver.id).where(Driver.tenant_id == tenant_id, Driver.code == code)
+                )
+            ) is not None
+
+        if data.code is None:
+            data = data.model_copy(update={"code": await unique_code(data.full_name, taken)})
+        elif await taken(data.code):
             raise ConflictError(f"driver {data.code!r} already exists")
         driver = Driver(tenant_id=tenant_id, **data.model_dump())
         self._session.add(driver)

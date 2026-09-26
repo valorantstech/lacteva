@@ -36,6 +36,9 @@ import {
  *  * a product is deactivated, never deleted. A product on an issued bill
  *    must keep resolving to its name for as long as the bill exists.
  */
+/** WO-107 §5: SUGGESTIONS. A shop sells packets, boxes, bottles, dozens,
+ *  grams — the unit is the label the customer sees on the bill (1–12
+ *  characters), and quantity × rate is the arithmetic whatever it says. */
 const UNITS = ["pc", "L", "kg"] as const;
 
 export default function ProductsPage() {
@@ -170,7 +173,7 @@ export default function ProductsPage() {
 function NewProductForm({ onDone }: { onDone: (message: string) => void }) {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [unit, setUnit] = useState<(typeof UNITS)[number]>("pc");
+  const [unit, setUnit] = useState<string>("pc");
   const [price, setPrice] = useState("");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -183,10 +186,12 @@ function NewProductForm({ onDone }: { onDone: (message: string) => void }) {
         setWorking(true);
         setError(null);
         try {
+          // WO-107 §3: the code is the platform's to spell unless the owner
+          // cares; blank means "generate it from the name".
           const created = await createProduct({
-            code,
+            ...(code.trim() ? { code: code.trim() } : {}),
             name,
-            unit,
+            unit: unit.trim(),
             ...(price.trim() ? { default_price: price.trim() } : {}),
           });
           setCode("");
@@ -201,16 +206,6 @@ function NewProductForm({ onDone }: { onDone: (message: string) => void }) {
       }}
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="p-code">Code</Label>
-        <Input
-          id="p-code"
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          placeholder="DAHI-500G"
-          className="w-40 font-mono"
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
         <Label htmlFor="p-name">Name</Label>
         <Input
           id="p-name"
@@ -222,17 +217,20 @@ function NewProductForm({ onDone }: { onDone: (message: string) => void }) {
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="p-unit">Unit</Label>
-        <Select
+        <Input
           id="p-unit"
+          list="p-unit-suggestions"
           value={unit}
-          onChange={(e) => setUnit(e.target.value as (typeof UNITS)[number])}
-        >
+          maxLength={12}
+          onChange={(e) => setUnit(e.target.value)}
+          placeholder="pc, L, kg, packet…"
+          className="w-32"
+        />
+        <datalist id="p-unit-suggestions">
           {UNITS.map((u) => (
-            <option key={u} value={u}>
-              {u}
-            </option>
+            <option key={u} value={u} />
           ))}
-        </Select>
+        </datalist>
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="p-price">Default price (optional)</Label>
@@ -245,9 +243,24 @@ function NewProductForm({ onDone }: { onDone: (message: string) => void }) {
           className="w-32"
         />
       </div>
-      <Button type="submit" disabled={working || !code.trim() || !name.trim()}>
+      <Button type="submit" disabled={working || !name.trim() || !unit.trim()}>
         {working ? "Adding…" : "Add product"}
       </Button>
+      {/* WO-107 §3: codes are not the owner's job. Generated from the name
+          unless somebody who cares types one here. */}
+      <details className="basis-full">
+        <summary className="cursor-pointer text-xs text-muted-foreground">More options</summary>
+        <div className="mt-2 flex flex-col gap-1.5">
+          <Label htmlFor="p-code">Code (optional — generated from the name)</Label>
+          <Input
+            id="p-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="DAHI-500G"
+            className="w-48 font-mono"
+          />
+        </div>
+      </details>
       {error ? (
         <p role="alert" className="w-full text-sm text-destructive">
           {error}

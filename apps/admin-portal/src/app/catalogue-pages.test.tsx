@@ -326,23 +326,41 @@ describe("Admin → Products", () => {
     expect(screen.getByText(/standing order always wins/)).toBeInTheDocument();
   });
 
-  it("adds a product with a price as a STRING", async () => {
+  it("adds a product with a price as a STRING, and no code — the platform spells it (WO-107)", async () => {
     const spy = stub();
     const user = userEvent.setup();
     await renderRoute(<ProductsPage />);
     await screen.findByText("Dahi 500 g");
-    await user.type(screen.getByLabelText("Code"), "shrikhand");
     await user.type(screen.getByLabelText("Name"), "Shrikhand");
     await user.type(screen.getByLabelText("Default price (optional)"), "60.00");
     await user.click(screen.getByRole("button", { name: "Add product" }));
     await waitFor(() => expect(bodies(spy, "/v1/products").length).toBe(1));
+    // No `code` key at all: blank means "generate it from the name".
     expect(bodies(spy, "/v1/products")[0]).toEqual({
-      code: "shrikhand",
       name: "Shrikhand",
       unit: "pc",
       default_price: "60.00",
     });
-    expect(await screen.findByRole("status")).toHaveTextContent("Added Shrikhand");
+    // The platform's spelling comes back in the confirmation.
+    expect(await screen.findByRole("status")).toHaveTextContent("Added Shrikhand (SHRIKHAND)");
+  });
+
+  it("sends a code typed under More options, and a unit the shop sells by (WO-107)", async () => {
+    const spy = stub();
+    const user = userEvent.setup();
+    await renderRoute(<ProductsPage />);
+    await screen.findByText("Dahi 500 g");
+    await user.type(screen.getByLabelText("Name"), "Paneer 200 g");
+    await user.clear(screen.getByLabelText("Unit"));
+    await user.type(screen.getByLabelText("Unit"), "packet");
+    await user.type(screen.getByLabelText(/Code \(optional/), "PNR-200");
+    await user.click(screen.getByRole("button", { name: "Add product" }));
+    await waitFor(() => expect(bodies(spy, "/v1/products").length).toBe(1));
+    expect(bodies(spy, "/v1/products")[0]).toEqual({
+      code: "PNR-200",
+      name: "Paneer 200 g",
+      unit: "packet",
+    });
   });
 
   it("deactivates rather than deletes, and says the bills keep it", async () => {

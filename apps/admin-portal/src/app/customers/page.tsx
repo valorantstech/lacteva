@@ -7,8 +7,11 @@ import { Plus, Store, Users } from "lucide-react";
 import {
   type Customer,
   type CustomerPageResult,
+  type Product,
   createCustomer,
   listCustomers,
+  listCustomerTypes,
+  listProducts,
   describeError,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -45,14 +48,30 @@ import { StatusBadge } from "@/components/status-badge";
 
 const PAGE_SIZE = 15;
 
-const TYPES = [
-  "",
-  "household",
-  "shop",
-  "hotel",
-  "institution",
-  "distributor",
-] as const;
+/** WO-107 §4: SUGGESTIONS. The type is the owner's own word; the filter
+ *  lists the types actually in use (`/v1/customers/types`). */
+const TYPE_SUGGESTIONS = ["household", "shop", "hotel", "institution", "distributor"] as const;
+const OTHER_TYPE = "__other__";
+
+/** "Rate per litre", "per kg", "per piece", "per packet" — the unit's word. */
+export function unitWord(unit: string | null | undefined): string {
+  switch ((unit ?? "").trim()) {
+    case "L":
+      return "litre";
+    case "kg":
+      return "kg";
+    case "pc":
+      return "piece";
+    case "":
+      return "unit";
+    default:
+      return unit!.trim();
+  }
+}
+
+/** A product a standing order can be for: active, and not the catch-all. */
+export const standingOrderProducts = (products: Product[]) =>
+  products.filter((p) => p.active && p.code !== "OTHER");
 const STATUSES = ["", "active", "inactive", "suspended"] as const;
 
 const describe = (e: unknown) => describeError(e);
@@ -77,8 +96,9 @@ function CustomersView() {
   const [status, setStatus] = useState<(typeof STATUSES)[number]>(
     () => (searchParams.get("status") as (typeof STATUSES)[number]) ?? "",
   );
-  const [customerType, setCustomerType] = useState<(typeof TYPES)[number]>(
-    () => (searchParams.get("type") as (typeof TYPES)[number]) ?? "",
+  const [typesInUse, setTypesInUse] = useState<string[]>([]);
+  const [customerType, setCustomerType] = useState<string>(
+    () => searchParams.get("type") ?? "",
   );
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -113,6 +133,17 @@ function CustomersView() {
     const t = setTimeout(() => void load(), 150);
     return () => clearTimeout(t);
   }, [load]);
+
+  // WO-107 §4: the filter offers the types this organisation actually uses.
+  useEffect(() => {
+    let cancelled = false;
+    listCustomerTypes()
+      .then((types) => !cancelled && setTypesInUse(types))
+      .catch(() => !cancelled && setTypesInUse([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const columns: Column<Customer>[] = [
     {
@@ -304,13 +335,14 @@ function CustomersView() {
                     id="cu-type"
                     value={customerType}
                     onChange={(e) => {
-                      setCustomerType(e.target.value as (typeof TYPES)[number]);
+                      setCustomerType(e.target.value);
                       setOffset(0);
                     }}
                   >
-                    {TYPES.map((t) => (
-                      <option key={t || "all"} value={t}>
-                        {t || "All types"}
+                    <option value="">All types</option>
+                    {typesInUse.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
                       </option>
                     ))}
                   </Select>
@@ -378,27 +410,70 @@ function CreateCustomerCard({
 }) {
   const [name, setName] = useState("");
   const [type, setType] = useState("household");
+  const [otherType, setOtherType] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [quantity, setQuantity] = useState("2.000");
   const [rate, setRate] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // WO-107 §1: the standing order is for ONE OF THE ORGANISATION'S products.
+  // This form hard-coded the demo seed's code, and the platform — rightly —
+  // refused it in every organisation without that exact code, which was all
+  // of them but the demo's. The labels follow the chosen product's unit and
+  // the rate prefills from its price.
+  const [products, setProducts] = useState<Product[] | null>(null);
+  const [productCode, setProductCode] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    listProducts(true)
+      .then((page) => {
+        if (cancelled) return;
+        const usable = standingOrderProducts(page.items);
+        setProducts(usable);
+        if (usable[0]) {
+          setProductCode(usable[0].code);
+          if (usable[0].default_price != null && String(usable[0].default_price) !== "") {
+            setRate(String(usable[0].default_price));
+          }
+        }
+      })
+      .catch(() => !cancelled && setProducts([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  function choose(code: string) {
+    setProductCode(code);
+    const chosen = products?.find((p) => p.code === code);
+    if (chosen?.default_price != null && String(chosen.default_price) !== "") {
+      setRate(String(chosen.default_price));
+    }
+  }
+  const product = products?.find((p) => p.code === productCode) ?? null;
+  const unit = product?.unit ?? "L";
+  const customerType = type === OTHER_TYPE ? otherType.trim() : type;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!product) {
+      setError(
+        "choose the product this customer takes — add your milk products first if there are none",
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await createCustomer({
         name,
-        customer_type: type,
+        customer_type: customerType,
         phone,
         address,
         plan: {
-          product: "RAW-COW-MILK",
+          product: product.code,
           default_quantity: quantity,
-          quantity_unit: "L",
+          quantity_unit: product.unit,
           unit_price: rate,
         },
       });
@@ -440,12 +515,25 @@ function CreateCustomerCard({
                 value={type}
                 onChange={(e) => setType(e.target.value)}
               >
-                {TYPES.filter(Boolean).map((t) => (
+                {TYPE_SUGGESTIONS.map((t) => (
                   <option key={t} value={t}>
                     {t}
                   </option>
                 ))}
+                <option value={OTHER_TYPE}>Other…</option>
               </Select>
+              {type === OTHER_TYPE ? (
+                <Input
+                  id="nc-type-other"
+                  aria-label="Type (your own word)"
+                  required
+                  minLength={2}
+                  maxLength={40}
+                  placeholder="e.g. Temple"
+                  value={otherType}
+                  onChange={(e) => setOtherType(e.target.value)}
+                />
+              ) : null}
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="nc-phone">Phone</Label>
@@ -465,7 +553,35 @@ function CreateCustomerCard({
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="nc-qty">Daily quantity (L)</Label>
+              <Label htmlFor="nc-product">Product</Label>
+              {products && products.length === 0 ? (
+                <p className="text-sm text-muted-foreground" data-testid="no-products">
+                  Add your milk products first — nothing in the catalogue can be
+                  a standing order yet.{" "}
+                  <Link
+                    href="/admin/products"
+                    className="text-primary underline underline-offset-4"
+                  >
+                    Products
+                  </Link>
+                </p>
+              ) : (
+                <Select
+                  id="nc-product"
+                  required
+                  value={productCode}
+                  onChange={(e) => choose(e.target.value)}
+                >
+                  {(products ?? []).map((p) => (
+                    <option key={p.code} value={p.code}>
+                      {p.name} ({p.unit})
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="nc-qty">Daily quantity ({unit})</Label>
               <Input
                 id="nc-qty"
                 required
@@ -475,7 +591,7 @@ function CreateCustomerCard({
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="nc-rate">Rate per litre</Label>
+              <Label htmlFor="nc-rate">Rate per {unitWord(unit)}</Label>
               <Input
                 id="nc-rate"
                 required
@@ -496,7 +612,7 @@ function CreateCustomerCard({
             </p>
           ) : null}
           <div className="flex gap-2">
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || !product}>
               {busy ? "Registering…" : "Register customer"}
             </Button>
             <Button type="button" variant="ghost" onClick={onClose}>

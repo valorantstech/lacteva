@@ -3006,6 +3006,10 @@ export function listCustomers(params: {
 export const getCustomer = (id: string) =>
   api<CustomerDetail>(`/v1/customers/${id}`);
 
+/** WO-107 §4: the customer types this organisation uses — the five
+ *  suggestions plus the owner's own words — for the Customers page filter. */
+export const listCustomerTypes = () => api<string[]>("/v1/customers/types");
+
 export const createCustomer = (body: Record<string, unknown>) =>
   api<Customer>("/v1/customers", {
     method: "POST",
@@ -3870,7 +3874,8 @@ export function listProducts(active: boolean | null = true): Promise<ProductPage
 }
 
 export const createProduct = (body: {
-  code: string;
+  /** WO-107 §3: omitted, the platform spells it from the name. */
+  code?: string;
   name: string;
   unit: string;
   default_price?: string;
@@ -4328,7 +4333,8 @@ export const listRoutes = () => api<Route[]>("/v1/routes");
 export const getRoute = (id: string) => api<RouteDetail>(`/v1/routes/${id}`);
 
 export const createRoute = (body: {
-  code: string;
+  /** WO-107 §3: omitted, the platform spells it from the name. */
+  code?: string;
   name: string;
   center_id?: string | null;
 }) => api<Route>("/v1/routes", { method: "POST", body: JSON.stringify(body) });
@@ -4383,7 +4389,8 @@ export const driverDefaultRoutes = (driverId: string) =>
   api<Route[]>(`/v1/drivers/${driverId}/default-routes`);
 
 export const createDriver = (body: {
-  code: string;
+  /** WO-107 §3: omitted, the platform spells it from the name. */
+  code?: string;
   full_name: string;
   phone?: string;
 }) =>

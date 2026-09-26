@@ -124,7 +124,7 @@ export default function CustomerDetailPage({
   // Which correction panel is open, if any. A customer record used to be
   // write-once in this portal; these are the two things an operator needs to
   // change about a live customer.
-  const [panel, setPanel] = useState<"none" | "details" | "plan">("none");
+  const [panel, setPanel] = useState<"none" | "details" | "plan" | "add-plan">("none");
 
   const load = useCallback(async () => {
     try {
@@ -252,6 +252,18 @@ export default function CustomerDetailPage({
             >
               Change order
             </Button>
+            {/* WO-107: a customer can take more than one product — cow AND
+                buffalo milk. WO-81 made the platform accept it; the form
+                never offered it. */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy !== null}
+              onClick={() => setPanel(panel === "add-plan" ? "none" : "add-plan")}
+            >
+              Add another standing order
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -305,10 +317,17 @@ export default function CustomerDetailPage({
         />
       ) : null}
 
-      {panel === "plan" ? (
+      {panel === "plan" || panel === "add-plan" ? (
         <ChangePlanCard
           customerId={customer.id}
-          current={plan}
+          current={panel === "plan" ? plan : null}
+          mode={panel}
+          products={products.filter(
+            (p) =>
+              p.active &&
+              p.code !== "OTHER" &&
+              !activePlans.some((a) => a.product === p.code),
+          )}
           currency={currency}
           busy={busy !== null}
           onCancel={() => setPanel("none")}
@@ -1564,6 +1583,8 @@ function EditCustomerCard({
 function ChangePlanCard({
   customerId,
   current,
+  mode = "plan",
+  products = [],
   currency,
   busy,
   onCancel,
@@ -1572,6 +1593,11 @@ function ChangePlanCard({
 }: {
   customerId: string;
   current: DeliveryPlan | null;
+  /** WO-107: `add-plan` agrees ANOTHER standing order — a product this
+   *  customer does not yet take — beside the existing ones. */
+  mode?: "plan" | "add-plan";
+  /** The products a new standing order may be for (active, not on a plan). */
+  products?: Product[];
   currency: string;
   busy: boolean;
   onCancel: () => void;
@@ -1583,6 +1609,17 @@ function ChangePlanCard({
   );
   const [rate, setRate] = useState(current ? String(current.unit_price) : "");
   const [saving, setSaving] = useState(false);
+  const adding = mode === "add-plan" || current === null;
+  const [productCode, setProductCode] = useState(products[0]?.code ?? "");
+  const product = products.find((p) => p.code === productCode) ?? null;
+  const unit = adding ? (product?.unit ?? "L") : (current?.quantity_unit ?? "L");
+  function choose(code: string) {
+    setProductCode(code);
+    const chosen = products.find((p) => p.code === code);
+    if (chosen?.default_price != null && String(chosen.default_price) !== "") {
+      setRate(String(chosen.default_price));
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -1591,15 +1628,24 @@ function ChangePlanCard({
       // The money leaves as the operator typed it. `unit_price` is a decimal
       // string end to end; putting it through Number() here would lose the
       // platform's precision before the request was even made.
+      if (adding && !product) {
+        onFailed("choose the product this standing order is for");
+        setSaving(false);
+        return;
+      }
       await setDeliveryPlan(customerId, {
-        product: current?.product ?? "RAW-COW-MILK",
+        product: adding ? product!.code : current!.product,
         default_quantity: quantity.trim(),
-        quantity_unit: current?.quantity_unit ?? "L",
+        quantity_unit: adding ? product!.unit : current!.quantity_unit,
         unit_price: rate.trim(),
         ...(current?.slot ? { slot: current.slot } : {}),
         ...(current?.weekdays ? { weekdays: current.weekdays } : {}),
       });
-      onSaved("Standing order updated. Deliveries from now on use the new agreement.");
+      onSaved(
+        adding
+          ? `Standing order for ${product!.name} agreed. It stands beside the others.`
+          : "Standing order updated. Deliveries from now on use the new agreement.",
+      );
     } catch (err) {
       onFailed(describe(err));
     } finally {
@@ -1610,19 +1656,44 @@ function ChangePlanCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Change the standing order</CardTitle>
+        <CardTitle className="text-base">
+          {adding ? "Add another standing order" : "Change the standing order"}
+        </CardTitle>
         <CardDescription>
-          This supersedes the current agreement rather than editing it, so
-          deliveries already priced keep pointing at the plan that priced them.
-          {current ? null : " This customer has no plan yet."}
+          {adding
+            ? "A customer can take more than one product — cow AND buffalo milk. This agrees a standing order beside the existing ones."
+            : "This supersedes the current agreement rather than editing it, so deliveries already priced keep pointing at the plan that priced them."}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={submit} className="flex flex-col gap-3">
+          {adding ? (
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="plan-product">Product</Label>
+              {products.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Every product in the catalogue is already on a standing order
+                  for this customer — add more under Products.
+                </p>
+              ) : (
+                <Select
+                  id="plan-product"
+                  value={productCode}
+                  onChange={(e) => choose(e.target.value)}
+                >
+                  {products.map((p) => (
+                    <option key={p.code} value={p.code}>
+                      {p.name} ({p.unit})
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1">
               <Label htmlFor="plan-quantity">
-                Quantity per delivery ({current?.quantity_unit ?? "L"})
+                Quantity per delivery ({unit})
               </Label>
               <Input
                 id="plan-quantity"
@@ -1634,7 +1705,7 @@ function ChangePlanCard({
             </div>
             <div className="flex flex-col gap-1">
               <Label htmlFor="plan-rate">
-                Agreed rate ({currency} per {current?.quantity_unit ?? "L"})
+                Agreed rate ({currency} per {unit})
               </Label>
               <Input
                 id="plan-rate"
@@ -1646,7 +1717,7 @@ function ChangePlanCard({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={saving || busy}>
+            <Button type="submit" disabled={saving || busy || (adding && !product)}>
               {saving ? "Saving…" : "Agree new order"}
             </Button>
             <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>

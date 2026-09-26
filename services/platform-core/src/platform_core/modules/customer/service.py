@@ -33,6 +33,23 @@ from platform_core.modules.delivery.models import DELIVERY_SLOTS
 # --- commands ----------------------------------------------------------------
 
 
+#: WO-107 §4. `CUSTOMER_TYPES` is documented as reporting information that
+#: drives nothing in code — so it is a list of SUGGESTIONS, and the owner's
+#: own word ("Temple", "Canteen") is as good as any of them. Reports group by
+#: the exact string; the Customers page filters by the types in use.
+CUSTOMER_TYPE_MIN, CUSTOMER_TYPE_MAX = 2, 40
+
+
+def normalise_customer_type(value: str) -> str:
+    cleaned = " ".join((value or "").split())
+    if not CUSTOMER_TYPE_MIN <= len(cleaned) <= CUSTOMER_TYPE_MAX:
+        raise ValueError(
+            f"customer_type must be {CUSTOMER_TYPE_MIN} to {CUSTOMER_TYPE_MAX} characters — "
+            f"one of {', '.join(CUSTOMER_TYPES)}, or your own word"
+        )
+    return cleaned.lower() if cleaned.lower() in CUSTOMER_TYPES else cleaned
+
+
 class CreateCustomerCommand(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     customer_type: str = "household"
@@ -57,9 +74,7 @@ class CreateCustomerCommand(BaseModel):
     @field_validator("customer_type")
     @classmethod
     def _known_type(cls, v: str) -> str:
-        if v not in CUSTOMER_TYPES:
-            raise ValueError(f"customer_type must be one of {', '.join(CUSTOMER_TYPES)}")
-        return v
+        return normalise_customer_type(v)
 
     @field_validator("billing_mode")
     @classmethod
@@ -90,6 +105,12 @@ MAX_IMPORT_ROWS = 500
 class UpdateCustomerCommand(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     customer_type: str = "household"
+
+    @field_validator("customer_type")
+    @classmethod
+    def _known_type(cls, v: str) -> str:
+        return normalise_customer_type(v)
+
     phone: str = Field(default="", max_length=32)
     alternate_phone: str = Field(default="", max_length=32)
     address: str = Field(default="", max_length=300)
@@ -99,9 +120,18 @@ class UpdateCustomerCommand(BaseModel):
 
 
 class DeliveryPlanInput(BaseModel):
-    product: str = Field(default="RAW-COW-MILK", max_length=40)
+    #: WO-107: this defaulted to `RAW-COW-MILK` — the demo seed's code — so
+    #: every organisation without that exact code was refused its first
+    #: customer, one layer below the form that hard-coded the same thing.
+    #: Omitted now, it is the ORGANISATION'S first milk product
+    #: (`CatalogService.default_standing_order_product`), and a refusal that
+    #: says "add your milk products first" when there is none. The form
+    #: always names one.
+    product: str | None = Field(default=None, min_length=1, max_length=40)
     default_quantity: Decimal = Field(default=Decimal("0"), ge=0)
-    quantity_unit: str = Field(default="L", max_length=8)
+    #: Omitted, the PRODUCT's unit — a plan for `BUFFALO-MILK` is in litres
+    #: because the product is, not because a form said "L".
+    quantity_unit: str | None = Field(default=None, max_length=12)
     #: The agreed selling price. Sent as a string by every client, because it
     #: is money and a float would have already lost by the time it arrived.
     unit_price: Decimal = Field(gt=0)
@@ -464,7 +494,14 @@ class CustomerService:
         # this module, and keeping it so is what stops a cycle.
         from platform_core.modules.catalog.service import CatalogService
 
-        await CatalogService(self._session).require_active(plan.product)
+        catalog = CatalogService(self._session)
+        if not plan.product:
+            plan = plan.model_copy(
+                update={"product": (await catalog.default_standing_order_product()).code}
+            )
+        product = await catalog.require_active(plan.product)
+        if not plan.quantity_unit:
+            plan = plan.model_copy(update={"quantity_unit": product.unit})
         existing = (
             await self._session.scalars(
                 select(DeliveryPlan).where(
@@ -848,6 +885,36 @@ class CustomerService:
             )
             for row in rows
         }
+
+    async def active_plans(self, customer_id: uuid.UUID) -> list[DeliveryPlan]:
+        """Every plan in force for this customer today, across products and
+        slots (WO-107: a delivery recorded without naming a product takes the
+        customer's ONE plan, and refuses to guess between several)."""
+        tenant_id = require_current_tenant()
+        today = await self._today()
+        rows = await self._session.scalars(
+            select(DeliveryPlan).where(
+                DeliveryPlan.tenant_id == tenant_id,
+                DeliveryPlan.customer_id == customer_id,
+                DeliveryPlan.active.is_(True),
+                DeliveryPlan.effective_from <= today,
+                or_(DeliveryPlan.effective_to.is_(None), DeliveryPlan.effective_to >= today),
+            )
+        )
+        return list(rows)
+
+    async def types_in_use(self) -> list[str]:
+        """WO-107 §4: the customer types this organisation actually uses, for
+        the Customers page's filter — the five suggestions plus whatever the
+        owner typed ("Temple")."""
+        tenant_id = require_current_tenant()
+        rows = await self._session.scalars(
+            select(Customer.customer_type)
+            .where(Customer.tenant_id == tenant_id)
+            .distinct()
+            .order_by(Customer.customer_type)
+        )
+        return [row for row in rows if row]
 
     async def active_plan(self, customer_id: uuid.UUID, product: str) -> DeliveryPlan | None:
         tenant_id = require_current_tenant()

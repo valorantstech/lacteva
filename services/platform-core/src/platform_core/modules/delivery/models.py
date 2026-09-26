@@ -80,7 +80,7 @@ class MilkDelivery(Base, IdMixin):
 
     product: Mapped[str] = mapped_column(String(40), default="RAW-COW-MILK")
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3))
-    quantity_unit: Mapped[str] = mapped_column(String(8), default="L")
+    quantity_unit: Mapped[str] = mapped_column(String(12), default="L")
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4))
     #: ISO 4217. NO DEFAULT, deliberately (DEMO-013): it was `"KES"`, which
     #: meant a code path that forgot to pass a currency minted Kenyan

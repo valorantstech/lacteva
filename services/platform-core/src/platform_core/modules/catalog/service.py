@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_core.core.codes import unique_code
 from platform_core.core.db import as_utc
 from platform_core.core.errors import ConflictError, NotFoundError, ValidationError
 from platform_core.core.money import quantize_money
@@ -24,10 +25,12 @@ from platform_core.core.tenancy import require_current_tenant
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.catalog.models import (
     CODE_MAX,
+    MILK_PRODUCTS,
     NAME_MAX,
     OTHER_PRODUCT_CODE,
     OTHER_PRODUCT_NAME,
     PRODUCT_UNITS,
+    UNIT_MAX,
     Product,
 )
 
@@ -54,11 +57,22 @@ _UNIT_SPELLINGS = {
 
 
 def normalise_unit(value: str | None) -> str:
-    """One of `PRODUCT_UNITS`, or a ValueError naming them."""
-    key = (value or "").strip().lower()
+    """A known spelling of `L`, `kg` or `pc` canonicalised — or, since WO-107
+    §5, any label a shop sells by (`packet`, `dozen`, `250 g`), trimmed, 1 to
+    `UNIT_MAX` characters, letters, digits, spaces and a few marks. The
+    suggestions stay suggestions; the label is what the customer sees on the
+    bill."""
+    raw = (value or "").strip()
+    key = raw.lower()
     if key in _UNIT_SPELLINGS:
         return _UNIT_SPELLINGS[key]
-    raise ValueError(f"unit must be one of {', '.join(PRODUCT_UNITS)}")
+    if not raw:
+        raise ValueError(f"unit is required — {', '.join(PRODUCT_UNITS)}, or the label you sell by")
+    if len(raw) > UNIT_MAX:
+        raise ValueError(f"unit must be at most {UNIT_MAX} characters")
+    if not all(ch.isalnum() or ch in " .-/µ" for ch in raw):
+        raise ValueError("unit may hold letters, digits, spaces, '.', '-', '/' and 'µ'")
+    return raw
 
 
 def normalise_code(value: str) -> str:
@@ -73,9 +87,11 @@ def normalise_code(value: str) -> str:
 
 
 class CreateProductCommand(BaseModel):
-    code: str = Field(min_length=1, max_length=CODE_MAX)
+    #: WO-107 §3: optional — generated from the name (upper-case slug, made
+    #: unique) when the caller does not care. Editable for those who do.
+    code: str | None = Field(default=None, min_length=1, max_length=CODE_MAX)
     name: str = Field(min_length=1, max_length=NAME_MAX)
-    unit: str = Field(default="pc", max_length=12)
+    unit: str = Field(default="pc", max_length=UNIT_MAX)
     #: A suggestion for forms, and the price of a sale item recorded without
     #: one. Never the rate of a standing order.
     default_price: Decimal | None = Field(default=None, ge=0)
@@ -83,8 +99,8 @@ class CreateProductCommand(BaseModel):
 
     @field_validator("code")
     @classmethod
-    def _slug(cls, v: str) -> str:
-        return normalise_code(v)
+    def _slug(cls, v: str | None) -> str | None:
+        return None if v is None or not v.strip() else normalise_code(v)
 
     @field_validator("unit")
     @classmethod
@@ -197,17 +213,51 @@ class CatalogService:
 
     # --- writes ------------------------------------------------------------------
 
+    async def default_standing_order_product(self) -> Product:
+        """WO-107: the product a standing order is for when the caller named
+        none — the organisation's first ACTIVE milk product (code or name
+        says MILK), by catalogue order. None at all is a refusal that says
+        what to do, never a guess at `OTHER`."""
+        tenant_id = require_current_tenant()
+        row = await self._session.scalar(
+            select(Product)
+            .where(
+                Product.tenant_id == tenant_id,
+                Product.active.is_(True),
+                (func.upper(Product.code).like("%MILK%"))
+                | (func.upper(Product.name).like("%MILK%")),
+            )
+            .order_by(Product.sort_order, Product.code)
+            .limit(1)
+        )
+        if row is None:
+            raise ValidationError(
+                "name the product this standing order is for — add your milk products first"
+            )
+        return row
+
+    async def _code_taken(self, tenant_id: uuid.UUID, code: str) -> bool:
+        return (
+            await self._session.scalar(
+                select(Product.id).where(Product.tenant_id == tenant_id, Product.code == code)
+            )
+        ) is not None
+
     async def create(self, cmd: CreateProductCommand, *, actor_id: uuid.UUID) -> ProductView:
         tenant_id = require_current_tenant()
-        clash = await self._session.scalar(
-            select(Product).where(Product.tenant_id == tenant_id, Product.code == cmd.code)
-        )
-        if clash is not None:
-            raise ConflictError(f"product {cmd.code} already exists — edit or reactivate it")
+        if cmd.code is None:
+            # WO-107 §3: the owner names the thing; the platform spells its code.
+            code = await unique_code(
+                cmd.name, lambda c: self._code_taken(tenant_id, c), max_length=CODE_MAX
+            )
+        else:
+            code = cmd.code
+            if await self._code_taken(tenant_id, code):
+                raise ConflictError(f"product {code} already exists — edit or reactivate it")
         currency = await tenant_currency(self._session)
         row = Product(
             tenant_id=tenant_id,
-            code=cmd.code,
+            code=code,
             name=cmd.name.strip(),
             unit=cmd.unit,
             default_price=(
@@ -296,9 +346,31 @@ class CatalogService:
         await self._session.flush()
         return row
 
-    async def seed_new_organisation(self, *, tenant_id: uuid.UUID, currency: str) -> Product:
-        """Exactly one product on day one: `OTHER`. Onboarding adds what else
-        the shop sells; nothing here guesses at milk."""
+    async def seed_new_organisation(
+        self, *, tenant_id: uuid.UUID, currency: str, modules: list[str] | None = None
+    ) -> Product:
+        """Day one: `OTHER` for everyone, and — WO-107 §2 — for an
+        organisation that SELLS, Cow milk and Buffalo milk in litres, unpriced.
+        The first shop owner asked "where is the option to add cow milk or
+        buffalo milk, do we need to add those in products?"; the answer is
+        now "they are already there; set your prices". A catalogue holding
+        only `OTHER` made the New customer form impossible to complete.
+
+        EVERY organisation, not only the ones running `sales` — D-31 says no
+        business rule branches on the modules (`test_modules.py` greps for
+        it), and two unpriced products a collection-only dairy never uses
+        cost nothing. `modules` is accepted and unused, for the caller's
+        clarity."""
+        del modules
+        for order, (code, name) in enumerate(MILK_PRODUCTS, start=1):
+            await self.ensure(
+                tenant_id=tenant_id,
+                code=code,
+                name=name,
+                unit="L",
+                currency=currency,
+                sort_order=order * 10,
+            )
         return await self.ensure(
             tenant_id=tenant_id,
             code=OTHER_PRODUCT_CODE,

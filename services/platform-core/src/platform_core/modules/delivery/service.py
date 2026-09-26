@@ -23,7 +23,7 @@ from sqlalchemy import Numeric, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.core.business_time import business_today
-from platform_core.core.errors import ConflictError, ForbiddenError, NotFoundError
+from platform_core.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from platform_core.core.money import quantize_money
 from platform_core.core.org_context import tenant_currency, tenant_timezone
 from platform_core.core.tenancy import enforce_customer_scope, require_current_tenant
@@ -106,7 +106,9 @@ class RecordDeliveryCommand(BaseModel):
     slot: str = "morning"
     #: Omit to use the customer's standing quantity from their plan.
     quantity: Decimal | None = Field(default=None, ge=0)
-    product: str = Field(default="RAW-COW-MILK", max_length=40)
+    #: WO-107: omitted, the customer's ONE standing order's product; refused
+    #: with a list to choose from when there are several. Never a default code.
+    product: str | None = Field(default=None, min_length=1, max_length=40)
     status: str = "delivered"
     notes: str = Field(default="", max_length=300)
     #: WO-89. A rate for THIS delivery, other than the plan's. Needs
@@ -408,6 +410,19 @@ class DeliveryService:
         # WO-81: a delivery names a product the catalogue knows. The plan
         # lookup below would refuse an unknown code anyway, but with a message
         # about rates; this one says what to do about the catalogue.
+        if cmd.product is None:
+            plans = await self._customers.active_plans(customer.id)
+            products = sorted({p.product for p in plans})
+            if not products:
+                raise ConflictError(
+                    f"{customer.code} has no active delivery plan — agree a standing order first"
+                )
+            if len(products) > 1:
+                raise ValidationError(
+                    f"{customer.code} has {len(products)} standing orders — name the product: "
+                    + ", ".join(products)
+                )
+            cmd = cmd.model_copy(update={"product": products[0]})
         await self._catalog.require_active(cmd.product)
         plan = await self._customers.active_plan(customer.id, cmd.product)
         if plan is None:

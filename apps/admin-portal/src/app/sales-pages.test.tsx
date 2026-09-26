@@ -327,6 +327,8 @@ function routeAll(overrides: Record<string, (url: string) => Response> = {}) {
     if (path.endsWith("/v1/customers/cu-1/statement")) return json(STATEMENT);
     if (path.endsWith("/v1/customers/cu-1"))
       return json({ customer: CUSTOMER, plans: [PLAN] });
+    // WO-107 §4: the filter offers the types in use.
+    if (path.endsWith("/v1/customers/types")) return json(["hotel", "household"]);
     if (path.endsWith("/v1/customers"))
       return json({ items: [CUSTOMER], total: 1, limit: 15, offset: 0 });
     if (path.endsWith("/v1/deliveries/report")) return json(REPORT);
@@ -543,6 +545,39 @@ describe("customer detail — the whole workflow", () => {
       // Number() here would have turned 62.5050 into 62.505 before it left.
       expect(body.unit_price).toBe("62.5050");
       expect(body.default_quantity).toBe("3.000");
+    });
+  });
+
+  it("adds ANOTHER standing order for a product the customer does not yet take (WO-107)", async () => {
+    const products = {
+      items: [
+        { id: "pr-cow", code: "COW-MILK", name: "Cow milk", unit: "L", default_price: null, currency: "INR", active: true, sort_order: 10 },
+        { id: "pr-buf", code: "BUFFALO-MILK", name: "Buffalo milk", unit: "L", default_price: "56.00", currency: "INR", active: true, sort_order: 20 },
+        { id: "pr-pnr", code: "PANEER-200-G", name: "Paneer 200 g", unit: "packet", default_price: "90.00", currency: "INR", active: true, sort_order: 30 },
+        { id: "pr-oth", code: "OTHER", name: "Other shop item", unit: "pc", default_price: null, currency: "INR", active: true, sort_order: 10000 },
+      ],
+      total: 4,
+    };
+    const spy = routeAll({ "/v1/products": () => json(products) });
+    await renderDetail(<CustomerDetailPage params={params()} />);
+    await userEvent.click(await screen.findByRole("button", { name: /add another standing order/i }));
+    // Not "change": a second order beside the first, for a product not yet taken.
+    expect(screen.getByText(/beside the existing ones/i)).toBeInTheDocument();
+    const select = screen.getByLabelText("Product") as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual(["COW-MILK", "BUFFALO-MILK", "PANEER-200-G"]);
+    await userEvent.selectOptions(select, "PANEER-200-G");
+    // The unit and the rate follow the product.
+    expect(screen.getByLabelText(/quantity per delivery \(packet\)/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/agreed rate/i)).toHaveValue("90.00");
+    await userEvent.click(screen.getByRole("button", { name: /agree new order/i }));
+    await waitFor(() => {
+      const call = spy.mock.calls.find((c) => String(c[0]).endsWith("/v1/customers/cu-1/plan"));
+      expect(call, "no POST to the plan endpoint").toBeTruthy();
+      expect(JSON.parse(String(call![1]?.body))).toMatchObject({
+        product: "PANEER-200-G",
+        quantity_unit: "packet",
+        unit_price: "90.00",
+      });
     });
   });
 

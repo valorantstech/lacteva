@@ -167,7 +167,7 @@ class CustomerInvoiceLine(Base, IdMixin):
     slot: Mapped[str] = mapped_column(String(10), default="morning")
     product: Mapped[str] = mapped_column(String(40))
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3))
-    quantity_unit: Mapped[str] = mapped_column(String(8), default="L")
+    quantity_unit: Mapped[str] = mapped_column(String(12), default="L")
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4))
     amount: Mapped[Decimal] = mapped_column(Numeric(16, 2))
     #: WO-89. Copied from the delivery with the rate, so the bill can say

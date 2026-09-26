@@ -286,7 +286,7 @@ class OrganizationService:
         from platform_core.modules.catalog.service import CatalogService
 
         await CatalogService(self._session).seed_new_organisation(
-            tenant_id=org.id, currency=org.currency_code
+            tenant_id=org.id, currency=org.currency_code, modules=list(org.modules or [])
         )
         await self._audit.record(
             action="organization.created",

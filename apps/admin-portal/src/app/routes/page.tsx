@@ -218,12 +218,23 @@ export default function RoutesPage() {
         <RegisterCard
           description="A named round. Its stops are set on the round itself."
           fields={[
-            { key: "code", label: "Code", placeholder: "R-01" },
-            { key: "name", label: "Name", placeholder: "Kilima morning round" },
+            { key: "name", label: "Name", placeholder: "Morning round" },
+          ]}
+          optional={[
+            {
+              key: "code",
+              label: "Code (optional — generated from the name)",
+              placeholder: "MORNING-ROUND",
+            },
           ]}
           icon={RouteIcon}
           onSubmit={(v) =>
-            act(() => createRoute({ code: v.code, name: v.name }))
+            act(() =>
+              createRoute({
+                name: v.name,
+                ...(v.code?.trim() ? { code: v.code.trim() } : {}),
+              }),
+            )
           }
           title="Add a route"
         />
@@ -248,12 +259,23 @@ export default function RoutesPage() {
         <RegisterCard
           description="A driver need not have a platform login."
           fields={[
-            { key: "code", label: "Code", placeholder: "DRV-1" },
-            { key: "full_name", label: "Name", placeholder: "Joseph Mwangi" },
+            { key: "full_name", label: "Name", placeholder: "Ramesh Pawar" },
+          ]}
+          optional={[
+            {
+              key: "code",
+              label: "Code (optional — generated from the name)",
+              placeholder: "RAMESH-PAWAR",
+            },
           ]}
           icon={UserRound}
           onSubmit={(v) =>
-            act(() => createDriver({ code: v.code, full_name: v.full_name }))
+            act(() =>
+              createDriver({
+                full_name: v.full_name,
+                ...(v.code?.trim() ? { code: v.code.trim() } : {}),
+              }),
+            )
           }
           title="Add a driver"
         />
@@ -470,12 +492,16 @@ function RegisterCard({
   description,
   icon: Icon,
   fields,
+  optional = [],
   onSubmit,
 }: {
   title: string;
   description: string;
   icon: React.ElementType;
   fields: { key: string; label: string; placeholder: string }[];
+  /** WO-107 §3: fields nobody has to fill — the code, generated from the
+   *  name when left blank — folded under "More options". */
+  optional?: { key: string; label: string; placeholder: string }[];
   onSubmit: (values: Record<string, string>) => void;
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
@@ -504,6 +530,28 @@ function RegisterCard({
             />
           </div>
         ))}
+        {optional.length > 0 ? (
+          <details>
+            <summary className="cursor-pointer text-xs text-muted-foreground">
+              More options
+            </summary>
+            <div className="mt-2 space-y-3">
+              {optional.map((field) => (
+                <div className="grid gap-1.5" key={field.key}>
+                  <Label htmlFor={`${title}-${field.key}`}>{field.label}</Label>
+                  <Input
+                    id={`${title}-${field.key}`}
+                    onChange={(e) =>
+                      setValues((v) => ({ ...v, [field.key]: e.target.value }))
+                    }
+                    placeholder={field.placeholder}
+                    value={values[field.key] ?? ""}
+                  />
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
         <Button
           disabled={!complete}
           onClick={() => {

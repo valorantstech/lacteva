@@ -38,10 +38,21 @@ DAYS_IN_MONTH = (MONTH_END - MONTH_START).days + 1
 
 
 async def _product(client, admin, code, name, unit, default_price=None):
+    """The product, created — or, since WO-107 seeds Cow milk and Buffalo
+    milk for every shop, the seeded one priced as this test wants it."""
     body = {"code": code, "name": name, "unit": unit}
     if default_price is not None:
         body["default_price"] = str(default_price)
     r = await client.post("/v1/products", json=body, headers=admin)
+    if r.status_code == 409:
+        page = (await client.get("/v1/products", headers=admin)).json()
+        existing = next(p for p in page["items"] if p["code"] == code)
+        patch = {"name": name, "active": True}
+        if default_price is not None:
+            patch["default_price"] = str(default_price)
+        r = await client.patch(f"/v1/products/{existing['id']}", json=patch, headers=admin)
+        assert r.status_code == 200, r.text
+        return r.json()
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -91,21 +102,27 @@ async def _shop(client):
 # --- the catalogue ------------------------------------------------------------
 
 
-async def test_a_new_organisation_starts_with_exactly_other(client):
+async def test_a_new_organisation_starts_with_its_milk_and_other(client):
+    """WO-107 §2: a shop's catalogue on day one is Cow milk, Buffalo milk and
+    OTHER — unpriced milk, so the owner's first job is to set prices rather
+    than to discover that "cow milk" has to be invented."""
     org, admin = await _tenant_admin(client)
-    # The fixture added RAW-COW-MILK the way onboarding would; remove it from
-    # the picture by listing everything and looking at what was there first.
+    # The fixture added RAW-COW-MILK the way onboarding used to; everything
+    # else on the list is what the platform seeded.
     page = (await client.get("/v1/products", headers=admin)).json()
     codes = {p["code"]: p for p in page["items"]}
     assert "OTHER" in codes
+    for code, name in (("COW-MILK", "Cow milk"), ("BUFFALO-MILK", "Buffalo milk")):
+        assert codes[code]["name"] == name and codes[code]["unit"] == "L"
+        assert codes[code]["default_price"] is None and codes[code]["active"] is True
     other = codes["OTHER"]
     assert other["name"] == "Other shop item"
     assert other["unit"] == "pc"
     assert other["default_price"] is None
     assert other["active"] is True
     assert other["currency"] == org["currency_code"]
-    # Only the seeded OTHER and the fixture's milk — nothing guessed at.
-    assert set(codes) == {"OTHER", "RAW-COW-MILK"}
+    # The seed, the fixture's milk — and nothing else guessed at.
+    assert set(codes) == {"OTHER", "COW-MILK", "BUFFALO-MILK", "RAW-COW-MILK"}
 
 
 async def test_a_plan_and_a_delivery_must_name_an_active_product(client):

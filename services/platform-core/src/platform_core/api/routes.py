@@ -4455,6 +4455,13 @@ async def create_customer(
     return await service.create(cmd, actor_id=p.id)
 
 
+@customer_router.get("/types", response_model=list[str])
+async def customer_types_in_use(service: CustomerSvc, _: CustomerRead) -> Any:
+    """WO-107 §4: the customer types this organisation uses — the five
+    suggestions plus the owner's own words — for the Customers page filter."""
+    return await service.types_in_use()
+
+
 @customer_router.get("", response_model=CustomerPage)
 async def search_customers(
     service: CustomerSvc,
