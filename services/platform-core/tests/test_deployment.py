@@ -12,6 +12,7 @@ during an incident, when nobody has time to read both.
 """
 
 import asyncio
+import os
 import pathlib
 import re
 
@@ -528,6 +529,166 @@ rollback_to "$PREVIOUS_TAG"
 """
 
 
+# A fake docker for staging: `pull` of a release image fails unless
+# FAKE_RELEASE_TREE is set, in which case `create` succeeds and `cp` copies
+# that tree into the destination; `ps -q`/`inspect` describe one running
+# container whose bind mount is FAKE_MOUNT_SOURCE.
+_FAKE_DOCKER_STAGING = """#!/usr/bin/env bash
+case "$1" in
+  pull)   [ -n "${FAKE_RELEASE_TREE:-}" ] || exit 1 ;;
+  create) exit 0 ;;
+  cp)     dest="${@: -1}"; cp -a "$FAKE_RELEASE_TREE/." "${dest%/}/" ;;
+  rm)     exit 0 ;;
+  ps)     [ -n "${FAKE_MOUNT_SOURCE:-}" ] && echo id-nginx ;;
+  inspect) echo "$FAKE_MOUNT_SOURCE" ;;
+esac
+exit 0
+"""
+
+_STAGING_HARNESS = """#!/usr/bin/env bash
+eval "$(sed -n '1,/^# --- arguments/p' "$DEPLOY_SCRIPT" | grep -v "^set -")"
+IMAGE=lacteva/platform-core; PREVIOUS=main-0000000
+stage_release "$TAG"
+"""
+
+
+def _staging_world(tmp_path, *, live_tag: str, fake_env: dict[str, str]):
+    """A releases/ dir holding `live_tag` with the files production mounts,
+    `current` pointing at it, and the fake docker on PATH."""
+    import os
+
+    releases, current = tmp_path / "releases", tmp_path / "current"
+    live = releases / live_tag
+    (live / "infra" / "nginx" / "conf.d").mkdir(parents=True)
+    (live / "infra" / "nginx" / "nginx.conf").write_text("# the running nginx config\n")
+    (live / "infra" / "nginx" / "conf.d" / "api.conf").write_text("server {}\n")
+    (live / "docker-compose.production.yml").write_text("services: {}\n")
+    (live / ".deployed-tag").write_text("main-0000000\n")
+    current.symlink_to(live)
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "docker").write_text(_FAKE_DOCKER_STAGING)
+    (bindir / "docker").chmod(0o755)
+    harness = tmp_path / "harness.sh"
+    harness.write_text(_STAGING_HARNESS)
+    env = {
+        **os.environ,
+        "PATH": f"{bindir}:{os.environ['PATH']}",
+        "RELEASES_DIR": str(releases),
+        "CURRENT_LINK": str(current),
+        "ENV_FILE": str(tmp_path / ".env.production"),
+        "DEPLOY_LOG": str(tmp_path / "deploy.log"),
+        "DEPLOY_SCRIPT": str(REPO / "infra/deploy/deploy.sh"),
+        **fake_env,
+    }
+    (tmp_path / ".env.production").write_text("LACTEVA_IMAGE_TAG=main-1111111\n")
+    return releases, current, harness, env
+
+
+def _run_staging(harness, env, tag):
+    import subprocess
+
+    return subprocess.run(
+        ["bash", str(harness)],
+        env={**env, "TAG": tag},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def test_a_failed_restage_of_the_live_release_leaves_it_intact(tmp_path):
+    """The incident: `current` named main-b7d75d3 (the half-rollback never
+    moved it back), a deploy of that same tag began with `rm -rf` of its
+    directory, and the attempt died before refilling it — while nginx,
+    promtail, Loki, Grafana, Prometheus and postgres were all bind-mounted
+    out of it. A pull that fails must leave every file where it was."""
+    releases, current, harness, env = _staging_world(tmp_path, live_tag="main-1111111", fake_env={})
+    result = _run_staging(harness, env, "main-1111111")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Refusing to deploy from the host tree" in result.stderr
+    live = releases / "main-1111111"
+    assert (live / "infra/nginx/nginx.conf").read_text() == "# the running nginx config\n"
+    assert (live / "infra/nginx/conf.d/api.conf").exists()
+    assert (live / "docker-compose.production.yml").exists()
+    assert os.readlink(current) == str(live)
+    assert not list(releases.glob(".staging-*")), "no staging leftovers"
+
+
+def test_restaging_the_live_release_retires_it_by_rename_and_swaps_in_a_complete_tree(tmp_path):
+    """When the re-deploy succeeds, the live tree is renamed aside (running
+    containers keep their mounted inodes) and the new tree appears whole at
+    the same path; nothing is deleted while a container mounts it."""
+    import os
+
+    tree = tmp_path / "tree"
+    for rel in ("infra/nginx/conf.d", "infra/deploy"):
+        (tree / rel).mkdir(parents=True)
+    (tree / "infra/nginx/nginx.conf").write_text("# the NEW nginx config\n")
+    (tree / "docker-compose.production.yml").write_text("services: {api: {}}\n")
+    (tree / "infra/deploy/verify-deployment.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
+    releases, current, harness, env = _staging_world(
+        tmp_path,
+        live_tag="main-1111111",
+        fake_env={
+            "FAKE_RELEASE_TREE": str(tree),
+            "FAKE_MOUNT_SOURCE": str(tmp_path / "releases/main-1111111/infra/nginx/nginx.conf"),
+        },
+    )
+    result = _run_staging(harness, env, "main-1111111")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "is LIVE" in result.stdout and "retiring it to" in result.stdout
+    live = releases / "main-1111111"
+    assert (live / "infra/nginx/nginx.conf").read_text() == "# the NEW nginx config\n"
+    assert (live / ".deployed-tag").read_text().strip() == "main-0000000"
+    retired = list(releases.glob(".retired-main-1111111-*"))
+    assert len(retired) == 1, retired
+    assert (retired[0] / "infra/nginx/nginx.conf").read_text() == "# the running nginx config\n"
+    assert os.readlink(current) == str(live)  # the caller re-points it; the path is unchanged
+    assert not list(releases.glob(".staging-*"))
+
+
+def test_restaging_an_unreferenced_release_replaces_it_outright(tmp_path):
+    """A tag that neither `current` nor any container references is just a
+    directory: no retirement, no clutter."""
+    tree = tmp_path / "tree"
+    (tree / "infra/nginx/conf.d").mkdir(parents=True)
+    (tree / "infra/deploy").mkdir(parents=True)
+    (tree / "infra/nginx/nginx.conf").write_text("new\n")
+    (tree / "docker-compose.production.yml").write_text("services: {}\n")
+    (tree / "infra/deploy/verify-deployment.sh").write_text("exit 0\n")
+    releases, _current, harness, env = _staging_world(
+        tmp_path, live_tag="main-1111111", fake_env={"FAKE_RELEASE_TREE": str(tree)}
+    )
+    (releases / "main-2222222").mkdir()
+    (releases / "main-2222222" / "stale").write_text("x")
+    result = _run_staging(harness, env, "main-2222222")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (releases / "main-2222222" / "stale").exists()
+    assert (releases / "main-2222222" / "infra/nginx/nginx.conf").read_text() == "new\n"
+    assert not list(releases.glob(".retired-*"))
+
+
+def test_no_path_in_the_deploy_removes_a_release_tree_without_the_live_check():
+    """The rule, pinned: every `rm -rf` in deploy.sh is of a staging
+    directory this run owns, or is guarded by release_is_live()."""
+    script = (INFRA / "deploy" / "deploy.sh").read_text()
+    code = [line for line in script.splitlines() if not line.lstrip().startswith("#")]
+    assert 'rm -rf "${RELEASE}"' not in "\n".join(code)
+    for line in code:
+        if "rm -rf" not in line:
+            continue
+        if ".staging-" in line or 'rm -rf "${stage}"' in line:
+            continue
+        assert 'rm -rf "${release}"' in line or 'rm -rf "${d}"' in line, line
+    guarded = script[script.index("stage_release() {") : script.index("# --- arguments")]
+    for target in ('rm -rf "${release}"', 'rm -rf "${d}"'):
+        assert guarded.index("release_is_live") < guarded.index(target)
+    # The live check looks at BOTH what `current` names and what containers mount.
+    check = script[script.index("release_is_live() {") : script.index("stage_release() {")]
+    assert '"${CURRENT}"' in check and ".Mounts" in check
+
+
 def test_a_failed_verification_leaves_nothing_on_the_failed_release(tmp_path):
     """deploy.sh's rollback against a fake docker, with the new release's
     verification made to fail: afterwards no container runs the failed tag,
@@ -910,13 +1071,13 @@ def test_a_config_only_commit_still_publishes_a_deployable_tag():
 
 def test_the_deploy_prefers_the_registry_over_the_host_tree():
     deploy = (REPO / "infra/deploy/deploy.sh").read_text()
-    assert 'RELEASE_IMAGE="${IMAGE}:release-${TAG}"' in deploy
+    assert 'release_image="${IMAGE}:release-${tag}"' in deploy
     assert "docker cp" in deploy
     # The fallback stays — a rollback to a pre-WO-44 tag has no release image
     # — but it must ANNOUNCE itself, or this defect returns silently.
     fallback = deploy.split("falling back")[1][:400]
     assert "rsync" in fallback
-    assert "log " in deploy.split('RELEASE_IMAGE="')[0][-2000:] or "log " in deploy
+    assert "log " in deploy.split('release_image="')[0][-2000:] or "log " in deploy
 
 
 def test_the_host_tree_fallback_must_be_asked_for_by_name():
@@ -927,8 +1088,8 @@ def test_the_host_tree_fallback_must_be_asked_for_by_name():
     rsync path exists only for a pre-WO-44 rollback and needs ALLOW_HOST_TREE=1
     said out loud."""
     deploy = (REPO / "infra/deploy/deploy.sh").read_text()
-    branch = deploy.split('if docker pull "${RELEASE_IMAGE}"')[1]
-    fallback = branch.split("\nelse\n", 1)[1].split("\nfi\n", 1)[0]
+    branch = deploy.split('if docker pull "${release_image}"')[1]
+    fallback = branch.split("\n  else\n", 1)[1].split("\n  fi\n", 1)[0]
     assert "ALLOW_HOST_TREE" in fallback
     assert fallback.index("die ") < fallback.index("rsync "), "refuse BEFORE the rsync"
     # And a copy of the script that is not a release's own says so.

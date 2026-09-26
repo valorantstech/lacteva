@@ -132,6 +132,111 @@ rollback_to() {
   die "ROLLBACK ALSO FAILED VERIFICATION. The platform is not serving. This is an incident: DEPLOYMENT.md §12."
 }
 
+# --- live release trees -------------------------------------------------------
+# A release directory that `current` points at, or that a RUNNING container
+# bind-mounts anything out of, is live, and nothing here may rm or re-stage it.
+#
+# Staging used to begin with `rm -rf "${RELEASE}"`. Re-deploying the tag that
+# `current` already named — exactly what the pre-WO-102 half-rollback left
+# behind, since it never moved `current` back — emptied the directory that
+# nginx, promtail, Loki, Grafana, Prometheus and postgres were all mounted out
+# of, and when that attempt then died (a pull that failed, an extraction that
+# did not happen, a hand on Ctrl-C) nothing refilled it. Production kept
+# serving only because every process had already loaded its configuration; the
+# next reload would have taken all three sites down and the nightly backup
+# would have failed on a missing script. So: stage into a directory nobody
+# references, prove it complete, and only then swap it in — retiring a live
+# tree by rename (running containers keep their mounted inodes) instead of
+# deleting it.
+release_is_live() {
+  local dir="$1" resolved
+  resolved="$(readlink -f "${dir}" 2>/dev/null || true)"
+  [ -n "${resolved}" ] && [ -e "${resolved}" ] || return 1
+  [ "$(readlink -f "${CURRENT}" 2>/dev/null || true)" = "${resolved}" ] && return 0
+  docker ps -q 2>/dev/null \
+    | xargs -r docker inspect --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' 2>/dev/null \
+    | grep -q "^${resolved}\(/\|$\)"
+}
+
+stage_release() {
+  # Fills ${RELEASES}/<tag> with the release tree at <tag> and never leaves it
+  # empty: the work happens in a sibling staging directory and the swap is two
+  # renames. Needs IMAGE, PREVIOUS and SOURCE_TREE.
+  # One assignment per line: `local a="$1" b="${a}"` expands every word BEFORE
+  # any of them is assigned, so b would see the caller's (empty) a.
+  local tag release stage release_image extract
+  tag="$1"
+  release="${RELEASES}/${tag}"
+  stage="${RELEASES}/.staging-${tag}-$$"
+  rm -rf "${RELEASES}/.staging-${tag}-"*   # an interrupted earlier attempt; never referenced
+  mkdir -p "${stage}"
+  release_image="${IMAGE}:release-${tag}"
+  if docker pull "${release_image}" > /dev/null 2>&1; then
+    log "release tree from ${release_image}"
+    extract="lacteva-release-extract-$$"
+    docker rm -f "${extract}" > /dev/null 2>&1 || true
+    docker create --name "${extract}" "${release_image}" > /dev/null \
+      || { rm -rf "${stage}"; die "could not create a container from ${release_image}"; }
+    # `/release/.` copies the CONTENTS: `docker cp /release` would nest it.
+    if ! docker cp "${extract}:/release/." "${stage}/"; then
+      docker rm -f "${extract}" > /dev/null 2>&1 || true
+      rm -rf "${stage}"
+      die "could not extract the release tree from ${release_image}"
+    fi
+    docker rm -f "${extract}" > /dev/null 2>&1 || true
+    # An empty or partial extraction would leave compose bind-mounting missing
+    # files, which surfaces much later as an unexplained nginx failure.
+    for required in docker-compose.production.yml infra/nginx/nginx.conf \
+                    infra/nginx/conf.d infra/deploy/verify-deployment.sh; do
+      [ -e "${stage}/${required}" ] \
+        || { rm -rf "${stage}"; die "the release image is missing ${required} — refusing to deploy an incomplete release"; }
+    done
+  else
+    # WO-70 deploy incident: the fallback ran when a transient pull failure met
+    # a STALE host tree, and shipped an August compose file over a September
+    # platform — the marketing service vanished and lacteva.com served the
+    # portal's login page. A tree this script cannot vouch for is not a release.
+    # The fallback now needs to be ASKED for, by name, for the one case it
+    # exists for: rolling back to a tag published before WO-44, which has no
+    # release image. Everything since has one, and a missing image is a reason
+    # to stop, not to guess.
+    if [ "${ALLOW_HOST_TREE:-}" != "1" ]; then
+      rm -rf "${stage}"
+      die "no ${release_image} in the registry (or the pull failed). Refusing to deploy from the host tree at ${SOURCE_TREE}: it may be stale. Re-run once the image pulls, or set ALLOW_HOST_TREE=1 for a pre-WO-44 tag."
+    fi
+    log "no ${release_image} — ALLOW_HOST_TREE=1: falling back to the host tree at ${SOURCE_TREE} (pre-WO-44 tag)"
+    rsync -a --delete --exclude '.git' "${SOURCE_TREE}/" "${stage}/" \
+      || { rm -rf "${stage}"; die "could not copy the host tree into the release"; }
+  fi
+  echo "${PREVIOUS}" > "${stage}/.deployed-tag"   # what to go BACK to
+  # The swap. A live tree is retired by rename, never deleted: the containers
+  # mounted out of it keep their inodes, and `current` is re-pointed by the
+  # caller a moment later.
+  if [ -e "${release}" ] || [ -L "${release}" ]; then
+    if release_is_live "${release}"; then
+      local retired="${RELEASES}/.retired-${tag}-$(date -u +%Y%m%dT%H%M%SZ)"
+      log "${release} is LIVE (current or a running container references it) — retiring it to ${retired}, not deleting it"
+      mv "${release}" "${retired}"
+    else
+      rm -rf "${release}"
+    fi
+  fi
+  mv "${stage}" "${release}"
+}
+
+retire_unreferenced_releases() {
+  # Retired trees go once nothing mounts them any more — checked, not assumed.
+  local d
+  for d in "${RELEASES}"/.retired-*; do
+    [ -e "${d}" ] || continue
+    if release_is_live "${d}"; then
+      log "keeping ${d}: a running container still mounts it"
+    else
+      rm -rf "${d}" && log "removed retired release tree ${d}"
+    fi
+  done
+}
+
 # --- arguments -------------------------------------------------------------
 TAG=""
 ROLLBACK_ONLY=0
@@ -234,9 +339,6 @@ fi
 # --- 3. record the release -------------------------------------------------
 step "3/6  staging release ${TAG}"
 RELEASE="${RELEASES}/${TAG}"
-rm -rf "${RELEASE}"
-mkdir -p "${RELEASE}"
-
 # WO-44: the release tree comes from the REGISTRY, at this tag.
 #
 # It used to come from `rsync "${SOURCE_TREE}/"` — the host's own current
@@ -267,43 +369,10 @@ case "${SELF}" in
   "$(readlink -f "${CURRENT}" 2>/dev/null)"/*|"${RELEASES}"/*) ;;
   *) log "WARNING: running ${SELF}, which is not a release's own copy — prefer ${CURRENT}/infra/deploy/deploy.sh" ;;
 esac
-RELEASE_IMAGE="${IMAGE}:release-${TAG}"
-if docker pull "${RELEASE_IMAGE}" > /dev/null 2>&1; then
-  log "release tree from ${RELEASE_IMAGE}"
-  EXTRACT="lacteva-release-extract-$$"
-  docker rm -f "${EXTRACT}" > /dev/null 2>&1 || true
-  docker create --name "${EXTRACT}" "${RELEASE_IMAGE}" > /dev/null \
-    || die "could not create a container from ${RELEASE_IMAGE}"
-  # `/release/.` copies the CONTENTS: `docker cp /release` would nest it.
-  if ! docker cp "${EXTRACT}:/release/." "${RELEASE}/"; then
-    docker rm -f "${EXTRACT}" > /dev/null 2>&1 || true
-    die "could not extract the release tree from ${RELEASE_IMAGE}"
-  fi
-  docker rm -f "${EXTRACT}" > /dev/null 2>&1 || true
-  # An empty or partial extraction would leave compose bind-mounting missing
-  # files, which surfaces much later as an unexplained nginx failure.
-  for required in docker-compose.production.yml infra/nginx/nginx.conf \
-                  infra/nginx/conf.d infra/deploy/verify-deployment.sh \
-                  infra/deploy/verify-release.sh infra/deploy/verify-log-pipeline.sh; do
-    [ -e "${RELEASE}/${required}" ] \
-      || die "the release image is missing ${required} — refusing to deploy an incomplete release"
-  done
-else
-  # WO-70 deploy incident: the fallback ran when a transient pull failure met
-  # a STALE host tree, and shipped an August compose file over a September
-  # platform — the marketing service vanished and lacteva.com served the
-  # portal's login page. A tree this script cannot vouch for is not a release.
-  # The fallback now needs to be ASKED for, by name, for the one case it
-  # exists for: rolling back to a tag published before WO-44, which has no
-  # release image. Everything since has one, and a missing image is a reason
-  # to stop, not to guess.
-  if [ "${ALLOW_HOST_TREE:-}" != "1" ]; then
-    die "no ${RELEASE_IMAGE} in the registry (or the pull failed). Refusing to deploy from the host tree at ${SOURCE_TREE}: it may be stale. Re-run once the image pulls, or set ALLOW_HOST_TREE=1 for a pre-WO-44 tag."
-  fi
-  log "no ${RELEASE_IMAGE} — ALLOW_HOST_TREE=1: falling back to the host tree at ${SOURCE_TREE} (pre-WO-44 tag)"
-  rsync -a --delete --exclude '.git' "${SOURCE_TREE}/" "${RELEASE}/"
-fi
-echo "${PREVIOUS}" > "${RELEASE}/.deployed-tag"   # what to go BACK to
+# Staged beside the release and swapped in complete, or not at all — see
+# release_is_live()/stage_release() above: this directory may be the one
+# production is mounted out of right now.
+stage_release "${TAG}"
 ln -sfn "${RELEASE}" "${CURRENT}"
 cd "${CURRENT}"
 # From here the subject is the NEW release, and every container recreated
@@ -393,6 +462,7 @@ if ! ./infra/deploy/smoke-test.py --base-url "${SMOKE_URL:-http://localhost}" "$
   die "deployment ${TAG} failed the smoke test. Left running for inspection (--no-rollback)."
 fi
 
+retire_unreferenced_releases
 printf '\n\033[32mDEPLOYED %s\033[0m\n' "${TAG}" | tee -a "${LOG}"
 log "previous release ${PREVIOUS:-none} — roll back with: $0 --rollback"
 [ "${SCHEMA_BEFORE}" != "${SCHEMA_AFTER}" ] && \
