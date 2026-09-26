@@ -737,6 +737,10 @@ def _safe_prod(**overrides):
     exactly one thing and know that is what failed."""
     base = dict(
         env="prod",
+        # WO-100: the reference production configuration names the portal —
+        # it is the link in every invitation and password-reset email, and
+        # prod refuses to start without an https value.
+        portal_public_url="https://app.lacteva.com",
         jwt_algorithm="HS256",
         jwt_secret="a-real-secret",
         minio_secret_key="a-real-minio-secret",
