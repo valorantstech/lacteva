@@ -1164,7 +1164,8 @@ async def test_a_tenant_cannot_put_markup_in_somebody_else_s_mail(monkeypatch):
     # markup: every angle bracket that came from a value is escaped, so the
     # browser renders characters rather than elements.
     assert "<script>" not in html
-    assert "<img" not in html
+    # WO-105: the ONE image is the logo; the injected one is text.
+    assert html.count("<img") == 1 and "<img src=x" not in html
     assert "<b>not-bold</b>" not in html
     assert "&lt;script&gt;" in html  # escaped, and still legible
     assert "&lt;img src=x onerror=alert(1)&gt;" in html
@@ -1193,8 +1194,18 @@ async def test_the_page_needs_nothing_the_recipient_has_to_fetch(monkeypatch):
     await providers.SmtpEmailProvider().send(message)
     html = captured["mail"].get_body(("html",)).get_content()
 
-    for forbidden in ("<script", "<svg", "<img", "http://", "https://", "<link"):
+    for forbidden in ("<script", "<svg", "http://", "<link"):
         assert forbidden not in html, f"the page depends on {forbidden}"
+    # WO-105: ONE image — the logo, by absolute versioned URL with explicit
+    # size and alt text, so the page reads with images off — and nothing
+    # else remote. Every https:// on the page is the logo or lacteva.com.
+    import re
+
+    from platform_core.modules.notification.email_design import LOGO_URL
+
+    assert html.count("<img") == 1
+    assert f'src="{LOGO_URL}" width="180" height="44" alt="Lacteva"' in html
+    assert set(re.findall(r'https://[^\s"<]+', html)) <= {LOGO_URL, "https://lacteva.com"}
 
 
 async def test_a_message_with_no_single_secret_gets_no_code_box(monkeypatch):

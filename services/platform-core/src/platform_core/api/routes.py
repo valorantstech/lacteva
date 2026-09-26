@@ -3132,7 +3132,7 @@ async def preview_notification_template(
         user=str(p.id),
         endpoint="notification-preview",
     )
-    return service.preview(key, body.channel, body.language, body.variables)
+    return await service.preview_with_html(key, body.channel, body.language, body.variables)
 
 
 @notification_router.get("/notifications/{notification_id}", response_model=NotificationView)

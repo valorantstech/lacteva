@@ -579,3 +579,45 @@ describe("the template registry panel", () => {
     }
   });
 });
+
+/**
+ * WO-105: the owner can look at what customers receive without sending one —
+ * the preview of an email template renders the platform's HTML in a
+ * sandboxed frame beside the text.
+ */
+describe("the email preview", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("shows the rendered email in a sandboxed frame when the platform returns one", async () => {
+    stubApi();
+    vi.spyOn(api, "listNotificationTemplates").mockResolvedValue([
+      {
+        key: "invitation",
+        channel: "email",
+        language: "en",
+        title: "You have been invited to join {organization}",
+        body: "You have been invited to join {organization} as its {role}.",
+        variables: ["organization", "role"],
+      },
+    ] as never);
+    const preview = vi.spyOn(api, "previewNotificationTemplate").mockResolvedValue({
+      key: "invitation",
+      channel: "email",
+      language: "en",
+      title: "You have been invited to join Patel Dairy Shop and Sweets",
+      body: "You have been invited to join Patel Dairy Shop and Sweets as its owner.",
+      variables_used: {},
+      html: "<!doctype html><html><body><p>Designed</p></body></html>",
+    });
+    render(<NotificationsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /Show template catalog/ }));
+    // Choose the template in the catalog, then render it.
+    fireEvent.click(await screen.findByRole("button", { name: "Preview" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Render" }));
+    await waitFor(() => expect(preview).toHaveBeenCalled());
+    const frame = (await screen.findByTestId("email-preview")) as HTMLIFrameElement;
+    expect(frame.getAttribute("sandbox")).toBe("");
+    expect(frame.getAttribute("srcdoc")).toContain("Designed");
+    expect(frame.title).toContain("Email preview");
+  });
+});

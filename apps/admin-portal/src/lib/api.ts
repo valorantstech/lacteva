@@ -1814,6 +1814,8 @@ export type RenderedPreview = {
   title: string;
   body: string;
   variables_used: Record<string, unknown>;
+  /** WO-105: for the email channel, the page a mail client would show. */
+  html?: string | null;
 };
 
 export function listNotifications(params: {

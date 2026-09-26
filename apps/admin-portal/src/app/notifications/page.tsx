@@ -651,6 +651,19 @@ function TemplateCatalog({ templates }: { templates: NotificationTemplate[] }) {
                 <p className="whitespace-pre-wrap text-muted-foreground">
                   {preview.body}
                 </p>
+                {/* WO-105: the email as a mail client shows it — so an owner
+                    can look at what customers receive without sending one.
+                    Sandboxed: the page is ours, but it is still a document
+                    rendered from tenant-controlled words. */}
+                {preview.html ? (
+                  <iframe
+                    title={`Email preview: ${preview.title}`}
+                    data-testid="email-preview"
+                    sandbox=""
+                    srcDoc={preview.html}
+                    className="mt-3 h-[720px] w-full rounded-md border border-border bg-white"
+                  />
+                ) : null}
               </div>
             )}
           </div>

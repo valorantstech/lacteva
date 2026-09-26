@@ -36,6 +36,7 @@ from platform_core.core.org_context import tenant_locale
 from platform_core.core.tenancy import get_current_tenant, require_current_tenant
 from platform_core.modules.event_relay.consumers import MAX_CONSUMER_ATTEMPTS
 from platform_core.modules.event_relay.service import backoff_delay
+from platform_core.modules.notification.email_design import EMAIL_SECRET_VARIABLES, email_parts
 from platform_core.modules.notification.models import (
     Notification,
     NotificationDevice,
@@ -46,6 +47,7 @@ from platform_core.modules.notification.providers import (
     OutboundMessage,
     PermanentSendError,
     ProviderSendError,
+    email_html,
     get_provider,
     vendor_template_for,
 )
@@ -59,6 +61,7 @@ from platform_core.modules.notification.templates import (
     render,
     select_template_key,
 )
+from platform_core.modules.organization.service import sender_contact
 
 log = structlog.get_logger("notification")
 
@@ -346,6 +349,10 @@ class RenderedPreview(BaseModel):
     title: str
     body: str
     variables_used: dict
+    #: WO-105: for the email channel, the page a mail client would show —
+    #: so an owner can look at what their customers receive without sending
+    #: one. None for every other channel.
+    html: str | None = None
 
 
 #: Config key a tenant sets to choose how its people are reached, per purpose.
@@ -572,6 +579,17 @@ class NotificationService:
                 else message
             )
             provider = get_provider(notification.channel)
+            # WO-105: the email's structure — button, code box, bill table,
+            # who it is from and why — from the same values the text shows.
+            presentation = None
+            if notification.channel == "email":
+                presentation = email_parts(
+                    template.key,
+                    message.language,
+                    variables,
+                    secrets_in_play,
+                    await sender_contact(self._session, notification.tenant_id),
+                )
             # Provider latency is the number that tells an operator whether a
             # delivery backlog is the gateway's fault or ours.
             with NOTIFICATION_PROVIDER_SECONDS.labels(notification.channel, provider.name).time():
@@ -601,6 +619,7 @@ class NotificationService:
                             if len(secrets_in_play) == 1
                             else None
                         ),
+                        presentation=presentation,
                     )
                 )
         except PermanentSendError as exc:
@@ -1334,6 +1353,33 @@ class NotificationService:
             body=message.body,
             variables_used=values,
         )
+
+    async def preview_with_html(
+        self, key: str, channel: str, language: str | None, variables: dict
+    ) -> RenderedPreview:
+        """`preview`, plus the rendered page for an email — from THIS
+        session's organisation, so the footer and the pay-to block are the
+        reader's own (WO-105)."""
+        rendered = self.preview(key, channel, language, variables)
+        if channel != "email":
+            return rendered
+        template = get_template(key, channel, language)
+        values = dict(rendered.variables_used)
+        sender = await sender_contact(self._session, get_current_tenant())
+        secrets = {k: v for k, v in values.items() if k in EMAIL_SECRET_VARIABLES}
+        rendered.html = email_html(
+            OutboundMessage(
+                channel="email",
+                recipient="preview@example.invalid",
+                title=rendered.title,
+                body=rendered.body,
+                language=template.language,
+                template_key=template.key,
+                notification_id=uuid.UUID(int=0),
+                presentation=email_parts(template.key, template.language, values, secrets, sender),
+            )
+        )
+        return rendered
 
 
 def _timedelta_seconds(seconds: float):

@@ -62,6 +62,21 @@ def role_label(role_name: str) -> str:
     return ROLE_LABELS.get(role_name, role_name.replace("_", " ").replace("-", " ").lower())
 
 
+async def sender_contact(session: AsyncSession, tenant_id: uuid.UUID | None):
+    """WO-105: who a tenant's email is from — its name, phone, address and
+    "Pay to" line (WO-83 §2a) — for the footer and the bill's pay-to block.
+    The notification module asks HERE rather than reading this module's
+    table, and a platform-level message (no tenant) is from Lacteva."""
+    from platform_core.modules.notification.email_design import PLATFORM_SENDER, Sender
+
+    if tenant_id is None:
+        return PLATFORM_SENDER
+    org = await session.get(Organization, tenant_id)
+    if org is None:
+        return PLATFORM_SENDER
+    return Sender(name=org.name, phone=org.phone, address=org.address, pay_to=org.pay_to)
+
+
 class CreateOrganizationCommand(BaseModel):
     """Onboarding asks ONE locale question: where are you? (DEMO-013 §4)
 

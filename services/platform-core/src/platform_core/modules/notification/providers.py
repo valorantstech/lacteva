@@ -14,6 +14,7 @@ runtime through `register_provider` — the seam deployments and tests use.
 
 import asyncio
 import json
+import re
 import smtplib
 import uuid
 from dataclasses import dataclass, field
@@ -26,6 +27,17 @@ import structlog
 from platform_core.core import webhook_security
 from platform_core.core.config import get_settings
 from platform_core.infrastructure.notifications import Notification, get_notifier
+from platform_core.modules.notification import email_design as _design
+from platform_core.modules.notification.email_design import (
+    LOGO_HEIGHT,
+    LOGO_URL,
+    LOGO_WIDTH,
+    NAVY,
+    RULE_GREEN,
+    TAGLINE,
+    EmailParts,
+    labels_for,
+)
 
 log = structlog.get_logger("notification.provider")
 
@@ -107,6 +119,12 @@ class OutboundMessage:
     #: message did not already contain, and the text part stays exactly as the
     #: template wrote it.
     highlight: str | None = None
+    #: WO-105: what the EMAIL wrapper renders around the words — the action as
+    #: a button, the code as a box, a bill's figures as a table, who it is
+    #: from and why the reader got it. Built by `email_design.email_parts`;
+    #: None means "paragraphs only", which is what every other channel and a
+    #: message built by hand gets.
+    presentation: EmailParts | None = None
 
     @property
     def idempotency_key(self) -> str:
@@ -784,11 +802,12 @@ class HttpWhatsAppProvider(HttpSmsProvider):
 #: heuristics — so a logo delivered as artwork is a logo most recipients never
 #: see. A wordmark set in the brand colour renders identically everywhere,
 #: including in a text-only preview pane.
-_DAIRY = "#1B5E20"  # tools/brand/mark.json
-_MILK = "#FDFBF4"
-_INK = "#1A1C19"
-_MUTED = "#5B6159"
-_RULE = "#DCE5DA"
+# tools/brand/mark.json, via email_design — one source for the email's colours.
+_DAIRY = _design.DAIRY
+_MILK = _design.MILK
+_INK = _design.INK
+_MUTED = _design.MUTED
+_RULE = _design.RULE
 #: One stack, so the message reads the same in every block of it.
 _FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif"
 
@@ -798,122 +817,218 @@ _RTL_LANGUAGES = frozenset({"ar", "fa", "he", "ur"})
 
 
 def _html_document(message: "OutboundMessage") -> str:
-    """The same message, laid out (WO-49).
+    """The page an email client shows (WO-105 · LACTEVA-NOTIFY-003).
 
-    WHY THE TRANSPORT BUILDS THIS AND NOT THE TEMPLATE CATALOG. The catalog
-    renders one string per template per language, and that string is what SMS
-    and WhatsApp send; giving it a second, HTML rendering would double every
-    entry in four languages and put markup where translators work. The plain
-    text stays the single source of the words. This wraps it — the domain says
-    what the message means, the adapter decides what it looks like in a medium
-    that has a page.
+    Templates are plain text in four languages — what SMS and WhatsApp send
+    — and the text stays the single source of the words. This wraps it: the
+    logo in a white header with a green accent rule, the words as
+    paragraphs, and — from `message.presentation` — the action as a
+    bulletproof button with the raw link beneath it, the code as a labelled
+    box, a bill's figures as a summary table with the amount due set large
+    and the shop's "Pay to" block, and a footer that says who sent it and
+    why. With no presentation it is paragraphs and the code box, as before.
 
-    The text part is sent UNCHANGED beside it. That is not politeness: the E2E
-    harness and the demo seeder both read the token out of the plain body with
-    a regular expression, so rewording it would break the proof that this
-    channel works at all. It is also what text-only clients, screen readers and
-    every spam filter that prefers multipart/alternative will read.
+    The text part is sent UNCHANGED beside it (multipart/alternative, text
+    first): the E2E harness and the demo seeder read the token out of the
+    plain body, and text-only clients, screen readers and spam filters read
+    it too.
 
-    Written to the constraints email actually has rather than the ones a
-    browser has: tables for structure, every style inline, no external asset,
-    no JavaScript, one column, 600px. `dir` follows the message's language.
+    Written to the constraints email actually has: tables for structure,
+    every style inline, ONE image (the logo, by absolute versioned URL with
+    explicit size and alt text — not a data: URI, which Gmail strips, and not
+    a CID attachment), no JavaScript, one column, 600px, full width below
+    it, 16px body text, everything readable with images off. `lang` and
+    `dir` follow the message's language. Every value reaches the page
+    through a tenant-controlled string, so everything is escaped.
     """
     import html as _html
 
-    rtl = message.language.split("-")[0].lower() in _RTL_LANGUAGES
+    parts = message.presentation
+    language = message.language or "en"
+    rtl = language.split("-")[0].lower() in _RTL_LANGUAGES
     direction = "rtl" if rtl else "ltr"
     align = "right" if rtl else "left"
+    labels = parts.labels if parts and parts.labels else labels_for(language)
+    esc = _html.escape
 
-    title = _html.escape(message.title)
-
-    # Every value here reaches the page through a tenant-controlled string —
-    # an organization is named by whoever created it — so it is escaped, not
-    # trusted. A dairy called `<script>` is a strange name, not an exploit.
-    def _paragraphs(text: str) -> str:
-        return "".join(
+    def paragraph(text: str) -> str:
+        return (
             f'<p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:{_INK};">'
-            f"{_html.escape(part)}</p>"
-            for part in text.split("\n\n")
-            if part.strip()
+            f"{esc(text)}</p>"
         )
 
-    # The code takes its own place IN the sentence rather than appearing twice.
-    #
-    # The template writes it inline — "Use this code to complete your reset:
-    # Wc1T3hn…-mvUg. The code expires in 2 hours." — which is right for SMS and
-    # for the text part, and wrong for a page: the first mail this platform
-    # sent showed a forty-character token mid-paragraph AND again in a box
-    # below it. Splitting the body at the token keeps the sentence the
-    # translators wrote, in whatever language they wrote it, and lets the box
-    # stand where the token stood. No template needs a second version.
-    before, after = message.body, ""
-    if message.highlight and message.highlight in message.body:
-        before, _, after = message.body.partition(message.highlight)
-        # The punctuation that followed the token belonged to the token, not
-        # to the sentence after it.
-        after = after.lstrip(".,;:،。 \t\n")
-    paragraphs = _paragraphs(before.rstrip())
-    trailing = _paragraphs(after)
+    def button(label: str, url: str) -> str:
+        # A padded table-cell anchor, with the VML fallback Outlook needs.
+        return (
+            '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
+            'style="margin:8px 0 12px;"><tr>'
+            f'<td style="border-radius:8px;background:{_DAIRY};">'
+            "<!--[if mso]>"
+            f'<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="{esc(url)}" '
+            'style="height:46px;v-text-anchor:middle;width:260px;" arcsize="18%" '
+            f'strokecolor="{_DAIRY}" fillcolor="{_DAIRY}"><w:anchorlock/>'
+            f'<center style="color:#FFFFFF;font-family:{_FONT};font-size:16px;font-weight:600;">'
+            f"{esc(label)}</center></v:roundrect><![endif]-->"
+            "<!--[if !mso]><!-- -->"
+            f'<a href="{esc(url)}" style="display:inline-block;padding:13px 26px;'
+            f"font-family:{_FONT};font-size:16px;font-weight:600;line-height:20px;"
+            f'color:#FFFFFF;text-decoration:none;border-radius:8px;background:{_DAIRY};">'
+            f"{esc(label)}</a><!--<![endif]--></td></tr></table>"
+            f'<p style="margin:0 0 20px;font-size:12px;line-height:1.5;color:{_MUTED};'
+            f'word-break:break-all;">{esc(labels["fallback"])}<br>'
+            f'<a href="{esc(url)}" style="color:{_MUTED};">{esc(url)}</a></p>'
+        )
 
-    code_block = ""
-    if message.highlight:
-        code_block = f"""
-              <tr><td style="padding:8px 0 24px;">
-                <div style="border:1px solid {_RULE};border-radius:8px;background:{_MILK};
-                            padding:18px 20px;text-align:center;">
-                  <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;
-                              color:{_MUTED};margin-bottom:8px;">
-                    {_html.escape(_code_label(message))}</div>
-                  <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-                              font-size:18px;line-height:1.45;color:{_INK};word-break:break-all;
-                              direction:ltr;unicode-bidi:embed;">
-                    {_html.escape(message.highlight)}</div>
-                </div>
-              </td></tr>"""
+    def code_box(label: str, code: str) -> str:
+        # Nothing touches the code: a long-press on a phone selects it alone
+        # (WO-100's lesson, now visual). LTR whatever the page's direction.
+        return (
+            f'<div style="border:1px solid {_RULE};border-radius:8px;background:{_MILK};'
+            'padding:18px 20px;margin:4px 0 24px;text-align:center;">'
+            '<div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;'
+            f'color:{_MUTED};margin-bottom:8px;">{esc(label)}</div>'
+            '<div style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;'
+            f"font-size:20px;letter-spacing:.06em;line-height:1.45;color:{_INK};"
+            'word-break:break-all;direction:ltr;unicode-bidi:embed;">'
+            f"{esc(code)}</div></div>"
+        )
 
-    return f'''<!doctype html>
-<html lang="{_html.escape(message.language)}" dir="{direction}">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light">
-<title>{title}</title>
-</head>
-<body style="margin:0;padding:0;background:#F1F4F0;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-         style="background:#F1F4F0;padding:24px 12px;">
-    <tr><td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
-             style="width:100%;max-width:600px;background:#FFFFFF;
-                    border:1px solid {_RULE};
-                    border-radius:12px;overflow:hidden;">
-        <tr><td style="background:{_DAIRY};padding:20px 28px;">
-          <span style="font-size:20px;font-weight:700;letter-spacing:.02em;color:{_MILK};
-                       font-family:{_FONT};">
-            Lacteva</span>
-        </td></tr>
-        <tr><td dir="{direction}" align="{align}"
-                style="padding:28px;text-align:{align};
-                       font-family:{_FONT};">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-            <tr><td style="padding-bottom:4px;">
-              <h1 style="margin:0 0 16px;font-size:20px;line-height:1.35;color:{_INK};
-                         font-weight:600;">{title}</h1>
-            </td></tr>
-            <tr><td>{paragraphs}</td></tr>{code_block}
-            <tr><td>{trailing}</td></tr>
-          </table>
-        </td></tr>
-        <tr><td style="border-top:1px solid {_RULE};padding:18px 28px;">
-          <p style="margin:0;font-size:12px;line-height:1.5;color:{_MUTED};
-                    font-family:{_FONT};">
-            This is an automated message from Lacteva. Please do not reply.</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>'''
+    def summary_table() -> str:
+        if not parts or not (parts.summary or parts.amount):
+            return ""
+        cell = f"padding:9px 0;border-bottom:1px solid {_RULE};font-size:15px;"
+        rows = "".join(
+            f'<tr><td style="{cell}color:{_MUTED};">{esc(k)}</td>'
+            f'<td align="right" dir="ltr" style="{cell}color:{_INK};text-align:right;'
+            f'font-variant-numeric:tabular-nums;white-space:nowrap;">{esc(v)}</td></tr>'
+            for k, v in parts.summary
+        )
+        amount = ""
+        if parts.amount:
+            amount = (
+                f'<tr><td style="padding:14px 0 4px;font-size:15px;font-weight:600;color:{_INK};">'
+                f"{esc(parts.amount[0])}</td>"
+                '<td align="right" dir="ltr" style="padding:14px 0 4px;font-size:26px;'
+                f"font-weight:700;letter-spacing:-.01em;color:{_INK};text-align:right;"
+                f'font-variant-numeric:tabular-nums;white-space:nowrap;">{esc(parts.amount[1])}</td></tr>'
+            )
+        pay_to = ""
+        if parts.pay_to:
+            pay_to = (
+                f'<div style="border:1px solid {_RULE};border-radius:8px;background:{_MILK};'
+                'padding:14px 16px;margin:16px 0 8px;">'
+                '<div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;'
+                f'color:{_MUTED};margin-bottom:6px;">{esc(labels["pay_to"])}</div>'
+                f'<div style="font-size:15px;line-height:1.5;color:{_INK};">{esc(parts.pay_to)}</div>'  # noqa: E501
+                "</div>"
+            )
+        return (
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            f'style="margin:4px 0 12px;border-top:2px solid {RULE_GREEN};">'
+            f"{rows}{amount}</table>{pay_to}"
+        )
+
+    # --- the body: the template's paragraphs, with the link and the code
+    #     replaced by the button and the box where they stood -----------------
+    action = parts.action if parts else None
+    code = (parts.code if parts and parts.code else message.highlight) or None
+    code_label = parts.code_label if parts and parts.code_label else _code_label(message)
+    amount_value = parts.amount[1] if parts and parts.amount else None
+
+    body_html: list[str] = []
+    table_done = False
+    code_done = False
+    for part in message.body.split("\n\n"):
+        part = part.strip()
+        if not part:
+            continue
+        if action and action.url and action.url in part:
+            # The sentence that introduced the link ("Click this link to
+            # join:") is the text part's; on a page the BUTTON says what
+            # happens, so the sentence and the raw URL become the button,
+            # with the URL beneath it as the fallback.
+            body_html.append(button(action.label, action.url))
+            continue
+        if code and code in part:
+            before, _, after = part.partition(code)
+            if before.strip():
+                body_html.append(paragraph(before.strip()))
+            body_html.append(code_box(code_label, code))
+            code_done = True
+            after = after.lstrip(".,;:،。 \t\n")
+            if after.strip():
+                body_html.append(paragraph(after.strip()))
+            continue
+        if not table_done and amount_value and amount_value.split()[0] in part and parts.summary:
+            # The figures the text lists as "Label: value" lines are the
+            # table's rows here; only the sentence stays above it.
+            prose = [
+                line
+                for line in part.split("\n")
+                if not re.match(r"^[^:\n]{1,40}: \S", line.strip())
+            ]
+            if prose:
+                body_html.append(paragraph(" ".join(line.strip() for line in prose)))
+            body_html.append(summary_table())
+            table_done = True
+            continue
+        body_html.append(paragraph(part))
+    if not table_done and parts and (parts.summary or parts.amount):
+        body_html.append(summary_table())
+    if code and not code_done:
+        # A code the template did not write into its own sentence (a message
+        # built by hand, or a template that names it elsewhere) still gets
+        # its box: the one value the reader must act on is never left out.
+        body_html.append(code_box(code_label, code))
+
+    # --- the footer: who, why, and that nobody is reading replies ------------
+    sender = parts.sender if parts else None
+    footer_lines = [esc(TAGLINE)]
+    if parts:
+        footer_lines.append(esc(parts.why))
+    if sender and not sender.is_platform:
+        footer_lines.append(esc(labels["questions"].format(contact=sender.contact_line)))
+    footer_lines.append(esc(labels["automated"]))
+    footer = "<br>".join(footer_lines)
+
+    title = esc(message.title)
+    body = "".join(body_html)
+    return (
+        "<!doctype html>\n"
+        f'<html lang="{esc(language)}" dir="{direction}">\n'
+        '<head>\n<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
+        '<meta name="color-scheme" content="light">\n'
+        '<meta name="supported-color-schemes" content="light">\n'
+        f"<title>{title}</title>\n</head>\n"
+        '<body style="margin:0;padding:0;background:#F1F4F0;">\n'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        'style="background:#F1F4F0;padding:24px 12px;"><tr><td align="center">\n'
+        '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+        f'style="width:100%;max-width:600px;background:#FFFFFF;border:1px solid {_RULE};'
+        'border-radius:12px;overflow:hidden;">\n'
+        # The header: WHITE, with the full-colour logo and the green accent rule.
+        f'<tr><td style="background:#FFFFFF;padding:22px 28px 18px;border-bottom:3px solid {RULE_GREEN};">'  # noqa: E501
+        '<a href="https://lacteva.com" style="text-decoration:none;">'
+        f'<img src="{LOGO_URL}" width="{LOGO_WIDTH}" height="{LOGO_HEIGHT}" alt="Lacteva" '
+        f'style="display:block;width:{LOGO_WIDTH}px;height:{LOGO_HEIGHT}px;border:0;outline:none;">'
+        "</a></td></tr>\n"
+        f'<tr><td dir="{direction}" align="{align}" style="padding:28px;text-align:{align};font-family:{_FONT};">'  # noqa: E501
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
+        f'<tr><td style="padding-bottom:4px;"><h1 style="margin:0 0 16px;font-size:22px;line-height:1.35;'  # noqa: E501
+        f'color:{NAVY};font-weight:600;">{title}</h1></td></tr>'
+        f"<tr><td>{body}</td></tr></table></td></tr>\n"
+        f'<tr><td style="border-top:1px solid {_RULE};background:{_MILK};padding:18px 28px;">'
+        f'<p style="margin:0;font-size:12px;line-height:1.6;color:{_MUTED};font-family:{_FONT};">{footer}</p>'  # noqa: E501
+        f'<p style="margin:10px 0 0;font-size:12px;line-height:1.5;color:{_DAIRY};font-weight:600;'
+        f'font-family:{_FONT};">Lacteva</p></td></tr>\n'
+        "</table></td></tr></table>\n</body>\n</html>"
+    )
+
+
+def email_html(message: "OutboundMessage") -> str:
+    """The email's HTML part, for previews and proofs (WO-105)."""
+    return _html_document(message)
 
 
 def _code_label(message: "OutboundMessage") -> str:
