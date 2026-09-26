@@ -281,6 +281,7 @@ async def test_component_health_names_every_component(client):
         "outbox",
         "projections",
         "redis",
+        "turnstile",  # WO-103: the bot check's state, ON or loudly OFF
     }
     assert body["status"] in ("healthy", "warning", "degraded", "critical")
     assert isinstance(body["ready"], bool)
