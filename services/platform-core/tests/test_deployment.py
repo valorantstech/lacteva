@@ -295,11 +295,292 @@ def test_the_docker_socket_proxy_lets_promtail_discover_targets():
 
 
 def test_the_deploy_verification_fails_on_an_empty_log_store():
-    script = (REPO / "infra/deploy/verify-deployment.sh").read_text()
+    script = (REPO / "infra/deploy/verify-log-pipeline.sh").read_text()
     assert "promtail_sent_entries_total" in script
     assert "query_range" in script and "request_id" in script.lower()
     assert 'fail "promtail has shipped NOTHING' in script
-    assert 'fail "a request made a minute ago cannot be found in Loki' in script
+    assert 'fail "a request made' in script and "cannot be found in Loki" in script
+    # verify-deployment.sh runs it and counts its failure.
+    runner = (REPO / "infra/deploy/verify-deployment.sh").read_text()
+    assert "verify-log-pipeline.sh" in runner
+    assert runner.index("verify-log-pipeline.sh") < runner.index('if [ "${FAILURES}" -eq 0 ]')
+
+
+# --- WO-102: the log-pipeline check waits for promtail; the rollback is whole
+
+# A `COMPOSE` command that plays api, promtail and Loki. promtail's counter is
+# zero until FAKE_SHIPS_AFTER seconds have passed since first use; Loki finds
+# the probe only once promtail has shipped, and only if FAKE_QUERYABLE=1.
+_FAKE_COMPOSE = """#!/usr/bin/env bash
+[ -f "$FAKE_STARTED" ] || date +%s > "$FAKE_STARTED"
+age=$(( $(date +%s) - $(cat "$FAKE_STARTED") ))
+shipped=0; [ "$age" -ge "$FAKE_SHIPS_AFTER" ] && shipped=1
+# $1=exec $2=-T $3=service, the rest is the command
+case "$3" in
+  api) exit 0 ;;
+  promtail)
+    if [ "$shipped" = 1 ]; then echo 'promtail_sent_entries_total{host="x"} 142'
+    else echo 'promtail_sent_entries_total{host="x"} 0'; fi ;;
+  loki)
+    if [ "$shipped" = 1 ] && [ "$FAKE_QUERYABLE" = 1 ]; then
+      echo "${@: -1}" | sed -n 's/.*%22\\(verify-[^%]*\\)%22.*/{"line":"\\1"}/p'
+    else echo '{}'; fi ;;
+esac
+"""
+
+
+def _run_log_pipeline(tmp_path, *, ships_after: int, timeout: str, queryable: bool = True):
+    import os
+    import subprocess
+
+    fake = tmp_path / "compose"
+    fake.write_text(_FAKE_COMPOSE)
+    fake.chmod(0o755)
+    env = {
+        **os.environ,
+        "COMPOSE": str(fake),
+        "FAKE_STARTED": str(tmp_path / "started"),
+        "FAKE_SHIPS_AFTER": str(ships_after),
+        "FAKE_QUERYABLE": "1" if queryable else "0",
+        "LOG_PIPELINE_POLL": "1",
+        "LOG_PIPELINE_TIMEOUT": timeout,
+    }
+    return subprocess.run(
+        [str(REPO / "infra/deploy/verify-log-pipeline.sh")],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def test_the_log_pipeline_check_waits_for_a_promtail_that_starts_at_zero(tmp_path):
+    """The b7d75d3 deploy was rolled back because this check fired seconds
+    after promtail was recreated, saw promtail_sent_entries_total=0 and
+    failed; a minute later the rollback's own run saw 142 lines. A promtail
+    that starts at zero and ships after 20 s must PASS, not fail."""
+    result = _run_log_pipeline(tmp_path, ships_after=20, timeout="90")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "promtail has shipped 142 lines to Loki" in result.stdout
+    assert "queryable in Loki by its request_id" in result.stdout
+    # It says how long it waited, and it did wait: not 0 s, not the whole timeout.
+    waited = [int(m) for m in re.findall(r"after (\d+)s", result.stdout)]
+    assert waited and 18 <= waited[-1] < 60, result.stdout
+
+
+def test_the_log_pipeline_check_fails_the_same_promtail_without_the_wait(tmp_path):
+    """The proof can refuse: the same 20-second promtail with no wait is the
+    old behaviour, and it fails — so the wait is what changed."""
+    result = _run_log_pipeline(tmp_path, ships_after=20, timeout="0")
+    assert result.returncode == 1
+    assert "promtail has shipped NOTHING to Loki after waiting 0s" in result.stderr
+
+
+def test_the_log_pipeline_check_still_fails_when_nothing_ever_ships(tmp_path):
+    """A wait is not a pass: a promtail that never ships fails after the
+    timeout, and the message names the wait so the reader knows it was
+    given every chance."""
+    result = _run_log_pipeline(tmp_path, ships_after=10_000, timeout="3")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "promtail has shipped NOTHING to Loki after waiting" in result.stderr
+    assert re.search(r"after waiting [3-9]s", result.stderr), result.stderr
+
+
+def test_the_log_pipeline_check_fails_when_loki_cannot_find_the_request(tmp_path):
+    """Shipped is not delivered: a counter that moves while the query finds
+    nothing is still a failure."""
+    result = _run_log_pipeline(tmp_path, ships_after=0, timeout="3", queryable=False)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "promtail has shipped 142 lines" in result.stdout
+    assert "cannot be found in Loki by its request_id" in result.stderr
+
+
+def test_rollback_restores_every_app_service_and_repoints_current():
+    """A rollback that restores api and nginx only leaves portal and
+    marketing on the failed release, and `current` naming it (found after
+    the b7d75d3 rollback: api on 9e68ce0, the rest on b7d75d3)."""
+    script = (INFRA / "deploy" / "deploy.sh").read_text()
+    body = script[script.index("rollback_to() {") : script.index("# --- arguments")]
+    assert "compose up -d --no-deps api portal marketing nginx" in body
+    assert 'ln -sfn "${RELEASES}/${tag}" "${CURRENT}"' in body
+    assert "verify-release.sh" in body, "the rollback must prove every container's tag"
+    assert "ROLLBACK LEFT A CONTAINER ON THE WRONG RELEASE" in body
+    # Every app service the compose file tags with the release is covered.
+    services = _compose()["services"]
+    tagged = {n for n, svc in services.items() if "LACTEVA_IMAGE_TAG" in str(svc.get("image", ""))}
+    assert tagged == {"api", "portal", "marketing", "migrate"}, tagged
+    checker = (INFRA / "deploy" / "verify-release.sh").read_text()
+    for name in tagged - {"migrate"}:
+        assert re.search(rf"for svc in [^;]*\b{name}\b", checker), name
+    # And `migrate` stays out — a code rollback never touches the schema.
+    assert "migrate" not in body.split("compose up -d")[1].split("||")[0]
+    # The release check also guards the deploy itself, before verification.
+    assert script.index("verify-release.sh") < script.index("./infra/deploy/verify-deployment.sh")
+
+
+# `docker compose … ps -q <svc>` and `docker inspect <id>` over a stack whose
+# containers run the images listed in FAKE_RUNNING as "svc=image" lines.
+_FAKE_DOCKER_PS = """#!/usr/bin/env bash
+if [ "$1" = inspect ]; then id="${@: -1}"; sed -n "s/^${id#id-}=//p" "$FAKE_RUNNING"; exit 0; fi
+while [ "$1" != ps ]; do shift; done
+grep -q "^$3=" "$FAKE_RUNNING" && echo "id-$3"
+exit 0
+"""
+
+
+def _run_verify_release(tmp_path, running: dict[str, str], tag: str):
+    import os
+    import subprocess
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "docker").write_text(_FAKE_DOCKER_PS)
+    (bindir / "docker").chmod(0o755)
+    listing = tmp_path / "running"
+    listing.write_text("".join(f"{svc}={image}\n" for svc, image in running.items()))
+    env = {
+        **os.environ,
+        "PATH": f"{bindir}:{os.environ['PATH']}",
+        "COMPOSE": "docker compose",
+        "FAKE_RUNNING": str(listing),
+    }
+    return subprocess.run(
+        [str(REPO / "infra/deploy/verify-release.sh"), tag],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def test_verify_release_passes_when_every_app_container_is_on_the_tag(tmp_path):
+    running = {
+        "api": "lacteva/platform-core:main-abc1234",
+        "portal": "lacteva/admin-portal:main-abc1234",
+        "marketing": "lacteva/admin-portal:marketing-main-abc1234",
+    }
+    result = _run_verify_release(tmp_path, running, "main-abc1234")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.count("is on") == 3
+
+
+def test_verify_release_fails_loudly_on_a_half_rollback(tmp_path):
+    """Exactly production after the b7d75d3 rollback: api restored, the
+    other two still on the failed release."""
+    running = {
+        "api": "lacteva/platform-core:main-9e68ce0",
+        "portal": "lacteva/admin-portal:main-b7d75d3",
+        "marketing": "lacteva/admin-portal:marketing-main-b7d75d3",
+    }
+    result = _run_verify_release(tmp_path, running, "main-9e68ce0")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "portal is on lacteva/admin-portal:main-b7d75d3, not :main-9e68ce0" in result.stderr
+    assert (
+        "marketing is on lacteva/admin-portal:marketing-main-b7d75d3, not :marketing-main-9e68ce0"
+        in result.stderr
+    )
+    assert "api is on lacteva/platform-core:main-9e68ce0" in result.stdout
+
+
+def test_verify_release_fails_when_an_app_container_is_missing(tmp_path):
+    running = {
+        "api": "lacteva/platform-core:main-abc1234",
+        "portal": "lacteva/admin-portal:main-abc1234",
+    }
+    result = _run_verify_release(tmp_path, running, "main-abc1234")
+    assert result.returncode == 1
+    assert "marketing: no running container" in result.stderr
+
+
+# A whole fake docker for the rollback path: `compose up` moves the named app
+# services to the tag in the env file, `ps -q`/`inspect` report what each is
+# on, and everything else is a no-op that succeeds.
+_FAKE_DOCKER_STACK = """#!/usr/bin/env bash
+tag="$(sed -n s/^LACTEVA_IMAGE_TAG=//p "$FAKE_ENV")"
+if [ "$1" = inspect ]; then
+  id="${@: -1}"; svc="${id#id-}"; img="$(sed -n "s/^$svc=//p" "$FAKE_SVCS")"
+  [ "$svc" = marketing ] && echo "lacteva/portal:marketing-$img" || echo "lacteva/x:$img"
+  exit 0
+fi
+shift
+while [ $# -gt 0 ]; do
+  case "$1" in up|ps|restart|run|exec|pull|config|images) break ;; *) shift ;; esac
+done
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  up) for s in "$@"; do
+        case "$s" in api|portal|marketing) sed -i "s/^$s=.*/$s=$tag/" "$FAKE_SVCS" ;; esac
+      done ;;
+  ps) echo "id-${@: -1}" ;;
+  images) echo "$tag" ;;
+esac
+exit 0
+"""
+
+# Everything in deploy.sh above the argument parser (settings and functions),
+# then the failed-verification branch exactly as step 5 takes it.
+_ROLLBACK_HARNESS = """#!/usr/bin/env bash
+eval "$(sed -n '1,/^# --- arguments/p' "$DEPLOY_SCRIPT" | grep -v "^set -")"
+if "$CURRENT_LINK/infra/deploy/verify-deployment.sh"; then
+  echo "expected the new release to fail"; exit 9
+fi
+rollback_to "$PREVIOUS_TAG"
+"""
+
+
+def test_a_failed_verification_leaves_nothing_on_the_failed_release(tmp_path):
+    """deploy.sh's rollback against a fake docker, with the new release's
+    verification made to fail: afterwards no container runs the failed tag,
+    `current` points at the previous release, and the env file names it."""
+    import os
+    import subprocess
+
+    releases, current = tmp_path / "releases", tmp_path / "current"
+    prev, new = "main-0000000", "main-1111111"
+    env_file = tmp_path / ".env.production"
+    env_file.write_text(f"LACTEVA_IMAGE_TAG={prev}\n")
+    svcs = tmp_path / "svcs"
+    svcs.write_text(f"api={prev}\nportal={prev}\nmarketing={prev}\n")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "docker").write_text(_FAKE_DOCKER_STACK)
+    (bindir / "docker").chmod(0o755)
+    for tag in (prev, new):
+        d = releases / tag / "infra" / "deploy"
+        d.mkdir(parents=True)
+        for name in ("verify-release.sh", "verify-log-pipeline.sh"):
+            (d / name).write_bytes((REPO / "infra/deploy" / name).read_bytes())
+            (d / name).chmod(0o755)
+        outcome = "echo 'deliberate failure' >&2; exit 1" if tag == new else "exit 0"
+        (d / "verify-deployment.sh").write_text(f"#!/usr/bin/env bash\n{outcome}\n")
+        (d / "verify-deployment.sh").chmod(0o755)
+        (releases / tag / "docker-compose.production.yml").write_text("services: {}\n")
+    current.symlink_to(releases / new)  # step 3 has staged and re-pointed
+    harness = tmp_path / "harness.sh"
+    harness.write_text(_ROLLBACK_HARNESS)
+    env = {
+        **os.environ,
+        "PATH": f"{bindir}:{os.environ['PATH']}",
+        "RELEASES_DIR": str(releases),
+        "CURRENT_LINK": str(current),
+        "ENV_FILE": str(env_file),
+        "DEPLOY_LOG": str(tmp_path / "deploy.log"),
+        "DEPLOY_SCRIPT": str(REPO / "infra/deploy/deploy.sh"),
+        "PREVIOUS_TAG": prev,
+        "FAKE_ENV": str(env_file),
+        "FAKE_SVCS": str(svcs),
+    }
+    result = subprocess.run(
+        ["bash", str(harness)], env=env, capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    # No container on the failed release, and no symlink on it either.
+    running = dict(line.split("=") for line in svcs.read_text().split())
+    assert running == {"api": prev, "portal": prev, "marketing": prev}, running
+    assert os.readlink(current) == str(releases / prev)
+    assert f"LACTEVA_IMAGE_TAG={prev}" in env_file.read_text()
+    assert f"rollback verified: running {prev}" in result.stdout
+    assert f"marketing is on lacteva/portal:marketing-{prev}" in result.stdout
 
 
 def test_every_service_has_a_healthcheck_or_says_why_not():

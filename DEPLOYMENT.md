@@ -450,15 +450,22 @@ It has to be, because for the window between step 2 and step 3 above, the **new 
 Deployment N  →  fails verification  →  rollback to N-1
 ```
 
-**The rollback itself:**
+**The rollback itself** — what `deploy.sh --rollback` (and the automatic rollback inside a failed deploy) does, and what to do by hand if the script itself is the casualty:
 
 ```bash
-sed -i "s/^LACTEVA_IMAGE_TAG=.*/LACTEVA_IMAGE_TAG=$PREVIOUS_TAG/" .env.production
-docker compose -f docker-compose.production.yml --env-file .env.production up -d api nginx
+sed -i "s/^LACTEVA_IMAGE_TAG=.*/LACTEVA_IMAGE_TAG=$PREVIOUS_TAG/" /etc/lacteva/.env.production
+ln -sfn /opt/lacteva/releases/$PREVIOUS_TAG /opt/lacteva/current      # current goes back too
+cd /opt/lacteva/current
+docker compose -f docker-compose.production.yml --env-file /etc/lacteva/.env.production up -d --no-deps api portal marketing nginx
+COMPOSE="docker compose -f docker-compose.production.yml --env-file /etc/lacteva/.env.production" ./infra/deploy/verify-release.sh "$PREVIOUS_TAG"
 ./infra/deploy/verify-deployment.sh
 ```
 
+A rollback restores **every** image-tagged application service — api, portal, marketing, and any worker added later — and re-points `current` at the release it restores; then `verify-release.sh` asserts that every running app container is on that tag and fails loudly naming any that is not. It has to, because until WO-102 the automatic rollback restored api and nginx only: after the b7d75d3 rollback production ran api on one release, portal and marketing on the failed one, and `current` named the failed one. A half-rollback looks healthy and is not a rollback.
+
 Note what is **not** in that command: `migrate`. Rolling the code back does not roll the schema back, and it must not try to.
+
+**A change to `deploy.sh` takes effect one deploy late.** The deploy runs `/opt/lacteva/current/infra/deploy/deploy.sh`, i.e. the *currently running* release's copy; the deploy that ships a fix to the script is still executed by the old script, and the fix first runs on the deploy *after* that. The same holds for `verify-deployment.sh`, `verify-release.sh` and `verify-log-pipeline.sh` on the rollback path, which run from the release being restored. When a deploy-script fix matters for the deploy that carries it, run that deploy from the new release's tree explicitly: `sudo /opt/lacteva/releases/<tag>/infra/deploy/deploy.sh <tag>` after staging, or expect the old behaviour once more.
 
 ### Database compatibility — the part that decides whether rollback works
 

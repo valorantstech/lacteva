@@ -107,10 +107,24 @@ rollback_to() {
   local tag="$1"
   step "ROLLING BACK to ${tag}"
   set_tag "${tag}"
-  # Only the application services. `migrate` is deliberately excluded — see
-  # the header, and DEPLOYMENT.md §5.
-  compose up -d --no-deps api nginx || die "rollback failed to start — the platform is DOWN, page someone"
+  # WO-102: `current` goes back too. It named the FAILED release after every
+  # rollback since the portal and marketing services were added — and so did
+  # those two containers, because only api and nginx were restored. A
+  # rollback restores every image-tagged application service; `migrate` is
+  # deliberately excluded — see the header, and DEPLOYMENT.md §5.
+  if [ -d "${RELEASES}/${tag}" ]; then
+    ln -sfn "${RELEASES}/${tag}" "${CURRENT}"
+    COMPOSE_FILE="${RELEASES}/${tag}/docker-compose.production.yml"
+    cd "${CURRENT}"
+  else
+    log "no staged release directory for ${tag} — containers roll back, current stays where it is"
+  fi
+  compose up -d --no-deps api portal marketing nginx || die "rollback failed to start — the platform is DOWN, page someone"
   repoint_nginx
+  # Every app container on the restored tag, or say so loudly: a half-rollback
+  # is the failure this function exists to prevent.
+  COMPOSE="docker compose -f ${COMPOSE_FILE} --env-file ${ENV_FILE}" "${CURRENT}/infra/deploy/verify-release.sh" "${tag}" \
+    || die "ROLLBACK LEFT A CONTAINER ON THE WRONG RELEASE (see above). The platform is in a mixed state: DEPLOYMENT.md §12."
   if "${CURRENT}/infra/deploy/verify-deployment.sh"; then
     log "rollback verified: running ${tag}"
     return 0
@@ -269,7 +283,8 @@ if docker pull "${RELEASE_IMAGE}" > /dev/null 2>&1; then
   # An empty or partial extraction would leave compose bind-mounting missing
   # files, which surfaces much later as an unexplained nginx failure.
   for required in docker-compose.production.yml infra/nginx/nginx.conf \
-                  infra/nginx/conf.d infra/deploy/verify-deployment.sh; do
+                  infra/nginx/conf.d infra/deploy/verify-deployment.sh \
+                  infra/deploy/verify-release.sh infra/deploy/verify-log-pipeline.sh; do
     [ -e "${RELEASE}/${required}" ] \
       || die "the release image is missing ${required} — refusing to deploy an incomplete release"
   done
@@ -338,6 +353,17 @@ compose up -d --remove-orphans || {
   die "deployment failed to start"
 }
 repoint_nginx
+
+# WO-102: before asking whether the platform is healthy, ask whether it is
+# the release we meant — a partial `up` is caught here, not on rollback day.
+if ! COMPOSE="docker compose -f ${COMPOSE_FILE} --env-file ${ENV_FILE}" ./infra/deploy/verify-release.sh "${TAG}"; then
+  log "RELEASE CHECK FAILED — a container is not on ${TAG}"
+  if [ "${AUTO_ROLLBACK}" = "1" ] && [ -n "${PREVIOUS}" ]; then
+    rollback_to "${PREVIOUS}"
+    die "deployment ${TAG} did not come up on its own tag and was rolled back to ${PREVIOUS}."
+  fi
+  die "deployment ${TAG} did not come up on its own tag. Left running for inspection (--no-rollback)."
+fi
 
 if ! ./infra/deploy/verify-deployment.sh; then
   log "VERIFICATION FAILED"
