@@ -13,7 +13,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { DashboardHero, MilkVessel } from "@/components/dashboard-hero";
+import { DashboardHero, MilkVessel, ShopHero } from "@/components/dashboard-hero";
 
 const FULL = {
   dateLine: "2026-08-21 to 2026-08-27",
@@ -116,5 +116,64 @@ describe("the vessel", () => {
     expect(screen.getByTestId("vessel-fill").className).toContain(
       "lacteva-vessel",
     );
+  });
+});
+
+/**
+ * WO-104 (WO-85 §7): the shop's morning. On the sales-only Patel Dairy Shop
+ * the dairy hero read "0.0 collected · 0 farmers delivered · 0.00 payable
+ * accrued · 0.00 receivables collected" and "1 of 1 centres collecting" —
+ * five figures about milk a shop never buys.
+ */
+describe("the shop hero", () => {
+  const SHOP = {
+    dateLine: "2026-09-26 to 2026-09-26",
+    round: { delivered: 38, remaining: 9, skipped: 2 },
+    delivered: "412.500",
+    unit: "L",
+    billsOpen: 14,
+    billsAmount: "18650.00",
+    received: "3200.00",
+    currency: "INR",
+  };
+
+  it("leads with today's round, today's milk, the bills still open and today's cash", () => {
+    render(<ShopHero {...SHOP} />);
+    expect(screen.getByRole("status")).toHaveTextContent("38 delivered · 9 to go · 2 skipped");
+    expect(screen.getByText("38 / 49")).toBeInTheDocument();
+    expect(screen.getByText("today's round")).toBeInTheDocument();
+    expect(screen.getByText("412.5")).toBeInTheDocument();
+    expect(screen.getByText("milk delivered today")).toBeInTheDocument();
+    expect(screen.getByText("18,650.00")).toBeInTheDocument();
+    expect(screen.getByText("bills outstanding · 14 open")).toBeInTheDocument();
+    expect(screen.getByText("3,200.00")).toBeInTheDocument();
+    expect(screen.getByText("money received today")).toBeInTheDocument();
+  });
+
+  it("shows NO collection figure — not collected, not farmers, not payable, not centres", () => {
+    const { container } = render(<ShopHero {...SHOP} />);
+    const text = container.textContent ?? "";
+    for (const word of ["collected", "farmers", "payable", "centres collecting", "receivables"]) {
+      expect(text, word).not.toContain(word);
+    }
+    expect(container.querySelector('[data-testid="vessel-fill"]')).toBeNull();
+  });
+
+  it("says when no round is planned, and shows dashes rather than zeroes for what it does not know", () => {
+    render(
+      <ShopHero
+        dateLine="2026-09-26 to 2026-09-26"
+        round={null}
+        delivered={null}
+        unit={null}
+        billsOpen={null}
+        billsAmount={null}
+        received={null}
+        currency={null}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("No round planned today");
+    expect(screen.getAllByText("—")).toHaveLength(4);
+    expect(screen.getByText("bills outstanding")).toBeInTheDocument();
   });
 });

@@ -79,13 +79,18 @@ function offered(s: Session): string[] {
   );
 }
 
+// WO-104: a tenant-admin with both modules. In the business's words, grouped
+// by the day's work, Settings at the bottom — and none of the platform's own
+// tools (Sync, Playground, Organizations, Configuration, Operations, Roadmap),
+// which only a platform session is offered now. `menus.test.tsx` pins every
+// kind of user; this file keeps the MODULE axis honest.
 const EVERYTHING = [
-  "Dashboard", "Centres", "Suppliers", "Transactions", "Day book",
-  "Customers", "Deliveries", "Month sheet", "Routes and runs", "Billing", "Who owes money",
-  "Rate cards", "Matrices", "Playground",
-  "Settlements", "Payments", "Receipts", "Reports",
-  "Notifications", "Sync", "Subscription", "Business calendar", "Users", "Products",
-  "Roles", "Organizations", "Audit", "Configuration", "Operations", "Settings", "Roadmap",
+  "Dashboard",
+  "Collection centres", "Farmers", "Collections", "Day book", "Rate cards", "Matrices",
+  "Customers", "Deliveries", "Month sheet", "Delivery rounds", "Bills", "Who owes money", "Products",
+  "Settlements", "Farmer payments", "Receipts",
+  "Reports", "Notifications",
+  "Staff", "Dairy settings", "Business calendar", "Roles", "Plan",
 ];
 
 describe("the registry", () => {
@@ -102,6 +107,10 @@ describe("the registry", () => {
     for (const href of ["/", "/reports", "/notifications", "/sync", "/admin/users", "/admin/settings", "/admin/audit", "/admin/subscription"]) {
       expect(byHref[href], href).toBeNull();
     }
+    // WO-104: two settings pages belong to firms that collect — holidays
+    // decide collection days, and custom roles are a firm's thing.
+    expect(byHref["/admin/calendar"]).toBe("collection");
+    expect(byHref["/admin/roles"]).toBe("collection");
   });
 });
 
@@ -116,31 +125,31 @@ describe("what a tenant-admin is offered", () => {
     expect(enabledModules(null)).toEqual(new Set(["collection", "sales"]));
   });
 
-  it("a milk shop: no Settlements, Rate cards, Suppliers, Day book, Payments or Receipts", () => {
+  it("a milk shop: no Settlements, Rate cards, Farmers, Day book, Farmer payments or Receipts", () => {
     const labels = offered(session(["sales"]));
-    for (const hidden of ["Settlements", "Rate cards", "Matrices", "Playground", "Suppliers", "Centres", "Transactions", "Day book", "Payments", "Receipts"]) {
+    for (const hidden of ["Settlements", "Rate cards", "Matrices", "Playground", "Farmers", "Collection centres", "Collections", "Day book", "Farmer payments", "Receipts", "Business calendar", "Roles"]) {
       expect(labels, hidden).not.toContain(hidden);
     }
-    for (const shown of ["Dashboard", "Customers", "Deliveries", "Routes and runs", "Billing", "Who owes money", "Products", "Reports", "Notifications", "Sync", "Users", "Settings", "Subscription", "Audit"]) {
+    for (const shown of ["Dashboard", "Customers", "Deliveries", "Delivery rounds", "Bills", "Who owes money", "Products", "Reports", "Notifications", "Staff", "Dairy settings", "Plan"]) {
       expect(labels, shown).toContain(shown);
     }
   });
 
-  it("a classic dairy: no Customers, Deliveries, Routes, Billing or Who owes money", () => {
+  it("a classic dairy: no Customers, Deliveries, Delivery rounds, Bills or Who owes money", () => {
     const labels = offered(session(["collection"]));
-    for (const hidden of ["Customers", "Deliveries", "Month sheet", "Routes and runs", "Billing", "Who owes money", "Products"]) {
+    for (const hidden of ["Customers", "Deliveries", "Month sheet", "Delivery rounds", "Bills", "Who owes money", "Products"]) {
       expect(labels, hidden).not.toContain(hidden);
     }
-    for (const shown of ["Centres", "Suppliers", "Settlements", "Rate cards", "Payments", "Receipts", "Reports"]) {
+    for (const shown of ["Collection centres", "Farmers", "Settlements", "Rate cards", "Farmer payments", "Receipts", "Reports", "Business calendar", "Roles"]) {
       expect(labels, shown).toContain(shown);
     }
   });
 
-  it("permission still comes first: a shop's viewer without users.read is not offered Users", () => {
+  it("permission still comes first: a shop's viewer without users.read is not offered Staff", () => {
     const viewer = { ...session(["sales"]), permissions: ["sales.customer.read"] } as Session;
     const labels = offered(viewer);
     expect(labels).toContain("Customers");
-    expect(labels).not.toContain("Users");
+    expect(labels).not.toContain("Staff");
     expect(labels).not.toContain("Deliveries");
   });
 });
@@ -155,10 +164,13 @@ describe("the words", () => {
     expect(shop("entity.center")).toBe("Shop");
     expect(dairy("entity.center")).toBe("Collection centre");
     expect(shop("dashboard.heroTitle")).toBe("The shop, this morning");
+    // WO-104: a shop's settings are the shop's.
+    expect(shop("nav.settings")).toBe("Shop settings");
+    expect(dairy("nav.settings")).toBe("Dairy settings");
     // Every key without an override falls through.
     expect(shop("nav.customers")).toBe(dairy("nav.customers"));
     expect(shop("settlement.subtitle")).toBe(dairy("settlement.subtitle"));
-    // And Hindi has the same four, no more.
+    // And Hindi has the same overrides, no more.
     const hi = translatorFor("hi", { salesOnly: true });
     expect(hi("entity.center")).toBe("दुकान");
     expect(hi("nav.customers")).toBe(CATALOGS.hi["nav.customers"]);
@@ -188,7 +200,7 @@ describe("the shell", () => {
     render(<AppShell><div>PAGE</div></AppShell>);
     expect(await screen.findByRole("link", { name: "Customers" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Settlements" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Suppliers" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Farmers" })).toBeNull();
     expect(screen.getByRole("link", { name: "Products" })).toBeInTheDocument();
   });
 
@@ -255,6 +267,24 @@ describe("Admin → Settings", () => {
     );
     const put = spy.mock.calls.find((c) => (c[1] as RequestInit)?.method === "PUT")!;
     expect(JSON.parse(String((put[1] as RequestInit).body))).toEqual({ modules: ["sales"] });
+  });
+
+  it("carries the activity log, so an owner without a menu entry for it still has it (WO-104)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/auth/session")) return json(session(["sales"]));
+        if (url.endsWith("/v1/organizations/settings/locale"))
+          return json({ ...LOCALE, modules: ["sales"] });
+        return json({ title: "not_found" }, 404);
+      }),
+    );
+    render(<OrganizationSettingsPage />);
+    const link = await screen.findByTestId("settings-activity-log");
+    expect(link).toHaveAttribute("href", "/admin/audit");
+    expect(link).toHaveTextContent("Open the activity log");
+    expect(screen.getByText(/who changed this bill/)).toBeInTheDocument();
   });
 
   it("will not let the last module be switched off", async () => {

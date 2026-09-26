@@ -1244,6 +1244,9 @@ export type SalesSummary = {
   /** Balances, as at now — deliberately NOT narrowed by the date range. */
   invoiced: string;
   received: string;
+  /** WO-104: payments received BETWEEN date_from and date_to — a period
+   *  figure, unlike `received`, which is the all-time balance. */
+  received_in_period: string;
   receivable: string;
   by_status: InvoiceStatusRow[];
   open_invoices: number;

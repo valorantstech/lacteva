@@ -67,7 +67,7 @@ import {
   setActingTenant,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { LocaleProvider, translatorFor, useT } from "@/lib/i18n";
+import { LocaleProvider, type Translate, translatorFor, useT } from "@/lib/i18n";
 import { type ModuleKey, moduleEnabled, salesOnly } from "@/lib/modules";
 import { isPublic, loginPath } from "@/proxy";
 import { cn } from "@/lib/utils";
@@ -88,17 +88,74 @@ type Entry = {
   /** D-31 / WO-85: the product module this destination belongs to. Absent
    *  means "always" — Dashboard, Reports, Notifications, Sync and Admin. */
   module?: ModuleKey;
+  /**
+   * WO-104: WHO the page is for — the third axis, composed after permission
+   * and module. `platform` is Lacteva's own operator tooling (Organizations,
+   * Configuration, Operations, Sync, Roadmap, the pricing Playground) and is
+   * offered ONLY to a platform session — one with no tenant bound — whatever
+   * permissions a tenant user happens to hold: a shop's owner is a
+   * tenant-admin and so held `configuration.read`, which is how the Patel
+   * Dairy Shop's menu came to list Configuration, Organizations and Sync.
+   * `settings` is grouped at the bottom under one heading; `business` is the
+   * day's work.
+   */
+  audience: Audience;
+  /** A last, entry-specific condition — used by exactly the entries whose
+   *  comment says why. Hiding is presentation, as with every filter here. */
+  when?: (session: Session | null) => boolean;
 };
 
-const OPERATIONS: Entry[] = [
+export type Audience = "platform" | "business" | "settings";
+
+/** A platform session: Lacteva staff, no tenant bound (TENANT-001). Acting
+ *  inside an organisation does not make it a tenant user. */
+export const isPlatformSession = (session: Session | null): boolean =>
+  session?.authenticated === true && session.tenant_id === null;
+
+/**
+ * The organisation's owner — a tenant user who may change the organisation's
+ * own settings (`tenant-admin` / `ORGANIZATION_ADMIN`). By permission, not
+ * role name: a custom role granted the same power is the same person to the
+ * menu.
+ */
+export const isOwner = (session: Session | null): boolean =>
+  session?.authenticated === true &&
+  session.tenant_id !== null &&
+  can(session, "organization.settings.manage");
+
+/**
+ * WO-104: the roles whose work is the handset. A portal sign-in by one of
+ * them used to get an almost-empty menu (Centres, Farmers, Collections for
+ * an operator; nothing at all for a driver) and office forms the platform
+ * would then refuse. They get one line saying where their work is instead —
+ * see `MobileOnly`. Role NAMES from the registry, because nothing else
+ * distinguishes an operator from a viewer with the same reads.
+ */
+const MOBILE_ROLES = new Set([
+  "COLLECTION_OPERATOR",
+  "DRIVER",
+  "CUSTOMER_PORTAL",
+]);
+export const mobileOnly = (session: Session | null): boolean =>
+  session?.authenticated === true &&
+  session.tenant_id !== null &&
+  (session.roles ?? []).length > 0 &&
+  (session.roles ?? []).every((role) => MOBILE_ROLES.has(role.name));
+
+const HOME: Entry[] = [
   {
     href: "/",
+    audience: "business",
     labelKey: "nav.dashboard",
     permission: "*dashboard",
     icon: Gauge,
   },
+];
+
+const COLLECTION: Entry[] = [
   {
     href: "/centers",
+    audience: "business",
     module: "collection",
     labelKey: "nav.centers",
     permission: "collection.center.read",
@@ -106,6 +163,7 @@ const OPERATIONS: Entry[] = [
   },
   {
     href: "/suppliers",
+    audience: "business",
     module: "collection",
     labelKey: "nav.suppliers",
     permission: "supplier.read",
@@ -113,6 +171,7 @@ const OPERATIONS: Entry[] = [
   },
   {
     href: "/transactions",
+    audience: "business",
     module: "collection",
     labelKey: "nav.transactions",
     permission: "collection.transaction.read",
@@ -123,18 +182,34 @@ const OPERATIONS: Entry[] = [
   // centre's own day is not the same authority as recording what left it.
   {
     href: "/day-book",
+    audience: "business",
     module: "collection",
     labelKey: "nav.dayBook",
     permission: "operations.dispatch.read",
     icon: BookOpen,
   },
+  {
+    href: "/rate-cards",
+    audience: "business",
+    module: "collection",
+    labelKey: "nav.rateCards",
+    permission: "pricing.ratecard.read",
+    icon: Tags,
+  },
+  {
+    href: "/matrices",
+    audience: "business",
+    module: "collection",
+    labelKey: "nav.matrices",
+    permission: "pricing.ratecard.read",
+    icon: Grid3x3,
+  },
 ];
 
-// DEMO-009 — the customer side. Permission-gated like every other entry, so a
-// collection operator (who has no sales.* grant) never sees it.
 const SALES: Entry[] = [
   {
     href: "/customers",
+    audience: "business",
     module: "sales",
     labelKey: "nav.customers",
     permission: "sales.customer.read",
@@ -142,6 +217,7 @@ const SALES: Entry[] = [
   },
   {
     href: "/deliveries",
+    audience: "business",
     module: "sales",
     labelKey: "nav.deliveries",
     permission: "sales.delivery.read",
@@ -150,6 +226,7 @@ const SALES: Entry[] = [
   // WO-84 — the shop's register: a month of litres, one row per household.
   {
     href: "/deliveries/month",
+    audience: "business",
     module: "sales",
     labelKey: "nav.monthSheet",
     permission: "sales.delivery.read",
@@ -159,6 +236,7 @@ const SALES: Entry[] = [
   // so a finance officer never sees it.
   {
     href: "/routes",
+    audience: "business",
     module: "sales",
     labelKey: "nav.routes",
     permission: "logistics.route.read",
@@ -166,6 +244,7 @@ const SALES: Entry[] = [
   },
   {
     href: "/billing",
+    audience: "business",
     module: "sales",
     labelKey: "nav.billing",
     permission: "sales.invoice.read",
@@ -176,40 +255,28 @@ const SALES: Entry[] = [
   // anything on the sales module itself.
   {
     href: "/receivables",
+    audience: "business",
     module: "sales",
     labelKey: "nav.receivables",
     permission: "reporting.read",
     icon: Wallet,
   },
-];
-
-const PRICING: Entry[] = [
   {
-    href: "/rate-cards",
-    module: "collection",
-    labelKey: "nav.rateCards",
-    permission: "pricing.ratecard.read",
+    // WO-81: what the organisation sells. Milk on a standing order is a
+    // product too and must be here.
+    href: "/admin/products",
+    audience: "business",
+    module: "sales",
+    labelKey: "nav.products",
+    permission: "catalog.read",
     icon: Tags,
-  },
-  {
-    href: "/matrices",
-    module: "collection",
-    labelKey: "nav.matrices",
-    permission: "pricing.ratecard.read",
-    icon: Grid3x3,
-  },
-  {
-    href: "/resolve",
-    module: "collection",
-    labelKey: "nav.playground",
-    permission: "pricing.ratecard.read",
-    icon: Boxes,
   },
 ];
 
 const FINANCE: Entry[] = [
   {
     href: "/settlements",
+    audience: "business",
     module: "collection",
     labelKey: "nav.settlements",
     permission: "settlement.read",
@@ -217,6 +284,7 @@ const FINANCE: Entry[] = [
   },
   {
     href: "/payments",
+    audience: "business",
     module: "collection",
     labelKey: "nav.payments",
     permission: "payment.read",
@@ -224,100 +292,126 @@ const FINANCE: Entry[] = [
   },
   {
     href: "/receipts",
+    audience: "business",
     module: "collection",
     labelKey: "nav.receipts",
     permission: "receipt.read",
     icon: Receipt,
   },
+];
+
+const INSIGHT: Entry[] = [
   {
     href: "/reports",
+    audience: "business",
     labelKey: "nav.reports",
     permission: "reporting.read",
     icon: FileText,
   },
-];
-
-const PLATFORM: Entry[] = [
   {
     href: "/notifications",
+    audience: "business",
     labelKey: "nav.notifications",
     permission: "notification.read",
     icon: Bell,
   },
-  {
-    href: "/sync",
-    labelKey: "nav.sync",
-    permission: "sync.read",
-    icon: RefreshCw,
-  },
-  {
-    // DEMO-026. Where an administrator sees the trial and what it covers.
-    href: "/admin/subscription",
-    labelKey: "nav.subscription",
-    permission: "organization.subscription.read",
-    icon: BadgeCheck,
-  },
-  {
-    // DEMO-020. Read-only, and behind its own permission: a viewer may look at
-    // the dairy's calendar without being able to close its books.
-    href: "/admin/calendar",
-    labelKey: "nav.calendar",
-    permission: "organization.calendar.read",
-    icon: CalendarDays,
-  },
+];
+
+const SETTINGS: Entry[] = [
   {
     href: "/admin/users",
+    audience: "settings",
     labelKey: "nav.users",
     permission: "identity.user.read",
     icon: Users,
-  },
-  {
-    // WO-81: what the organisation sells. Milk on a standing order is a
-    // product too and must be here.
-    href: "/admin/products",
-    module: "sales",
-    labelKey: "nav.products",
-    permission: "catalog.read",
-    icon: Tags,
-  },
-  {
-    href: "/admin/roles",
-    labelKey: "nav.roles",
-    permission: "authz.role.read",
-    icon: KeyRound,
-  },
-  {
-    href: "/admin/organizations",
-    labelKey: "nav.organizations",
-    permission: "organization.read",
-    icon: Landmark,
-  },
-  {
-    href: "/admin/audit",
-    labelKey: "nav.audit",
-    permission: "audit.read",
-    icon: ScrollText,
-  },
-  {
-    href: "/admin/configuration",
-    labelKey: "nav.configuration",
-    permission: "configuration.read",
-    icon: Cog,
-  },
-  {
-    href: "/admin/operations",
-    labelKey: "nav.operations",
-    permission: "platform.relay.manage",
-    icon: Server,
   },
   // DEMO-013. `organization.read`, not the manage grant: seeing what currency
   // and clock your dairy runs on is not an administrative act, and the page
   // itself hides the controls that would be refused.
   {
     href: "/admin/settings",
+    audience: "settings",
     labelKey: "nav.settings",
     permission: "organization.read",
     icon: Globe,
+  },
+  {
+    // DEMO-020. Read-only, and behind its own permission: a viewer may look at
+    // the dairy's calendar without being able to close its books.
+    href: "/admin/calendar",
+    audience: "settings",
+    // WO-104: holidays decide collection days; a shop has no use for it.
+    module: "collection",
+    labelKey: "nav.calendar",
+    permission: "organization.calendar.read",
+    icon: CalendarDays,
+  },
+  {
+    href: "/admin/roles",
+    audience: "settings",
+    // WO-104: a shop assigns a role when it invites; the Roles page is for
+    // firms with custom roles.
+    module: "collection",
+    labelKey: "nav.roles",
+    permission: "authz.role.read",
+    icon: KeyRound,
+  },
+  {
+    // DEMO-026. Where an administrator sees the trial and what it covers.
+    href: "/admin/subscription",
+    audience: "settings",
+    labelKey: "nav.subscription",
+    permission: "organization.subscription.read",
+    icon: BadgeCheck,
+  },
+  {
+    href: "/admin/audit",
+    audience: "settings",
+    // WO-104: an owner reaches the activity log from Settings; everyone else
+    // with audit.read (an Auditor) has it in the menu.
+    when: (session) => !isOwner(session),
+    labelKey: "nav.audit",
+    permission: "audit.read",
+    icon: ScrollText,
+  },
+];
+
+const PLATFORM: Entry[] = [
+  {
+    href: "/sync",
+    audience: "platform",
+    labelKey: "nav.sync",
+    permission: "sync.read",
+    icon: RefreshCw,
+  },
+  {
+    href: "/resolve",
+    audience: "platform",
+    module: "collection",
+    labelKey: "nav.playground",
+    permission: "pricing.ratecard.read",
+    icon: Boxes,
+  },
+  {
+    href: "/admin/organizations",
+    audience: "platform",
+    labelKey: "nav.organizations",
+    permission: "organization.read",
+    icon: Landmark,
+  },
+  {
+    href: "/admin/configuration",
+    audience: "platform",
+    labelKey: "nav.configuration",
+    permission: "configuration.read",
+    icon: Cog,
+  },
+  {
+    href: "/admin/operations",
+    audience: "platform",
+    labelKey: "nav.operations",
+    permission: "platform.relay.manage",
+    icon: Server,
   },
   // P0-PRODUCT-VISIBILITY-001. An honest, non-interactive page that keeps
   // "available today" and "on the roadmap" visibly separate. It needs no
@@ -325,19 +419,31 @@ const PLATFORM: Entry[] = [
   // the same always-visible sentinel as the dashboard.
   {
     href: "/roadmap",
+    audience: "platform",
     labelKey: "nav.roadmap",
     permission: "*roadmap",
     icon: Milestone,
   },
 ];
 
-const GROUPS: { titleKey: string; entries: Entry[] }[] = [
-  { titleKey: "nav.operations", entries: OPERATIONS },
+/**
+ * WO-104: grouped by what the work IS, in the order a day runs — intake, then
+ * sales, then money, then the two pages everyone reads — with Settings under
+ * one heading at the bottom and the platform's own tools last. A group with
+ * no `titleKey` draws no heading: "OPERATIONS" over a lone Dashboard, or a
+ * "PLATFORM" heading over a shop owner's Users page, were headings for the
+ * people who built the menu, not the people who read it.
+ */
+const GROUPS: { titleKey?: string; entries: Entry[] }[] = [
+  { entries: HOME },
+  { titleKey: "nav.groupCollection", entries: COLLECTION },
   { titleKey: "nav.sales", entries: SALES },
-  { titleKey: "nav.pricing", entries: PRICING },
   { titleKey: "nav.finance", entries: FINANCE },
+  { entries: INSIGHT },
+  { titleKey: "nav.groupSettings", entries: SETTINGS },
   { titleKey: "nav.platform", entries: PLATFORM },
 ];
+const ALL_ENTRIES: Entry[] = GROUPS.flatMap((g) => g.entries);
 
 /**
  * The dashboard and the roadmap need a session but no particular permission —
@@ -355,10 +461,18 @@ const GROUPS: { titleKey: string; entries: Entry[] }[] = [
  * module filter too. The routes still exist, the permissions still govern,
  * and a shop's tenant-admin who types `/settlements` still gets the page,
  * with nothing in it. Turning a module off deletes nothing.
+ *
+ * THREE filters since WO-104: permission, then module, then AUDIENCE — a
+ * `platform` entry is offered only to a platform session, and an entry's own
+ * `when` runs last. Same rule as before about what this is: presentation.
+ * The routes still exist and the permissions still govern; `/admin/sync`
+ * typed by a shop owner is answered by the platform exactly as it was.
  */
 const visibleTo = (session: Session | null, entry: Entry) =>
   (entry.permission.startsWith("*") ? true : can(session, entry.permission)) &&
-  moduleEnabled(session, entry.module);
+  moduleEnabled(session, entry.module) &&
+  (entry.audience !== "platform" || isPlatformSession(session)) &&
+  (entry.when ? entry.when(session) : true);
 
 /**
  * The page the current path belongs to, if the nav knows it (P0-UX-001).
@@ -371,10 +485,9 @@ const visibleTo = (session: Session | null, entry: Entry) =>
  * everything (that part worked); the page just should not have promised it.
  */
 const entryFor = (pathname: string): Entry | undefined => {
-  const all = [...OPERATIONS, ...SALES, ...PRICING, ...FINANCE, ...PLATFORM];
-  return all
-    .filter((e) => pathname === e.href || pathname.startsWith(`${e.href}/`))
-    .sort((a, b) => b.href.length - a.href.length)[0];
+  return ALL_ENTRIES.filter(
+    (e) => pathname === e.href || pathname.startsWith(`${e.href}/`),
+  ).sort((a, b) => b.href.length - a.href.length)[0];
 };
 
 /**
@@ -488,10 +601,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     session.tenant_id === null &&
     !scoped;
 
-  const groups = GROUPS.map((g) => ({
-    ...g,
-    entries: g.entries.filter((e) => visibleTo(session, e)),
-  })).filter((g) => g.entries.length > 0);
+  // WO-104: a handset role gets no menu at all — see `MobileOnly`.
+  const handset = signedIn && mobileOnly(session);
+  const groups = handset
+    ? []
+    : GROUPS.map((g) => ({
+        ...g,
+        entries: g.entries.filter((e) => visibleTo(session, e)),
+      })).filter((g) => g.entries.length > 0);
 
   // Signed out — or the answer is not known yet. No rail, no destinations, no
   // promises. The sign-in link waits for `checked`: offering it before the
@@ -575,10 +692,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const nav = (
     <nav aria-label="Main" className="flex flex-col gap-6 px-3 py-4">
       {groups.map((group) => (
-        <div key={group.titleKey} className="flex flex-col gap-1">
-          <p className="px-3 pb-1 text-meta font-semibold uppercase tracking-wider text-muted-foreground">
-            {t(group.titleKey)}
-          </p>
+        <div
+          key={group.titleKey ?? group.entries[0].href}
+          className="flex flex-col gap-1"
+        >
+          {group.titleKey ? (
+            <p className="px-3 pb-1 text-meta font-semibold uppercase tracking-wider text-muted-foreground">
+              {t(group.titleKey)}
+            </p>
+          ) : null}
           {group.entries.map((entry) => {
             const Icon = entry.icon;
             const active =
@@ -707,7 +829,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         administrator keeps its wording. */}
                     {session.tenant_id === null
                       ? "Platform administrator"
-                      : roleLabel(session)}
+                      : roleLabel(session, t)}
                   </span>
                 </span>
               ) : null}
@@ -794,6 +916,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 Client-side courtesy only — the server's own guards are the
                 security, and they were verified to hold without this. */}
             {(() => {
+              if (handset) return <MobileOnly />;
               const entry = signedIn ? entryFor(pathname) : undefined;
               if (entry && !visibleTo(session, entry)) {
                 return <NotYourArea session={session} />;
@@ -822,19 +945,49 @@ export function AppShell({ children }: { children: React.ReactNode }) {
  * elsewhere — and "Organization member" is the honest answer to that, rather
  * than an empty line.
  */
-function roleLabel(session: Session): string {
+function roleLabel(session: Session, t: Translate): string {
   if (!session.authenticated) return "";
   const names = (session.roles ?? [])
     .map((role) => role.name)
     .filter(Boolean)
     .map((name) =>
-      name
-        .replace(/[_-]+/g, " ")
-        .toLowerCase()
-        .replace(/\b\w/g, (letter) => letter.toUpperCase()),
+      // WO-104: the owner is "Owner". `tenant-admin` is the registry's key
+      // for the person who owns the organisation, and "Tenant Admin" under
+      // a shopkeeper's name is the platform talking to itself.
+      OWNER_ROLES.has(name)
+        ? t("role.owner")
+        : name
+            .replace(/[_-]+/g, " ")
+            .toLowerCase()
+            .replace(/\b\w/g, (letter) => letter.toUpperCase()),
     );
   const unique = Array.from(new Set(names));
   return unique.length ? unique.join(" · ") : "Organization member";
+}
+
+const OWNER_ROLES = new Set(["tenant-admin", "ORGANIZATION_ADMIN"]);
+
+/**
+ * WO-104: the page a handset role sees on the portal. One line, and a link —
+ * not an empty rail, and not office forms the platform will refuse.
+ */
+function MobileOnly() {
+  const t = useT();
+  return (
+    <div className="mx-auto max-w-3xl px-6 py-16">
+      <div className="rounded-lg border border-border bg-background p-6">
+        <p className="font-medium" data-testid="mobile-only">
+          {t("shell.mobileOnly")}
+        </p>
+        <a
+          className="mt-3 inline-block text-sm text-primary underline-offset-4 hover:underline"
+          href="https://lacteva.com/product"
+        >
+          {t("shell.mobileOnlyLink")}
+        </a>
+      </div>
+    </div>
+  );
 }
 
 function OrganizationChip({
@@ -913,3 +1066,22 @@ function OrganizationChip({
  *  against the same list and the same rule rather than a copy of either. */
 export const NAV_REGISTRY = GROUPS;
 export const navVisibleTo = visibleTo;
+
+/**
+ * WO-104, tests only: the menu a session is offered, as the reader sees it —
+ * heading (or null) and labels, in order, in the session's own words (a shop
+ * reads "Shop settings"). A handset role is offered nothing.
+ */
+export function menuFor(
+  session: Session | null,
+  language = "en",
+): { heading: string | null; entries: string[] }[] {
+  const t = translatorFor(language, { salesOnly: salesOnly(session) });
+  if (mobileOnly(session)) return [];
+  return GROUPS.map((group) => ({
+    heading: group.titleKey ? t(group.titleKey) : null,
+    entries: group.entries
+      .filter((entry) => visibleTo(session, entry))
+      .map((entry) => t(entry.labelKey)),
+  })).filter((group) => group.entries.length > 0);
+}

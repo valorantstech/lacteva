@@ -20,6 +20,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 
 import { AdminPage } from "@/components/admin-page";
 import { Button } from "@/components/ui/button";
@@ -452,6 +453,28 @@ export default function OrganizationSettingsPage() {
               }}
             />
           ) : null}
+
+          {/* WO-104: the activity log has no menu entry of its own for an
+              owner — the menu is the day's work — so it lives here, where
+              "who changed this bill" is a settings question. */}
+          <section
+            className="flex flex-col gap-3 border-t border-border pt-6"
+            aria-labelledby="activity-log-heading"
+          >
+            <h2 id="activity-log-heading" className="text-sm font-semibold">
+              {t("settings.activityLog")}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.activityLogHelp")}
+            </p>
+            <Link
+              href="/admin/audit"
+              className="text-sm text-primary underline-offset-4 hover:underline"
+              data-testid="settings-activity-log"
+            >
+              {t("settings.openActivityLog")}
+            </Link>
+          </section>
 
           <section className="flex flex-col gap-3 border-t border-border pt-6">
             <h2 className="text-sm font-semibold">

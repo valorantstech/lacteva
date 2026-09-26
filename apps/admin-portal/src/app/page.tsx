@@ -34,6 +34,10 @@ import {
   getSession,
   getSupplierReport,
   listAudit,
+  getSalesSummary,
+  listDeliveryRuns,
+  type DeliveryRun,
+  type SalesSummary,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,15 +51,16 @@ import {
   type DateRange,
   DateRangePicker,
   useDefaultRange,
+  todayIn,
 } from "@/components/date-range";
 import { BarBreakdown, TrendChart } from "@/components/trend-chart";
 import { CurrencyTotals, Money, Quantity } from "@/components/money";
 import { unitLabel } from "@/lib/units";
-import { enabledModules } from "@/lib/modules";
+import { enabledModules, salesOnly } from "@/lib/modules";
 import { SectionHeading } from "@/components/page-header";
 import { PageContainer } from "@/components/page-container";
 import { Metric, Surface } from "@/components/surface";
-import { DashboardHero } from "@/components/dashboard-hero";
+import { DashboardHero, ShopHero } from "@/components/dashboard-hero";
 import {
   EmptyState,
   ErrorState,
@@ -127,6 +132,10 @@ export default function Home() {
     useState<Load<ReportPage<SupplierSummaryRow>>>(LOADING);
   const [activity, setActivity] = useState<Load<AuditRecord[]>>(LOADING);
   const [owing, setOwing] = useState<Load<ReceivablesPage>>(LOADING);
+  // WO-104: the shop's morning — today's round and today's sales figures,
+  // loaded only for an organisation that sells and does not collect.
+  const [shopToday, setShopToday] = useState<Load<SalesSummary>>(LOADING);
+  const [runsToday, setRunsToday] = useState<Load<DeliveryRun[]>>(LOADING);
   const [busy, setBusy] = useState(false);
 
   const signedIn = session?.authenticated === true;
@@ -135,6 +144,9 @@ export default function Home() {
   const modules = enabledModules(session);
   const showCollection = modules.has("collection");
   const showSales = modules.has("sales");
+  const shop = salesOnly(session);
+  const { timezone } = useLocale();
+  const today = todayIn(timezone);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,9 +193,20 @@ export default function Home() {
       // Six rows and a total computed over ALL debtors — the card shows a
       // shortlist, never a sum of the shortlist.
       getReceivables({ limit: "6" }).then(ok(setOwing), fail(setOwing)),
+      // WO-104: a shop's hero is about TODAY, whatever range the reader picks
+      // for the rest of the page — the round is a day's work.
+      ...(shop
+        ? [
+            getSalesSummary({ date_from: today, date_to: today }).then(
+              ok(setShopToday),
+              fail(setShopToday),
+            ),
+            listDeliveryRuns(today).then(ok(setRunsToday), fail(setRunsToday)),
+          ]
+        : []),
     ]);
     setBusy(false);
-  }, []);
+  }, [shop, today]);
 
   useEffect(() => {
     if (!signedIn) return;
@@ -241,8 +264,43 @@ export default function Home() {
       ? Math.min(collection.total_net_weight_kg / peakDay, 1)
       : null;
 
+  // WO-104: today's round, counted from every run's stops. `delivery_status`
+  // is the delivery domain's word for each stop; a stop with none yet is
+  // still to go.
+  const runs = runsToday.state === "ready" ? runsToday.data : null;
+  const stops = runs?.flatMap((run) => run.stops) ?? [];
+  const roundDelivered = stops.filter(
+    (s) => s.delivery_status === "delivered",
+  ).length;
+  const roundSkipped = stops.filter(
+    (s) => s.delivery_status === "skipped" || s.delivery_status === "returned",
+  ).length;
+  const round =
+    runs && runs.length > 0
+      ? {
+          delivered: roundDelivered,
+          skipped: roundSkipped,
+          remaining: stops.length - roundDelivered - roundSkipped,
+        }
+      : null;
+  const shopFigures = shopToday.state === "ready" ? shopToday.data : null;
+
   return (
     <PageContainer width="wide">
+      {shop ? (
+        <ShopHero
+          dateLine={t("dashboard.heroRange", { from: today, to: today })}
+          round={round}
+          delivered={
+            shopFigures ? shopFigures.delivered_quantity_in_period : null
+          }
+          unit={shopFigures ? shopFigures.quantity_unit : null}
+          billsOpen={shopFigures ? shopFigures.open_invoices : null}
+          billsAmount={shopFigures ? shopFigures.receivable : null}
+          received={shopFigures ? shopFigures.received_in_period : null}
+          currency={shopFigures?.currency ?? sales?.currency ?? null}
+        />
+      ) : (
       <DashboardHero
         dateLine={
           report
@@ -265,6 +323,7 @@ export default function Home() {
         received={sales ? sales.received : null}
         receivedCurrency={sales?.currency ?? null}
       />
+      )}
 
       {/*
         No second title. The hero above IS this page's heading — it carries the

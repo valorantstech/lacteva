@@ -18,6 +18,8 @@ export const SALES_ONLY_OVERRIDES: Record<string, Partial<Catalog>> = {
   en: {
     "entity.center": "Shop",
     "dashboard.heroTitle": "The shop, this morning",
+    "nav.settings": "Shop settings",
+    "settings.title": "Shop settings",
     "dashboard.salesDetail": "Milk delivered to customers, and what they owe the shop",
     "shell.notYourAreaDetail":
       "Your role does not include this part of the shop. Everything you do have access to is in the navigation — nothing here is broken.",
@@ -25,6 +27,8 @@ export const SALES_ONLY_OVERRIDES: Record<string, Partial<Catalog>> = {
   hi: {
     "entity.center": "दुकान",
     "dashboard.heroTitle": "आज सुबह की दुकान",
+    "nav.settings": "दुकान सेटिंग्स",
+    "settings.title": "दुकान सेटिंग्स",
     "dashboard.salesDetail": "ग्राहकों को दिया गया दूध, और वे दुकान को क्या देते हैं",
     "shell.notYourAreaDetail":
       "आपकी भूमिका में दुकान का यह हिस्सा शामिल नहीं है। जो कुछ आपकी पहुँच में है वह नेविगेशन में है — यहाँ कुछ भी टूटा नहीं है।",

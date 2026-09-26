@@ -585,3 +585,89 @@ describe("dashboard", () => {
     expect(screen.getByText(/See all 6 customers who owe/)).toBeInTheDocument();
   });
 });
+
+/**
+ * WO-104 (WO-85 §7): a shop's dashboard shows a shop. The hero on the
+ * sales-only Patel Dairy Shop read four collection figures and "1 of 1
+ * centres collecting"; it now shows today's round, today's milk, the bills
+ * outstanding and today's cash, and asks the platform for TODAY's sales
+ * summary and today's delivery runs to do it.
+ */
+describe("the shop's dashboard (sales only)", () => {
+  const SHOP_SESSION = {
+    ...SESSION,
+    organization: {
+      id: "org-1",
+      name: "Patel Dairy Shop and Sweets",
+      slug: "patel",
+      country_code: "IN",
+      currency_code: "INR",
+      currency_symbol: "₹",
+      timezone: "Asia/Kolkata",
+      default_language: "en",
+      supported_languages: ["en"],
+      languages: [{ tag: "en", name: "English", endonym: "English", rtl: false }],
+      quantity_unit: "litre",
+      quantity_unit_label: "L",
+      modules: ["sales"],
+    },
+  };
+  const TODAY_SALES = {
+    ...DASHBOARD.sales,
+    delivered_quantity_in_period: "412.500",
+    quantity_unit: "L",
+    receivable: "18650.00",
+    open_invoices: 14,
+    received: "99999.00",
+    received_in_period: "3200.00",
+    currency: "INR",
+  };
+  const RUNS = [
+    {
+      id: "run-1", route_id: "r1", route_code: "R1", route_name: "Morning", business_date: "2026-09-26",
+      slot: "morning", vehicle_id: null, vehicle_registration: null, driver_id: null, driver_name: null,
+      status: "in_progress", notes: "", started_at: null, finished_at: null,
+      stops: [
+        { customer_id: "c1", position: 1, code: "C1", name: "A", delivery_status: "delivered" },
+        { customer_id: "c2", position: 2, code: "C2", name: "B", delivery_status: "delivered" },
+        { customer_id: "c3", position: 3, code: "C3", name: "C", delivery_status: "skipped" },
+        { customer_id: "c4", position: 4, code: "C4", name: "D", delivery_status: null },
+      ],
+    },
+  ];
+
+  it("shows the shop's morning, from today's figures, and no collection figure", async () => {
+    const spy = routeAll({
+      "/api/auth/session": () => json(SHOP_SESSION),
+      "/reports/sales/summary": () => json(TODAY_SALES),
+      "/delivery-runs": () => json(RUNS),
+    });
+    render(<Home />);
+    // The loading state is a `status` too, so wait for the round's own words.
+    expect(await screen.findByText("2 delivered · 1 to go · 1 skipped")).toBeInTheDocument();
+    expect(await screen.findByText("412.5")).toBeInTheDocument();
+    expect(screen.getByText("18,650.00")).toBeInTheDocument();
+    expect(screen.getByText("bills outstanding · 14 open")).toBeInTheDocument();
+    // TODAY's cash — the period figure — not the all-time balance.
+    expect(screen.getByText("3,200.00")).toBeInTheDocument();
+    expect(screen.queryByText("99,999.00")).toBeNull();
+    for (const word of ["farmers delivered", "payable accrued", "centres collecting", "receivables collected"]) {
+      expect(screen.queryByText(word), word).toBeNull();
+    }
+    // The two extra requests are about today, whatever the range picker says.
+    const urls = spy.mock.calls.map((c) => String(c[0]));
+    const summary = urls.find((u) => u.includes("/reports/sales/summary"))!;
+    const [, from, to] = summary.match(/date_from=([\d-]+)&date_to=([\d-]+)/)!;
+    expect(from).toBe(to);
+    expect(urls.some((u) => u.includes(`/delivery-runs?business_date=${from}`))).toBe(true);
+  });
+
+  it("a dairy that does both keeps the dairy's hero and asks for neither", async () => {
+    const spy = routeAll();
+    render(<Home />);
+    expect(await screen.findByText("farmers delivered")).toBeInTheDocument();
+    const urls = spy.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes("/reports/sales/summary"))).toBe(false);
+    expect(urls.some((u) => u.includes("/delivery-runs"))).toBe(false);
+  });
+});

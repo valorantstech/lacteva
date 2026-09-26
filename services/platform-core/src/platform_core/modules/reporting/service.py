@@ -571,6 +571,10 @@ class SalesSummary(BaseModel):
 
     invoiced: Decimal  #: issued + paid invoices, all time
     received: Decimal  #: recorded customer payments, all time
+    #: WO-104: what came in BETWEEN date_from and date_to — the shop's "money
+    #: received today". A period figure, unlike `received`, which is the
+    #: all-time balance; reckoned by the organisation's calendar day.
+    received_in_period: Decimal = Decimal("0.00")
     receivable: Decimal  #: invoiced less received; what is still owed
     by_status: list[InvoiceStatusRow]
     open_invoices: int  #: issued and not yet fully settled
@@ -1785,6 +1789,20 @@ class ReportingService:
                 CustomerPayment.status == "recorded",
             )
         )
+        # WO-104: the same payments, narrowed to the window — by the
+        # organisation's day, not UTC's (DEMO-013 §8), or a shop in Bengaluru
+        # would see the evening's cash under tomorrow.
+        window_start, window_end = range_bounds(date_from, date_to, await self._timezone())
+        received_in_period = await self._session.scalar(
+            select(
+                func.coalesce(func.sum(cast(CustomerPayment.amount, Numeric)), _EXACT_ZERO)
+            ).where(
+                CustomerPayment.tenant_id == tenant_id,
+                CustomerPayment.status == "recorded",
+                CustomerPayment.received_at >= window_start,
+                CustomerPayment.received_at < window_end,
+            )
+        )
 
         # 5. How many households are behind, which is the question a dairy
         #    owner actually asks. Owed and paid are grouped per customer and
@@ -1920,6 +1938,7 @@ class ReportingService:
             total_customers=sum(c for _, c in customer_states),
             invoiced=_money(invoiced),
             received=_money(received),
+            received_in_period=_money(received_in_period),
             receivable=_money(Decimal(invoiced or 0) - Decimal(received or 0)),
             by_status=by_status,
             open_invoices=sum(r.count for r in by_status if r.status == "issued"),

@@ -52,3 +52,34 @@ async def test_custom_role_grants_specific_permission(client):
         headers=user_headers,
     )
     assert r.status_code == 403
+
+
+def test_the_portal_role_fixture_is_the_permission_registry():
+    """WO-104: the portal pins one menu per kind of user against its nav
+    registry, using the roles' permission sets from
+    `apps/admin-portal/src/lib/system-roles.json`. That file is generated from
+    `ALL_SYSTEM_ROLES`; a role that changes here without the export rerun
+    would let the portal test pass against a stale copy — the
+    catalog-without-callers defect — so this fails first."""
+    import json
+    import pathlib
+
+    from platform_core.modules.authz.permissions import ALL_SYSTEM_ROLES
+
+    repo = pathlib.Path(__file__).resolve().parents[3]
+    fixture = json.loads((repo / "apps/admin-portal/src/lib/system-roles.json").read_text())
+    expected = {name: sorted(set(perms)) for name, perms in ALL_SYSTEM_ROLES.items()}
+    assert fixture == expected, "rerun tools/authz/export_system_roles.py"
+    # The kinds of user WO-104 names all exist, under these names.
+    for role in (
+        "platform-admin",
+        "tenant-admin",
+        "CENTRE_MANAGER",
+        "FINANCE_MANAGER",
+        "SALES_OFFICER",
+        "AUDITOR",
+        "COLLECTION_OPERATOR",
+        "DRIVER",
+        "CUSTOMER_PORTAL",
+    ):
+        assert role in fixture, role

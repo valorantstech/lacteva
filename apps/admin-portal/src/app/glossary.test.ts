@@ -32,15 +32,28 @@ const visible = (value: string) => value.replace(/\{[^}]*\}/g, " ");
  * is deliberately no "billable" entry — ruling B1 put state words under the
  * document noun, so "invoiceable" is the word and "billable" is not allowed
  * back in through an allowlist.
+ *
+ * WO-104 (owner, 2026-09-26) added the MENU's words for a shop: the entry that
+ * opens the billing section reads "Bills", the shop hero says "bills
+ * outstanding", and Settings explains the activity log as the answer to "who
+ * changed this bill" — the words a shopkeeper uses, on the two surfaces a
+ * shopkeeper reads first. The DOCUMENT is still an Invoice everywhere else;
+ * those keys are allowlisted by name, not by pattern, so the ruling does not
+ * leak.
  */
 const ALLOWED = [/\bBilling\b/g, /\bbilling period\b/gi];
+const MENU_WORDS = new Set([
+  "nav.billing",
+  "dashboard.shopBills",
+  "settings.activityLogHelp",
+]);
 
 const withoutAllowed = (value: string) =>
   ALLOWED.reduce((text, pattern) => text.replace(pattern, " "), value);
 
 const offenders = (pattern: RegExp, allow = false) =>
   Object.entries(en)
-    .filter(([key]) => !(allow && key.startsWith("billing.")))
+    .filter(([key]) => !(allow && (key.startsWith("billing.") || MENU_WORDS.has(key))))
     .map(([key, value]) => [key, allow ? withoutAllowed(visible(value)) : visible(value)])
     .filter(([, text]) => pattern.test(text as string))
     .map(([key]) => key);
@@ -61,13 +74,15 @@ describe("the D-4 glossary, in the EN catalog", () => {
     // Without this the two assertions above pass beautifully against nothing.
     expect(Object.keys(en).length).toBeGreaterThan(400);
     expect(en["entity.invoice"]).toBe("Invoice");
-    expect(en["nav.centers"]).toBe("Centres");
+    expect(en["nav.centers"]).toBe("Collection centres");
   });
 
   it("keeps the allowlisted activity name", () => {
     // The guard must not be so eager that it forces "Invoicing" on a section
     // that is correctly called Billing.
     expect(en["billing.title"]).toBe("Billing");
-    expect(en["nav.billing"]).toBe("Billing");
+    // WO-104: the menu says Bills; the page it opens is still the Billing
+    // section and the documents on it are still invoices.
+    expect(en["nav.billing"]).toBe("Bills");
   });
 });

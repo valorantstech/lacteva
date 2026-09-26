@@ -501,15 +501,17 @@ describe("navigation (NAV-001)", () => {
 
     render(<AppShell>{null}</AppShell>);
     expect(
-      await screen.findByRole("link", { name: "Centres" }),
+      await screen.findByRole("link", { name: "Collection centres" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Suppliers" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Farmers" })).toBeInTheDocument();
+    // WO-104 renamed these; the hidden list must name what the menu would
+    // SAY, or it passes against labels that no longer exist.
     for (const hidden of [
-      "Users",
+      "Staff",
       "Roles",
-      "Audit",
+      "Activity log",
       "Settlements",
-      "Payments",
+      "Farmer payments",
     ]) {
       expect(
         screen.queryByRole("link", { name: hidden }),
@@ -531,9 +533,9 @@ describe("navigation (NAV-001)", () => {
 
     render(<AppShell>{null}</AppShell>);
     expect(
-      await screen.findByRole("link", { name: "Users" }),
+      await screen.findByRole("link", { name: "Staff" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Centres" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Collection centres" })).toBeInTheDocument();
   });
 
   it("asks a platform session with no organization to choose one (TENANT-001)", async () => {
@@ -558,7 +560,7 @@ describe("navigation (NAV-001)", () => {
     routeFetch(SIGNED_IN);
 
     render(<AppShell>{null}</AppShell>);
-    await screen.findByRole("link", { name: "Centres" });
+    await screen.findByRole("link", { name: "Collection centres" });
     expect(screen.queryByLabelText("Organization ID")).not.toBeInTheDocument();
   });
 
@@ -568,12 +570,12 @@ describe("navigation (NAV-001)", () => {
 
     render(<AppShell>{null}</AppShell>);
     expect(
-      await screen.findByRole("link", { name: "Centres" }),
+      await screen.findByRole("link", { name: "Collection centres" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "Settlements" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Users" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Staff" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /sign out/i }),
     ).toBeInTheDocument();
@@ -592,7 +594,7 @@ describe("navigation (NAV-001)", () => {
 
     render(<AppShell>{null}</AppShell>);
     expect(
-      screen.queryByRole("link", { name: "Centres" }),
+      screen.queryByRole("link", { name: "Collection centres" }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: /sign in/i }),
@@ -615,7 +617,7 @@ describe("navigation (NAV-001)", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("link", { name: "Centres" }),
+        screen.queryByRole("link", { name: "Collection centres" }),
       ).not.toBeInTheDocument(),
     );
   });

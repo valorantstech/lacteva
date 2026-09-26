@@ -152,6 +152,130 @@ export function DashboardHero({
   );
 }
 
+/**
+ * WO-104 (WO-85 §7, finally done): the hero for an organisation that sells
+ * and does not collect. The dairy's hero read "0.0 collected · 0 farmers
+ * delivered · 0.00 payable accrued" on the Patel Dairy Shop — four figures
+ * about milk it never buys. A shop's morning is its round, the milk that went
+ * out, the bills still open and the cash that came in TODAY; nothing here is
+ * a collection figure, and a test holds it to that.
+ */
+export function ShopHero({
+  dateLine,
+  round,
+  delivered,
+  unit,
+  billsOpen,
+  billsAmount,
+  received,
+  currency,
+}: {
+  dateLine: string;
+  /** Today's round(s) across every route, counted from their stops; null
+   *  when no round is planned today (or the figure is not known). */
+  round: { delivered: number; remaining: number; skipped: number } | null;
+  /** Milk delivered today, as the platform's decimal string. */
+  delivered: string | null;
+  unit: string | null;
+  billsOpen: number | null;
+  billsAmount: string | null;
+  /** Money received today (the period figure, not the balance). */
+  received: string | null;
+  currency: string | null;
+}) {
+  const t = useT();
+  const total = round ? round.delivered + round.remaining + round.skipped : 0;
+  return (
+    <div className="relative -mx-4 overflow-hidden bg-[image:var(--gradient-dairy)] px-4 py-7 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -end-16 -top-20 size-[340px] rounded-full bg-[radial-gradient(circle_at_38%_32%,color-mix(in_oklch,var(--on-brand)_13%,transparent),transparent_62%)]"
+      />
+      <div className="relative flex flex-col gap-5">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-sm text-on-brand-muted">{dateLine}</p>
+            <h1 className="text-page font-semibold tracking-tight text-on-brand">
+              {t("dashboard.heroTitle")}
+            </h1>
+          </div>
+          <p
+            className="flex items-center gap-2 rounded-full border border-on-brand/20 bg-on-brand/10 px-3.5 py-1.5 text-sm font-medium text-on-brand"
+            role="status"
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "size-2 rounded-full",
+                round && round.remaining === 0 && round.delivered > 0
+                  ? "bg-on-brand-positive"
+                  : "bg-on-brand-muted",
+              )}
+            />
+            {round
+              ? t("dashboard.shopRoundDetail", {
+                  delivered: String(round.delivered),
+                  remaining: String(round.remaining),
+                  skipped: String(round.skipped),
+                })
+              : t("dashboard.shopNoRound")}
+          </p>
+        </div>
+
+        <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
+          <HeroCell>
+            <HeroFigure
+              value={round ? `${round.delivered} / ${total}` : "—"}
+              caption={t("dashboard.shopRound")}
+            />
+          </HeroCell>
+          <HeroCell>
+            <HeroFigure
+              value={
+                delivered === null ? (
+                  "—"
+                ) : (
+                  <Quantity value={delivered} unit={unit} />
+                )
+              }
+              caption={t("dashboard.shopDelivered")}
+            />
+          </HeroCell>
+          <HeroCell>
+            <HeroFigure
+              value={
+                billsAmount === null ? (
+                  "—"
+                ) : (
+                  <Money amount={billsAmount} currency={currency} />
+                )
+              }
+              caption={
+                billsOpen === null
+                  ? t("dashboard.shopBills")
+                  : `${t("dashboard.shopBills")} · ${t("dashboard.shopBillsDetail", { count: String(billsOpen) })}`
+              }
+            />
+          </HeroCell>
+          <HeroCell>
+            <HeroFigure
+              tone="positive"
+              value={
+                received === null ? (
+                  "—"
+                ) : (
+                  <Money amount={received} currency={currency} />
+                )
+              }
+              caption={t("dashboard.shopReceived")}
+            />
+          </HeroCell>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HeroCell({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-on-brand/15 bg-on-brand/[0.09] px-4 py-4">

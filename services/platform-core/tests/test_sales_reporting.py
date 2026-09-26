@@ -197,6 +197,33 @@ async def test_the_receivable_equals_the_sum_of_every_customer_balance(client):
     assert summary["customers_owing"] == 2  # part paid and unpaid; not the settled one
 
 
+async def test_money_received_in_the_period_is_a_period_figure_not_the_balance(client):
+    """WO-104: the shop's hero says "money received today". `received` is the
+    all-time balance and cannot answer that; `received_in_period` can, and it
+    is reckoned by the organisation's day. The ledger's payments were all
+    recorded today, so today's window holds every one of them and a window
+    that ends yesterday holds none."""
+    admin, _who, _worth = await _ledger(client)
+    today = (
+        await client.get(
+            f"/v1/reports/sales/summary?date_from={TODAY}&date_to={TODAY}", headers=admin
+        )
+    ).json()
+    assert Decimal(today["received"]) > 0
+    assert Decimal(today["received_in_period"]) == Decimal(today["received"])
+
+    before = (
+        await client.get(
+            f"/v1/reports/sales/summary?date_from={TODAY - timedelta(days=10)}"
+            f"&date_to={TODAY - timedelta(days=1)}",
+            headers=admin,
+        )
+    ).json()
+    assert Decimal(before["received_in_period"]) == Decimal("0.00")
+    # The balance does not move with the window — that is the distinction.
+    assert Decimal(before["received"]) == Decimal(today["received"])
+
+
 async def test_the_summary_separates_delivered_from_billed(client):
     admin, who, worth = await _ledger(client)
     summary = (await client.get("/v1/reports/sales/summary", headers=admin)).json()
