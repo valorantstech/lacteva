@@ -203,6 +203,63 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
+      # WO-106 · LACTEVA-BUILD-002: BUILDING the image proves nothing about
+      # whether it runs — building never imports the app. The 4b46e15 deploy
+      # rolled back because turnstile.py imported httpx, a dev-only extra
+      # every test had and the image did not. So the image that was just
+      # pushed is pulled back and RUN: first every module under the package
+      # is imported (a missing runtime dependency fails here, whether the
+      # import is at module level or inside a function that pkgutil's walk
+      # still triggers at import time), then the app is started against a
+      # PostgreSQL with a production-shaped environment and /health/live is
+      # asked to answer. `tests/test_runtime_dependencies.py` is the static
+      # half of the same guard.
+      - name: Run the image — import the app and every module
+        if: matrix.name == 'platform-core'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ matrix.repository }}:${{ matrix.tag_prefix }}${{ needs.tag.outputs.tag }}
+        run: |
+          docker pull "$IMAGE"
+          docker run --rm "$IMAGE" python -c "import platform_core.main"
+          docker run --rm "$IMAGE" python - <<'PY'
+          import importlib, pkgutil, sys
+          import platform_core
+          failed = []
+          for module in pkgutil.walk_packages(platform_core.__path__, "platform_core."):
+              try:
+                  importlib.import_module(module.name)
+              except Exception as exc:  # noqa: BLE001 — every failure is reported, none hidden
+                  failed.append(f"{module.name}: {exc!r}")
+          if failed:
+              print("\n".join(failed))
+              sys.exit(1)
+          print("every module under platform_core imports in the production image")
+          PY
+
+      - name: Run the image — start it and ask /health/live
+        if: matrix.name == 'platform-core'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ matrix.repository }}:${{ matrix.tag_prefix }}${{ needs.tag.outputs.tag }}
+        run: |
+          docker run -d --name smoke-pg -e POSTGRES_PASSWORD=smoke -e POSTGRES_USER=lacteva -e POSTGRES_DB=lacteva \
+            -p 5432:5432 postgres:16
+          for _ in $(seq 1 30); do docker exec smoke-pg pg_isready -U lacteva >/dev/null 2>&1 && break; sleep 1; done
+          docker run -d --name smoke-api --network host \
+            -e LACTEVA_ENV=dev \
+            -e LACTEVA_DATABASE_URL=postgresql+asyncpg://lacteva:smoke@127.0.0.1:5432/lacteva \
+            -e LACTEVA_EVENT_BUS=memory -e LACTEVA_OUTBOX_MODE=inline -e LACTEVA_RATE_LIMIT_BACKEND=memory \
+            -e LACTEVA_JWT_SECRET=ci-smoke-secret-0123456789abcdef0123456789abcdef \
+            "$IMAGE"
+          ok=0
+          for _ in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8000/health/live >/dev/null 2>&1; then ok=1; break; fi
+            sleep 2
+          done
+          docker logs smoke-api | tail -60
+          docker rm -f smoke-api smoke-pg >/dev/null
+          [ "$ok" = 1 ] || { echo "the production image did not answer /health/live"; exit 1; }
+          echo "the production image starts and answers /health/live"
+
       - name: Record what was published
         run: |
           {
