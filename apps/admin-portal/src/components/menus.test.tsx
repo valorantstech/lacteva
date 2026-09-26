@@ -253,6 +253,6 @@ describe("the shell", () => {
     expect(screen.getByRole("link", { name: "About the Lacteva app" })).toHaveAttribute("href", "https://lacteva.com/product");
     expect(screen.queryByText("OFFICE FORMS")).toBeNull();
     expect(screen.queryByRole("link", { name: "Dashboard" })).toBeNull();
-    expect(screen.getByText("Driver")).toBeInTheDocument();
+    expect(screen.getByText("Delivery boy")).toBeInTheDocument();
   });
 });

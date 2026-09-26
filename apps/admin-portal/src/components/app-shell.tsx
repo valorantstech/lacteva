@@ -70,6 +70,7 @@ import { Button } from "@/components/ui/button";
 import { LocaleProvider, type Translate, translatorFor, useT } from "@/lib/i18n";
 import { type ModuleKey, moduleEnabled, salesOnly } from "@/lib/modules";
 import { isPublic, loginPath } from "@/proxy";
+import { OWNER_ROLES, roleLabel as roleName } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 /**
@@ -954,18 +955,11 @@ function roleLabel(session: Session, t: Translate): string {
       // WO-104: the owner is "Owner". `tenant-admin` is the registry's key
       // for the person who owns the organisation, and "Tenant Admin" under
       // a shopkeeper's name is the platform talking to itself.
-      OWNER_ROLES.has(name)
-        ? t("role.owner")
-        : name
-            .replace(/[_-]+/g, " ")
-            .toLowerCase()
-            .replace(/\b\w/g, (letter) => letter.toUpperCase()),
+      OWNER_ROLES.has(name) ? t("role.owner") : roleName(name),
     );
   const unique = Array.from(new Set(names));
   return unique.length ? unique.join(" · ") : "Organization member";
 }
-
-const OWNER_ROLES = new Set(["tenant-admin", "ORGANIZATION_ADMIN"]);
 
 /**
  * WO-104: the page a handset role sees on the portal. One line, and a link —

@@ -95,7 +95,7 @@ describe("inviting a colleague", () => {
     render(<UsersPage />);
 
     // The roles offered come from the platform, never a compiled-in list.
-    await screen.findByRole("option", { name: "COLLECTION_OPERATOR" });
+    await screen.findByRole("option", { name: "Collection Operator" });
 
     await userEvent.type(
       screen.getByLabelText("Invite by email"),
@@ -141,7 +141,7 @@ describe("inviting a colleague", () => {
       ),
     );
     render(<UsersPage />);
-    await screen.findByRole("option", { name: "COLLECTION_OPERATOR" });
+    await screen.findByRole("option", { name: "Collection Operator" });
 
     await userEvent.type(
       screen.getByLabelText("Invite by email"),

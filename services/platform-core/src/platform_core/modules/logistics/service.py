@@ -32,6 +32,7 @@ from platform_core.modules.logistics.models import (
     OPEN_RUN_STATUSES,
     RUN_STATUSES,
     RUN_TRANSITIONS,
+    TRANSPORT_MODES,
     DeliveryRun,
     Driver,
     Route,
@@ -40,6 +41,13 @@ from platform_core.modules.logistics.models import (
 )
 
 # --- DTOs ------------------------------------------------------------------
+
+
+def _known_transport(value: str) -> str:
+    key = (value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if key not in TRANSPORT_MODES:
+        raise ValueError(f"transport must be one of {', '.join(TRANSPORT_MODES)}")
+    return key
 
 
 class RouteInput(BaseModel):
@@ -53,6 +61,13 @@ class RouteInput(BaseModel):
     default_driver_id: uuid.UUID | None = None
     default_vehicle_id: uuid.UUID | None = None
     auto_plan: bool = False
+    #: WO-108 §3: how the round goes out — see `TRANSPORT_MODES`.
+    transport: str = "vehicle"
+
+    @field_validator("transport")
+    @classmethod
+    def _transport(cls, v: str) -> str:
+        return _known_transport(v)
 
 
 class RouteUpdateInput(BaseModel):
@@ -69,6 +84,12 @@ class RouteUpdateInput(BaseModel):
     clear_default_driver: bool = False
     clear_default_vehicle: bool = False
     auto_plan: bool | None = None
+    transport: str | None = None
+
+    @field_validator("transport")
+    @classmethod
+    def _transport(cls, v: str | None) -> str | None:
+        return None if v is None else _known_transport(v)
 
 
 class RouteView(BaseModel):
@@ -81,6 +102,7 @@ class RouteView(BaseModel):
     default_driver_id: uuid.UUID | None = None
     default_vehicle_id: uuid.UUID | None = None
     auto_plan: bool = False
+    transport: str = "vehicle"
     stop_count: int = 0
 
     model_config = {"from_attributes": True}
@@ -284,6 +306,8 @@ class RunView(BaseModel):
     driver_name: str | None = None
     status: str
     notes: str
+    #: WO-108 §3: the route's — what the run needs before it can start.
+    transport: str = "vehicle"
     started_at: datetime | None = None
     finished_at: datetime | None = None
     stops: list[RunStopView] = []
@@ -497,6 +521,8 @@ class LogisticsService:
             changed["default_vehicle_id"] = str(data.default_vehicle_id)
         if data.auto_plan is not None and data.auto_plan != route.auto_plan:
             route.auto_plan = data.auto_plan
+        if data.transport is not None and data.transport != route.transport:
+            route.transport = data.transport
             changed["auto_plan"] = str(data.auto_plan)
         await self._session.flush()
         if changed:
@@ -942,8 +968,20 @@ class LogisticsService:
         # round nobody can be asked about afterwards. This is the guarantee
         # that makes an `assigned` STATUS unnecessary: assignment is two
         # columns, and starting is what checks them.
-        if status == "in_progress" and (run.driver_id is None or run.vehicle_id is None):
-            raise ConflictError("a run needs both a driver and a vehicle before it can start")
+        #
+        # WO-108 §3: the vehicle half applies to a round that goes out BY
+        # vehicle. A shop's delivery boy walks or rides a bicycle, and the
+        # round says so (`Route.transport`); the driver half always applies.
+        if status == "in_progress":
+            route = await self._session.get(Route, run.route_id)
+            needs_vehicle = route is None or route.transport == "vehicle"
+            if needs_vehicle and (run.driver_id is None or run.vehicle_id is None):
+                raise ConflictError(
+                    "a run needs both a driver and a vehicle before it can start — "
+                    "or mark the round as going out on foot or by bicycle"
+                )
+            if run.driver_id is None:
+                raise ConflictError("a run needs a driver before it can start")
 
         values: dict[str, object] = {"status": status, "updated_at": utcnow()}
         if status == "in_progress":
@@ -1403,6 +1441,7 @@ class LogisticsService:
             route_id=run.route_id,
             route_code=route.code if route else "",
             route_name=route.name if route else "",
+            transport=route.transport if route else "vehicle",
             business_date=run.business_date,
             slot=run.slot,
             vehicle_id=run.vehicle_id,
@@ -1503,3 +1542,87 @@ async def plan_auto_routes_for_scheduler(
         bus=OutboxEventBus(session, get_event_bus()),
         audit=AuditService(session),
     )
+
+
+# --- WO-108 §1: the delivery boy's profile, made when he joins -----------------
+
+
+def _same_person(a: str, b: str) -> bool:
+    return " ".join(a.lower().split()) == " ".join(b.lower().split())
+
+
+async def ensure_driver_for_login(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    full_name: str,
+    actor_id: uuid.UUID,
+    audit: AuditService,
+) -> tuple[Driver | None, str]:
+    """Called by the invitation flow when a DRIVER accepts (WO-108 §1).
+
+    The common case needs no driver screen at all: a profile is created from
+    his name and linked to his login, so the app's "my runs" answers from
+    the first sign-in. Idempotent, and careful about the case that is not
+    common: an existing UNLINKED profile with the same name is OFFERED — left
+    for the owner to link from the Delivery rounds page — not duplicated and
+    not silently taken over; a profile already on this login is simply
+    returned.
+
+    Returns the profile (or None when one was offered) and what happened:
+    `created`, `already-linked` or `offered`.
+    """
+    linked = await session.scalar(
+        select(Driver).where(
+            Driver.tenant_id == tenant_id, Driver.user_id == user_id, Driver.active.is_(True)
+        )
+    )
+    if linked is not None:
+        return linked, "already-linked"
+    unlinked = [
+        d
+        for d in (
+            await session.scalars(
+                select(Driver).where(
+                    Driver.tenant_id == tenant_id,
+                    Driver.user_id.is_(None),
+                    Driver.active.is_(True),
+                )
+            )
+        ).all()
+        if _same_person(d.full_name, full_name)
+    ]
+    if unlinked:
+        await audit.record(
+            action="logistics.driver_login_offered",
+            resource_type="driver",
+            resource_id=unlinked[0].id,
+            actor_id=actor_id,
+            detail={"code": unlinked[0].code, "user_id": str(user_id)},
+        )
+        return None, "offered"
+
+    async def taken(code: str) -> bool:
+        return (
+            await session.scalar(
+                select(Driver.id).where(Driver.tenant_id == tenant_id, Driver.code == code)
+            )
+        ) is not None
+
+    driver = Driver(
+        tenant_id=tenant_id,
+        code=await unique_code(full_name, taken),
+        full_name=" ".join(full_name.split()),
+        user_id=user_id,
+    )
+    session.add(driver)
+    await session.flush()
+    await audit.record(
+        action="logistics.driver_created",
+        resource_type="driver",
+        resource_id=driver.id,
+        actor_id=actor_id,
+        detail={"code": driver.code, "has_login": True, "from": "invitation"},
+    )
+    return driver, "created"

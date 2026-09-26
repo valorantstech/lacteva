@@ -256,9 +256,11 @@ describe("users page", () => {
     render(<UsersPage />);
 
     expect(await screen.findByText("Wanjiku Mbugua")).toBeInTheDocument();
-    expect(screen.getByText("ORGANIZATION_ADMIN")).toBeInTheDocument();
+    // WO-108: roles read as words to the people who hold them — "Owner",
+    // "Centre Manager", "Delivery boy" — from the one label source.
+    expect(screen.getByText("Owner")).toBeInTheDocument();
     expect(screen.getByText("· whole organization")).toBeInTheDocument();
-    expect(screen.getByText("CENTRE_MANAGER")).toBeInTheDocument();
+    expect(screen.getByText("Centre Manager")).toBeInTheDocument();
     // The scope is shown as a centre NAME, not a uuid.
     expect(screen.getByText("· Kilima Hill")).toBeInTheDocument();
   });

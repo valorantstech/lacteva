@@ -4273,6 +4273,9 @@ export type Route = {
   default_driver_id?: string | null;
   default_vehicle_id?: string | null;
   auto_plan?: boolean;
+  /** WO-108 §3: how the round goes out. `vehicle` needs one assigned before
+   *  a run starts; `on_foot` and `bicycle` need the delivery boy alone. */
+  transport?: "vehicle" | "on_foot" | "bicycle";
   stop_count: number;
 };
 
@@ -4352,6 +4355,7 @@ export const updateRoute = (
     clear_default_driver?: boolean;
     clear_default_vehicle?: boolean;
     auto_plan?: boolean;
+    transport?: "vehicle" | "on_foot" | "bicycle";
   },
 ) => api<Route>(`/v1/routes/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 
@@ -4368,6 +4372,14 @@ export const createVehicle = (body: { registration: string; label?: string }) =>
   api<Vehicle>("/v1/vehicles", { method: "POST", body: JSON.stringify(body) });
 
 export const listDrivers = () => api<Driver[]>("/v1/drivers");
+
+/** WO-108 §2: give a driver profile a login (a member holding the Delivery boy
+ *  role), or take it away with `null`. One login drives one profile. */
+export const linkDriverUser = (driverId: string, userId: string | null) =>
+  api<Driver>(`/v1/drivers/${driverId}/user`, {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId }),
+  });
 
 /** WO-88 §1: retire a driver, or bring one back. Future assignment only —
  *  past runs keep the person's name. */

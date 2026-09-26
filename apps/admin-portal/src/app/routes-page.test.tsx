@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "@/lib/api";
@@ -42,7 +43,9 @@ const RUN = {
   stops: [],
 };
 
-function stubApi(overrides: { runs?: unknown[] } = {}) {
+function stubApi(
+  overrides: { runs?: unknown[]; members?: unknown[]; userNames?: Record<string, string> } = {},
+) {
   vi.spyOn(api, "listRoutes").mockResolvedValue([ROUTE] as never);
   vi.spyOn(api, "listVehicles").mockResolvedValue([
     { id: "v-1", registration: "KDA 123X", label: "Blue van", center_id: null, active: true },
@@ -61,6 +64,11 @@ function stubApi(overrides: { runs?: unknown[] } = {}) {
   vi.spyOn(api, "listDeliveryRuns").mockResolvedValue(
     (overrides.runs ?? [RUN]) as never,
   );
+  // WO-108: the page also asks who holds the Delivery boy role, and names them.
+  vi.spyOn(api, "listMembers").mockResolvedValue((overrides.members ?? []) as never);
+  vi.spyOn(api, "getUser").mockImplementation(async (id: string) =>
+    ({ id, email: `${id}@patel.example`, full_name: overrides.userNames?.[id] ?? id, locale: "en", is_active: true }) as never,
+  );
 }
 
 beforeEach(() => {
@@ -74,7 +82,10 @@ describe("routes and runs", () => {
 
     expect(await screen.findByText("Kilima morning round")).toBeInTheDocument();
     expect(screen.getByText("R-01")).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
+    // WO-108: the stop count is the way into the stops editor.
+    expect(
+      screen.getByRole("button", { name: "Edit the stops of Kilima morning round" }),
+    ).toHaveTextContent("3 stops");
   });
 
   it("asks the PLATFORM which day it is, and never sends a date", async () => {
@@ -231,6 +242,11 @@ describe("routes and runs", () => {
 describe("a route that plans its own morning (WO-82)", () => {
   it("names a default driver by sending only that, and the switch waits for it", async () => {
     stubApi();
+    // WO-108: the default is chosen from LINKED delivery boys — a profile
+    // with a login is one whose phone will show the round.
+    vi.spyOn(api, "listDrivers").mockResolvedValue([
+      { id: "d-1", code: "DRV-1", full_name: "Joseph Mwangi", phone: "", user_id: "u-1", center_id: null, active: true },
+    ] as never);
     const spy = vi
       .spyOn(api, "updateRoute")
       .mockResolvedValue({ ...ROUTE, default_driver_id: "d-1" } as never);
@@ -239,7 +255,7 @@ describe("a route that plans its own morning (WO-82)", () => {
     expect(toggle.disabled).toBe(true);
     expect(screen.getByText("needs a default driver")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Default driver for R-01"), {
+    fireEvent.change(screen.getByLabelText("Default delivery boy for R-01"), {
       target: { value: "d-1" },
     });
     await waitFor(() =>
@@ -273,5 +289,77 @@ describe("a route that plans its own morning (WO-82)", () => {
     await waitFor(() =>
       expect(spy).toHaveBeenCalledWith("route-1", { clear_default_vehicle: true }),
     );
+  });
+});
+
+/**
+ * WO-108 · LACTEVA-LOGISTICS-003: the owner gives his delivery boy a round
+ * without typing a code or leaving this page — the stops in delivery order
+ * with up/down buttons, the default delivery boy from the LINKED drivers, how
+ * the round goes out, and a hand-made profile linked to a login.
+ */
+describe("giving the delivery boy a round (WO-108)", () => {
+  const LINKED = { id: "d-2", code: "RAMESH-PAWAR", full_name: "Ramesh Pawar", phone: "", user_id: "u-ramesh", center_id: null, active: true };
+
+  it("edits the stops in delivery order with up/down buttons and saves the order", async () => {
+    stubApi();
+    vi.spyOn(api, "getRoute").mockResolvedValue({
+      ...ROUTE,
+      stops: [
+        { customer_id: "c-flat", position: 1, code: "CUS-1", name: "Flat C-1603" },
+        { customer_id: "c-temple", position: 2, code: "CUS-2", name: "Shri Ganesh Mandir" },
+      ],
+    } as never);
+    vi.spyOn(api, "listCustomers").mockResolvedValue({
+      items: [{ id: "c-hotel", code: "CUS-3", name: "Hotel Annapurna", customer_type: "hotel", status: "active" }],
+      total: 1, limit: 8, offset: 0,
+    } as never);
+    const save = vi.spyOn(api, "setRouteStops").mockResolvedValue({ ...ROUTE, stops: [] } as never);
+    render(<RoutesPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Edit the stops of Kilima morning round" }));
+    const list = await screen.findByRole("list", { name: "Stops" });
+    await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(2));
+    // The temple goes first: one tap on its up arrow.
+    await userEvent.click(screen.getByRole("button", { name: "Move Shri Ganesh Mandir up" }));
+    // And the hotel is added by name.
+    await userEvent.type(screen.getByLabelText("Add a customer"), "Anna");
+    await userEvent.click(await screen.findByRole("button", { name: /Hotel Annapurna/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Save stops" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith("route-1", ["c-temple", "c-flat", "c-hotel"]));
+  });
+
+  it("offers only LINKED delivery boys as the round's default, and how the round goes out", async () => {
+    stubApi();
+    vi.spyOn(api, "listDrivers").mockResolvedValue([
+      { id: "d-1", code: "DRV-1", full_name: "Joseph Mwangi", phone: "", user_id: null, center_id: null, active: true },
+      LINKED,
+    ] as never);
+    const update = vi.spyOn(api, "updateRoute").mockResolvedValue(ROUTE as never);
+    render(<RoutesPage />);
+    const select = (await screen.findByLabelText("Default delivery boy for R-01")) as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual(["— none —", "Ramesh Pawar"]);
+    await userEvent.selectOptions(select, "d-2");
+    await waitFor(() => expect(update).toHaveBeenCalledWith("route-1", { default_driver_id: "d-2" }));
+    await userEvent.selectOptions(screen.getByLabelText("How R-01 goes out"), "on_foot");
+    await waitFor(() => expect(update).toHaveBeenCalledWith("route-1", { transport: "on_foot" }));
+  });
+
+  it("links a hand-made profile to a Delivery boy login from a select, by name", async () => {
+    stubApi({
+      members: [
+        { user_id: "u-ramesh", status: "active", joined_at: "2026-09-26T00:00:00Z", roles: [{ name: "DRIVER", center_id: null }] },
+        { user_id: "u-owner", status: "active", joined_at: "2026-09-26T00:00:00Z", roles: [{ name: "tenant-admin", center_id: null }] },
+      ],
+      userNames: { "u-ramesh": "Ramesh Pawar", "u-owner": "Sarwari Patel" },
+    });
+    const link = vi.spyOn(api, "linkDriverUser").mockResolvedValue(LINKED as never);
+    render(<RoutesPage />);
+    const select = (await screen.findByLabelText("Login for Joseph Mwangi")) as HTMLSelectElement;
+    // Only the Delivery boy logins not yet on a profile — never the owner.
+    await waitFor(() =>
+      expect([...select.options].map((o) => o.textContent)).toEqual(["— no app login yet —", "Ramesh Pawar"]),
+    );
+    await userEvent.selectOptions(select, "u-ramesh");
+    await waitFor(() => expect(link).toHaveBeenCalledWith("d-1", "u-ramesh"));
   });
 });

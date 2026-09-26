@@ -25,6 +25,7 @@ import {
 import { DepartureChecklist } from "@/components/departure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { roleLabel } from "@/lib/roles";
 
 type Person = Member & { user: User | null };
 
@@ -363,7 +364,7 @@ export default function UsersPage() {
                 key={`${role.name}-${role.center_id ?? "org"}`}
                 className="text-sm"
               >
-                {role.name}
+                {roleLabel(role.name)}
                 <span className="ms-1 text-xs text-muted-foreground">
                   {role.center_id
                     ? `· ${centerName(role.center_id)}`
@@ -503,7 +504,7 @@ export default function UsersPage() {
           >
             {roles.map((role) => (
               <option key={role.id} value={role.name}>
-                {role.name}
+                {roleLabel(role.name)}
               </option>
             ))}
           </Select>

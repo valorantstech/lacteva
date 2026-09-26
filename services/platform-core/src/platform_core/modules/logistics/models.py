@@ -81,11 +81,23 @@ class Route(Base, IdMixin):
     default_driver_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     default_vehicle_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     auto_plan: Mapped[bool] = mapped_column(default=False, server_default="0")
+    #: WO-108 §3 — HOW the round goes out: `vehicle` (the default, and the
+    #: only case until now), `on_foot` or `bicycle`. BR-0028 asks for a
+    #: driver AND a vehicle before a run may start; a shop's delivery boy
+    #: walks or rides a bicycle, so the round says so and the rule asks for
+    #: the driver alone. The round carries it, not the organisation's
+    #: modules — D-31 forbids a business rule from branching on those.
+    transport: Mapped[str] = mapped_column(String(12), default="vehicle", server_default="vehicle")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+#: WO-108 §3. `vehicle` needs one assigned before the run starts; the other
+#: two need the delivery boy alone.
+TRANSPORT_MODES = ("vehicle", "on_foot", "bicycle")
 
 
 class RouteStop(Base, IdMixin):

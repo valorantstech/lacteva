@@ -167,7 +167,7 @@ describe("money and actions are in the card, not off the right edge (WO-96 §1)"
     stub(() => undefined);
     await mount(<RoutesPage />);
     const card = await cardWith("R-01");
-    expect(within(card).getByLabelText("Default driver for R-01")).toBeInTheDocument();
+    expect(within(card).getByLabelText("Default delivery boy for R-01")).toBeInTheDocument();
     expect(within(card).getByLabelText("Default vehicle for R-01")).toBeInTheDocument();
     expect(within(card).getByLabelText("Plan R-01 every morning")).toBeInTheDocument();
   });

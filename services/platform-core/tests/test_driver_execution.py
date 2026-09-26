@@ -107,16 +107,33 @@ async def test_my_profile_answers_and_an_unlinked_login_is_told_clearly(client):
     assert me.status_code == 200, me.text
     assert me.json()["code"] == "DRV-1"
 
-    # A second DRIVER login with no linked profile: the app needs "not set up
-    # yet" (404 on /drivers/me) to be distinguishable from "no run today"
-    # (200 with an empty list on /mine).
+    # WO-108 §1: a second DRIVER login whose name matches no profile gets one
+    # CREATED and linked on acceptance — "my runs" answers from the first
+    # sign-in, with nothing to set up.
+    hire, _uid = await _driver_login(
+        client, env["admin"], env["org_id"], "newhire@kilima.example", full_name="New Hire"
+    )
+    me = await client.get("/v1/drivers/me", headers=hire)
+    assert me.status_code == 200, me.text
+    assert me.json()["code"] == "NEW-HIRE"
+    r = await client.get("/v1/delivery-runs/mine", headers=hire)
+    assert r.status_code == 200 and r.json() == []
+
+    # The one way to be unlinked now: a hand-made profile with the SAME name
+    # already exists. It is OFFERED to the owner, not duplicated and not taken
+    # over — so the app still needs "not set up yet" (404 on /drivers/me) to
+    # be distinguishable from "no run today" (200 with an empty list).
+    r = await client.post("/v1/drivers", json={"full_name": "Spare Hand"}, headers=env["admin"])
+    assert r.status_code == 201, r.text
     other, _uid = await _driver_login(
-        client, env["admin"], env["org_id"], "unlinked@kilima.example", full_name="New Hire"
+        client, env["admin"], env["org_id"], "unlinked@kilima.example", full_name="Spare Hand"
     )
     assert (await client.get("/v1/drivers/me", headers=other)).status_code == 404
     r = await client.get("/v1/delivery-runs/mine", headers=other)
     assert r.status_code == 200
     assert r.json() == []
+    drivers = (await client.get("/v1/drivers", headers=env["admin"])).json()
+    assert [d["full_name"] for d in drivers].count("Spare Hand") == 1, "offered, not duplicated"
 
 
 # --- isolation: own runs only ----------------------------------------------------

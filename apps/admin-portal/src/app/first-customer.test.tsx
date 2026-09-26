@@ -63,7 +63,7 @@ function stub(products: unknown[], types: string[] = ["household", "Temple"]) {
       if (path.endsWith("/v1/drivers") && init?.method === "POST")
         return json({ id: "d-new", code: "RAMESH-PAWAR", full_name: "Ramesh Pawar", phone: "", user_id: null, center_id: null, active: true }, 201);
       // The rounds page's lists are plain arrays.
-      if (/\/v1\/(routes|vehicles|drivers|delivery-runs)$/.test(path)) return json([]);
+      if (/\/v1\/(routes|vehicles|drivers|delivery-runs|members)$/.test(path)) return json([]);
       return json({ items: [], total: 0 });
     }),
   );

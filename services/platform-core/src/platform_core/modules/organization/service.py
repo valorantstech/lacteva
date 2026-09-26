@@ -989,6 +989,21 @@ class InvitationService:
             # was at the keyboard.
             actor_id=user.id,
         )
+        # WO-108 §1: a delivery boy is a DRIVER profile from his first
+        # sign-in — created from his name and linked to this login, unless an
+        # unlinked profile with his name already exists, which is offered to
+        # the owner to link rather than duplicated or taken over.
+        if invitation.role_name == "DRIVER" and invitation.tenant_id is not None:
+            from platform_core.modules.logistics.service import ensure_driver_for_login
+
+            await ensure_driver_for_login(
+                self._session,
+                tenant_id=invitation.tenant_id,
+                user_id=user.id,
+                full_name=full_name,
+                actor_id=user.id,
+                audit=self._audit,
+            )
         invitation.accepted_at = utcnow()
         await self._audit.record(
             action="organization.invitation.accepted",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Route as RouteIcon, Truck, UserRound } from "lucide-react";
+import { ArrowDown, ArrowUp, Route as RouteIcon, Truck, UserRound, X } from "lucide-react";
 import {
   ApiError,
   type DeliveryRun,
@@ -21,6 +21,15 @@ import {
   listVehicles,
   setDeliveryRunStatus,
   updateRoute,
+  getRoute,
+  setRouteStops,
+  listCustomers,
+  listMembers,
+  linkDriverUser,
+  type Member,
+  type RouteStop,
+  type Customer,
+  getUser,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -40,6 +49,7 @@ import { Skeleton } from "@/components/skeleton";
 import { Metric, Surface } from "@/components/surface";
 import { StatusBadge } from "@/components/status-badge";
 import { type Column, DataTable } from "@/components/data-table";
+import { roleLabel } from "@/lib/roles";
 
 /**
  * Routes, fleet and today's rounds (DEMO-034).
@@ -73,6 +83,11 @@ export default function RoutesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [runs, setRuns] = useState<DeliveryRun[]>([]);
+  // WO-108: the organisation's people, for "which login is this delivery
+  // boy?" — and which round's stops are being edited.
+  const [members, setMembers] = useState<Member[]>([]);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [editingStops, setEditingStops] = useState<Route | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<RunGeneration | null>(null);
   // LACTEVA-ADMIN-001: every list here starts `[]`, so on first paint the
@@ -83,16 +98,29 @@ export default function RoutesPage() {
 
   const load = useCallback(async () => {
     try {
-      const [r, v, d, runList] = await Promise.all([
+      const [r, v, d, runList, people] = await Promise.all([
         listRoutes(),
         listVehicles(),
         listDrivers(),
         listDeliveryRuns(),
+        // Not every reader may list members; the link select is then simply
+        // absent rather than the whole page failing.
+        listMembers().catch(() => [] as Member[]),
       ]);
       setRoutes(r);
       setVehicles(v);
       setDrivers(d);
       setRuns(runList);
+      setMembers(people);
+      // The members list carries roles, not names; the few people holding
+      // the Delivery boy role are named from their user records.
+      const boys = people.filter((m) => (m.roles ?? []).some((r) => r.name === "DRIVER"));
+      const users = await Promise.all(boys.map((m) => getUser(m.user_id).catch(() => null)));
+      setNames(
+        Object.fromEntries(
+          users.filter(Boolean).map((u) => [u!.id, u!.full_name || u!.email]),
+        ),
+      );
       setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "could not load routes");
@@ -299,7 +327,14 @@ export default function RoutesPage() {
               caption="Routes"
               rowKey={(route) => route.id}
               rows={routes}
-              columns={routeColumns({ drivers, vehicles, act })}
+              columns={routeColumns({
+                drivers,
+                vehicles,
+                act,
+                editing: editingStops?.id ?? null,
+                onEditStops: (route) =>
+                  setEditingStops((current) => (current?.id === route.id ? null : route)),
+              })}
             />
           )}
           <p className="pt-3 text-xs text-muted-foreground">
@@ -311,6 +346,20 @@ export default function RoutesPage() {
           </p>
         </CardContent>
       </Card>
+
+      {editingStops ? (
+        <RouteStopsEditor
+          key={editingStops.id}
+          route={editingStops}
+          onClose={() => setEditingStops(null)}
+          onSaved={() => {
+            setEditingStops(null);
+            void load();
+          }}
+        />
+      ) : null}
+
+      <DeliveryBoys drivers={drivers} members={members} names={names} act={act} />
     </PageContainer>
   );
 }
@@ -567,6 +616,265 @@ function RegisterCard({
   );
 }
 
+
+/**
+ * WO-108 §2: the round's stops — which customers, in delivery order — edited
+ * on a phone: search a customer and add them, move a stop up or down with a
+ * button (no drag needed at 360px), remove one, save. The list IS the order
+ * the platform stores.
+ */
+function RouteStopsEditor({
+  route,
+  onClose,
+  onSaved,
+}: {
+  route: Route;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [stops, setStops] = useState<RouteStop[] | null>(null);
+  const [q, setQ] = useState("");
+  const [found, setFound] = useState<Customer[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getRoute(route.id)
+      .then((detail) => !cancelled && setStops(detail.stops))
+      .catch((e) => !cancelled && setError(e instanceof ApiError ? e.message : "could not load the stops"));
+    return () => {
+      cancelled = true;
+    };
+  }, [route.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Debounced, and the short-query clear happens on the same tick as a
+    // search would — never a state write straight from the effect body.
+    const t = setTimeout(() => {
+      if (q.trim().length < 2) {
+        setFound([]);
+        return;
+      }
+      listCustomers({ q: q.trim(), status: "active", limit: 8, offset: 0 })
+        .then((page) => !cancelled && setFound(page.items))
+        .catch(() => !cancelled && setFound([]));
+    }, 150);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [q]);
+
+  function move(index: number, delta: number) {
+    setStops((current) => {
+      if (!current) return current;
+      const next = [...current];
+      const target = index + delta;
+      if (target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next.map((s, i) => ({ ...s, position: i + 1 }));
+    });
+  }
+
+  const current = stops ?? [];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Stops of {route.name}</CardTitle>
+        <CardDescription>
+          In delivery order, top to bottom. Add a customer by name, move a stop
+          with the arrows, and save.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {stops === null && !error ? <LoadingState label="Loading stops…" /> : null}
+        <ol className="flex flex-col divide-y" aria-label="Stops">
+          {current.map((stop, index) => (
+            <li key={stop.customer_id} className="flex items-center gap-2 py-2">
+              <span className="w-6 shrink-0 text-xs text-muted-foreground">{index + 1}.</span>
+              <span className="min-w-0 flex-1 truncate text-sm">
+                {stop.name}
+                <span className="ms-1 text-xs text-muted-foreground">{stop.code}</span>
+              </span>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={`Move ${stop.name} up`}
+                disabled={index === 0}
+                onClick={() => move(index, -1)}
+              >
+                <ArrowUp className="size-4" />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={`Move ${stop.name} down`}
+                disabled={index === current.length - 1}
+                onClick={() => move(index, 1)}
+              >
+                <ArrowDown className="size-4" />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={`Remove ${stop.name}`}
+                onClick={() => setStops(current.filter((s) => s.customer_id !== stop.customer_id))}
+              >
+                <X className="size-4" />
+              </Button>
+            </li>
+          ))}
+        </ol>
+        {stops !== null && current.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No stops yet — add the first customer below.</p>
+        ) : null}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`stops-search-${route.id}`}>Add a customer</Label>
+          <Input
+            id={`stops-search-${route.id}`}
+            placeholder="Type a name…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          {found.length > 0 ? (
+            <ul className="flex flex-col divide-y rounded-md border border-border" aria-label="Matching customers">
+              {found
+                .filter((c) => !current.some((s) => s.customer_id === c.id))
+                .map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between px-3 py-2 text-start text-sm hover:bg-muted"
+                      onClick={() => {
+                        setStops([
+                          ...current,
+                          { customer_id: c.id, position: current.length + 1, code: c.code, name: c.name },
+                        ]);
+                        setQ("");
+                      }}
+                    >
+                      <span className="truncate">{c.name}</span>
+                      <span className="ms-2 shrink-0 text-xs text-muted-foreground">add</span>
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          ) : null}
+        </div>
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            disabled={saving || stops === null}
+            onClick={async () => {
+              setSaving(true);
+              setError(null);
+              try {
+                await setRouteStops(route.id, current.map((s) => s.customer_id));
+                onSaved();
+              } catch (e) {
+                setError(e instanceof ApiError ? e.message : "could not save the stops");
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {saving ? "Saving…" : "Save stops"}
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * WO-108 §2: the delivery boys, and which login each one is. A boy invited as
+ * a Delivery boy arrives here already linked (the platform makes his profile
+ * when he accepts). A profile made by hand — before this work order, or for
+ * a name that already existed — is linked from the select: the members
+ * holding the Delivery boy role who are not yet on a profile.
+ */
+function DeliveryBoys({
+  drivers,
+  members,
+  names,
+  act,
+}: {
+  drivers: Driver[];
+  members: Member[];
+  /** user_id → the person's name, for the members holding the role. */
+  names: Record<string, string>;
+  act: (fn: () => Promise<unknown>) => void;
+}) {
+  const boys = members.filter((m) => (m.roles ?? []).some((r) => r.name === "DRIVER"));
+  const linkedUsers = new Set(drivers.map((d) => d.user_id).filter(Boolean));
+  const name = (m: Member) => names[m.user_id] ?? m.user_id;
+  if (drivers.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Delivery boys</CardTitle>
+        <CardDescription>
+          Invite a delivery boy from Staff and his profile appears here linked to
+          his login. A profile made by hand is linked to a login below.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="flex flex-col divide-y" aria-label="Delivery boys">
+          {drivers
+            .filter((d) => d.active)
+            .map((driver) => {
+              const holder = members.find((m) => m.user_id === driver.user_id);
+              return (
+                <li key={driver.id} className="flex flex-wrap items-center gap-2 py-2">
+                  <span className="min-w-0 flex-1 text-sm">
+                    {driver.full_name}
+                    <span className="ms-1 font-mono text-xs text-muted-foreground">{driver.code}</span>
+                  </span>
+                  {driver.user_id ? (
+                    <span className="text-xs text-muted-foreground">
+                      {roleLabel("DRIVER")} login: {holder ? name(holder) : "linked"}
+                    </span>
+                  ) : (
+                    <Select
+                      aria-label={`Login for ${driver.full_name}`}
+                      value=""
+                      onChange={(e) => {
+                        if (e.target.value) act(() => linkDriverUser(driver.id, e.target.value));
+                      }}
+                    >
+                      <option value="">— no app login yet —</option>
+                      {boys
+                        .filter((m) => !linkedUsers.has(m.user_id))
+                        .map((m) => (
+                          <option key={m.user_id} value={m.user_id}>
+                            {name(m)}
+                          </option>
+                        ))}
+                    </Select>
+                  )}
+                </li>
+              );
+            })}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
 /**
  * The route list as columns (WO-96 §1), so the phone shows each round as a
  * card with its driver, vehicle and the every-morning switch beneath the
@@ -576,24 +884,47 @@ function routeColumns({
   drivers,
   vehicles,
   act,
+  editing,
+  onEditStops,
 }: {
   drivers: Driver[];
   vehicles: Vehicle[];
   act: (fn: () => Promise<unknown>) => void;
+  /** WO-108 §2: the route whose stops are open in the editor below. */
+  editing: string | null;
+  onEditStops: (route: Route) => void;
 }): Column<Route>[] {
+  // WO-108 §2: the default delivery boy is chosen from the LINKED drivers —
+  // a profile with a login is one whose phone will show the round.
+  const linked = drivers.filter((d) => d.active && d.user_id);
   return [
     { key: "code", header: "Code", role: "title", cell: (route) => <span className="font-mono text-xs">{route.code}</span> },
     { key: "name", header: "Name", role: "subtitle", cell: (route) => route.name },
-    { key: "stops", header: "Stops", cell: (route) => route.stop_count },
+    {
+      key: "stops",
+      header: "Stops",
+      cell: (route) => (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          aria-label={`Edit the stops of ${route.name}`}
+          aria-pressed={editing === route.id}
+          onClick={() => onEditStops(route)}
+        >
+          {route.stop_count} {route.stop_count === 1 ? "stop" : "stops"} · edit
+        </Button>
+      ),
+    },
     { key: "status", header: "Status", role: "status", cell: (route) => <StatusBadge status={route.active ? "active" : "inactive"} /> },
     // WO-82 §3: the round will exist every morning without anyone creating
     // it — when a default driver is named and the switch is on.
     {
       key: "driver",
-      header: "Default driver",
+      header: "Delivery boy",
       cell: (route) => (
         <Select
-          aria-label={`Default driver for ${route.code}`}
+          aria-label={`Default delivery boy for ${route.code}`}
           value={route.default_driver_id ?? ""}
           onChange={(e) =>
             act(() =>
@@ -605,11 +936,43 @@ function routeColumns({
           }
         >
           <option value="">— none —</option>
-          {drivers.map((d) => (
+          {linked.map((d) => (
             <option key={d.id} value={d.id}>
               {d.full_name}
             </option>
           ))}
+          {/* A default set before this work order, on a profile without a
+              login, stays visible rather than silently vanishing. */}
+          {route.default_driver_id && !linked.some((d) => d.id === route.default_driver_id)
+            ? drivers
+                .filter((d) => d.id === route.default_driver_id)
+                .map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.full_name} (no app login)
+                  </option>
+                ))
+            : null}
+        </Select>
+      ),
+    },
+    {
+      key: "transport",
+      header: "Goes out by",
+      cell: (route) => (
+        <Select
+          aria-label={`How ${route.code} goes out`}
+          value={route.transport ?? "vehicle"}
+          onChange={(e) =>
+            act(() =>
+              updateRoute(route.id, {
+                transport: e.target.value as "vehicle" | "on_foot" | "bicycle",
+              }),
+            )
+          }
+        >
+          <option value="vehicle">vehicle</option>
+          <option value="on_foot">on foot</option>
+          <option value="bicycle">bicycle</option>
         </Select>
       ),
     },
