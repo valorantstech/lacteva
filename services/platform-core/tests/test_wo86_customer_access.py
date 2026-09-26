@@ -100,6 +100,9 @@ async def test_the_staff_route_refuses_the_customer_role_and_the_customer_route_
     from platform_core.modules.event_relay.service import OutboxEventBus
     from platform_core.modules.organization.service import InvitationService
 
+    # WO-109: the inviter is a real member whose reach covers the role — a
+    # made-up actor holds nothing and is refused for THAT reason first.
+    owner_id = uuid.UUID((await client.get("/v1/auth/me", headers=admin)).json()["user"]["id"])
     async with platform_factory("test: a staff role bound to a customer")() as session:
         set_current_tenant(uuid.UUID(org["id"]))
         service = InvitationService(
@@ -109,7 +112,7 @@ async def test_the_staff_route_refuses_the_customer_role_and_the_customer_route_
             await service.invite(
                 email="manager@household.example",
                 role_name="tenant-viewer",
-                actor_id=uuid.uuid4(),
+                actor_id=owner_id,
                 customer_id=uuid.uuid4(),
             )
         set_current_tenant(None)
