@@ -217,7 +217,9 @@ async def invite(
     assert "invitation_token" not in body, "the raw token is back in the API response"
     assert "token" not in body, "the raw token is back in the API response"
     assert "body" in captured, "no invitation message was delivered"
-    match = re.search(r"registration:\s*(\S+?)\.\s", captured["body"])
+    # WO-100: the link carries the code in its FRAGMENT; the code also stands
+    # alone on its own line. Read it from the link, the way a phone does.
+    match = re.search(r"/accept-invitation#code=([A-Za-z0-9_-]+)", captured["body"])
     assert match, f"no token in the delivered message: {captured['body']!r}"
     return body, match.group(1)
 

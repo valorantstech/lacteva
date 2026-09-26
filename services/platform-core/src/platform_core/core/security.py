@@ -14,6 +14,7 @@ Clock skew is tolerated by an explicit leeway rather than by widening
 expiry: two nodes disagreeing by a few seconds must not log a farmer out.
 """
 
+import re
 import uuid
 from datetime import timedelta
 from typing import Any, Literal
@@ -146,3 +147,25 @@ def token_key_id(token: str) -> str | None:
         return jwt.get_unverified_header(token).get("kid")
     except Exception:
         return None
+
+
+#: The alphabet `secrets.token_urlsafe` draws from — nothing else is ever part
+#: of a code the platform issued.
+_TOKEN_RUN = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def normalise_token(raw: str) -> str:
+    """Keep the token and nothing else from a pasted code (WO-100).
+
+    The first real customer's owner long-pressed the code in the invitation
+    email on a phone and got "XXXX." — the full stop that followed it in the
+    sentence — and a perfectly valid invitation was refused, because the
+    platform hashes the token exactly. Quotes, "code:", the line breaks Gmail
+    inserts, even the whole link pasted instead of the code: the token is the
+    LONGEST run of the alphabet `token_urlsafe` uses (43 characters; "code",
+    "accept-invitation" and the rest are far shorter), so taking that run
+    cannot turn one valid token into another. Done here, on the server,
+    because the API is also what the mobile app calls.
+    """
+    runs = _TOKEN_RUN.findall(raw or "")
+    return max(runs, key=len) if runs else ""

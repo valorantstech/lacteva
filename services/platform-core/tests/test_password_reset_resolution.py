@@ -19,6 +19,7 @@ organizations gets a code for EACH (the inbox is the identity, and each message
 says whose account it opens), and each code opens only its own account.
 """
 
+import re
 import uuid
 
 import pytest
@@ -54,7 +55,7 @@ class _Capturing:
 
 
 def _code_in(body: str) -> str:
-    return body.split("complete your reset:", 1)[1].split(".", 1)[0].strip()
+    return re.search(r"/reset-password#code=([A-Za-z0-9_-]+)", body).group(1)
 
 
 async def _reset_token_count() -> int:

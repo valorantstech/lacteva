@@ -194,6 +194,56 @@ describe("accepting an invitation", () => {
     });
   });
 
+  it("prefills the code from the email's link, removes it from the address bar, and never sends it in a URL (WO-100)", async () => {
+    const replaceState = vi.fn();
+    vi.stubGlobal("location", {
+      assign: vi.fn(),
+      pathname: "/accept-invitation",
+      search: "",
+      hash: "#code=" + "abcXYZ_-09".repeat(4) + ".",
+    });
+    vi.stubGlobal("history", { replaceState });
+    const seen: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: RequestInfo | URL) => {
+        seen.push(String(url));
+        return json({ id: "u9" }, 201);
+      }),
+    );
+    render(<AcceptInvitationPage />);
+    // The code is there, without the full stop the link's sender never put there.
+    await waitFor(() =>
+      expect(screen.getByLabelText("Invitation code")).toHaveValue("abcXYZ_-09".repeat(4)),
+    );
+    // And the fragment is gone from the bar.
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/accept-invitation");
+    await userEvent.type(screen.getByLabelText("Full name"), "Vikas Dangi");
+    await userEvent.type(screen.getByLabelText("Password"), "correct-horse-battery");
+    await userEvent.click(screen.getByRole("button", { name: "Join" }));
+    await waitFor(() => expect(seen.length).toBeGreaterThan(0));
+    // No request URL carries the token — that is the access-log guarantee.
+    for (const url of seen) expect(url).not.toContain("abcXYZ_-09");
+  });
+
+  it("forgives a code pasted with the full stop a phone's copy drags along", async () => {
+    let seenBody = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        seenBody = String(init?.body ?? "");
+        return json({ id: "u9" }, 201);
+      }),
+    );
+    render(<AcceptInvitationPage />);
+    await userEvent.type(screen.getByLabelText("Invitation code"), '"code-abc-XYZ_09."');
+    await userEvent.type(screen.getByLabelText("Full name"), "Asha Verma");
+    await userEvent.type(screen.getByLabelText("Password"), "correct-horse-battery");
+    await userEvent.click(screen.getByRole("button", { name: "Join" }));
+    await waitFor(() => expect(seenBody).not.toBe(""));
+    expect(JSON.parse(seenBody).token).toBe("code-abc-XYZ_09");
+  });
+
   it("shows the platform's reason for a spent code, and keeps the form", async () => {
     vi.stubGlobal(
       "fetch",

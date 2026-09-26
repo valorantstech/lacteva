@@ -17,7 +17,12 @@ from platform_core.core.errors import (
     InvalidCredentialsError,
     InvalidTokenError,
 )
-from platform_core.core.security import create_token, hash_password, verify_password
+from platform_core.core.security import (
+    create_token,
+    hash_password,
+    normalise_token,
+    verify_password,
+)
 from platform_core.infrastructure.events import EventBus, EventEnvelope
 from platform_core.modules.audit.service import AuditService
 from platform_core.modules.auth.models import AuthSession, PasswordResetToken
@@ -417,6 +422,7 @@ class AuthService:
         idempotency keyed on THIS token — so a second request sends the second
         code rather than suppressing it or re-sending a stale one.
         """
+        from platform_core.modules.notification.links import password_reset_link, portal_url
         from platform_core.modules.notification.service import (
             NotificationRequest,
             NotificationService,
@@ -435,8 +441,13 @@ class AuthService:
                 variables={
                     "expires_hours": int(RESET_TOKEN_TTL.total_seconds() // 3600),
                     "organization": await self._organization_name(user.tenant_id),
+                    "portal_url": portal_url(),
                 },
-                secret_variables={"reset_token": raw_token},
+                # WO-100: the link carries the token, so it is a secret too.
+                secret_variables={
+                    "reset_token": raw_token,
+                    "reset_link": password_reset_link(raw_token),
+                },
             )
         )
 
@@ -457,7 +468,9 @@ class AuthService:
             self._session, reason="email change: resolve the account from the code"
         )
         change = await self._session.scalar(
-            select(EmailChange).where(EmailChange.token_hash == _hash_secret(token))
+            select(EmailChange).where(
+                EmailChange.token_hash == _hash_secret(normalise_token(token))
+            )
         )
         if (
             change is None
@@ -531,7 +544,9 @@ class AuthService:
             self._session, reason="password reset: resolve the account from the token"
         )
         record = await self._session.scalar(
-            select(PasswordResetToken).where(PasswordResetToken.token_hash == _hash_secret(token))
+            select(PasswordResetToken).where(
+                PasswordResetToken.token_hash == _hash_secret(normalise_token(token))
+            )
         )
         if record is None or record.used_at is not None or as_utc(record.expires_at) < utcnow():
             raise InvalidTokenError()

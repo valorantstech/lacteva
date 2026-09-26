@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -14,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LactevaLockup } from "@/components/lockup";
 import { ApiError, confirmEmailChange } from "@/lib/api";
+import { normaliseCode, takeCodeFromFragment } from "@/lib/one-time-code";
 
 /**
  * The new address confirms an email change (WO-87 §3).
@@ -35,10 +35,24 @@ export default function ConfirmEmailPage() {
 }
 
 function ConfirmEmail() {
-  const params = useSearchParams();
-  const [code, setCode] = useState(params.get("token") ?? "");
+  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // WO-100: the email's link carries the code in the URL FRAGMENT, which a
+  // browser never sends to any server — no access log, no proxy log. Read it
+  // once, prefill, and remove it from the address bar. Deferred by a tick,
+  // like every effect that sets state in this portal.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const fromLink = takeCodeFromFragment();
+      if (fromLink) {
+        setCode(fromLink);
+        
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
   const [done, setDone] = useState(false);
 
   function refusal(err: unknown): string {
@@ -56,7 +70,7 @@ function ConfirmEmail() {
     setBusy(true);
     setError(null);
     try {
-      await confirmEmailChange(code.trim());
+      await confirmEmailChange(normaliseCode(code));
       setDone(true);
     } catch (err) {
       setError(refusal(err));

@@ -348,6 +348,11 @@ class Settings(BaseSettings):
     # Dev defaults cover the local portal; set LACTEVA_CORS_ORIGINS in
     # staging/prod (JSON list, e.g. '["https://admin.lacteva.example"]').
     cors_origins: tuple[str, ...] = ("http://localhost:3000", "http://127.0.0.1:3000")
+    #: WO-100. Where the portal is, for the links the platform puts in mail — an
+    #: invitation, a password reset, an email change. A RUNTIME setting on the
+    #: API, deliberately: the marketing site's WO-76 was a build-time address
+    #: that a rebuild forgot for three weeks. Required and https in prod.
+    portal_public_url: str = "http://localhost:3000"
 
     # Observability
     otel_exporter_endpoint: str = ""  # empty = OTel hook disabled
@@ -433,6 +438,11 @@ class Settings(BaseSettings):
             problems.append("LACTEVA_DEBUG must be false in prod")
         if any(origin in ("*", "") for origin in self.cors_origins):
             problems.append("LACTEVA_CORS_ORIGINS must name explicit origins in prod")
+        if not self.portal_public_url.startswith("https://"):
+            problems.append(
+                "LACTEVA_PORTAL_PUBLIC_URL must be the portal's https address in prod — "
+                "it is the link every invitation and password-reset email carries"
+            )
 
         # --- PROD-001: every remaining way to look healthy while doing nothing.
         #

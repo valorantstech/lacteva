@@ -502,7 +502,8 @@ class ApiClient {
   /// phone is the last place it should linger.
   Future<void> confirmPasswordReset(String token, String newPassword) async {
     await _send('POST', '/v1/auth/password-reset/confirm', body: {
-      'token': token,
+      // WO-100: forgive what a phone's copy drags along with the code.
+      'token': normaliseToken(token),
       'new_password': newPassword,
     });
   }
@@ -2413,4 +2414,19 @@ class RenderedReceipt {
   final String filename;
   final String body;
   final bool placeholder;
+}
+
+/// The token and nothing else from a pasted code (WO-100).
+///
+/// The first real customer's owner long-pressed the code in the email on a
+/// phone and got the full stop after it, and a valid code was refused. The
+/// token is the longest run of the alphabet `token_urlsafe` uses; quotes,
+/// "code:", line breaks and even a whole pasted link are dropped. The
+/// platform does the same on its side.
+String normaliseToken(String raw) {
+  String best = '';
+  for (final m in RegExp(r'[A-Za-z0-9_-]+').allMatches(raw)) {
+    if (m.end - m.start > best.length) best = m.group(0)!;
+  }
+  return best;
 }

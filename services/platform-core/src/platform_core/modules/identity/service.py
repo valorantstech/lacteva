@@ -431,6 +431,7 @@ class IdentityService:
         To the NEW address: the code, as a secret variable. To the OLD address:
         no secret at all — the new address, who asked, and how to stop it.
         """
+        from platform_core.modules.notification.links import email_change_link, portal_url
         from platform_core.modules.notification.service import (
             NotificationRequest,
             NotificationService,
@@ -449,8 +450,16 @@ class IdentityService:
                 recipient=change.new_email,
                 recipient_ref=user.id,
                 language=user.locale,
-                variables={"organization": organization, "expires_hours": expires_hours},
-                secret_variables={"change_token": raw_token},
+                variables={
+                    "organization": organization,
+                    "expires_hours": expires_hours,
+                    "portal_url": portal_url(),
+                },
+                # WO-100: the link carries the token, so it is a secret too.
+                secret_variables={
+                    "change_token": raw_token,
+                    "change_link": email_change_link(raw_token),
+                },
             )
         )
         await service.dispatch(

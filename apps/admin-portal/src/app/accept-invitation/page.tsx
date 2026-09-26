@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,6 +15,7 @@ import { LactevaLockup } from "@/components/lockup";
 import {acceptInvitation,
   describeError,
 } from "@/lib/api";
+import { normaliseCode, takeCodeFromFragment } from "@/lib/one-time-code";
 
 /**
  * Join the organization you were invited to (LACTEVA-ADMIN-002).
@@ -24,12 +25,14 @@ import {acceptInvitation,
  * the second page a new colleague ever sees, and the first is the one they are
  * sent to afterwards.
  *
- * The code is typed, not carried in the URL. A token in a query string ends up
- * in browser history, in the referrer of anything the page loads, and in every
- * access log between here and the server — for a credential that creates an
- * account with a role attached. The invitee reads it from their email and
- * types it, and this page holds it in component state for the length of one
- * request (SEC-003).
+ * The code arrives in the URL FRAGMENT or is typed — never in a query string.
+ * A token in a query string ends up in browser history, in the referrer of
+ * anything the page loads, and in every access log between here and the
+ * server — for a credential that creates an account with a role attached. A
+ * fragment is sent nowhere (WO-100): the page reads it once, prefills the
+ * code, removes it from the address bar, and holds it in component state for
+ * the length of one request (SEC-003). The box stays for people who copy the
+ * code instead, and forgives what a phone's copy drags along with it.
  *
  * Deliberately English (Decision D-1): this is a new, unwired surface, so its
  * strings stay plain rather than half-wiring a catalog nobody reads yet.
@@ -42,6 +45,21 @@ export default function AcceptInvitationPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // WO-100: the email's link carries the code in the URL FRAGMENT, which a
+  // browser never sends to any server — no access log, no proxy log. Read it
+  // once, prefill, and remove it from the address bar. Deferred by a tick,
+  // like every effect that sets state in this portal.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const fromLink = takeCodeFromFragment();
+      if (fromLink) {
+        setCode(fromLink);
+        
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
   const [done, setDone] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -49,7 +67,7 @@ export default function AcceptInvitationPage() {
     setBusy(true);
     setError(null);
     try {
-      await acceptInvitation(code.trim(), fullName.trim(), password);
+      await acceptInvitation(normaliseCode(code), fullName.trim(), password);
       // The account exists now; say so before leaving, so the navigation is
       // not the only evidence it worked.
       setDone(true);

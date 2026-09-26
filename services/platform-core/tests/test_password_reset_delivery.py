@@ -28,6 +28,7 @@ Both halves are asserted here, in one test, because either alone is a trap:
 A test that checked only the first would applaud the second.
 """
 
+import re
 import uuid
 
 import pytest
@@ -123,16 +124,18 @@ async def test_the_code_reaches_the_reader_and_never_the_outbox(client, provider
     delivered = [m for m in recorder.sent if m.recipient == EMAIL]
     assert len(delivered) == 1, "exactly one message, sent once"
     body = delivered[0].body
-    assert "Use this code to complete your reset" in body
+    assert "paste this code" in body
     assert "Do not share this code with anyone." in body
-    # And it no longer promises a link it never contained.
-    assert "link" not in body.lower(), f"still promising a link: {body!r}"
+    # WO-100: it carries a real link now — the portal's address, the code in
+    # the fragment — and says where the code is used.
+    assert re.search(r"https?://\S+/reset-password#code=[A-Za-z0-9_-]+", body), body
+    assert "/reset-password and paste this code" in body
 
     tokens = await _reset_token_rows()
     assert len(tokens) == 1, "one request, one token"
 
     # Read the code the way its reader would: out of the message.
-    code = body.split("complete your reset:", 1)[1].split(".", 1)[0].strip()
+    code = re.search(r"/reset-password#code=([A-Za-z0-9_-]+)", body).group(1)
     assert code, f"no code in the delivered body: {body!r}"
 
     # The proof that it is usable, which is the entire point of the work order:
@@ -199,7 +202,9 @@ async def test_a_second_request_sends_the_second_code_not_the_first(client, prov
 
     delivered = [m for m in recorder.sent if m.recipient == email]
     assert len(delivered) == 2, "two requests, two messages"
-    codes = [m.body.split("complete your reset:", 1)[1].split(".", 1)[0].strip() for m in delivered]
+    codes = [
+        re.search(r"/reset-password#code=([A-Za-z0-9_-]+)", m.body).group(1) for m in delivered
+    ]
     assert len(set(codes)) == 2, "each message carries its own code"
 
     # The second code works — which is what somebody who never received the

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LactevaLockup } from "@/components/lockup";
 import { ApiError, confirmPasswordReset, requestPasswordReset } from "@/lib/api";
+import { normaliseCode, takeCodeFromFragment } from "@/lib/one-time-code";
 
 /**
  * Reset a forgotten password (LACTEVA-ADMIN-003).
@@ -46,6 +47,22 @@ export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // WO-100: the email's link carries the code in the URL FRAGMENT, which a
+  // browser never sends to any server — no access log, no proxy log. Read it
+  // once, prefill, and remove it from the address bar. Deferred by a tick,
+  // like every effect that sets state in this portal.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const fromLink = takeCodeFromFragment();
+      if (fromLink) {
+        setCode(fromLink);
+        // A link lands straight on the confirm step.
+        setStep("confirm");
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   /** The same words for every outcome. See the enumeration note above. */
   const sent = `If an account exists for ${email}, a reset code has been sent.`;
@@ -81,7 +98,7 @@ export default function ResetPasswordPage() {
     setBusy(true);
     setError(null);
     try {
-      await confirmPasswordReset(code.trim(), password);
+      await confirmPasswordReset(normaliseCode(code), password);
       // The notice is a KEY, not a sentence: the login page renders it from
       // its own catalog, so nothing this page writes can reach that screen.
       window.location.assign("/login?notice=reset");
@@ -106,7 +123,9 @@ export default function ResetPasswordPage() {
           <CardDescription>
             {step === "request"
               ? "We will email you a one-time code."
-              : sent}
+              : email
+                ? sent
+                : "Use the code from your email to choose a new password."}
           </CardDescription>
         </CardHeader>
         <CardContent>

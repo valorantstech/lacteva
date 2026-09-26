@@ -94,12 +94,12 @@ PURPOSES: dict[str, str] = {
     ),
     "milk_rejected": "Tells a farmer a collection was rejected, and why",
     "price_unavailable": "Tells an operator no rate could be resolved for a collection",
-    "invitation": "Sends a new user their one-time invitation link",
+    "invitation": "Sends a new user their one-time invitation link and code",
     "month_end_drafted": (
         "Tells the dairy's administrators that last month's bills are drafted and wait to be issued"
     ),
     "invitation_accepted": "Confirms to an administrator that an invitation was accepted",
-    "password_reset": "Sends a user a one-time password-reset code",
+    "password_reset": "Sends a user a one-time password-reset link and code",
     "email_change_confirm": "Sends the NEW address the one-time code that confirms an email change",
     "email_change_notice": (
         "Tells the OLD address that an email change was requested, naming the new address "
@@ -359,8 +359,10 @@ TEMPLATES: tuple[Template, ...] = (
         "email",
         "en",
         "Reset your Lacteva password",
-        "A password reset was requested for your account in {organization}. "
-        "Use this code to complete your reset: {reset_token}. "
+        "A password reset was requested for your account in {organization}.\n\n"
+        "Open this link on your phone to choose a new password:\n{reset_link}\n\n"
+        "Or go to {portal_url}/reset-password and paste this code:\n\n"
+        "{reset_token}\n\n"
         "The code expires in {expires_hours} hours. "
         "If you did not request this, ignore this message. "
         "Do not share this code with anyone.",
@@ -374,8 +376,10 @@ TEMPLATES: tuple[Template, ...] = (
         "email",
         "en",
         "Confirm your new Lacteva email",
-        "Somebody asked to make this address the login for an account in {organization}. "
-        "Use this code to confirm: {change_token}. "
+        "Somebody asked to make this address the login for an account in {organization}.\n\n"
+        "Open this link on your phone to confirm:\n{change_link}\n\n"
+        "Or go to {portal_url}/confirm-email and paste this code:\n\n"
+        "{change_token}\n\n"
         "The code expires in {expires_hours} hours. "
         "If you were not expecting this, ignore this message and nothing will change. "
         "Do not share this code with anyone.",
@@ -396,8 +400,13 @@ TEMPLATES: tuple[Template, ...] = (
         "email",
         "en",
         "You have been invited to Lacteva",
-        "You have been invited to join {organization} as {role}. "
-        "Use this code to complete your registration: {invite_token}. "
+        # WO-100: a link first — tappable on a phone, the code already filled
+        # in — then the code ALONE on its own line, so a long-press copy takes
+        # nothing but the code, and one sentence saying where it is used.
+        "You have been invited to join {organization} as {role}.\n\n"
+        "Open this link on your phone to join:\n{invite_link}\n\n"
+        "Or go to {portal_url}/accept-invitation and paste this code:\n\n"
+        "{invite_token}\n\n"
         "The invitation expires in {expires_days} days. "
         "Do not share this code with anyone, including the person who invited you.",
     ),

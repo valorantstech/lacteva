@@ -26,6 +26,7 @@ from platform_core.core.locales import (
 )
 from platform_core.core.modules import DEFAULT_MODULES, module_choices, validate_modules
 from platform_core.core.org_context import reset_locale_cache
+from platform_core.core.security import normalise_token
 from platform_core.core.tenancy import (
     get_current_tenant,
     require_current_tenant,
@@ -864,6 +865,7 @@ class InvitationService:
         provider, same delivery record, same retry budget, same idempotency
         (keyed on the invitation id, so re-issuing is not re-sending).
         """
+        from platform_core.modules.notification.links import invitation_link, portal_url
         from platform_core.modules.notification.service import (
             NotificationRequest,
             NotificationService,
@@ -881,8 +883,14 @@ class InvitationService:
                     "role": role_name,
                     "organization": "Lacteva",
                     "expires_days": INVITATION_TTL.days,
+                    "portal_url": portal_url(),
                 },
-                secret_variables={"invite_token": raw_token},
+                # WO-100: the link carries the token, so it is a secret too —
+                # redacted in the stored body, never in a response or a log.
+                secret_variables={
+                    "invite_token": raw_token,
+                    "invite_link": invitation_link(raw_token),
+                },
             )
         )
 
@@ -904,7 +912,7 @@ class InvitationService:
         # binding to the tenant that read reveals.
         from platform_core.core.rls import bind_platform_context, rebind_tenant
 
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        token_hash = hashlib.sha256(normalise_token(token).encode()).hexdigest()
         await bind_platform_context(
             self._session, reason="invitation acceptance: resolve tenant from token"
         )

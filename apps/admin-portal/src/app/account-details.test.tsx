@@ -298,7 +298,7 @@ describe("my own account on Settings (WO-87 §1, §3)", () => {
 
 describe("the confirm page (WO-87 §3)", () => {
   it("spends the code from the link through the pre-auth handler, then sends the person to sign in", async () => {
-    searchParams = new URLSearchParams("token=code-xyz");
+    // WO-100: the link carries the code in the FRAGMENT, never a query string.
     const calls: Call[] = [];
     vi.stubGlobal(
       "fetch",
@@ -312,12 +312,16 @@ describe("the confirm page (WO-87 §3)", () => {
       }),
     );
     const assign = vi.fn();
-    vi.stubGlobal("location", { assign, pathname: "/confirm-email" });
+    const replaceState = vi.fn();
+    vi.stubGlobal("location", { assign, pathname: "/confirm-email", search: "", hash: "#code=code-xyz" });
+    vi.stubGlobal("history", { replaceState });
     const user = userEvent.setup();
     await act(async () => {
       render(<ConfirmEmailPage />);
     });
-    expect(screen.getByLabelText("Confirmation code")).toHaveValue("code-xyz");
+    await waitFor(() => expect(screen.getByLabelText("Confirmation code")).toHaveValue("code-xyz"));
+    // Read once, then gone from the address bar.
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/confirm-email");
     expect(screen.getByText(/old address keeps working/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(calls).toHaveLength(1));
@@ -334,7 +338,8 @@ describe("the confirm page (WO-87 §3)", () => {
   });
 
   it("says why a dead code failed and keeps the form", async () => {
-    searchParams = new URLSearchParams("token=stale");
+    vi.stubGlobal("location", { assign: vi.fn(), pathname: "/confirm-email", search: "", hash: "#code=stale" });
+    vi.stubGlobal("history", { replaceState: vi.fn() });
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -345,6 +350,7 @@ describe("the confirm page (WO-87 §3)", () => {
     await act(async () => {
       render(<ConfirmEmailPage />);
     });
+    await waitFor(() => expect(screen.getByLabelText("Confirmation code")).toHaveValue("stale"));
     await user.click(screen.getByRole("button", { name: "Confirm" }));
     expect(
       await alertSaying(/expired, been cancelled, or already been used/),

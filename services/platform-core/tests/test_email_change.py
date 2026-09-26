@@ -73,9 +73,9 @@ class _Capture:
         return [m for m in self.messages if m.recipient == recipient]
 
     def code_for(self, recipient: str) -> str:
-        bodies = [m.body for m in self.to(recipient) if "confirm:" in m.body]
+        bodies = [m.body for m in self.to(recipient) if "#code=" in m.body]
         assert bodies, f"no confirmation code was delivered to {recipient}"
-        match = re.search(r"confirm:\s*(\S+?)\.\s", bodies[-1])
+        match = re.search(r"/confirm-email#code=([A-Za-z0-9_-]+)", bodies[-1])
         assert match, bodies[-1]
         return match.group(1)
 

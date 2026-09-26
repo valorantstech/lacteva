@@ -66,6 +66,7 @@ Then fill it in. Every variable is documented in the template; the ones that wil
 - **`POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`, `LACTEVA_APP_PASSWORD`** — generate them: `openssl rand -base64 36`.
 - **`LACTEVA_APP_USER`** — the role the API connects as. It **must differ from `POSTGRES_USER`**; see §2b, which is the single most consequential setting on this page.
 - **`LACTEVA_CORS_ORIGINS`** — a JSON list of exact origins. Never a wildcard.
+- **`LACTEVA_PORTAL_PUBLIC_URL`** — the portal's https address, the link every invitation and password-reset email carries (WO-100). The platform refuses to start in prod without it.
 
 ### TLS certificates (TLS-001)
 
