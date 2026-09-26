@@ -239,6 +239,36 @@ else
   fail "nginx is not answering its own health endpoint"
 fi
 
+# WO-101: the log store must have RECEIVED something, or an empty pipeline
+# looks exactly like a healthy one — promtail, Loki and Grafana all reported
+# "Up (healthy)" on production while Loki held nothing, and the evidence of
+# the first real customer's failed sign-up was gone with the next deploy.
+# The health probes checked in a request served, not a request queryable in
+# Loki, so the platform's own request to itself is issued here and then
+# looked up by its request_id.
+step "Log pipeline"
+LOG_PROBE="verify-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+# Straight at the api container, so the id is the one the api binds and logs
+# (`core/observability.py` honours X-Request-ID) whatever the edge forwards.
+${COMPOSE} exec -T api python -c "import urllib.request as u; u.urlopen(u.Request('http://127.0.0.1:8000/health/live', headers={'X-Request-ID': '${LOG_PROBE}'}), timeout=5)" >/dev/null 2>&1 || true
+SENT="$(${COMPOSE} exec -T promtail wget -qO- http://127.0.0.1:9080/metrics 2>/dev/null | sed -n 's/^promtail_sent_entries_total{[^}]*} //p' | head -1 || echo 0)"
+if [ "${SENT:-0}" != "0" ] && [ -n "${SENT}" ]; then
+  pass "promtail has shipped ${SENT} lines to Loki"
+else
+  fail "promtail has shipped NOTHING to Loki (promtail_sent_entries_total=${SENT:-0}) — check 'docker compose logs promtail' for discovery errors"
+fi
+FOUND=""
+for _ in $(seq 1 12); do
+  FOUND="$(${COMPOSE} exec -T loki wget -qO- "http://127.0.0.1:3100/loki/api/v1/query_range?query=%7Bservice%3D%22api%22%7D%20%7C%3D%20%22${LOG_PROBE}%22&limit=1&start=$(( $(date +%s) - 300 ))000000000" 2>/dev/null | grep -c "${LOG_PROBE}" || true)"
+  [ "${FOUND:-0}" != "0" ] && break
+  sleep 5
+done
+if [ "${FOUND:-0}" != "0" ]; then
+  pass "a request made now is queryable in Loki by its request_id (${LOG_PROBE})"
+else
+  fail "a request made a minute ago cannot be found in Loki by its request_id — the log pipeline delivers nothing"
+fi
+
 printf '\n'
 if [ "${FAILURES}" -eq 0 ]; then
   printf '\033[32mDEPLOYMENT VERIFIED — the platform is serving.\033[0m\n'

@@ -496,11 +496,19 @@ services:
   dockerproxy:
     image: tecnativa/docker-socket-proxy:0.2.0
     environment:
-      CONTAINERS: "1"   # the only thing promtail needs
+      CONTAINERS: "1"   # containers/json and each container's log stream
+      # WO-101: promtail's docker service discovery lists /networks after
+      # /containers/json to label each target with its networks. With this
+      # at "0" the proxy answered 403, discovery refused the WHOLE refresh
+      # ("Unable to refresh target groups"), promtail had zero targets and
+      # shipped zero lines — while promtail, Loki and Grafana all reported
+      # healthy, and Loki's label list on production was empty for weeks. A
+      # GET on /networks reveals names and subnets, nothing more; POST stays
+      # off, so nothing can be created or changed through this socket.
+      NETWORKS: "1"
       POST: "0"         # no mutations of any kind
       EXEC: "0"
       IMAGES: "0"
-      NETWORKS: "0"
       VOLUMES: "0"
       INFO: "0"
     volumes:

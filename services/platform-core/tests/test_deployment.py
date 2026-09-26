@@ -279,6 +279,29 @@ def test_the_docs_and_the_example_say_how_to_switch_push_on():
     assert "PATH=/etc/lacteva/fcm-service-account.json" not in example
 
 
+# --- WO-101: the log pipeline can actually deliver -------------------------------
+
+
+def test_the_docker_socket_proxy_lets_promtail_discover_targets():
+    """promtail's docker discovery lists /networks as well as /containers; a
+    proxy that refuses it fails the whole refresh, and a pipeline with zero
+    targets reports healthy while shipping nothing (found on production)."""
+    env = _compose()["services"]["dockerproxy"]["environment"]
+    assert str(env["CONTAINERS"]) == "1"
+    assert str(env["NETWORKS"]) == "1", "promtail cannot refresh its targets without /networks"
+    # Still read-only: nothing can be created, changed or executed through it.
+    for key in ("POST", "EXEC"):
+        assert str(env[key]) == "0", key
+
+
+def test_the_deploy_verification_fails_on_an_empty_log_store():
+    script = (REPO / "infra/deploy/verify-deployment.sh").read_text()
+    assert "promtail_sent_entries_total" in script
+    assert "query_range" in script and "request_id" in script.lower()
+    assert 'fail "promtail has shipped NOTHING' in script
+    assert 'fail "a request made a minute ago cannot be found in Loki' in script
+
+
 def test_every_service_has_a_healthcheck_or_says_why_not():
     compose = _compose()
     for name, service in compose["services"].items():
