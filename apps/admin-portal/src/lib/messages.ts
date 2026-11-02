@@ -344,7 +344,7 @@ const en: Catalog = {
   "settings.timezone": "Timezone",
   "settings.unit": "Milk is measured in",
   "settings.unitHelp":
-    "The unit milk is measured in — at the counter when it comes in, and at the door when it goes out — and the unit rates are quoted per. Changing it applies to future collections and deliveries only; receipts and bills already issued keep the unit they were measured in.",
+    "The unit milk is measured in — at the counter when it comes in, and at the door when it goes out — and the unit rates are quoted per. Changing it applies to future collections and deliveries only; receipts and invoices already issued keep the unit they were measured in.",
   "settings.unitLitre": "Litres (L)",
   "settings.unitKg": "Kilograms (kg)",
   "settings.conversion": "Paid in the other unit",
