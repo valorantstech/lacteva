@@ -323,6 +323,9 @@ const Map<String, Map<BarShape, String>> screenHomes = {
   'ConflictDetailScreen': {BarShape.manager: 'more', BarShape.operator: 'more', BarShape.driver: 'more'},
   // --- the round ----------------------------------------------------------
   'DriverHomeScreen': {BarShape.driver: 'round'},
+  // WO-110 §2: a stop of the finished round, opened from the Round tab to
+  // review and correct; the app bar's arrow and Android back return there.
+  'DriverStopReviewScreen': {BarShape.driver: 'round'},
   'DeliveryRoundScreen': {BarShape.driver: 'deliver', BarShape.manager: 'more'},
   'RecordDeliveryScreen': {BarShape.driver: 'deliver'},
   // --- the household ------------------------------------------------------

@@ -30,6 +30,8 @@ import {
   type RouteStop,
   type Customer,
   getUser,
+  listUnroutedCustomers,
+  type UnroutedCustomer,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -88,6 +90,8 @@ export default function RoutesPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const [editingStops, setEditingStops] = useState<Route | null>(null);
+  // WO-110 §6: households with a standing order that no active round visits.
+  const [unrouted, setUnrouted] = useState<UnroutedCustomer[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<RunGeneration | null>(null);
   // LACTEVA-ADMIN-001: every list here starts `[]`, so on first paint the
@@ -98,7 +102,7 @@ export default function RoutesPage() {
 
   const load = useCallback(async () => {
     try {
-      const [r, v, d, runList, people] = await Promise.all([
+      const [r, v, d, runList, people, nobody] = await Promise.all([
         listRoutes(),
         listVehicles(),
         listDrivers(),
@@ -106,12 +110,14 @@ export default function RoutesPage() {
         // Not every reader may list members; the link select is then simply
         // absent rather than the whole page failing.
         listMembers().catch(() => [] as Member[]),
+        listUnroutedCustomers().catch(() => ({ count: 0, items: [] as UnroutedCustomer[] })),
       ]);
       setRoutes(r);
       setVehicles(v);
       setDrivers(d);
       setRuns(runList);
       setMembers(people);
+      setUnrouted(nobody.items);
       // The members list carries roles, not names; the few people holding
       // the Delivery boy role are named from their user records.
       const boys = people.filter((m) => (m.roles ?? []).some((r) => r.name === "DRIVER"));
@@ -225,6 +231,19 @@ export default function RoutesPage() {
           .
         </p>
       )}
+
+      {unrouted.length > 0 ? (
+        <UnroutedCustomers
+          customers={unrouted}
+          routes={routes.filter((r) => r.active)}
+          onAdd={(routeId, customerId) =>
+            act(async () => {
+              const detail = await getRoute(routeId);
+              await setRouteStops(routeId, [...detail.stops.map((s) => s.customer_id), customerId]);
+            })
+          }
+        />
+      ) : null}
 
       <TodaysRuns
         drivers={drivers}
@@ -486,11 +505,20 @@ function TodaysRuns({
                     disabled={
                       run.status === "completed" || run.status === "cancelled"
                     }
-                    label="Driver"
+                    label="Delivery boy"
                     onChange={(id) => onAssign(run.id, { driver_id: id })}
-                    options={drivers
-                      .filter((d) => d.active)
-                      .map((d) => ({ id: d.id, label: d.full_name }))}
+                    // WO-110 §7 (WO-108's rule): a profile with a login is
+                    // one whose phone will show the run — covering for an
+                    // absent boy means handing today's run to a phone. A
+                    // run already on a profile without a login stays visible.
+                    options={[
+                      ...drivers
+                        .filter((d) => d.active && d.user_id)
+                        .map((d) => ({ id: d.id, label: d.full_name })),
+                      ...drivers
+                        .filter((d) => d.id === run.driver_id && !d.user_id)
+                        .map((d) => ({ id: d.id, label: `${d.full_name} (no app login)` })),
+                    ]}
                     value={run.driver_id}
                   />
                 </div>
@@ -780,7 +808,24 @@ function RouteStopsEditor({
               setSaving(true);
               setError(null);
               try {
-                await setRouteStops(route.id, current.map((s) => s.customer_id));
+                try {
+                  await setRouteStops(route.id, current.map((s) => s.customer_id));
+                } catch (e) {
+                  // WO-110 §5: a household already on another active round.
+                  // The platform names it and the round; the owner decides
+                  // whether to move it here, and the save is repeated with
+                  // that answer. Nothing is doubled either way.
+                  if (
+                    e instanceof ApiError &&
+                    e.status === 409 &&
+                    /already on the round/.test(e.message) &&
+                    window.confirm(`${e.message.replace(/ — move it.*$/, "")}.\n\nMove it to ${route.name}?`)
+                  ) {
+                    await setRouteStops(route.id, current.map((s) => s.customer_id), { move: true });
+                  } else {
+                    throw e;
+                  }
+                }
                 onSaved();
               } catch (e) {
                 setError(e instanceof ApiError ? e.message : "could not save the stops");
@@ -795,6 +840,76 @@ function RouteStopsEditor({
             Close
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * WO-110 §6: households with a standing order that no active round visits.
+ * Verified on the platform: with rounds in use the nightly generator works
+ * round by round, so such a household gets no delivery at all — nobody's
+ * phone shows it and nothing reaches a bill, silently. Listed here with one
+ * tap onto a round; the dashboard's "Needs your attention" links here.
+ */
+function UnroutedCustomers({
+  customers,
+  routes,
+  onAdd,
+}: {
+  customers: UnroutedCustomer[];
+  routes: Route[];
+  onAdd: (routeId: string, customerId: string) => void;
+}) {
+  const [chosen, setChosen] = useState<Record<string, string>>({});
+  const only = routes.length === 1 ? routes[0].id : "";
+  return (
+    <Card id="unrouted" className="border-amber-300/70">
+      <CardHeader>
+        <CardTitle>
+          {customers.length} {customers.length === 1 ? "customer" : "customers"} with a standing
+          order {customers.length === 1 ? "is" : "are"} on no delivery round
+        </CardTitle>
+        <CardDescription>
+          No delivery boy will see them and nothing will be billed until each is on a round.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="flex flex-col divide-y" aria-label="Customers on no round">
+          {customers.map((c) => {
+            const routeId = chosen[c.customer_id] ?? only;
+            return (
+              <li key={c.customer_id} className="flex flex-wrap items-center gap-2 py-2">
+                <span className="min-w-0 flex-1 truncate text-sm">
+                  {c.name}
+                  <span className="ms-1 text-xs text-muted-foreground">{c.code}</span>
+                </span>
+                {routes.length > 1 ? (
+                  <Select
+                    aria-label={`Round for ${c.name}`}
+                    value={routeId}
+                    onChange={(e) => setChosen({ ...chosen, [c.customer_id]: e.target.value })}
+                  >
+                    <option value="">Choose a round…</option>
+                    {routes.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </Select>
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!routeId}
+                  onClick={() => onAdd(routeId, c.customer_id)}
+                >
+                  {routes.length === 1 ? `Add to ${routes[0].name}` : "Add to a round"}
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
       </CardContent>
     </Card>
   );

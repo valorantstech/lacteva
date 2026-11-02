@@ -13,6 +13,10 @@ import {
   listCustomerTypes,
   listProducts,
   describeError,
+  getRoute,
+  listRoutes,
+  setRouteStops,
+  type Route,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -72,6 +76,11 @@ export function unitWord(unit: string | null | undefined): string {
 /** A product a standing order can be for: active, and not the catch-all. */
 export const standingOrderProducts = (products: Product[]) =>
   products.filter((p) => p.active && p.code !== "OTHER");
+
+/** WO-110 §3: what a new household most likely takes — the first milk product
+ *  in catalogue order, falling back to the first product at all. */
+export const firstMilkProduct = (products: Product[]) =>
+  products.find((p) => /milk/i.test(p.code) || /milk/i.test(p.name)) ?? products[0] ?? null;
 const STATUSES = ["", "active", "inactive", "suspended"] as const;
 
 const describe = (e: unknown) => describeError(e);
@@ -424,6 +433,25 @@ function CreateCustomerCard({
   // the rate prefills from its price.
   const [products, setProducts] = useState<Product[] | null>(null);
   const [productCode, setProductCode] = useState("");
+  // WO-110 §6: a household on no round is seen by nobody and billed never.
+  // With exactly one round the new customer joins it by default — the form
+  // says so and lets the owner pick another, or none.
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [routeId, setRouteId] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    listRoutes()
+      .then((all) => {
+        if (cancelled) return;
+        const active = all.filter((r) => r.active);
+        setRoutes(active);
+        if (active.length === 1) setRouteId(active[0].id);
+      })
+      .catch(() => !cancelled && setRoutes([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
     let cancelled = false;
     listProducts(true)
@@ -431,10 +459,13 @@ function CreateCustomerCard({
         if (cancelled) return;
         const usable = standingOrderProducts(page.items);
         setProducts(usable);
-        if (usable[0]) {
-          setProductCode(usable[0].code);
-          if (usable[0].default_price != null && String(usable[0].default_price) !== "") {
-            setRate(String(usable[0].default_price));
+        // WO-110 §3: the first MILK product, not the newest product — the
+        // owner's walk found Dahi (a piece item) preselected for a household.
+        const first = firstMilkProduct(usable);
+        if (first) {
+          setProductCode(first.code);
+          if (first.default_price != null && String(first.default_price) !== "") {
+            setRate(String(first.default_price));
           }
         }
       })
@@ -465,7 +496,7 @@ function CreateCustomerCard({
     setBusy(true);
     setError(null);
     try {
-      await createCustomer({
+      const created = await createCustomer({
         name,
         customer_type: customerType,
         phone,
@@ -477,6 +508,13 @@ function CreateCustomerCard({
           unit_price: rate,
         },
       });
+      if (routeId) {
+        // Appended as the round's last stop; the owner reorders on the
+        // rounds page. The platform refuses a household already on another
+        // active round, which a brand-new customer cannot be.
+        const detail = await getRoute(routeId);
+        await setRouteStops(routeId, [...detail.stops.map((s) => s.customer_id), created.id]);
+      }
       onCreated();
     } catch (err) {
       setError(describe(err));
@@ -505,7 +543,7 @@ function CreateCustomerCard({
                 minLength={2}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Mama Njeri Household"
+                placeholder="e.g. A-101, Sunrise Tower"
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -552,6 +590,24 @@ function CreateCustomerCard({
                 placeholder="Where the round drops the milk"
               />
             </div>
+            {routes.length > 0 ? (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="nc-route">Delivery round</Label>
+                <Select id="nc-route" value={routeId} onChange={(e) => setRouteId(e.target.value)}>
+                  <option value="">— none yet —</option>
+                  {routes.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </Select>
+                <p className="text-xs text-muted-foreground" data-testid="nc-route-help">
+                  {routeId
+                    ? `Added as the last stop of ${routes.find((r) => r.id === routeId)?.name ?? "the round"}. A customer on no round is delivered by nobody.`
+                    : "On no round, no delivery boy will see this customer."}
+                </p>
+              </div>
+            ) : null}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="nc-product">Product</Label>
               {products && products.length === 0 ? (

@@ -97,6 +97,9 @@ class _FakeDriverClient extends OfflineApiClient {
 
   @override
   Future<List<Map<String, dynamic>>> myRuns() async => runs;
+
+  @override
+  Future<Map<String, dynamic>> myNextRound() async => {'business_date': null};
 }
 
 Future<void> _pumpSmallPhone(WidgetTester tester, Widget child) async {
@@ -167,7 +170,7 @@ void main() {
       DriverHomeScreen(client: client, session: _session()),
     );
 
-    expect(find.text('No run assigned today'), findsOneWidget);
+    expect(find.text('No round today'), findsOneWidget);
     expect(find.byIcon(Icons.free_breakfast_outlined), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -255,20 +258,29 @@ void wo82Tests() {
     ]);
   });
 
-  testWidgets('a household with two milks is asked which, and the product is sent', (tester) async {
+  testWidgets('a household with two milks records BOTH, each naming its product (WO-110 §1)', (tester) async {
     final client = await _pumpRun(
       tester,
       orders: [_order('COW-MILK', 'Cow milk', '1.500'), _order('BUFFALO-MILK', 'Buffalo milk', '0.500')],
     );
+    expect(find.text('Cow milk · 1.500 L'), findsOneWidget);
     expect(find.text('Buffalo milk · 0.500 L'), findsOneWidget);
     await tester.tap(find.text('Delivered'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('pour-BUFFALO-MILK')));
-    await tester.pump();
-    expect(tester.widget<TextField>(find.byKey(const ValueKey('pour-quantity'))).controller!.text, '0.500');
+    // The sheet lists every milk with its own figure — no "which one?" chip,
+    // because the answer is "both", which is what the old flow lost.
+    expect(
+      tester.widget<TextField>(find.byKey(const ValueKey('pour-quantity-BUFFALO-MILK'))).controller!.text,
+      '0.500',
+    );
+    expect(
+      tester.widget<TextField>(find.byKey(const ValueKey('pour-quantity-COW-MILK'))).controller!.text,
+      '1.500',
+    );
     await tester.tap(find.byKey(const ValueKey('pour-confirm')));
     await tester.pumpAndSettle();
     expect(client.outcomes, [
+      ['cus-1', 'delivered', null, 'COW-MILK'],
       ['cus-1', 'delivered', null, 'BUFFALO-MILK'],
     ]);
   });

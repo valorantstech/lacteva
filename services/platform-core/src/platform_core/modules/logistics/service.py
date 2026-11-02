@@ -27,7 +27,7 @@ from platform_core.modules.business_calendar.service import WorkingDayResolver
 from platform_core.modules.customer.service import CustomerService
 from platform_core.modules.delivery.generation import RoundScope
 from platform_core.modules.delivery.models import DELIVERY_SLOTS
-from platform_core.modules.delivery.service import DeliveryService, RouteMembership
+from platform_core.modules.delivery.service import DeliveryFact, DeliveryService, RouteMembership
 from platform_core.modules.logistics.models import (
     OPEN_RUN_STATUSES,
     RUN_STATUSES,
@@ -39,6 +39,7 @@ from platform_core.modules.logistics.models import (
     RouteStop,
     Vehicle,
 )
+from platform_core.modules.sale_item.service import SaleItemService
 
 # --- DTOs ------------------------------------------------------------------
 
@@ -180,6 +181,10 @@ class RouteStopsInput(BaseModel):
     """The route's stops, in visiting order. The list IS the order."""
 
     customer_ids: list[uuid.UUID] = Field(default_factory=list, max_length=500)
+    #: WO-110 §5: a household already on ANOTHER active round is refused —
+    #: two delivery boys would walk to one door — unless the caller says to
+    #: move it here, which takes it off the other round in the same save.
+    move_from_other_rounds: bool = False
 
 
 class RunStatusInput(BaseModel):
@@ -268,6 +273,22 @@ class RunStopOrder(BaseModel):
     quantity: Decimal
     quantity_unit: str
     delivery_status: str | None = None
+    #: WO-110 §1/§2: what the delivery domain recorded for THIS product —
+    #: the quantity that actually went (the standing figure until the
+    #: doorstep changes it) and whether a bill has taken the row, after
+    #: which the phone may look but not correct.
+    quantity_delivered: Decimal | None = None
+    invoiced: bool = False
+
+
+class RunStopItem(BaseModel):
+    """A thing sold beside the milk at this stop today (WO-82 §2), as the
+    day's summary lists it (WO-110 §2)."""
+
+    product: str
+    product_name: str
+    quantity: Decimal
+    unit: str
 
 
 class RunStopView(BaseModel):
@@ -286,11 +307,17 @@ class RunStopView(BaseModel):
     #: customer module's own contact batch, never joined into it.
     phone: str = ""
     address: str = ""
+    #: The stop's OVERALL answer, for callers that predate `orders` — an
+    #: older APK counts stops by it. WO-110 §1 defines it honestly for a
+    #: household with two milks: `scheduled` while ANY of its deliveries is
+    #: still scheduled, so a phone that records one outcome per stop keeps
+    #: the stop open (and is told "say which") instead of walking on.
     delivery_status: str | None = None
     #: WO-82 §1: the standing product(s), name, quantity and unit — a
-    #: household with two milks lists two. `delivery_status` above stays the
-    #: stop's overall answer for callers that predate this.
+    #: household with two milks lists two.
     orders: list[RunStopOrder] = []
+    #: WO-110 §2: sold at the doorstep today.
+    items: list[RunStopItem] = []
 
 
 class RunView(BaseModel):
@@ -311,8 +338,60 @@ class RunView(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     stops: list[RunStopView] = []
+    #: WO-110 §1: the run's progress counts DELIVERIES, not stops. A stop
+    #: with two milks is two of these; the run can complete only when
+    #: `deliveries_scheduled` is zero, and the platform enforces that.
+    deliveries_total: int = 0
+    deliveries_recorded: int = 0
+    deliveries_scheduled: int = 0
 
     model_config = {"from_attributes": True}
+
+
+class RemainingOutcomeInput(BaseModel):
+    """ "Mark the rest as delivered" (WO-110 §4): every delivery of this run
+    still `scheduled` becomes delivered at its standing quantity. Nothing
+    else is offered — a batch skip is a decision per door."""
+
+    notes: str = Field(default="", max_length=300)
+
+
+class RemainingOutcomeView(BaseModel):
+    run_id: uuid.UUID
+    #: Deliveries this call marked delivered.
+    marked: int
+    #: Deliveries already recorded before the call — changed, skipped,
+    #: returned — and left exactly as they were.
+    untouched: int
+    run: RunView
+
+
+class NextRoundView(BaseModel):
+    """What the delivery boy has next (WO-110 §2): a run already planned for
+    a later day, or — with none planned yet — the round he is the default
+    boy of, on the next working day the scheduler will plan it. `None` for
+    the date means nothing is known."""
+
+    business_date: date | None = None
+    stops: int = 0
+    route_name: str = ""
+    #: True when a run exists; False when this is the auto-planned round's
+    #: expectation and the scheduler has not created the run yet.
+    planned: bool = False
+
+
+class UnroutedCustomer(BaseModel):
+    """A household with a standing order that no active round visits
+    (WO-110 §6) — invisible to every delivery boy."""
+
+    customer_id: uuid.UUID
+    code: str
+    name: str
+
+
+class UnroutedCustomersView(BaseModel):
+    count: int
+    items: list[UnroutedCustomer]
 
 
 # --- service ---------------------------------------------------------------
@@ -453,6 +532,9 @@ class LogisticsService:
         # because this module publishes: a run changes no delivery and emits no
         # delivery event. Built in `api/deps.py`, the one composition root.
         self._deliveries = DeliveryService(session, bus, audit)
+        # WO-110 §2: the day's summary names what was sold beside the milk.
+        # Read through the module that owns it, as values.
+        self._items = SaleItemService(session, bus, audit)
 
     # --- routes ------------------------------------------------------------
 
@@ -594,6 +676,7 @@ class LogisticsService:
         *,
         actor_id: uuid.UUID,
         audit: AuditService,
+        move_from_other_rounds: bool = False,
     ) -> RouteDetailView:
         """Replace the route's stops with this ordered list.
 
@@ -620,6 +703,49 @@ class LogisticsService:
             unknown = [str(c) for c in customer_ids if c not in known]
             if unknown:
                 raise NotFoundError(f"unknown customer(s): {', '.join(sorted(unknown))}")
+
+        # WO-110 §5. `uq_route_stop_customer` is per ROUND, so nothing stopped
+        # one household sitting on two active rounds — two delivery boys
+        # walk to one door and whoever records first wins. Nobody has asked
+        # for a deliberate second round, so it is refused: the caller either
+        # moves the household here (off the other round, in this same save)
+        # or leaves it where it is. An inactive round does not count.
+        if customer_ids:
+            elsewhere = (
+                await self._session.execute(
+                    select(RouteStop, Route.name)
+                    .join(Route, Route.id == RouteStop.route_id)
+                    .where(
+                        RouteStop.tenant_id == tenant_id,
+                        RouteStop.route_id != route_id,
+                        RouteStop.customer_id.in_(customer_ids),
+                        Route.active.is_(True),
+                    )
+                )
+            ).all()
+            if elsewhere and not move_from_other_rounds:
+                named = await self._customers.directory({s.customer_id for s, _ in elsewhere})
+                clashes = ", ".join(
+                    f"{named[s.customer_id].name if s.customer_id in named else s.customer_id} "
+                    f"is already on the round {route_name}"
+                    for s, route_name in elsewhere
+                )
+                raise ConflictError(f"{clashes} — move it to this round, or leave it where it is")
+            for stop, route_name in elsewhere:
+                await self._session.delete(stop)
+                await audit.record(
+                    action="logistics.route_stop_moved",
+                    resource_type="route",
+                    resource_id=route.id,
+                    actor_id=actor_id,
+                    detail={
+                        "customer_id": str(stop.customer_id),
+                        "from_route_id": str(stop.route_id),
+                        "from_route": route_name,
+                    },
+                )
+            if elsewhere:
+                await self._session.flush()
 
         existing = (
             await self._session.scalars(select(RouteStop).where(RouteStop.route_id == route_id))
@@ -983,6 +1109,20 @@ class LogisticsService:
             if run.driver_id is None:
                 raise ConflictError("a run needs a driver before it can start")
 
+        # WO-110 §1. A run completed with a delivery still `scheduled` is a
+        # household whose second milk never reaches a bill — silently, every
+        # day. The phone counts deliveries too, but older APKs in the field
+        # record one outcome per stop, so THIS is the guard that holds.
+        if status == "completed":
+            open_deliveries = await self._scheduled_deliveries(run)
+            if open_deliveries:
+                raise ConflictError(
+                    f"{len(open_deliveries)} of this run's deliveries are still scheduled — "
+                    "record them first: "
+                    + ", ".join(open_deliveries[:6])
+                    + (" …" if len(open_deliveries) > 6 else "")
+                )
+
         values: dict[str, object] = {"status": status, "updated_at": utcnow()}
         if status == "in_progress":
             values["started_at"] = utcnow()
@@ -1291,7 +1431,7 @@ class LogisticsService:
         with it. This module still computes no quantity, no price and no date.
         """
         run = await self._my_run(run_id, user_id=user_id)
-        if run.status not in OPEN_RUN_STATUSES:
+        if run.status not in OPEN_RUN_STATUSES and run.status != "completed":
             raise ConflictError(f"a {run.status} run cannot record outcomes")
 
         on_route = await self._session.scalar(
@@ -1323,18 +1463,42 @@ class LogisticsService:
                 )
             else:
                 raise ConflictError("this household has no standing order for this slot")
-        delivery = await self._deliveries.record(
-            RecordDeliveryCommand(
-                customer_id=customer_id,
-                delivery_date=run.business_date,
-                slot=run.slot,
-                status=outcome.status,
-                quantity=outcome.quantity,
-                product=product,
-                notes=outcome.notes,
-            ),
-            actor_id=user_id,
+        facts = await self._deliveries.facts_by_customer_product(
+            [customer_id], run.business_date, run.slot
         )
+        already = facts.get((customer_id, product))
+        if run.status == "completed" and (already is None or already.status == "scheduled"):
+            # WO-110 §2: a finished round is reviewable — what was recorded
+            # may be corrected — but it is closed to NEW outcomes.
+            raise ConflictError("a completed run cannot record outcomes")
+        if already is not None and already.status != "scheduled":
+            # WO-110 §2: a wrong quantity is corrected from the same door,
+            # until a bill has taken the row — then the office, not the
+            # doorstep, and the delivery domain says so in its own words.
+            from platform_core.modules.delivery.service import AmendDeliveryCommand
+
+            delivery = await self._deliveries.amend(
+                already.delivery_id,
+                AmendDeliveryCommand(
+                    quantity=outcome.quantity,
+                    status=outcome.status,
+                    notes=outcome.notes or None,
+                ),
+                actor_id=user_id,
+            )
+        else:
+            delivery = await self._deliveries.record(
+                RecordDeliveryCommand(
+                    customer_id=customer_id,
+                    delivery_date=run.business_date,
+                    slot=run.slot,
+                    status=outcome.status,
+                    quantity=outcome.quantity,
+                    product=product,
+                    notes=outcome.notes,
+                ),
+                actor_id=user_id,
+            )
 
         contacts = await self._customers.contact_directory({customer_id})
         contact = contacts.get(customer_id)
@@ -1350,6 +1514,151 @@ class LogisticsService:
             address=contact.address if contact else "",
             delivery_status=delivery.status,
         )
+
+    async def record_remaining_outcomes(
+        self,
+        run_id: uuid.UUID,
+        body: RemainingOutcomeInput,
+        *,
+        user_id: uuid.UUID,
+        audit: AuditService,
+    ) -> RemainingOutcomeView:
+        """ "Mark the rest as delivered" (WO-110 §4), for the caller's own
+        open run: every delivery of the run still `scheduled` is recorded
+        delivered at its standing quantity, through the same door and the
+        same delivery-domain call as one tap at one gate — one audit line per
+        delivery, from the domain that owns it. Anything already recorded is
+        untouched. Idempotent by construction: a replay finds nothing
+        scheduled and marks nothing, whatever happened to the header.
+        """
+        run = await self._my_run(run_id, user_id=user_id)
+        if run.status not in OPEN_RUN_STATUSES:
+            raise ConflictError(f"a {run.status} run cannot record outcomes")
+
+        from platform_core.modules.delivery.service import RecordDeliveryCommand
+
+        route_stops = await self._stops(run.route_id)
+        ids = [s.customer_id for s in route_stops]
+        facts = await self._deliveries.facts_by_customer_product(ids, run.business_date, run.slot)
+        marked = 0
+        untouched = 0
+        for (customer_id, product), fact in sorted(facts.items(), key=lambda kv: str(kv[0])):
+            if fact.status != "scheduled":
+                untouched += 1
+                continue
+            await self._deliveries.record(
+                RecordDeliveryCommand(
+                    customer_id=customer_id,
+                    delivery_date=run.business_date,
+                    slot=run.slot,
+                    status="delivered",
+                    quantity=None,
+                    product=product,
+                    notes=body.notes,
+                ),
+                actor_id=user_id,
+            )
+            marked += 1
+        await audit.record(
+            action="logistics.run_remaining_marked_delivered",
+            resource_type="delivery_run",
+            resource_id=run.id,
+            actor_id=user_id,
+            detail={"marked": marked, "untouched": untouched},
+        )
+        return RemainingOutcomeView(
+            run_id=run.id, marked=marked, untouched=untouched, run=await self._run_view(run)
+        )
+
+    async def _scheduled_deliveries(self, run: DeliveryRun) -> list[str]:
+        """The run's deliveries still `scheduled`, named for a refusal
+        ("B-204 BUFFALO-MILK"). The rows are the delivery domain's; the
+        names come from the customer module's own batch."""
+        route_stops = await self._stops(run.route_id)
+        facts = await self._deliveries.facts_by_customer_product(
+            [s.customer_id for s in route_stops], run.business_date, run.slot
+        )
+        code_of = {s.customer_id: s.code or str(s.customer_id) for s in route_stops}
+        return sorted(
+            f"{code_of.get(customer_id, customer_id)} {product}"
+            for (customer_id, product), fact in facts.items()
+            if fact.status == "scheduled"
+        )
+
+    async def next_round_for(self, *, user_id: uuid.UUID) -> NextRoundView:
+        """What comes after today, for the caller's own profile (WO-110 §2).
+
+        A run already planned for a later day answers first. With none, the
+        round he is the DEFAULT delivery boy of — if it auto-plans — is
+        expected on the next working day within a week; the scheduler will
+        create that run at its hour, so it is reported as expected rather than
+        planned. Nothing known answers with no date, and the phone says so
+        calmly rather than inventing one.
+        """
+        driver = await self.driver_for_user(user_id)
+        if driver is None:
+            return NextRoundView()
+        tenant_id = require_current_tenant()
+        today = business_today(await tenant_timezone(self._session, tenant_id))
+        run = await self._session.scalar(
+            select(DeliveryRun)
+            .where(
+                DeliveryRun.tenant_id == tenant_id,
+                DeliveryRun.driver_id == driver.id,
+                DeliveryRun.business_date > today,
+                DeliveryRun.status.in_(OPEN_RUN_STATUSES),
+            )
+            .order_by(DeliveryRun.business_date, DeliveryRun.slot)
+            .limit(1)
+        )
+        if run is not None:
+            route = await self._session.get(Route, run.route_id)
+            stops = await self._session.scalar(
+                select(func.count())
+                .select_from(RouteStop)
+                .where(RouteStop.route_id == run.route_id)
+            )
+            return NextRoundView(
+                business_date=run.business_date,
+                stops=int(stops or 0),
+                route_name=route.name if route else "",
+                planned=True,
+            )
+        routes = (
+            await self._session.scalars(
+                select(Route).where(
+                    Route.tenant_id == tenant_id,
+                    Route.default_driver_id == driver.id,
+                    Route.active.is_(True),
+                    Route.auto_plan.is_(True),
+                )
+            )
+        ).all()
+        if not routes:
+            return NextRoundView()
+        stops = 0
+        for route in routes:
+            stops += int(
+                await self._session.scalar(
+                    select(func.count())
+                    .select_from(RouteStop)
+                    .where(RouteStop.route_id == route.id)
+                )
+                or 0
+            )
+        from datetime import timedelta
+
+        for offset in range(1, 8):
+            day = today + timedelta(days=offset)
+            resolver = WorkingDayResolver(self._session, tenant_id, day)
+            if await resolver.is_working(routes[0].center_id):
+                return NextRoundView(
+                    business_date=day,
+                    stops=stops,
+                    route_name=routes[0].name if len(routes) == 1 else "",
+                    planned=False,
+                )
+        return NextRoundView()
 
     async def _assert_assignable(
         self, vehicle_id: uuid.UUID | None, driver_id: uuid.UUID | None
@@ -1401,9 +1710,10 @@ class LogisticsService:
             # the delivery domain says happened to it.
             ids = {s.customer_id for s in route_stops}
             standing = await self._customers.standing_orders_for(ids, run.slot)
-            per_product = await self._deliveries.status_by_customer_product(
+            facts = await self._deliveries.facts_by_customer_product(
                 list(ids), run.business_date, run.slot
             )
+            sold = await self._items.items_for(ids, run.business_date)
             from platform_core.modules.catalog.service import CatalogService
 
             names = await CatalogService(self._session).names_for(
@@ -1421,20 +1731,31 @@ class LogisticsService:
                     name=s.name,
                     phone=contacts[s.customer_id].phone if s.customer_id in contacts else "",
                     address=contacts[s.customer_id].address if s.customer_id in contacts else "",
-                    delivery_status=outcomes.get(s.customer_id),
+                    delivery_status=stop_status(
+                        [f for (cid, _p), f in facts.items() if cid == s.customer_id],
+                        outcomes.get(s.customer_id),
+                    ),
                     orders=[
-                        RunStopOrder(
-                            product=o.product,
-                            product_name=names.get(o.product, o.product),
-                            quantity=o.quantity,
-                            quantity_unit=o.quantity_unit,
-                            delivery_status=per_product.get((s.customer_id, o.product)),
-                        )
+                        _order_view(o, names, facts.get((s.customer_id, o.product)))
                         for o in standing.get(s.customer_id, [])
+                    ],
+                    items=[
+                        RunStopItem(
+                            product=i.product,
+                            product_name=i.product_name,
+                            quantity=i.quantity,
+                            unit=i.unit,
+                        )
+                        for i in sold.get(s.customer_id, [])
                     ],
                 )
                 for s in route_stops
             ]
+
+        # WO-110 §1: progress in DELIVERIES — every standing order due at a
+        # stop is one, whatever the delivery domain has so far said about it.
+        orders = [o for stop in stops for o in stop.orders]
+        scheduled = sum(1 for o in orders if o.delivery_status in (None, "scheduled"))
 
         return RunView(
             id=run.id,
@@ -1453,7 +1774,76 @@ class LogisticsService:
             started_at=run.started_at,
             finished_at=run.finished_at,
             stops=stops,
+            deliveries_total=len(orders),
+            deliveries_recorded=len(orders) - scheduled,
+            deliveries_scheduled=scheduled,
         )
+
+
+def _order_view(o, names: dict[str, str], fact: DeliveryFact | None) -> RunStopOrder:
+    """One standing order with whatever the delivery domain says about it."""
+    return RunStopOrder(
+        product=o.product,
+        product_name=names.get(o.product, o.product),
+        quantity=o.quantity,
+        quantity_unit=o.quantity_unit,
+        delivery_status=fact.status if fact is not None else None,
+        quantity_delivered=fact.quantity if fact is not None else None,
+        invoiced=fact.invoiced if fact is not None else False,
+    )
+
+
+def stop_status(facts: list[DeliveryFact], fallback: str | None) -> str | None:
+    """A stop's one-word answer from its deliveries (WO-110 §1).
+
+    `scheduled` while ANY delivery at the door is still scheduled — a phone
+    that records one outcome per stop then keeps the stop open and is told
+    "say which" on the second tap, instead of walking on with the buffalo
+    milk unrecorded. Otherwise the delivered status wins when any product
+    was delivered; otherwise the first recorded status. No rows: the old
+    per-customer answer (None when nothing was generated).
+    """
+    if not facts:
+        return fallback
+    statuses = [f.status for f in facts]
+    if "scheduled" in statuses:
+        return "scheduled"
+    if "delivered" in statuses:
+        return "delivered"
+    return statuses[0]
+
+
+async def customers_on_no_round(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> list[UnroutedCustomer]:
+    """Households with a standing order that no active round visits (WO-110 §6).
+
+    Verified before this existed: with rounds in use the nightly generator
+    works route by route (`scheduled_round_scopes`), so a household on no
+    round gets NO delivery row at all — nobody's phone shows it, nothing
+    reaches a bill, and nothing says so. (A shop with no rounds yet is
+    generated whole, and its deliveries are the office's to record, so this
+    reports nothing there.) A module-level read, like `route_memberships`,
+    so the dashboard can be handed the count as a value.
+    """
+    from platform_core.modules.customer.service import CustomerService
+
+    routed = (
+        await session.execute(
+            select(RouteStop.customer_id)
+            .join(Route, Route.id == RouteStop.route_id)
+            .where(RouteStop.tenant_id == tenant_id, Route.active.is_(True))
+        )
+    ).scalars()
+    routed_ids = set(routed)
+    if not routed_ids:
+        return []
+    with_orders = await CustomerService(session, None).customers_with_standing_orders()
+    return [
+        UnroutedCustomer(customer_id=c.id, code=c.code, name=c.name)
+        for c in with_orders
+        if c.id not in routed_ids
+    ]
 
 
 async def plan_auto_routes(

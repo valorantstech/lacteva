@@ -98,6 +98,9 @@ class _Platform extends ApiClient {
   }
 
   @override
+  Future<Map<String, dynamic>> myNextRound() async => {'business_date': null};
+
+  @override
   Future<Map<String, dynamic>> startMyRun(String runId) async {
     transitions.add('start:$runId');
     return {'id': runId, 'status': 'in_progress'};
@@ -131,6 +134,9 @@ class _Client extends OfflineApiClient {
 
   @override
   Future<List<Map<String, dynamic>>> myRuns() => platform.myRuns();
+
+  @override
+  Future<Map<String, dynamic>> myNextRound() => platform.myNextRound();
 
   @override
   Future<Map<String, dynamic>> startMyRun(String runId) =>
@@ -216,7 +222,8 @@ void main() {
       // van. Each fact appears once, in the region that owns it.
       expect(find.text('Route 3 · West Ward'), findsOneWidget);
       expect(find.text('MH 12 KA 4471'), findsOneWidget);
-      expect(find.text('2 of 4 stops'), findsOneWidget);
+      // WO-110 §1: progress counts DELIVERIES — a stop without orders is one.
+      expect(find.text('2 of 4 deliveries'), findsOneWidget);
     });
 
     testWidgets('the chip says the run STATE, not a wall-clock time', (
@@ -408,7 +415,7 @@ void main() {
       );
       expect(find.text('Complete run'), findsNothing);
       // WO-72 Part A: the plural rule the board lacked — one stop, not "1 stops".
-      expect(find.text('1 stop remaining'), findsOneWidget);
+      expect(find.text('1 delivery remaining'), findsOneWidget);
 
       final platform = await _pump(
         tester,
@@ -423,7 +430,7 @@ void main() {
         ],
       );
       expect(find.text('Complete run'), findsOneWidget);
-      expect(find.text('Every stop recorded'), findsOneWidget);
+      expect(find.text('Every delivery recorded'), findsOneWidget);
       await tester.tap(find.text('Complete run'));
       await tester.pumpAndSettle();
       expect(platform.transitions, ['complete:run-1']);
@@ -460,7 +467,7 @@ void main() {
       tester,
     ) async {
       await _pump(tester, runs: const []);
-      expect(find.text('No run assigned today'), findsOneWidget);
+      expect(find.text('No round today'), findsOneWidget);
       expect(find.byIcon(Icons.free_breakfast_outlined), findsOneWidget);
     });
 

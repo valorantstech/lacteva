@@ -886,6 +886,30 @@ class CustomerService:
             for row in rows
         }
 
+    async def customers_with_standing_orders(self) -> list[CustomerName]:
+        """Every ACTIVE customer with at least one plan in force today, in
+        one query (WO-110 §6) — the set a round has to visit for the
+        household to be delivered and billed at all."""
+        tenant_id = require_current_tenant()
+        today = await self._today()
+        rows = (
+            await self._session.execute(
+                select(Customer.id, Customer.code, Customer.name)
+                .join(DeliveryPlan, DeliveryPlan.customer_id == Customer.id)
+                .where(
+                    Customer.tenant_id == tenant_id,
+                    Customer.status == "active",
+                    DeliveryPlan.tenant_id == tenant_id,
+                    DeliveryPlan.active.is_(True),
+                    DeliveryPlan.effective_from <= today,
+                    or_(DeliveryPlan.effective_to.is_(None), DeliveryPlan.effective_to >= today),
+                )
+                .distinct()
+                .order_by(Customer.code)
+            )
+        ).all()
+        return [CustomerName(id=r[0], code=r[1], name=r[2]) for r in rows]
+
     async def active_plans(self, customer_id: uuid.UUID) -> list[DeliveryPlan]:
         """Every plan in force for this customer today, across products and
         slots (WO-107: a delivery recorded without naming a product takes the

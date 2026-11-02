@@ -384,6 +384,34 @@ class OfflineApiClient extends ApiClient {
     };
   }
 
+  /// "Mark the rest as delivered" (WO-110 §4), captured durably. Online, the
+  /// platform answers now and says how many it marked; offline, ONE
+  /// operation goes into the same queue with its operation id as the
+  /// idempotency key. Replaying it is safe twice over: the key makes it the
+  /// same request, and the platform marks only what is still scheduled.
+  Future<Map<String, dynamic>> markRemainingDeliveredOffline({
+    required String runId,
+  }) async {
+    if (isOnline) {
+      try {
+        return await markRemainingDelivered(runId);
+      } on ApiException {
+        rethrow;
+      } catch (_) {
+        _believedOnline = false;
+      }
+    }
+    await queue.load();
+    await queue.enqueue(
+      operationId: _operationId(),
+      kind: 'run_remaining',
+      clientReference: _localId('remaining'),
+      targetRef: '/v1/delivery-runs/$runId/outcomes/remaining',
+      payload: const {},
+    );
+    return {'run_id': runId, '_queued': true};
+  }
+
   /// The catalogue, from the platform when there is signal and from the
   /// queue's cache when there is not (WO-82 §2). The cache is refreshed on
   /// every online read, so a product deactivated in the office disappears
@@ -507,9 +535,15 @@ class OfflineApiClient extends ApiClient {
   /// with the path read from each operation's `targetRef`.
   Future<(int, int)> _drainRunOutcomes() async {
     await queue.load();
+    // WO-110 §4: the batch "mark the rest" travels the same loop, addressed
+    // by its own run-scoped path.
     final mine = queue
         .due()
-        .where((op) => op.kind == 'run_outcome' && op.targetRef != null)
+        .where(
+          (op) =>
+              (op.kind == 'run_outcome' || op.kind == 'run_remaining') &&
+              op.targetRef != null,
+        )
         .toList(growable: false);
     if (mine.isEmpty) return (0, 0);
     var sent = 0;

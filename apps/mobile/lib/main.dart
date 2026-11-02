@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'src/api_url.dart';
@@ -29,8 +30,19 @@ const apiUrl = String.fromEnvironment(
   defaultValue: 'http://localhost:8000',
 );
 
+/// The one orientation this app is used in (WO-110 §8). A delivery boy holds
+/// the phone one-handed while pouring milk; the screen must not turn when
+/// the phone tilts. Portrait on phones AND tablets — the owner asked for no
+/// rotation, and a shop does not run this app on a tablet in landscape.
+/// `AndroidManifest.xml` says the same for the first frame before Flutter
+/// starts, and `Info.plist` for iOS; `orientation_test.dart` pins all three.
+const List<DeviceOrientation> lockedOrientations = [DeviceOrientation.portraitUp];
+
+Future<void> lockOrientation() => SystemChrome.setPreferredOrientations(lockedOrientations);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await lockOrientation();
   final misbuilt = apiUrlProblem(apiUrl, release: kReleaseMode);
   if (misbuilt != null) {
     // A release that points at a developer machine is not an app with a

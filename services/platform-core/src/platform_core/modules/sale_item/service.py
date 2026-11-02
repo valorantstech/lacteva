@@ -6,6 +6,7 @@ reason; there is no edit, for the same reason a delivery has none: a bill
 somebody has read cannot change shape behind them.
 """
 
+import builtins
 import uuid
 from collections.abc import Sequence
 from datetime import date, datetime
@@ -98,6 +99,15 @@ class SaleItemView(BaseModel):
     created_at: datetime
     cancelled_at: datetime | None
     cancel_reason: str
+
+
+class SoldItem(BaseModel):
+    """One doorstep item as a run's day summary lists it (WO-110 §2)."""
+
+    product: str
+    product_name: str
+    quantity: Decimal
+    unit: str
 
 
 class SaleItemPage(BaseModel):
@@ -353,6 +363,39 @@ class SaleItemService:
             total_amount=quantize_money(Decimal(value[0] or 0), currency),
             currency=currency,
         )
+
+    async def items_for(
+        self, customer_ids: set[uuid.UUID], day: date
+    ) -> "dict[uuid.UUID, builtins.list[SoldItem]]":
+        """What was sold at these households on this day, not cancelled, in
+        one query (WO-110 §2) — the delivery boy's day summary names the
+        Dahi beside the milk. Values only: the run never reads this table."""
+        if not customer_ids:
+            return {}
+        rows = (
+            await self._session.scalars(
+                select(SaleItem)
+                .where(
+                    SaleItem.tenant_id == require_current_tenant(),
+                    SaleItem.customer_id.in_(customer_ids),
+                    SaleItem.sale_date == day,
+                    SaleItem.status != "cancelled",
+                )
+                .order_by(SaleItem.created_at)
+            )
+        ).all()
+        names = await self._catalog.names_for({r.product_code for r in rows})
+        sold: dict[uuid.UUID, builtins.list[SoldItem]] = {}
+        for row in rows:
+            sold.setdefault(row.customer_id, []).append(
+                SoldItem(
+                    product=row.product_code,
+                    product_name=names.get(row.product_code, row.product_code),
+                    quantity=Decimal(row.quantity),
+                    unit=row.unit,
+                )
+            )
+        return sold
 
     async def unbilled_for_period(
         self, customer_id: uuid.UUID, period_from: date, period_to: date

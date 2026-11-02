@@ -48,8 +48,16 @@ export default function UsersPage() {
   // presentation only (D-31), a shop that does not collect is not offered
   // the collection roles.
   const COLLECTION_ROLES = new Set(["COLLECTION_OPERATOR", "CENTRE_MANAGER"]);
+  // WO-110 §3: ORGANIZATION_ADMIN and tenant-admin are both "Owner" — one
+  // entry, the one the platform's own onboarding grants. And a customer is
+  // invited from their own customer page, where the invitation is bound to
+  // the household, never from Staff.
   const offerable = roles.filter(
-    (role) => role.grantable !== false && !(salesOnly && COLLECTION_ROLES.has(role.name)),
+    (role) =>
+      role.grantable !== false &&
+      !(salesOnly && COLLECTION_ROLES.has(role.name)) &&
+      role.name !== "CUSTOMER_PORTAL" &&
+      !(role.name === "ORGANIZATION_ADMIN" && roles.some((r) => r.name === "tenant-admin")),
   );
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("tenant-viewer");

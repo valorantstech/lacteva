@@ -2208,6 +2208,22 @@ class ReportingService:
                     href="/deliveries?invoiced=false",
                 )
             )
+        # WO-110 §6: a household with a standing order on no delivery round
+        # is planned by nobody and billed never. The logistics module answers
+        # as values, the way route memberships already reach the report.
+        from platform_core.modules.logistics.service import customers_on_no_round
+
+        unrouted = len(await customers_on_no_round(self._session, tenant_id))
+        if unrouted:
+            attention.append(
+                AttentionItem(
+                    key="unrouted_customers",
+                    label="customers with a standing order are on no delivery round",
+                    count=unrouted,
+                    severity="warning",
+                    href="/routes#unrouted",
+                )
+            )
         draft_bills = sum(r.count for r in sales.by_status if r.status == "draft")
         if draft_bills:
             attention.append(

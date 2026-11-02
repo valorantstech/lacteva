@@ -14,16 +14,21 @@ no product takes the organisation's first milk product; and a custom unit
 never enters the D-21 measured-versus-traded conversion.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from platform_core.core import units
-from tests.clock import reference_date
 from tests.conftest import invite, register_and_login
 
-TODAY = reference_date()
+# The fresh shop is registered with country "in", so its business day is
+# Asia/Kolkata's — which is tomorrow's UTC date from 18:30 UTC. A window or a
+# generation date computed from UTC's today misses the shop's plan for part
+# of every evening (tests/clock.py explains the drift; WO-110 found it at
+# 00:34 IST).
+TODAY = datetime.now(ZoneInfo("Asia/Kolkata")).date()
 MONTH_START = TODAY.replace(day=1)
 MONTH_END = (MONTH_START + timedelta(days=32)).replace(day=1) - timedelta(days=1)
 

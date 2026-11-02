@@ -248,6 +248,19 @@ class RouteMembership:
     route_id: uuid.UUID | None = None
 
 
+class DeliveryFact(BaseModel):
+    """What the delivery domain says about ONE (household, product) on one
+    morning, as a run needs it (WO-110 §1): the status, the quantity that
+    was actually recorded (the standing figure until somebody changes it),
+    and whether a bill has taken it — after which the doorstep cannot
+    correct it any more."""
+
+    delivery_id: uuid.UUID
+    status: str
+    quantity: Decimal
+    invoiced: bool
+
+
 class DeliveryRouteRow(BaseModel):
     """One route's share of the window (DEMO-037).
 
@@ -841,17 +854,42 @@ class DeliveryService:
     ) -> dict[tuple[uuid.UUID, str], str]:
         """`status_by_customer`, per PRODUCT (WO-82 §1): a household with two
         milks on one morning has two rows, and the run shows each."""
+        facts = await self.facts_by_customer_product(customer_ids, day, slot)
+        return {key: fact.status for key, fact in facts.items()}
+
+    async def facts_by_customer_product(
+        self, customer_ids: list[uuid.UUID], day: date, slot: str
+    ) -> dict[tuple[uuid.UUID, str], DeliveryFact]:
+        """The per-product rows in full (WO-110 §1): status, recorded
+        quantity and whether a bill holds the row. The batch shape a run
+        view needs, and the one place logistics learns anything about a
+        delivery — still through this service, never the table."""
         if not customer_ids:
             return {}
         rows = await self._session.execute(
-            select(MilkDelivery.customer_id, MilkDelivery.product, MilkDelivery.status).where(
+            select(
+                MilkDelivery.customer_id,
+                MilkDelivery.product,
+                MilkDelivery.id,
+                MilkDelivery.status,
+                MilkDelivery.quantity,
+                MilkDelivery.invoice_id,
+            ).where(
                 MilkDelivery.tenant_id == require_current_tenant(),
                 MilkDelivery.delivery_date == day,
                 MilkDelivery.slot == slot,
                 MilkDelivery.customer_id.in_(customer_ids),
             )
         )
-        return {(row[0], row[1]): row[2] for row in rows}
+        return {
+            (row[0], row[1]): DeliveryFact(
+                delivery_id=row[2],
+                status=row[3],
+                quantity=Decimal(row[4]),
+                invoiced=row[5] is not None,
+            )
+            for row in rows
+        }
 
     def _conditions(
         self,

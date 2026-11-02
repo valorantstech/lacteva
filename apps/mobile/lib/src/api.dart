@@ -1138,6 +1138,33 @@ class ApiClient {
       await _send('POST', '/v1/delivery-runs/$runId/complete')
           as Map<String, dynamic>;
 
+  /// What the delivery boy has after today (WO-110 §2): a later run already
+  /// planned, or his auto-planned round on the next working day. The date is
+  /// the platform's; `business_date` null means nothing is known.
+  Future<Map<String, dynamic>> myNextRound() async =>
+      await _send('GET', '/v1/delivery-runs/mine/next') as Map<String, dynamic>;
+
+  /// "Mark the rest as delivered" (WO-110 §4): every delivery of the run
+  /// still scheduled, at its standing quantity, in one call. Own run only;
+  /// the platform leaves anything already recorded alone, so a replay marks
+  /// nothing — and `idempotencyKey` makes the replay the same answer too.
+  Future<Map<String, dynamic>> markRemainingDelivered(
+    String runId, {
+    String? idempotencyKey,
+  }) async {
+    final path = '/v1/delivery-runs/$runId/outcomes/remaining';
+    if (idempotencyKey != null) {
+      return await sendIdempotent(
+            'POST',
+            path,
+            idempotencyKey: idempotencyKey,
+            body: const <String, dynamic>{},
+          )
+          as Map<String, dynamic>;
+    }
+    return await _send('POST', path, body: const <String, dynamic>{}) as Map<String, dynamic>;
+  }
+
   /// What happened at one stop, through the driver's own narrow door
   /// (P0-MOB-002). The platform checks own-run, open-run and on-route, uses
   /// the RUN's date and slot, and prices from the plan — this app sends no

@@ -44,7 +44,11 @@ const BUFFALO = product("BUFFALO-MILK", "Buffalo milk", "L", "56.00");
 const PANEER = product("PANEER-200-G", "Paneer 200 g", "packet", "90.00");
 const OTHER = product("OTHER", "Other shop item", "pc", null);
 
-function stub(products: unknown[], types: string[] = ["household", "Temple"]) {
+function stub(
+  products: unknown[],
+  types: string[] = ["household", "Temple"],
+  routes: { id: string; name: string; active: boolean; stops: { customer_id: string }[] }[] = [],
+) {
   const calls: { url: string; init?: RequestInit }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -60,6 +64,13 @@ function stub(products: unknown[], types: string[] = ["household", "Temple"]) {
       if (path.endsWith("/v1/customers")) return json({ items: [], total: 0, limit: 15, offset: 0 });
       if (path.endsWith("/v1/routes") && init?.method === "POST")
         return json({ id: "r-new", code: "MORNING-ROUND", name: "Morning round", active: true, notes: "", center_id: null, stops: [] }, 201);
+      // WO-110 §6: the New customer form asks which rounds exist.
+      if (path.endsWith("/v1/routes") && routes.length > 0)
+        return json(routes.map((r) => ({ ...r, code: r.id.toUpperCase(), notes: "", center_id: null, stop_count: r.stops.length })));
+      const detail = routes.find((r) => path.endsWith(`/v1/routes/${r.id}`));
+      if (detail && (!init?.method || init.method === "GET"))
+        return json({ ...detail, code: detail.id.toUpperCase(), notes: "", center_id: null, stop_count: detail.stops.length });
+      if (/\/v1\/routes\/[^/]+\/stops$/.test(path) && init?.method === "PUT") return json({ stops: [] });
       if (path.endsWith("/v1/drivers") && init?.method === "POST")
         return json({ id: "d-new", code: "RAMESH-PAWAR", full_name: "Ramesh Pawar", phone: "", user_id: null, center_id: null, active: true }, 201);
       // The rounds page's lists are plain arrays.
@@ -165,5 +176,65 @@ describe("the rounds page", () => {
     await userEvent.click(within(driverCard as HTMLElement).getByRole("button", { name: "Add" }));
     await waitFor(() => expect(posted("/v1/drivers")).toHaveLength(1));
     expect(posted("/v1/drivers")[0]).toEqual({ full_name: "Ramesh Pawar", code: "DRV-7" });
+  });
+});
+
+/**
+ * WO-110 §3 and §6 — found on the owner's walk of the shop.
+ */
+describe("the New customer form, after the owner's walk (WO-110)", () => {
+  it("preselects the first MILK product, not the newest product", async () => {
+    // Dahi sorts first in the catalogue; a household still takes milk.
+    stub([PANEER, COW, BUFFALO, OTHER]);
+    render(<CustomersPage />);
+    await userEvent.click(await screen.findByRole("button", { name: /New customer/ }));
+    const select = (await screen.findByLabelText("Product")) as HTMLSelectElement;
+    expect(select.value).toBe("COW-MILK");
+    expect(screen.getByLabelText("Daily quantity (L)")).toBeInTheDocument();
+  });
+
+  it("gives an Indian example for the name, not the Kenya demo's", async () => {
+    stub([COW]);
+    render(<CustomersPage />);
+    await userEvent.click(await screen.findByRole("button", { name: /New customer/ }));
+    expect(await screen.findByPlaceholderText("e.g. A-101, Sunrise Tower")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/Mama Njeri/)).not.toBeInTheDocument();
+  });
+
+  it("adds the new customer to the shop's only round by default, saying so (§6)", async () => {
+    const { calls } = stub([COW], ["household"], [
+      { id: "r-1", name: "Morning round", active: true, stops: [{ customer_id: "cu-a101" }] },
+    ]);
+    render(<CustomersPage />);
+    await userEvent.click(await screen.findByRole("button", { name: /New customer/ }));
+    const round = (await screen.findByLabelText("Delivery round")) as HTMLSelectElement;
+    expect(round.value).toBe("r-1");
+    expect(screen.getByTestId("nc-route-help")).toHaveTextContent("Added as the last stop of Morning round");
+    await userEvent.type(screen.getByLabelText("Name"), "B-204");
+    await userEvent.type(screen.getByLabelText("Rate per litre"), "70");
+    await userEvent.click(screen.getByRole("button", { name: "Register customer" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.endsWith("/v1/routes/r-1/stops") && c.init?.method === "PUT")).toBe(true),
+    );
+    const put = calls.find((c) => c.url.endsWith("/v1/routes/r-1/stops") && c.init?.method === "PUT")!;
+    expect(JSON.parse(String(put.init?.body))).toEqual({ customer_ids: ["cu-a101", "cu-new"] });
+  });
+
+  it("lets the owner choose none, and then no stop is written (§6)", async () => {
+    const { calls } = stub([COW], ["household"], [
+      { id: "r-1", name: "Morning round", active: true, stops: [] },
+      { id: "r-2", name: "Evening round", active: true, stops: [] },
+    ]);
+    render(<CustomersPage />);
+    await userEvent.click(await screen.findByRole("button", { name: /New customer/ }));
+    const round = (await screen.findByLabelText("Delivery round")) as HTMLSelectElement;
+    // Two rounds: no default — the owner decides.
+    expect(round.value).toBe("");
+    expect(screen.getByTestId("nc-route-help")).toHaveTextContent("On no round, no delivery boy will see this customer.");
+    await userEvent.type(screen.getByLabelText("Name"), "B-204");
+    await userEvent.type(screen.getByLabelText("Rate per litre"), "70");
+    await userEvent.click(screen.getByRole("button", { name: "Register customer" }));
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/v1/customers") && c.init?.method === "POST")).toBe(true));
+    expect(calls.some((c) => c.init?.method === "PUT")).toBe(false);
   });
 });

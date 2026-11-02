@@ -4303,7 +4303,8 @@ export type Driver = {
 };
 
 export type RunStop = RouteStop & {
-  /** `MilkDelivery.status`, or null when the delivery domain has no row yet. */
+  /** `MilkDelivery.status`, or null when the delivery domain has no row yet.
+   *  WO-110 §1: `scheduled` while ANY of the household's deliveries is. */
   delivery_status: string | null;
   /** WO-82 §1: what to pour — the household's standing order(s) for the
    *  run's slot, named from the catalogue. */
@@ -4313,7 +4314,12 @@ export type RunStop = RouteStop & {
     quantity: string | number;
     quantity_unit: string;
     delivery_status: string | null;
+    /** WO-110: what was actually recorded, and whether a bill holds it. */
+    quantity_delivered?: string | number | null;
+    invoiced?: boolean;
   }[];
+  /** WO-110 §2: sold at the doorstep today. */
+  items?: { product: string; product_name: string; quantity: string | number; unit: string }[];
 };
 
 export type DeliveryRun = {
@@ -4332,9 +4338,20 @@ export type DeliveryRun = {
   started_at: string | null;
   finished_at: string | null;
   stops: RunStop[];
+  /** WO-110 §1: the run's progress counts DELIVERIES, not stops. */
+  deliveries_total?: number;
+  deliveries_recorded?: number;
+  deliveries_scheduled?: number;
 };
 
+/** WO-110 §6: a household with a standing order that no active round visits —
+ *  planned by nobody, seen by no delivery boy, never billed. */
+export type UnroutedCustomer = { customer_id: string; code: string; name: string };
+
 export const listRoutes = () => api<Route[]>("/v1/routes");
+
+export const listUnroutedCustomers = () =>
+  api<{ count: number; items: UnroutedCustomer[] }>("/v1/routes/unrouted-customers");
 
 export const getRoute = (id: string) => api<RouteDetail>(`/v1/routes/${id}`);
 
@@ -4363,10 +4380,16 @@ export const updateRoute = (
 ) => api<Route>(`/v1/routes/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 
 /** The ORDER is the payload: send the sequence, not add/remove calls. */
-export const setRouteStops = (id: string, customerIds: string[]) =>
+/** WO-110 §5: a household already on ANOTHER active round is refused (409,
+ *  naming the round) unless `move` is set, which takes it off that round in
+ *  the same save. */
+export const setRouteStops = (id: string, customerIds: string[], options?: { move?: boolean }) =>
   api<RouteDetail>(`/v1/routes/${id}/stops`, {
     method: "PUT",
-    body: JSON.stringify({ customer_ids: customerIds }),
+    body: JSON.stringify({
+      customer_ids: customerIds,
+      ...(options?.move ? { move_from_other_rounds: true } : {}),
+    }),
   });
 
 export const listVehicles = () => api<Vehicle[]>("/v1/vehicles");

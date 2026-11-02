@@ -290,6 +290,26 @@ describe("users page", () => {
     expect(offered.join(" ")).not.toMatch(/platform/i);
   });
 
+  it("offers ONE Owner and no Customer — a customer is invited from their own page (WO-110 §3)", async () => {
+    routeAll({
+      "/v1/authz/roles": () =>
+        json([
+          ...ROLES.map((r) => ({ ...r, grantable: true })),
+          { id: "r5", name: "ORGANIZATION_ADMIN", description: "", tenant_id: null, system: true, permissions: [], assignments: 0, grantable: true },
+          { id: "r6", name: "tenant-admin", description: "", tenant_id: null, system: true, permissions: [], assignments: 1, grantable: true },
+          { id: "r7", name: "CUSTOMER_PORTAL", description: "", tenant_id: null, system: true, permissions: [], assignments: 0, grantable: true },
+        ]),
+    });
+    render(<UsersPage />);
+    await screen.findByText("Wanjiku Mbugua");
+    const offered = roleOptions();
+    expect(offered.filter((o) => o === "Owner")).toHaveLength(1);
+    expect(offered).not.toContain("Customer");
+    // The Owner that is offered is the one the platform's onboarding grants.
+    const select = screen.getByLabelText("Role") as HTMLSelectElement;
+    expect([...select.options].find((o) => o.textContent === "Owner")?.value).toBe("tenant-admin");
+  });
+
   it("does not offer a sales-only shop the collection roles", async () => {
     routeAll();
     render(

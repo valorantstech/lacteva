@@ -344,7 +344,7 @@ const en: Catalog = {
   "settings.timezone": "Timezone",
   "settings.unit": "Milk is measured in",
   "settings.unitHelp":
-    "The unit your farmers' milk is measured in at the counter, and the unit rates are quoted per. Changing it applies to future collections only — receipts already issued keep the unit they were measured in.",
+    "The unit milk is measured in — at the counter when it comes in, and at the door when it goes out — and the unit rates are quoted per. Changing it applies to future collections and deliveries only; receipts and bills already issued keep the unit they were measured in.",
   "settings.unitLitre": "Litres (L)",
   "settings.unitKg": "Kilograms (kg)",
   "settings.conversion": "Paid in the other unit",
@@ -1084,7 +1084,7 @@ const hi: Catalog = {
   "settings.timezone": "समय क्षेत्र",
   "settings.unit": "दूध की माप",
   "settings.unitHelp":
-    "काउंटर पर किसानों के दूध की माप की इकाई, और जिस इकाई पर दर तय होती है। बदलाव केवल आगे के संग्रह पर लागू होता है — पहले जारी पर्चियाँ अपनी मूल इकाई रखती हैं।",
+    "दूध की माप की इकाई — काउंटर पर आते समय और दरवाज़े पर जाते समय — और जिस इकाई पर दर तय होती है। बदलाव केवल आगे के संग्रह और डिलीवरी पर लागू होता है; पहले जारी पर्चियाँ और बिल अपनी मूल इकाई रखते हैं।",
   "settings.unitLitre": "लीटर (L)",
   "settings.unitKg": "किलोग्राम (kg)",
   "settings.conversion": "दूसरी इकाई में भुगतान",
@@ -1838,7 +1838,7 @@ const ar: Catalog = {
   "settings.contactSaved": "تم الحفظ. كل فاتورة وكشف حساب يحملانه الآن.",
   "settings.unit": "يُقاس الحليب بـ",
   "settings.unitHelp":
-    "الوحدة التي يُقاس بها حليب المزارعين عند المنضدة، والتي تُحدَّد الأسعار بها. يسري التغيير على الاستلامات القادمة فقط — تحتفظ الإيصالات الصادرة بوحدتها الأصلية.",
+    "الوحدة التي يُقاس بها الحليب — عند المنضدة حين يصل، وعند الباب حين يخرج — والتي تُحدَّد الأسعار بها. يسري التغيير على الاستلامات والتوصيلات القادمة فقط؛ تحتفظ الإيصالات والفواتير الصادرة بوحدتها الأصلية.",
   "settings.unitLitre": "لترات (L)",
   "settings.unitKg": "كيلوغرامات (kg)",
   "settings.conversion": "الدفع بالوحدة الأخرى",

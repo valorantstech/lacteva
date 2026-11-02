@@ -66,6 +66,8 @@ function stubApi(
   );
   // WO-108: the page also asks who holds the Delivery boy role, and names them.
   vi.spyOn(api, "listMembers").mockResolvedValue((overrides.members ?? []) as never);
+  // WO-110 §6: and which households with a standing order are on no round.
+  vi.spyOn(api, "listUnroutedCustomers").mockResolvedValue({ count: 0, items: [] } as never);
   vi.spyOn(api, "getUser").mockImplementation(async (id: string) =>
     ({ id, email: `${id}@patel.example`, full_name: overrides.userNames?.[id] ?? id, locale: "en", is_active: true }) as never,
   );
@@ -361,5 +363,99 @@ describe("giving the delivery boy a round (WO-108)", () => {
     );
     await userEvent.selectOptions(select, "u-ramesh");
     await waitFor(() => expect(link).toHaveBeenCalledWith("d-1", "u-ramesh"));
+  });
+});
+
+/**
+ * WO-110 — walked on a real handset: a household on two rounds is moved, not
+ * doubled; a household on NO round is said out loud and put on one in a tap;
+ * covering for an absent boy hands the run to a phone that will show it.
+ */
+describe("the round, after the owner's walk (WO-110)", () => {
+  const LINKED = { id: "d-2", code: "RAMESH-PAWAR", full_name: "Ramesh Pawar", phone: "", user_id: "u-ramesh", center_id: null, active: true };
+
+  it("lists the households on no round and adds one to the only round in a tap (§6)", async () => {
+    stubApi();
+    vi.spyOn(api, "listUnroutedCustomers").mockResolvedValue({
+      count: 1,
+      items: [{ customer_id: "c-d407", code: "CUS-7", name: "D-407" }],
+    } as never);
+    vi.spyOn(api, "getRoute").mockResolvedValue({
+      ...ROUTE,
+      stops: [{ customer_id: "c-a101", position: 1, code: "CUS-1", name: "A-101" }],
+    } as never);
+    const save = vi.spyOn(api, "setRouteStops").mockResolvedValue({ ...ROUTE, stops: [] } as never);
+    render(<RoutesPage />);
+    expect(await screen.findByText(/1 customer with a standing order is on no delivery round/)).toBeInTheDocument();
+    const list = screen.getByRole("list", { name: "Customers on no round" });
+    expect(within(list).getByText("D-407")).toBeInTheDocument();
+    // One round: the button names it, and the household is appended as the last stop.
+    await userEvent.click(within(list).getByRole("button", { name: "Add to Kilima morning round" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith("route-1", ["c-a101", "c-d407"]));
+  });
+
+  it("says nothing when every household is on a round", async () => {
+    stubApi();
+    render(<RoutesPage />);
+    await screen.findByText("Kilima morning round");
+    expect(screen.queryByText(/on no delivery round/)).not.toBeInTheDocument();
+  });
+
+  it("asks before moving a household off another active round, and moves it (§5)", async () => {
+    stubApi();
+    vi.spyOn(api, "getRoute").mockResolvedValue({ ...ROUTE, stops: [] } as never);
+    vi.spyOn(api, "listCustomers").mockResolvedValue({
+      items: [{ id: "c-flat", code: "CUS-1", name: "Flat C-1603", customer_type: "household", status: "active" }],
+      total: 1, limit: 8, offset: 0,
+    } as never);
+    const save = vi
+      .spyOn(api, "setRouteStops")
+      .mockRejectedValueOnce(
+        new api.ApiError(409, "Flat C-1603 is already on the round Suresh evening — move it to this round, or leave it where it is"),
+      )
+      .mockResolvedValue({ ...ROUTE, stops: [] } as never);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<RoutesPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Edit the stops of Kilima morning round" }));
+    await userEvent.type(await screen.findByLabelText("Add a customer"), "Flat");
+    await userEvent.click(await screen.findByRole("button", { name: /Flat C-1603/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Save stops" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/Flat C-1603 is already on the round Suresh evening[\s\S]*Move it to Kilima morning round\?/));
+    expect(save).toHaveBeenNthCalledWith(1, "route-1", ["c-flat"]);
+    expect(save).toHaveBeenNthCalledWith(2, "route-1", ["c-flat"], { move: true });
+    confirm.mockRestore();
+  });
+
+  it("leaves the household where it is when the owner says no (§5)", async () => {
+    stubApi();
+    vi.spyOn(api, "getRoute").mockResolvedValue({ ...ROUTE, stops: [] } as never);
+    vi.spyOn(api, "listCustomers").mockResolvedValue({
+      items: [{ id: "c-flat", code: "CUS-1", name: "Flat C-1603", customer_type: "household", status: "active" }],
+      total: 1, limit: 8, offset: 0,
+    } as never);
+    const save = vi
+      .spyOn(api, "setRouteStops")
+      .mockRejectedValue(new api.ApiError(409, "Flat C-1603 is already on the round Suresh evening — move it to this round, or leave it where it is"));
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<RoutesPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Edit the stops of Kilima morning round" }));
+    await userEvent.type(await screen.findByLabelText("Add a customer"), "Flat");
+    await userEvent.click(await screen.findByRole("button", { name: /Flat C-1603/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Save stops" }));
+    await screen.findByText(/already on the round Suresh evening/);
+    expect(save).toHaveBeenCalledTimes(1);
+    confirm.mockRestore();
+  });
+
+  it("offers today's run only to LINKED delivery boys — a phone that will show it (§7)", async () => {
+    stubApi();
+    vi.spyOn(api, "listDrivers").mockResolvedValue([
+      { id: "d-1", code: "DRV-1", full_name: "Joseph Mwangi", phone: "", user_id: null, center_id: null, active: true },
+      LINKED,
+    ] as never);
+    render(<RoutesPage />);
+    const select = (await screen.findByLabelText("Delivery boy")) as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual(["Unassigned", "Ramesh Pawar"]);
   });
 });

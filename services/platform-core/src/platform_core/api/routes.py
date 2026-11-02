@@ -169,6 +169,9 @@ from platform_core.modules.logistics.service import (
     DriverUserLink,
     DriverView,
     LogisticsService,
+    NextRoundView,
+    RemainingOutcomeInput,
+    RemainingOutcomeView,
     RouteDetailView,
     RouteInput,
     RouteStopsInput,
@@ -181,8 +184,10 @@ from platform_core.modules.logistics.service import (
     RunStopView,
     RunView,
     StopOutcomeInput,
+    UnroutedCustomersView,
     VehicleInput,
     VehicleView,
+    customers_on_no_round,
     route_memberships,
 )
 from platform_core.modules.milk_collection.service import (
@@ -4911,6 +4916,15 @@ async def list_routes(service: LogisticsSvc, p: RouteRead, active: bool | None =
     return await service.list_routes(active=active)
 
 
+@logistics_router.get("/routes/unrouted-customers", response_model=UnroutedCustomersView)
+async def unrouted_customers(session: deps.Session, p: RouteRead) -> Any:
+    """Households with a standing order that no active round visits (WO-110
+    §6): planned by nobody, seen by no delivery boy, never billed. Declared
+    before `/routes/{route_id}` because FastAPI matches in order."""
+    items = await customers_on_no_round(session, require_current_tenant())
+    return UnroutedCustomersView(count=len(items), items=items)
+
+
 @logistics_router.get("/routes/{route_id}", response_model=RouteDetailView)
 async def get_route(route_id: uuid.UUID, service: LogisticsSvc, p: RouteRead) -> Any:
     return await service.get_route(route_id)
@@ -4944,7 +4958,13 @@ async def set_route_stops(
     sequence sends the sequence, and add/remove endpoints would need a third
     one to reorder.
     """
-    return await service.set_stops(route_id, body.customer_ids, actor_id=p.id, audit=audit)
+    return await service.set_stops(
+        route_id,
+        body.customer_ids,
+        actor_id=p.id,
+        audit=audit,
+        move_from_other_rounds=body.move_from_other_rounds,
+    )
 
 
 @logistics_router.post("/vehicles", response_model=VehicleView, status_code=201)
@@ -5060,6 +5080,14 @@ async def my_delivery_runs(service: LogisticsSvc, p: RunExecute) -> Any:
     return await service.my_runs(user_id=p.id)
 
 
+@logistics_router.get("/delivery-runs/mine/next", response_model=NextRoundView)
+async def my_next_round(service: LogisticsSvc, p: RunExecute) -> Any:
+    """What the delivery boy has after today (WO-110 §2): a later run already
+    planned, or the auto-planned round he is the default boy of, on the next
+    working day. Declared before `/delivery-runs/{run_id}`."""
+    return await service.next_round_for(user_id=p.id)
+
+
 @logistics_router.post("/delivery-runs/{run_id}/start", response_model=RunView)
 async def start_my_run(
     run_id: uuid.UUID, service: LogisticsSvc, audit: deps.Audit, p: RunExecute
@@ -5099,6 +5127,26 @@ async def record_stop_outcome(
     generated row, same money rules (none here: the platform prices it).
     """
     return await service.record_stop_outcome(run_id, customer_id, body, user_id=p.id, audit=audit)
+
+
+@logistics_router.post(
+    "/delivery-runs/{run_id}/outcomes/remaining",
+    response_model=RemainingOutcomeView,
+    status_code=201,
+)
+async def record_remaining_outcomes(
+    run_id: uuid.UUID,
+    body: RemainingOutcomeInput,
+    service: LogisticsSvc,
+    audit: deps.Audit,
+    p: RunExecute,
+) -> Any:
+    """ "Mark the rest as delivered" (WO-110 §4): every delivery of the
+    caller's own open run still scheduled, at its standing quantity, through
+    the same delivery-domain call as one tap at one gate. Own run only, like
+    the per-stop door; idempotent by construction and by this router's
+    `Idempotency-Key`."""
+    return await service.record_remaining_outcomes(run_id, body, user_id=p.id, audit=audit)
 
 
 @logistics_router.post("/delivery-runs", response_model=RunView, status_code=201)
