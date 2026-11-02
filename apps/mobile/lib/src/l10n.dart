@@ -555,7 +555,7 @@ const Catalog _en = {
   'driver.correct': 'Correct',
   'driver.correctTitle': 'Correct the quantity',
   'driver.confirmCorrection': 'Save the correction',
-  'driver.onBill': 'On a bill — ask the office to change it.',
+  'driver.onBill': 'On an invoice — ask the office to change it.',
   'common.cancel': 'Cancel',
   'round.customerCount': '{count, plural, =0{nothing left to deliver} one{# left to deliver} other{# left to deliver}}',
   'round.fromStandingOrders': 'from standing orders',
