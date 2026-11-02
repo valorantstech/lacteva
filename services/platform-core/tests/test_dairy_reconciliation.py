@@ -59,13 +59,19 @@ async def test_the_month_reconciles_exactly(client):
     customer = await _customer(client, admin, "Sharma Household")
 
     delivered = skipped = 0
+    # The one returned delivery falls on a WEEKDAY: the Sunday branch below
+    # wins otherwise, and when the 11th of the previous month is a Sunday (it
+    # was, on 2026-11-02) the month had no returned delivery to count.
+    returned_offset = next(
+        o for o in range(10, 17) if (MONTH[0] + timedelta(days=o)).weekday() != 6
+    )
     for offset in range((MONTH[1] - MONTH[0]).days + 1):
         day = MONTH[0] + timedelta(days=offset)
         # A realistic month: most days delivered, Sundays skipped, one returned.
         status = "delivered"
         if day.weekday() == 6:
             status = "skipped"
-        elif offset == 10:
+        elif offset == returned_offset:
             status = "returned"
         r = await client.post(
             "/v1/deliveries",
